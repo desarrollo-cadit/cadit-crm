@@ -72,6 +72,12 @@ export type CohortInput = {
   /** 005 iteración 2 — horario "HH:MM" para el calendario. */
   startTime?: string | null;
   endTime?: string | null;
+  /**
+   * 005 iteración 4 — CSV de índices de día 0=lunes..6=domingo (ej. "0,2"
+   * para lunes y miércoles); null = sin días específicos, se muestra en
+   * cada día de [startDate, endDate] (comportamiento anterior).
+   */
+  daysOfWeek?: string | null;
   classroom?: string | null;
   syllabusUrl?: string | null;
   capacity?: number | null;
@@ -194,6 +200,7 @@ export async function createCohort(
     frequency: input.frequency ?? null,
     startTime: input.startTime ?? null,
     endTime: input.endTime ?? null,
+    daysOfWeek: input.daysOfWeek ?? null,
     classroom: input.classroom ?? null,
     syllabusUrl: input.syllabusUrl ?? null,
     capacity: input.capacity ?? null,
@@ -258,6 +265,7 @@ export async function updateCohort(
       ...(input.frequency !== undefined ? { frequency: input.frequency } : {}),
       ...(input.startTime !== undefined ? { startTime: input.startTime } : {}),
       ...(input.endTime !== undefined ? { endTime: input.endTime } : {}),
+      ...(input.daysOfWeek !== undefined ? { daysOfWeek: input.daysOfWeek } : {}),
       ...(input.classroom !== undefined ? { classroom: input.classroom } : {}),
       ...(input.syllabusUrl !== undefined
         ? { syllabusUrl: input.syllabusUrl }
@@ -317,6 +325,24 @@ type CourseRow = typeof schema.course.$inferSelect;
 type TeacherRow = typeof schema.teacher.$inferSelect;
 type SoftwareRef = { id: string; name: string };
 
+/**
+ * 005 iteración 4 (feedback en vivo: "debería ser automático") — el status
+ * de la camada ya no se fija a mano: se calcula de `[startDate, endDate]`
+ * contra "hoy". `endDate` NULL se trata como "sigue en curso una vez
+ * empezada" (mismo criterio que DV-006, choque de horario). La columna
+ * `status` sigue existiendo en el schema pero la serialización SIEMPRE
+ * devuelve el valor calculado, nunca el guardado.
+ */
+export function computeCohortStatus(
+  startDate: Date,
+  endDate: Date | null,
+  now: Date = new Date()
+): "planificada" | "en_curso" | "finalizada" {
+  if (now < startDate) return "planificada";
+  if (endDate && now > endDate) return "finalizada";
+  return "en_curso";
+}
+
 function serializeCohort(
   cohort: CohortRow,
   course: CourseRow,
@@ -332,6 +358,7 @@ function serializeCohort(
     endDate: cohort.endDate?.toISOString() ?? null,
     startTime: cohort.startTime,
     endTime: cohort.endTime,
+    daysOfWeek: cohort.daysOfWeek,
     teacher: teacher ? { id: teacher.id, name: teacher.name } : null,
     cost: cohort.cost,
     frequency: cohort.frequency,
@@ -339,7 +366,7 @@ function serializeCohort(
     syllabusUrl: cohort.syllabusUrl,
     capacity: cohort.capacity,
     whatsappGroupLink: cohort.whatsappGroupLink,
-    status: cohort.status,
+    status: computeCohortStatus(cohort.startDate, cohort.endDate),
     software,
   };
 }

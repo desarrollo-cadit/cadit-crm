@@ -109,6 +109,8 @@ export type CohortDto = {
   /** 005 iteración 2 — horario "HH:MM" para el calendario; frequency queda como texto libre. */
   startTime: string | null;
   endTime: string | null;
+  /** 005 iteración 4 — CSV "0,2" (lunes=0..domingo=6); null = todos los días del rango. */
+  daysOfWeek: string | null;
   /** Referencia mínima del profesor asignado (no el TeacherDto completo con courseIds/hourlyRate). */
   teacher: { id: string; name: string } | null;
   cost: number | null;

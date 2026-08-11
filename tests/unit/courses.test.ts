@@ -399,4 +399,55 @@ describe("courses: createCourse / createCohort (004)", () => {
     expect("startTime" in set).toBe(false);
     expect("endTime" in set).toBe(false);
   });
+
+  it("createCohort (iteración 4) acepta daysOfWeek para el calendario semanal", async () => {
+    pushCourseExists();
+    const { createCohort } = await import("@/server/courses");
+    await createCohort("org_1", {
+      courseId: "crs_revit",
+      startDate: new Date("2026-08-04"),
+      daysOfWeek: "0,2",
+    });
+
+    const values = inserts[0]!.values as { daysOfWeek: string | null };
+    expect(values.daysOfWeek).toBe("0,2");
+  });
+});
+
+describe("computeCohortStatus (iteración 4, feedback en vivo: status automático por fecha)", () => {
+  it("hoy antes de startDate → planificada", async () => {
+    const { computeCohortStatus } = await import("@/server/courses");
+    const result = computeCohortStatus(
+      new Date("2026-09-01"),
+      new Date("2026-10-01"),
+      new Date("2026-08-01")
+    );
+    expect(result).toBe("planificada");
+  });
+
+  it("hoy entre startDate y endDate → en_curso", async () => {
+    const { computeCohortStatus } = await import("@/server/courses");
+    const result = computeCohortStatus(
+      new Date("2026-08-01"),
+      new Date("2026-10-01"),
+      new Date("2026-09-01")
+    );
+    expect(result).toBe("en_curso");
+  });
+
+  it("hoy después de endDate → finalizada", async () => {
+    const { computeCohortStatus } = await import("@/server/courses");
+    const result = computeCohortStatus(
+      new Date("2026-01-01"),
+      new Date("2026-02-01"),
+      new Date("2026-08-01")
+    );
+    expect(result).toBe("finalizada");
+  });
+
+  it("sin endDate y ya empezada → en_curso indefinidamente (mismo criterio que DV-006)", async () => {
+    const { computeCohortStatus } = await import("@/server/courses");
+    const result = computeCohortStatus(new Date("2026-01-01"), null, new Date("2026-12-31"));
+    expect(result).toBe("en_curso");
+  });
 });

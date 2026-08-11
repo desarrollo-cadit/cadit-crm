@@ -13,7 +13,10 @@ const submitSchema = z.object({
     .trim()
     .regex(/^\d{7,15}$/, "Teléfono en dígitos, con código de país (ej. 5215512345678)"),
   email: z.string().trim().email().max(200).optional(),
-  notes: z.string().max(4000).optional(),
+  // 005 iteración 4 (feedback en vivo: "el campo mensaje que llena el
+  // usuario en mi web") — nombre de cara al formulario externo; se guarda
+  // en contact.notes (mismo campo que ya se ve en la tabla de contactos).
+  message: z.string().max(4000).optional(),
 });
 
 /**
@@ -32,7 +35,7 @@ export async function POST(req: Request, ctx: Params) {
     name: body.data.name,
     phone: body.data.phone,
     email: body.data.email ?? null,
-    notes: body.data.notes ?? null,
+    notes: body.data.message ?? null,
   });
   if (!result.ok) {
     return apiError(result.status, result.code, result.message);

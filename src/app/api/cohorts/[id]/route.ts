@@ -28,6 +28,11 @@ const patchSchema = z.object({
   frequency: z.string().max(200).nullable().optional(),
   startTime: timeHHMM.optional(),
   endTime: timeHHMM.optional(),
+  daysOfWeek: z
+    .string()
+    .regex(/^[0-6](,[0-6])*$/, "CSV de índices de día 0-6")
+    .nullable()
+    .optional(),
   classroom: z.string().max(120).nullable().optional(),
   syllabusUrl: z.string().max(2000).nullable().optional(),
   capacity: z.number().int().min(0).nullable().optional(),

@@ -287,6 +287,15 @@ export const cohort = pgTable(
     /** 005 iteración 2 — horario de inicio/fin en texto "HH:MM", para el calendario. */
     startTime: text("start_time"),
     endTime: text("end_time"),
+    /**
+     * 005 iteración 4 — qué días de la semana dicta esta camada dentro de
+     * [start_date, end_date], para poder dibujarla en el calendario semanal
+     * (antes aparecía TODOS los días del rango, fines de semana incluidos).
+     * CSV de índices 0=lunes..6=domingo (mismo orden que WEEKDAYS del
+     * calendario); NULL = sin días específicos declarados (se sigue
+     * mostrando en cada día del rango, comportamiento anterior).
+     */
+    daysOfWeek: text("days_of_week"),
     classroom: text("classroom"),
     syllabusUrl: text("syllabus_url"),
     capacity: integer("capacity"),

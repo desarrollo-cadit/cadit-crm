@@ -32,6 +32,30 @@ function formatCost(cost: number | null) {
   return `$${cost.toLocaleString("es-MX")}`;
 }
 
+const DAY_LABELS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+
+function formatDaysOfWeek(daysOfWeek: string | null) {
+  if (!daysOfWeek) return null;
+  return daysOfWeek
+    .split(",")
+    .map((d) => DAY_LABELS[Number(d)])
+    .join(", ");
+}
+
+/**
+ * 005 iteración 4 (feedback en vivo: "debería ser automático... que muestre
+ * distintas badges") — el status ya se calcula solo en el servidor
+ * (computeCohortStatus); acá solo se mapea a color + etiqueta.
+ */
+const STATUS_BADGE: Record<
+  CohortDto["status"],
+  { label: string; variant: "secondary" | "success" | "outline" }
+> = {
+  planificada: { label: "Planificada", variant: "secondary" },
+  en_curso: { label: "En curso", variant: "success" },
+  finalizada: { label: "Finalizada", variant: "outline" },
+};
+
 /**
  * 005 (T014, US1) — pantalla de gestión académica. Iteración 2 (feedback en
  * vivo del dueño) suma pestañas Cursos/Software/Profesores: antes solo se
@@ -160,7 +184,9 @@ export function AcademicClient() {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-sm font-medium">{cohort.name ?? cohort.courseName}</span>
-                      <Badge variant="secondary">{cohort.status}</Badge>
+                      <Badge variant={STATUS_BADGE[cohort.status].variant}>
+                        {STATUS_BADGE[cohort.status].label}
+                      </Badge>
                     </div>
                     {cohort.name && (
                       <p className="text-xs text-muted-foreground">{cohort.courseName}</p>
@@ -173,11 +199,11 @@ export function AcademicClient() {
                       {formatCost(cohort.cost)}
                       {cohort.classroom ? ` · Aula ${cohort.classroom}` : ""}
                     </p>
-                    {(cohort.frequency || cohort.startTime) && (
+                    {(cohort.frequency || cohort.startTime || cohort.daysOfWeek) && (
                       <p className="text-xs text-muted-foreground">
-                        {cohort.frequency}
+                        {formatDaysOfWeek(cohort.daysOfWeek) ?? cohort.frequency}
                         {cohort.startTime
-                          ? ` ${cohort.frequency ? "· " : ""}${cohort.startTime}${cohort.endTime ? `–${cohort.endTime}` : ""}`
+                          ? ` ${formatDaysOfWeek(cohort.daysOfWeek) ?? cohort.frequency ? "· " : ""}${cohort.startTime}${cohort.endTime ? `–${cohort.endTime}` : ""}`
                           : ""}
                       </p>
                     )}

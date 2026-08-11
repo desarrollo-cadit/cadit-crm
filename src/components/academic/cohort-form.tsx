@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { CohortDto, CourseDto, SoftwareDto, TeacherDto } from "@/lib/types";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,6 +11,9 @@ import { Textarea } from "@/components/ui/textarea";
 function toDateInput(iso: string | null) {
   return iso ? iso.slice(0, 10) : "";
 }
+
+/** 0=lunes..6=domingo — mismo orden que el calendario semanal. */
+const DAY_LABELS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 
 /**
  * 005 (T014, US1, FR-005) — alta/edición de una camada con toda la
@@ -42,6 +46,12 @@ export function CohortForm({
   const [frequency, setFrequency] = useState(initial?.frequency ?? "");
   const [startTime, setStartTime] = useState(initial?.startTime ?? "");
   const [endTime, setEndTime] = useState(initial?.endTime ?? "");
+  // 005 iteración 4 — días de la semana en que dicta, para el calendario
+  // semanal (feedback en vivo: antes no existía, la camada aparecía todos
+  // los días del rango). Índices 0=lunes..6=domingo.
+  const [daysOfWeek, setDaysOfWeek] = useState<number[]>(
+    initial?.daysOfWeek ? initial.daysOfWeek.split(",").map(Number) : []
+  );
   const [classroom, setClassroom] = useState(initial?.classroom ?? "");
   const [syllabusUrl, setSyllabusUrl] = useState(initial?.syllabusUrl ?? "");
   const [capacity, setCapacity] = useState(initial?.capacity?.toString() ?? "");
@@ -90,6 +100,12 @@ export function CohortForm({
     );
   }
 
+  function toggleDay(day: number) {
+    setDaysOfWeek((prev) =>
+      (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]).sort()
+    );
+  }
+
   async function submit() {
     if (!courseId || !startDate) {
       setError("Curso y fecha de inicio son obligatorios");
@@ -107,6 +123,7 @@ export function CohortForm({
       frequency: frequency.trim() || null,
       startTime: startTime || null,
       endTime: endTime || null,
+      daysOfWeek: daysOfWeek.length > 0 ? daysOfWeek.join(",") : null,
       classroom: classroom.trim() || null,
       syllabusUrl: syllabusUrl.trim() || null,
       capacity: capacity.trim() ? Number(capacity) : null,
@@ -307,6 +324,31 @@ export function CohortForm({
                 onChange={(e) => setEndTime(e.target.value)}
               />
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Días de la semana</Label>
+            <div className="flex flex-wrap gap-1.5">
+              {DAY_LABELS.map((label, i) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => toggleDay(i)}
+                  className={cn(
+                    "flex h-7 w-9 items-center justify-center rounded border text-xs font-medium transition-colors",
+                    daysOfWeek.includes(i)
+                      ? "border-brand bg-brand-tint text-brand-text"
+                      : "border-input text-muted-foreground hover:bg-accent"
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Sin días marcados, la camada se muestra en TODOS los días entre
+              inicio y fin en el calendario.
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

@@ -4,14 +4,21 @@ import { createCohort, listCohorts } from "@/server/courses";
 
 export const dynamic = "force-dynamic";
 
+const listQuerySchema = z.object({ courseId: z.string().min(1).optional() });
+
 // 005 (US1) — listado con teacher/software resueltos (listCohorts, T008);
 // necesario para la pantalla de gestión académica (T014). No estaba en el
 // enunciado literal de T012 (que solo mencionaba POST), pero listCohorts ya
 // se construyó exactamente para esto — ver reporte final de la fase.
 export const GET = withAuth(async (session, req: Request) => {
-  const courseId = new URL(req.url).searchParams.get("courseId");
+  const parsedQuery = listQuerySchema.safeParse(
+    Object.fromEntries(new URL(req.url).searchParams)
+  );
+  if (!parsedQuery.success) {
+    return apiError(422, "invalid_query", "courseId inválido");
+  }
   const rows = await listCohorts(session.organizationId, {
-    courseId: courseId ?? undefined,
+    courseId: parsedQuery.data.courseId,
   });
   return Response.json({ cohorts: rows });
 });
@@ -31,6 +38,12 @@ const createSchema = z.object({
   frequency: z.string().max(200).nullable().optional(),
   startTime: timeHHMM.optional(),
   endTime: timeHHMM.optional(),
+  // 005 iteración 4 — CSV "0,2" (lunes=0..domingo=6); vacío/null = sin días específicos.
+  daysOfWeek: z
+    .string()
+    .regex(/^[0-6](,[0-6])*$/, "CSV de índices de día 0-6")
+    .nullable()
+    .optional(),
   classroom: z.string().max(120).nullable().optional(),
   syllabusUrl: z.string().max(2000).nullable().optional(),
   capacity: z.number().int().min(0).nullable().optional(),

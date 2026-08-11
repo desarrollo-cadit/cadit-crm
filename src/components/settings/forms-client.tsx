@@ -166,7 +166,7 @@ function FormCard({ form }: { form: IntakeFormDto }) {
     name: "Nombre del interesado",
     phone: "5215512345678",
     email: "opcional@ejemplo.com",
-    notes: "opcional",
+    message: "opcional — lo que el interesado escriba en el campo mensaje",
   }),
 });`;
   const curlSnippet = `curl -X POST "${url}" \\
