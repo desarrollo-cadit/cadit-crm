@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { CohortForm, CourseQuickForm } from "@/components/academic/cohort-form";
 import { SoftwareForm } from "@/components/academic/software-form";
 import { TeacherForm } from "@/components/academic/teacher-form";
+import { Skeleton } from "../ui/skeleton";
 
 const TABS = [
   { key: "courses", label: "Cursos" },
@@ -64,6 +65,7 @@ const STATUS_BADGE: Record<
  */
 export function AcademicClient() {
   const [tab, setTab] = useState<Tab>("courses");
+  const [loading, setLoading] = useState(false);
   const [courses, setCourses] = useState<CourseDto[]>([]);
   const [cohorts, setCohorts] = useState<CohortDto[]>([]);
   const [teachers, setTeachers] = useState<TeacherDto[]>([]);
@@ -80,6 +82,7 @@ export function AcademicClient() {
   >(null);
 
   const refetch = useCallback(async () => {
+    setLoading(true);
     const [coursesRes, cohortsRes, teachersRes, softwareRes] = await Promise.all([
       fetch("/api/courses").catch(() => null),
       fetch("/api/cohorts").catch(() => null),
@@ -102,6 +105,7 @@ export function AcademicClient() {
       const data = (await softwareRes.json()) as { software: SoftwareDto[] };
       setSoftware(data.software);
     }
+    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -165,7 +169,14 @@ export function AcademicClient() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-6">
-        {tab === "cohorts" &&
+        {loading && (
+          <div className="space-y-2">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="h-12 w-full" />
+            ))}
+          </div>
+        )}
+        {!loading && tab === "cohorts" &&
           (cohorts.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
               <p className="text-sm font-medium">Sin camadas</p>
@@ -236,7 +247,7 @@ export function AcademicClient() {
             </ul>
           ))}
 
-        {tab === "courses" &&
+        {!loading && tab === "courses" &&
           (courses.length === 0 ? (
             <p className="text-sm text-muted-foreground">Sin cursos todavía.</p>
           ) : (
@@ -264,7 +275,7 @@ export function AcademicClient() {
             </ul>
           ))}
 
-        {tab === "software" &&
+        {!loading && tab === "software" &&
           (software.length === 0 ? (
             <p className="text-sm text-muted-foreground">Sin software cargado todavía.</p>
           ) : (
@@ -274,11 +285,21 @@ export function AcademicClient() {
                   key={s.id}
                   className="flex items-center justify-between gap-4 rounded-lg border bg-card px-4 py-3"
                 >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">{s.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {s.totalLicenses} licencia{s.totalLicenses === 1 ? "" : "s"} en total
-                    </p>
+                  <div className="flex min-w-0 flex-1 items-center gap-3">
+                    {s.hasPhoto && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={`/api/software/${s.id}/photo`}
+                        alt=""
+                        className="h-9 w-9 shrink-0 rounded object-cover"
+                      />
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium">{s.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {s.totalLicenses} licencia{s.totalLicenses === 1 ? "" : "s"} en total
+                      </p>
+                    </div>
                   </div>
                   <Button
                     variant="ghost"
@@ -292,7 +313,7 @@ export function AcademicClient() {
             </ul>
           ))}
 
-        {tab === "teachers" &&
+        {!loading && tab === "teachers" &&
           (teachers.length === 0 ? (
             <p className="text-sm text-muted-foreground">Sin profesores todavía.</p>
           ) : (
@@ -302,20 +323,31 @@ export function AcademicClient() {
                   key={t.id}
                   className="flex items-start justify-between gap-4 rounded-lg border bg-card px-4 py-3"
                 >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">{t.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {t.hourlyRate !== null ? `${formatCost(t.hourlyRate)}/hora` : "sin costo por hora"}
-                    </p>
-                    {t.courseIds.length > 0 && (
-                      <div className="mt-1.5 flex flex-wrap gap-1">
-                        {t.courseIds.map((cid) => (
-                          <Badge key={cid} variant="outline">
-                            {courseNameFor(cid)}
-                          </Badge>
-                        ))}
-                      </div>
+                  <div className="flex min-w-0 flex-1 items-start gap-3">
+                    {t.hasPhoto && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={`/api/teachers/${t.id}/photo`}
+                        alt=""
+                        className="h-9 w-9 shrink-0 rounded-full object-cover"
+                      />
                     )}
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium">{t.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {t.email ? `${t.email} · ` : ""}
+                        {t.hourlyRate !== null ? `${formatCost(t.hourlyRate)}/hora` : "sin costo por hora"}
+                      </p>
+                      {t.courseIds.length > 0 && (
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          {t.courseIds.map((cid) => (
+                            <Badge key={cid} variant="outline">
+                              {courseNameFor(cid)}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <Button
                     variant="ghost"

@@ -57,6 +57,21 @@ vi.mock("@/lib/db", () => ({
   ),
 }));
 
+const saveMediaFile = vi.fn().mockResolvedValue("org_1/tch-photo-tch_1");
+const readMediaFile = vi.fn().mockResolvedValue(Buffer.from("fake-image-bytes"));
+
+vi.mock("@/server/whatsapp/media", () => ({
+  MEDIA_LIMITS: {
+    image: {
+      maxBytes: 5 * 1024 * 1024,
+      mimes: /^image\/(jpeg|png|webp)$/,
+      label: "imagen (jpeg/png/webp, máx. 5 MB)",
+    },
+  },
+  saveMediaFile: (...args: unknown[]) => saveMediaFile(...args),
+  readMediaFile: (...args: unknown[]) => readMediaFile(...args),
+}));
+
 function cohortRow(
   id: string,
   startDate: string,
@@ -199,7 +214,7 @@ describe("updateTeacher / listTeachers / getTeacher (iteración 2)", () => {
 
   it("listTeachers resuelve courseIds por profesor en una sola query extra", async () => {
     selectQueue.push(
-      [{ id: "tch_1", name: "Ing. Paola Suárez", hourlyRate: 400 }],
+      [{ id: "tch_1", name: "Ing. Paola Suárez", hourlyRate: 400, photoMimeType: null }],
       [{ teacherId: "tch_1", courseId: "crs_1" }]
     );
 
@@ -207,7 +222,13 @@ describe("updateTeacher / listTeachers / getTeacher (iteración 2)", () => {
     const rows = await listTeachers("org_1");
 
     expect(rows).toEqual([
-      { id: "tch_1", name: "Ing. Paola Suárez", hourlyRate: 400, courseIds: ["crs_1"] },
+      {
+        id: "tch_1",
+        name: "Ing. Paola Suárez",
+        hourlyRate: 400,
+        courseIds: ["crs_1"],
+        hasPhoto: false,
+      },
     ]);
   });
 
@@ -216,5 +237,58 @@ describe("updateTeacher / listTeachers / getTeacher (iteración 2)", () => {
     const { getTeacher } = await import("@/server/teachers");
     const result = await getTeacher("org_1", "tch_x");
     expect(result).toBeNull();
+  });
+});
+
+describe("saveTeacherPhoto / getTeacherPhoto (005 iteración 5)", () => {
+  beforeEach(() => {
+    selectQueue.length = 0;
+    updates.length = 0;
+    saveMediaFile.mockClear();
+    readMediaFile.mockClear();
+  });
+
+  it("rechaza un mime type no soportado sin tocar disco", async () => {
+    const { saveTeacherPhoto } = await import("@/server/teachers");
+    const result = await saveTeacherPhoto("org_1", "tch_1", {
+      mimeType: "application/pdf",
+      sizeBytes: 1000,
+      data: Buffer.from("x"),
+    });
+    expect(result.ok).toBe(false);
+    expect(saveMediaFile).not.toHaveBeenCalled();
+  });
+
+  it("404 si el profesor no pertenece a la organización", async () => {
+    selectQueue.push([]);
+    const { saveTeacherPhoto } = await import("@/server/teachers");
+    const result = await saveTeacherPhoto("org_1", "tch_ajeno", {
+      mimeType: "image/jpeg",
+      sizeBytes: 1000,
+      data: Buffer.from("x"),
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.status).toBe(404);
+  });
+
+  it("guarda el archivo y marca photoMimeType", async () => {
+    selectQueue.push([{ id: "tch_1" }]);
+    const { saveTeacherPhoto } = await import("@/server/teachers");
+    const result = await saveTeacherPhoto("org_1", "tch_1", {
+      mimeType: "image/jpeg",
+      sizeBytes: 1000,
+      data: Buffer.from("x"),
+    });
+    expect(result.ok).toBe(true);
+    expect(saveMediaFile).toHaveBeenCalledWith("org_1", "tch-photo-tch_1", expect.any(Buffer));
+    expect(updates[0]!.set).toMatchObject({ photoMimeType: "image/jpeg" });
+  });
+
+  it("getTeacherPhoto devuelve null cuando no hay foto, sin tocar disco", async () => {
+    selectQueue.push([{ photoMimeType: null }]);
+    const { getTeacherPhoto } = await import("@/server/teachers");
+    const result = await getTeacherPhoto("org_1", "tch_1");
+    expect(result).toBeNull();
+    expect(readMediaFile).not.toHaveBeenCalled();
   });
 });

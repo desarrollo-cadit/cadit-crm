@@ -71,6 +71,20 @@
       "when": 1786474366987,
       "tag": "0009_dazzling_groot",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1786476127521,
+      "tag": "0010_fancy_aaron_stack",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1786476719468,
+      "tag": "0011_solid_speedball",
+      "breakpoints": true
     }
   ]
 }

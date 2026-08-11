@@ -178,6 +178,19 @@ export const teacher = pgTable(
     name: text("name").notNull(),
     /** 005 iteración 2 — costo por hora opcional (moneda entera, DV-008). */
     hourlyRate: integer("hourly_rate"),
+    /**
+     * 005 iteración 5 (feedback en vivo: "que los profesores sean usuarios")
+     * — email de contacto, identidad mínima. NO crea cuenta/login: eso queda
+     * explícitamente para más adelante ("pensaremos cómo verán el
+     * dashboard"), decisión confirmada con el dueño del producto.
+     */
+    email: text("email"),
+    /**
+     * 005 iteración 5 — foto opcional, en disco local (MEDIA_DIR, mismo
+     * patrón que los adjuntos de WhatsApp — constitución II: sin S3/R2).
+     * `photoMimeType` NULL = sin foto.
+     */
+    photoMimeType: text("photo_mime_type"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -197,6 +210,8 @@ export const software = pgTable(
       .references(() => organization.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     totalLicenses: integer("total_licenses").notNull().default(0),
+    /** 005 iteración 5 — foto opcional del producto, mismo patrón que teacher. */
+    photoMimeType: text("photo_mime_type"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

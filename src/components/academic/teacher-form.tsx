@@ -26,13 +26,22 @@ export function TeacherForm({
   onSaved: () => void;
 }) {
   const [name, setName] = useState(initial?.name ?? "");
+  const [email, setEmail] = useState(initial?.email ?? "");
   const [hourlyRate, setHourlyRate] = useState(initial?.hourlyRate?.toString() ?? "");
   const [courseIds, setCourseIds] = useState<string[]>(initial?.courseIds ?? []);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function toggleCourse(id: string) {
     setCourseIds((prev) => (prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]));
+  }
+
+  async function uploadPhoto(id: string) {
+    if (!photoFile) return;
+    const body = new FormData();
+    body.append("file", photoFile);
+    await fetch(`/api/teachers/${id}/photo`, { method: "PUT", body }).catch(() => null);
   }
 
   async function submit() {
@@ -43,10 +52,12 @@ export function TeacherForm({
     const patchBody = {
       name: name.trim(),
       hourlyRate: hourlyRate.trim() ? Number(hourlyRate) : null,
+      email: email.trim() || null,
       courseIds,
     };
 
     let res: Response | null;
+    let teacherId = initial?.id ?? null;
     if (initial) {
       res = await fetch(`/api/teachers/${initial.id}`, {
         method: "PATCH",
@@ -57,12 +68,13 @@ export function TeacherForm({
       const createRes = await fetch("/api/teachers", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: name.trim() }),
+        body: JSON.stringify({ name: name.trim(), email: email.trim() || null }),
       }).catch(() => null);
       if (!createRes?.ok) {
         res = createRes;
       } else {
         const created = (await createRes.json()) as { teacher: TeacherDto };
+        teacherId = created.teacher.id;
         res = await fetch(`/api/teachers/${created.teacher.id}`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
@@ -74,14 +86,16 @@ export function TeacherForm({
       }
     }
 
-    setSaving(false);
     if (!res?.ok) {
+      setSaving(false);
       const body = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
       setError(body?.error?.message ?? "No se pudo guardar el profesor");
       return;
     }
+    if (teacherId) await uploadPhoto(teacherId);
+    setSaving(false);
     onSaved();
   }
 
@@ -103,6 +117,16 @@ export function TeacherForm({
             <Input id="teacher-name" value={name} onChange={(e) => setName(e.target.value)} />
           </div>
           <div className="space-y-1.5">
+            <Label htmlFor="teacher-email">Email</Label>
+            <Input
+              id="teacher-email"
+              type="email"
+              placeholder="profesor@ejemplo.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
             <Label htmlFor="teacher-rate">Costo por hora</Label>
             <Input
               id="teacher-rate"
@@ -111,6 +135,25 @@ export function TeacherForm({
               value={hourlyRate}
               onChange={(e) => setHourlyRate(e.target.value)}
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="teacher-photo">Foto (opcional)</Label>
+            <div className="flex items-center gap-2.5">
+              {initial?.hasPhoto && !photoFile && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={`/api/teachers/${initial.id}/photo`}
+                  alt=""
+                  className="h-9 w-9 shrink-0 rounded-full object-cover"
+                />
+              )}
+              <Input
+                id="teacher-photo"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)}
+              />
+            </div>
           </div>
           <div className="space-y-1.5">
             <Label>Cursos que dicta</Label>

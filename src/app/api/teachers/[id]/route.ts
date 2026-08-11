@@ -16,6 +16,7 @@ export const GET = withAuth(async (session, _req: Request, ctx: Params) => {
 const patchSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   hourlyRate: z.number().int().min(0).nullable().optional(),
+  email: z.string().trim().email().max(200).nullable().optional(),
   courseIds: z.array(z.string().min(1)).optional(),
 });
 

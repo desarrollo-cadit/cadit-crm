@@ -2,11 +2,12 @@ import { asc, eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
+import { MEDIA_LIMITS, readMediaFile, saveMediaFile } from "@/server/whatsapp/media";
 
 /** 005 (DV-005, FR-007) — Alta de un profesor (entidad propia). */
 export async function createTeacher(
   organizationId: string,
-  input: { name: string }
+  input: { name: string; email?: string | null }
 ) {
   const db = getDb();
   const id = newId("teacher");
@@ -14,6 +15,7 @@ export async function createTeacher(
     id,
     organizationId,
     name: input.name,
+    email: input.email ?? null,
   });
   return id;
 }
@@ -41,7 +43,60 @@ export function serializeTeacher(
   t: typeof schema.teacher.$inferSelect,
   courseIds: string[] = []
 ) {
-  return { id: t.id, name: t.name, hourlyRate: t.hourlyRate, courseIds };
+  return {
+    id: t.id,
+    name: t.name,
+    hourlyRate: t.hourlyRate,
+    email: t.email,
+    courseIds,
+    hasPhoto: t.photoMimeType !== null,
+  };
+}
+
+export type SaveTeacherPhotoResult =
+  | { ok: true }
+  | { ok: false; status: 404; code: "not_found"; message: string }
+  | { ok: false; status: 422; code: "invalid_body"; message: string };
+
+/** 005 iteración 5 — foto opcional del profesor; mismo patrón que software (ver ese archivo). */
+export async function saveTeacherPhoto(
+  organizationId: string,
+  teacherId: string,
+  file: { mimeType: string; sizeBytes: number; data: Buffer }
+): Promise<SaveTeacherPhotoResult> {
+  if (!MEDIA_LIMITS.image.mimes.test(file.mimeType) || file.sizeBytes > MEDIA_LIMITS.image.maxBytes) {
+    return { ok: false, status: 422, code: "invalid_body", message: `Se espera ${MEDIA_LIMITS.image.label}` };
+  }
+  const db = getDb();
+  const rows = await db
+    .select({ id: schema.teacher.id })
+    .from(schema.teacher)
+    .where(scoped(schema.teacher.organizationId, organizationId, eq(schema.teacher.id, teacherId)))
+    .limit(1);
+  if (!rows[0]) return { ok: false, status: 404, code: "not_found", message: "Profesor no encontrado" };
+
+  await saveMediaFile(organizationId, `tch-photo-${teacherId}`, file.data);
+  await db
+    .update(schema.teacher)
+    .set({ photoMimeType: file.mimeType, updatedAt: new Date() })
+    .where(scoped(schema.teacher.organizationId, organizationId, eq(schema.teacher.id, teacherId)));
+  return { ok: true };
+}
+
+export async function getTeacherPhoto(
+  organizationId: string,
+  teacherId: string
+): Promise<{ data: Buffer; mimeType: string } | null> {
+  const db = getDb();
+  const rows = await db
+    .select({ photoMimeType: schema.teacher.photoMimeType })
+    .from(schema.teacher)
+    .where(scoped(schema.teacher.organizationId, organizationId, eq(schema.teacher.id, teacherId)))
+    .limit(1);
+  const mimeType = rows[0]?.photoMimeType;
+  if (!mimeType) return null;
+  const data = await readMediaFile(organizationId, `tch-photo-${teacherId}`);
+  return { data, mimeType };
 }
 
 /** 005 — Listado de profesores de la organización, por nombre, con cursos/costo resueltos. */
@@ -75,6 +130,7 @@ export async function getTeacher(organizationId: string, teacherId: string) {
 export type UpdateTeacherInput = {
   name?: string;
   hourlyRate?: number | null;
+  email?: string | null;
   /** Reemplaza por completo el conjunto de cursos que dicta (teacher_course). */
   courseIds?: string[];
 };
@@ -114,6 +170,7 @@ export async function updateTeacher(
     .set({
       ...(input.name !== undefined ? { name: input.name } : {}),
       ...(input.hourlyRate !== undefined ? { hourlyRate: input.hourlyRate } : {}),
+      ...(input.email !== undefined ? { email: input.email } : {}),
       updatedAt: new Date(),
     })
     .where(

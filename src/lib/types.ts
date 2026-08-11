@@ -79,8 +79,12 @@ export type TeacherDto = {
   name: string;
   /** 005 iteración 2 — costo por hora opcional. */
   hourlyRate: number | null;
+  /** 005 iteración 5 — email de contacto (identidad mínima; sin cuenta/login todavía). */
+  email: string | null;
   /** 005 iteración 2 — cursos que dicta (teacher_course), para filtrar el selector de camada. */
   courseIds: string[];
+  /** 005 iteración 5 — true si tiene foto en `/api/teachers/:id/photo`. */
+  hasPhoto: boolean;
 };
 
 /** 005 (DV-004) — catálogo básico de software (sin lógica de disponibilidad, US4). */
@@ -88,6 +92,8 @@ export type SoftwareDto = {
   id: string;
   name: string;
   totalLicenses: number;
+  /** 005 iteración 5 — true si tiene foto en `/api/software/:id/photo`. */
+  hasPhoto: boolean;
 };
 
 /** 005 (DV-009) — empresa para facturación B2B opcional. */

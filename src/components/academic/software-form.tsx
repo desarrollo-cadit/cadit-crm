@@ -12,6 +12,11 @@ import { Label } from "@/components/ui/label";
  * el catálogo fuera del selector de camada). `initial` presente = edición
  * (PATCH `/api/software/:id`, que ya valida no bajar de lo asignado);
  * ausente = alta (POST `/api/software`).
+ *
+ * Iteración 5 (feedback en vivo: "adjuntar foto de los productos de
+ * licencia... así es más fácil distinguir") — la foto se sube aparte
+ * (multipart, `PUT /api/software/:id/photo`) DESPUÉS de guardar los datos,
+ * porque en alta recién ahí existe un id.
  */
 export function SoftwareForm({
   initial,
@@ -26,8 +31,16 @@ export function SoftwareForm({
   const [totalLicenses, setTotalLicenses] = useState(
     initial?.totalLicenses?.toString() ?? "0"
   );
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  async function uploadPhoto(id: string) {
+    if (!photoFile) return;
+    const body = new FormData();
+    body.append("file", photoFile);
+    await fetch(`/api/software/${id}/photo`, { method: "PUT", body }).catch(() => null);
+  }
 
   async function submit() {
     if (!name.trim()) return;
@@ -41,14 +54,17 @@ export function SoftwareForm({
         totalLicenses: totalLicenses.trim() ? Number(totalLicenses) : 0,
       }),
     }).catch(() => null);
-    setSaving(false);
     if (!res?.ok) {
+      setSaving(false);
       const body = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
       setError(body?.error?.message ?? "No se pudo guardar el software");
       return;
     }
+    const id = initial?.id ?? ((await res.json()) as { software: { id: string } }).software.id;
+    await uploadPhoto(id);
+    setSaving(false);
     onSaved();
   }
 
@@ -78,6 +94,25 @@ export function SoftwareForm({
               value={totalLicenses}
               onChange={(e) => setTotalLicenses(e.target.value)}
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="software-photo">Foto (opcional)</Label>
+            <div className="flex items-center gap-2.5">
+              {initial?.hasPhoto && !photoFile && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={`/api/software/${initial.id}/photo`}
+                  alt=""
+                  className="h-9 w-9 shrink-0 rounded object-cover"
+                />
+              )}
+              <Input
+                id="software-photo"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)}
+              />
+            </div>
           </div>
         </div>
         {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
