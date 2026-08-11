@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
+  CalendarDays,
   FlaskConical,
+  GraduationCap,
   Inbox,
   Kanban,
   LogOut,
@@ -17,12 +19,35 @@ import { cn, initials } from "@/lib/utils";
 import { signOut } from "@/lib/auth/client";
 import { useEvents } from "@/components/use-events";
 
-const NAV = [
-  { href: "/inbox", label: "Bandeja", icon: Inbox, badge: true },
-  { href: "/pipeline", label: "Pipeline", icon: Kanban },
-  { href: "/contacts", label: "Contactos", icon: Users },
-  { href: "/agent", label: "Agente", icon: Sparkles },
-  { href: "/lab", label: "Laboratorio", icon: FlaskConical },
+const NAV_GROUPS = [
+  {
+    label: "Inicio",
+    items: [
+      { href: "/", label: "Dashboard", icon: Kanban },
+    ],
+  },
+  {
+    label: "CRM",
+    items: [
+      { href: "/inbox", label: "Bandeja", icon: Inbox, badge: "unread" },
+      { href: "/pipeline", label: "Pipeline", icon: Kanban },
+      { href: "/contacts", label: "Alumnos", icon: Users, badge: "formArrivals" },
+    ],
+  },
+  {
+    label: "Gestión",
+    items: [
+      { href: "/academico", label: "Académico", icon: GraduationCap },
+      { href: "/calendar", label: "Calendario", icon: CalendarDays },
+    ],
+  },
+  {
+    label: "Inteligencia artificial",
+    items: [
+      { href: "/agent", label: "Agente", icon: Sparkles },
+      { href: "/lab", label: "Laboratorio", icon: FlaskConical },
+    ],
+  },
 ] as const;
 
 export function AppNav({
@@ -37,6 +62,10 @@ export function AppNav({
   const pathname = usePathname();
   const router = useRouter();
   const [unread, setUnread] = useState(0);
+  // Contactos que llegaron por un formulario de captación en las últimas
+  // 48hs (src/server/intake-forms.ts, countRecentFormArrivals) — mismo
+  // patrón de badge que "Bandeja".
+  const [formArrivals, setFormArrivals] = useState(0);
 
   async function refetchUnread() {
     const res = await fetch("/api/conversations").catch(() => null);
@@ -47,8 +76,16 @@ export function AppNav({
     setUnread(data.conversations.reduce((a, c) => a + c.unreadCount, 0));
   }
 
+  async function refetchFormArrivals() {
+    const res = await fetch("/api/contacts/form-arrivals-count").catch(() => null);
+    if (!res?.ok) return;
+    const data = (await res.json()) as { count: number };
+    setFormArrivals(data.count);
+  }
+
   useEffect(() => {
     void refetchUnread();
+    void refetchFormArrivals();
   }, []);
 
   useEvents({
@@ -56,10 +93,14 @@ export function AppNav({
     onConversationUpdated: () => void refetchUnread(),
   });
 
+  const badgeCounts: Record<string, number> = {
+    unread,
+    formArrivals,
+  };
+
   return (
     <aside className="flex w-56 shrink-0 flex-col border-r bg-subtle px-3 pb-3.5 pt-4">
-      {/* Brand white-label */}
-      <div className="mb-4 flex items-center gap-2.5 px-2">
+      <Link href="/" className="mb-4 flex items-center gap-2.5 px-2">
         <span
           className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-sm bg-brand text-[15px] font-bold text-white"
           aria-hidden
@@ -70,43 +111,55 @@ export function AppNav({
           <span className="block truncate text-[16px] font-[650] leading-tight tracking-tight">
             {branding.name}
           </span>
-          <span className="block text-[11px] text-text-3">CRM · WhatsApp</span>
+          <span className="block text-[11px] text-text-3">Gestión Academia</span>
         </span>
-      </div>
+      </Link>
 
-      <nav className="flex flex-col gap-0.5">
-        {NAV.map((item) => {
-          const active =
-            pathname === item.href || pathname.startsWith(`${item.href}/`);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex items-center gap-[11px] rounded-sm px-2.5 py-2 text-sm font-medium transition-colors",
-                active
-                  ? "bg-brand-tint font-semibold text-brand-text"
-                  : "text-text-2 hover:bg-accent"
-              )}
-            >
-              <item.icon
-                className={cn("h-[18px] w-[18px]", active ? "text-brand" : "text-text-3")}
-                strokeWidth={1.7}
-              />
-              <span className="flex-1">{item.label}</span>
-              {"badge" in item && item.badge && unread > 0 && (
-                <span
+      <nav className="flex flex-col gap-3.5">
+        {NAV_GROUPS.map((group) => (
+          <div key={group.label} className="flex flex-col gap-0.5">
+            <span className="px-2.5 pb-1 text-[10.5px] font-semibold uppercase tracking-wide text-text-3">
+              {group.label}
+            </span>
+            {group.items.map((item) => {
+              const active =
+                pathname === item.href || pathname.startsWith(`${item.href}/`);
+              const badgeCount =
+                "badge" in item && item.badge ? badgeCounts[item.badge] : undefined;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
                   className={cn(
-                    "flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1.5 text-[10.5px] font-semibold",
-                    active ? "bg-brand text-white" : "bg-border-strong text-text-2"
+                    "flex items-center gap-[11px] rounded-sm px-2.5 py-2 text-sm font-medium transition-colors",
+                    active
+                      ? "bg-brand-tint font-semibold text-brand-text"
+                      : "text-text-2 hover:bg-accent"
                   )}
                 >
-                  {unread}
-                </span>
-              )}
-            </Link>
-          );
-        })}
+                  <item.icon
+                    className={cn(
+                      "h-[18px] w-[18px]",
+                      active ? "text-brand" : "text-text-3"
+                    )}
+                    strokeWidth={1.7}
+                  />
+                  <span className="flex-1">{item.label}</span>
+                  {!!badgeCount && badgeCount > 0 && (
+                    <span
+                      className={cn(
+                        "flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1.5 text-[10.5px] font-semibold",
+                        active ? "bg-brand text-white" : "bg-border-strong text-text-2"
+                      )}
+                    >
+                      {badgeCount}
+                    </span>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+        ))}
       </nav>
 
       <div className="flex-1" />

@@ -1,7 +1,8 @@
-import { and, eq } from "drizzle-orm";
+import { eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, schema } from "@/lib/db";
 import { apiError, parseBody } from "@/lib/api";
+import { scoped } from "@/lib/db/tenant";
 import { requireBotKey, resolveInstanceOrg } from "@/server/bot/auth";
 import { publish } from "@/server/events/bus";
 
@@ -37,8 +38,9 @@ export async function POST(req: Request) {
     })
     .from(schema.conversation)
     .where(
-      and(
-        eq(schema.conversation.organizationId, organizationId),
+      scoped(
+        schema.conversation.organizationId,
+        organizationId,
         eq(schema.conversation.id, body.data.conversationId)
       )
     )
@@ -54,30 +56,32 @@ export async function POST(req: Request) {
       handoffReason: null,
       updatedAt: new Date(),
     })
-    .where(eq(schema.conversation.id, conv.id));
+    .where(scoped(schema.conversation.organizationId, organizationId, eq(schema.conversation.id, conv.id)));
 
   // Etapa al inicio del funnel (best-effort: sin etapas no revienta el reset).
   try {
     const stages = await db
       .select()
       .from(schema.pipelineStage)
-      .where(eq(schema.pipelineStage.organizationId, organizationId));
+      .where(scoped(schema.pipelineStage.organizationId, organizationId));
     const first = [...stages].sort((a, b) => a.position - b.position)[0];
     const leadRows = await db
-      .select({ id: schema.lead.id })
-      .from(schema.lead)
+      .select({ id: schema.enrollment.id })
+      .from(schema.enrollment)
       .where(
-        and(
-          eq(schema.lead.organizationId, organizationId),
-          eq(schema.lead.contactId, conv.contactId)
+        scoped(
+          schema.enrollment.organizationId,
+          organizationId,
+          eq(schema.enrollment.contactId, conv.contactId),
+          isNull(schema.enrollment.cohortId)
         )
       )
       .limit(1);
     if (first && leadRows[0]) {
       await db
-        .update(schema.lead)
+        .update(schema.enrollment)
         .set({ stageId: first.id, updatedAt: new Date() })
-        .where(eq(schema.lead.id, leadRows[0].id));
+        .where(scoped(schema.enrollment.organizationId, organizationId, eq(schema.enrollment.id, leadRows[0].id)));
     }
   } catch (err) {
     console.warn(`[bot/reset] reinicio de etapa falló: ${err}`);

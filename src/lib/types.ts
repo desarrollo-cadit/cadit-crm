@@ -66,11 +66,85 @@ export type StageDto = {
   kind: "open" | "won" | "lost";
 };
 
+/** 005 — Catálogo de cursos (Fase 1, sin cambios de forma). */
+export type CourseDto = {
+  id: string;
+  name: string;
+  description: string | null;
+};
+
+/** 005 (DV-005) — profesor como entidad propia. */
+export type TeacherDto = {
+  id: string;
+  name: string;
+  /** 005 iteración 2 — costo por hora opcional. */
+  hourlyRate: number | null;
+  /** 005 iteración 2 — cursos que dicta (teacher_course), para filtrar el selector de camada. */
+  courseIds: string[];
+};
+
+/** 005 (DV-004) — catálogo básico de software (sin lógica de disponibilidad, US4). */
+export type SoftwareDto = {
+  id: string;
+  name: string;
+  totalLicenses: number;
+};
+
+/** 005 (DV-009) — empresa para facturación B2B opcional. */
+export type CompanyDto = {
+  id: string;
+  legalName: string;
+  taxId: string | null;
+};
+
+/** 005 (T008) — camada con teacher/software resueltos. */
+export type CohortDto = {
+  id: string;
+  courseId: string;
+  courseName: string;
+  /** 005 iteración 2 — nombre propio de la camada; null = usar courseName. */
+  name: string | null;
+  startDate: string;
+  endDate: string | null;
+  /** 005 iteración 2 — horario "HH:MM" para el calendario; frequency queda como texto libre. */
+  startTime: string | null;
+  endTime: string | null;
+  /** Referencia mínima del profesor asignado (no el TeacherDto completo con courseIds/hourlyRate). */
+  teacher: { id: string; name: string } | null;
+  cost: number | null;
+  frequency: string | null;
+  classroom: string | null;
+  syllabusUrl: string | null;
+  capacity: number | null;
+  whatsappGroupLink: string | null;
+  status: "planificada" | "en_curso" | "finalizada";
+  software: { id: string; name: string }[];
+};
+
 export type ContactDto = {
   id: string;
   name: string;
   /** null en contactos que llegaron solo con BSUID (003). */
   phone: string | null;
   notes: string | null;
+  /** 004 — de dónde llegó el contacto (texto libre), si se conoce. */
+  source: string | null;
+  /** 004 — campaña de origen (UTM), si se conoce. */
+  utmCampaign: string | null;
+  /** 005 — único por organización cuando no es null (DV-003). */
+  email: string | null;
+  /** 005 — cédula/identificación. */
+  nationalId: string | null;
   archivedAt: string | null;
+  /** Iteración 3 — para la columna "Creado" de la tabla de contactos. */
+  createdAt: string;
+};
+
+/** Iteración 3 — formulario personalizado de captación (settings/forms). */
+export type IntakeFormDto = {
+  id: string;
+  name: string;
+  courseId: string | null;
+  courseName: string | null;
+  createdAt: string;
 };

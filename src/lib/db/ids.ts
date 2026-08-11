@@ -9,7 +9,11 @@ const prefixes = {
   contact: "ct",
   conversation: "cv",
   message: "msg",
-  lead: "ld",
+  course: "crs",
+  cohort: "coh",
+  enrollment: "enr",
+  license: "lic",
+  automationRule: "arule",
   stage: "stg",
   credentials: "cred",
   agentProfile: "agp",
@@ -18,6 +22,12 @@ const prefixes = {
   testRun: "run",
   testCase: "case",
   mediaAsset: "ma",
+  // 005 — gestión académica operativa (research.md DV-011)
+  software: "sw",
+  teacher: "tch",
+  company: "cia",
+  // 005 iteración 3 — formularios personalizados de captación (intake).
+  intakeForm: "frm",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

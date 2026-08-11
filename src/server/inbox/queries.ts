@@ -31,9 +31,9 @@ export async function listConversations(
     limit 1
   )`;
   const stageSql = sql<string | null>`(
-    select s.name from lead l
-    join pipeline_stage s on s.id = l.stage_id
-    where l.contact_id = ${schema.contact.id}
+    select s.name from enrollment e
+    join pipeline_stage s on s.id = e.stage_id
+    where e.contact_id = ${schema.contact.id} and e.cohort_id is null
     limit 1
   )`;
 

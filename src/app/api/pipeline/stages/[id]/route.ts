@@ -68,12 +68,12 @@ export const DELETE = withAuth(async (session, req: Request, ctx: Params) => {
 
   const leadsInStage = await db
     .select({ n: count() })
-    .from(schema.lead)
+    .from(schema.enrollment)
     .where(
       scoped(
-        schema.lead.organizationId,
+        schema.enrollment.organizationId,
         session.organizationId,
-        eq(schema.lead.stageId, id)
+        eq(schema.enrollment.stageId, id)
       )
     );
   const n = leadsInStage[0]?.n ?? 0;
@@ -101,13 +101,13 @@ export const DELETE = withAuth(async (session, req: Request, ctx: Params) => {
       return apiError(422, "invalid_move_to", "Etapa destino inválida");
     }
     await db
-      .update(schema.lead)
+      .update(schema.enrollment)
       .set({ stageId: moveTo, updatedAt: new Date() })
       .where(
         scoped(
-          schema.lead.organizationId,
+          schema.enrollment.organizationId,
           session.organizationId,
-          eq(schema.lead.stageId, id)
+          eq(schema.enrollment.stageId, id)
         )
       );
   }

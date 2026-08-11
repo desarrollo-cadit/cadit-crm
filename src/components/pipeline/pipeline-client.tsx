@@ -18,12 +18,14 @@ import type { StageDto } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { formatTime } from "@/components/inbox/helpers";
 import { StageManager } from "./stage-manager";
 
-export type BoardLead = {
+export type BoardEnrollment = {
   id: string;
   stageId: string;
+  cohortId: string | null;
   position: number;
   lastActivityAt: string | null;
   contact: { id: string; name: string; phone: string | null };
@@ -32,8 +34,9 @@ export type BoardLead = {
 
 export function PipelineClient() {
   const [stages, setStages] = useState<StageDto[]>([]);
-  const [leads, setLeads] = useState<BoardLead[]>([]);
-  const [activeLead, setActiveLead] = useState<BoardLead | null>(null);
+  const [leads, setLeads] = useState<BoardEnrollment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activeLead, setActiveLead] = useState<BoardEnrollment | null>(null);
   const [managing, setManaging] = useState(false);
 
   const sensors = useSensors(
@@ -42,10 +45,17 @@ export function PipelineClient() {
 
   const refetch = useCallback(async () => {
     const res = await fetch("/api/pipeline/board").catch(() => null);
-    if (!res?.ok) return;
-    const data = (await res.json()) as { stages: StageDto[]; leads: BoardLead[] };
+    if (!res?.ok) {
+      setLoading(false);
+      return;
+    }
+    const data = (await res.json()) as {
+      stages: StageDto[];
+      enrollments: BoardEnrollment[];
+    };
     setStages(data.stages);
-    setLeads(data.leads);
+    setLeads(data.enrollments);
+    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -88,26 +98,34 @@ export function PipelineClient() {
       </header>
 
       <div className="flex-1 overflow-x-auto p-4">
-        <DndContext
-          sensors={sensors}
-          onDragStart={onDragStart}
-          onDragEnd={(e) => void onDragEnd(e)}
-        >
+        {loading ? (
           <div className="flex h-full gap-3">
-            {stages.map((stage) => (
-              <StageColumn
-                key={stage.id}
-                stage={stage}
-                leads={leads
-                  .filter((l) => l.stageId === stage.id)
-                  .sort((a, b) => a.position - b.position)}
-              />
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-full w-64 shrink-0 rounded-lg" />
             ))}
           </div>
-          <DragOverlay>
-            {activeLead ? <LeadCard lead={activeLead} overlay /> : null}
-          </DragOverlay>
-        </DndContext>
+        ) : (
+          <DndContext
+            sensors={sensors}
+            onDragStart={onDragStart}
+            onDragEnd={(e) => void onDragEnd(e)}
+          >
+            <div className="flex h-full gap-3">
+              {stages.map((stage) => (
+                <StageColumn
+                  key={stage.id}
+                  stage={stage}
+                  leads={leads
+                    .filter((l) => l.stageId === stage.id)
+                    .sort((a, b) => a.position - b.position)}
+                />
+              ))}
+            </div>
+            <DragOverlay>
+              {activeLead ? <LeadCard lead={activeLead} overlay /> : null}
+            </DragOverlay>
+          </DndContext>
+        )}
       </div>
 
       {managing && (
@@ -121,7 +139,7 @@ export function PipelineClient() {
   );
 }
 
-function StageColumn({ stage, leads }: { stage: StageDto; leads: BoardLead[] }) {
+function StageColumn({ stage, leads }: { stage: StageDto; leads: BoardEnrollment[] }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
   return (
     <div
@@ -152,7 +170,7 @@ function StageColumn({ stage, leads }: { stage: StageDto; leads: BoardLead[] }) 
   );
 }
 
-function DraggableLead({ lead }: { lead: BoardLead }) {
+function DraggableLead({ lead }: { lead: BoardEnrollment }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: lead.id,
   });
@@ -168,7 +186,7 @@ function DraggableLead({ lead }: { lead: BoardLead }) {
   );
 }
 
-function LeadCard({ lead, overlay = false }: { lead: BoardLead; overlay?: boolean }) {
+function LeadCard({ lead, overlay = false }: { lead: BoardEnrollment; overlay?: boolean }) {
   return (
     <div
       className={cn(

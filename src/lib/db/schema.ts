@@ -4,6 +4,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -122,6 +123,14 @@ export const contact = pgTable(
     waUserId: text("wa_user_id"),
     name: text("name").notNull(),
     notes: text("notes"),
+    /** 004 — de dónde llegó el contacto (texto libre, p. ej. "feria-2026"). */
+    source: text("source"),
+    /** 004 — campaña de origen (UTM), opcional. */
+    utmCampaign: text("utm_campaign"),
+    /** 005 — único por organización cuando no es NULL (DV-003). */
+    email: text("email"),
+    /** 005 — cédula/identificación, sin constraint de unicidad (spec.md). */
+    nationalId: text("national_id"),
     archivedAt: timestamp("archived_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -130,6 +139,13 @@ export const contact = pgTable(
     uniqueIndex("contact_org_wa_identity_uq").on(t.organizationId, t.waIdentity),
     index("contact_org_wa_user_id_idx").on(t.organizationId, t.waUserId),
     index("contact_org_name_idx").on(t.organizationId, t.name),
+    // 005 (DV-003) — unicidad de email/celular por organización, cuando no es NULL.
+    uniqueIndex("contact_org_email_uq")
+      .on(t.organizationId, t.email)
+      .where(sql`${t.email} IS NOT NULL`),
+    uniqueIndex("contact_org_phone_uq")
+      .on(t.organizationId, t.phone)
+      .where(sql`${t.phone} IS NOT NULL`),
   ]
 );
 
@@ -151,8 +167,172 @@ export const pipelineStage = pgTable(
   (t) => [index("stage_org_pos_idx").on(t.organizationId, t.position)]
 );
 
-export const lead = pgTable(
-  "lead",
+/** 005 — Docente que dicta camadas (DV-005: entidad propia, no texto libre). */
+export const teacher = pgTable(
+  "teacher",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    /** 005 iteración 2 — costo por hora opcional (moneda entera, DV-008). */
+    hourlyRate: integer("hourly_rate"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [index("teacher_org_idx").on(t.organizationId)]
+);
+
+/**
+ * 005 — Catálogo de software con licencias limitadas (Revit, Civil3D...).
+ * Disponibles = total_licenses - count(license asignadas de este software).
+ */
+export const software = pgTable(
+  "software",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    totalLicenses: integer("total_licenses").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [index("software_org_idx").on(t.organizationId)]
+);
+
+/** 005 — Empresa para facturación B2B opcional de una inscripción (DV-009). */
+export const company = pgTable(
+  "company",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    legalName: text("legal_name").notNull(),
+    taxId: text("tax_id"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [index("company_org_idx").on(t.organizationId)]
+);
+
+/**
+ * 004 — Catálogo de cursos que dicta el área de capacitaciones (p. ej. "Revit").
+ */
+export const course = pgTable(
+  "course",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [index("course_org_idx").on(t.organizationId)]
+);
+
+/**
+ * 005 iteración 2 — Puente N:N: qué curso(s) dicta un profesor. Sin `id`
+ * propio, mismo patrón que `cohort_software`. Usado para filtrar el selector
+ * de profesor de una camada por curso (feedback en vivo del dueño).
+ */
+export const teacherCourse = pgTable(
+  "teacher_course",
+  {
+    teacherId: text("teacher_id")
+      .notNull()
+      .references(() => teacher.id, { onDelete: "cascade" }),
+    courseId: text("course_id")
+      .notNull()
+      .references(() => course.id, { onDelete: "cascade" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.teacherId, t.courseId] }),
+    index("teacher_course_course_idx").on(t.courseId),
+  ]
+);
+
+/**
+ * 004 — Camada: una edición concreta de un `course`, con fechas y profesor
+ * propios. Varias camadas pueden compartir curso.
+ */
+export const cohort = pgTable(
+  "cohort",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    courseId: text("course_id")
+      .notNull()
+      .references(() => course.id, { onDelete: "restrict" }),
+    /** 005 iteración 2 — nombre propio de la camada; NULL = usar course.name. */
+    name: text("name"),
+    startDate: timestamp("start_date").notNull(),
+    endDate: timestamp("end_date"),
+    /** 005 (DV-005) — reemplaza el `professor` texto libre de 004. */
+    teacherId: text("teacher_id").references(() => teacher.id, {
+      onDelete: "set null",
+    }),
+    /** 005 — moneda entera, mismo criterio que enrollment.amount (DV-008). */
+    cost: integer("cost"),
+    /** 005 — horario en texto libre, ej. "lunes y miércoles 18:30-20:30". */
+    frequency: text("frequency"),
+    /** 005 iteración 2 — horario de inicio/fin en texto "HH:MM", para el calendario. */
+    startTime: text("start_time"),
+    endTime: text("end_time"),
+    classroom: text("classroom"),
+    syllabusUrl: text("syllabus_url"),
+    capacity: integer("capacity"),
+    whatsappGroupLink: text("whatsapp_group_link"),
+    status: text("status", {
+      enum: ["planificada", "en_curso", "finalizada"],
+    })
+      .notNull()
+      .default("planificada"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("cohort_org_course_idx").on(t.organizationId, t.courseId),
+    index("cohort_teacher_idx").on(t.teacherId),
+  ]
+);
+
+/**
+ * 005 — Puente N:N: qué software(s) declara usar una camada (DV-004,
+ * FR-006). Sin `id` propio, es una tabla puente pura.
+ */
+export const cohortSoftware = pgTable(
+  "cohort_software",
+  {
+    cohortId: text("cohort_id")
+      .notNull()
+      .references(() => cohort.id, { onDelete: "cascade" }),
+    softwareId: text("software_id")
+      .notNull()
+      .references(() => software.id, { onDelete: "restrict" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.cohortId, t.softwareId] }),
+    index("cohort_software_software_idx").on(t.softwareId),
+  ]
+);
+
+/**
+ * 004 — Reemplaza a `lead`. `cohort_id` NULL = lead general de ventas de la
+ * academia (mismo rol que el `lead` de antes, sin cambio de comportamiento);
+ * con `cohort_id` asignada, es la inscripción a esa camada puntual. Un mismo
+ * contacto puede tener su lead general Y N inscripciones a camadas distintas.
+ */
+export const enrollment = pgTable(
+  "enrollment",
   {
     id: text("id").primaryKey(),
     organizationId: text("organization_id")
@@ -161,18 +341,103 @@ export const lead = pgTable(
     contactId: text("contact_id")
       .notNull()
       .references(() => contact.id, { onDelete: "cascade" }),
+    cohortId: text("cohort_id").references(() => cohort.id, {
+      onDelete: "restrict",
+    }),
     stageId: text("stage_id")
       .notNull()
       .references(() => pipelineStage.id),
     position: integer("position").notNull().default(0),
+    enrolledAt: timestamp("enrolled_at"),
     lastActivityAt: timestamp("last_activity_at"),
+    /** 005 — datos comerciales (DV-008, FR-009). */
+    amount: integer("amount"),
+    installments: integer("installments"),
+    paymentNotes: text("payment_notes"),
+    /** 005 — cédula del contacto al momento de inscribir. */
+    nationalId: text("national_id"),
+    invoiceNumber: text("invoice_number"),
+    receiptNumber: text("receipt_number"),
+    /** 005 — vendedor; validado en servidor como miembro de la org (DV-008). */
+    sellerId: text("seller_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    /** 005 — facturación B2B opcional (DV-009). */
+    companyId: text("company_id").references(() => company.id, {
+      onDelete: "restrict",
+    }),
+    /** 005 — checklist de onboarding de soporte (DV-007, FR-013). */
+    termsEmailSentAt: timestamp("terms_email_sent_at"),
+    softwareInstalledAt: timestamp("software_installed_at"),
+    hadOwnLicense: boolean("had_own_license").notNull().default(false),
+    academiaOnlineAccessAt: timestamp("academia_online_access_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [
-    uniqueIndex("lead_contact_uq").on(t.contactId),
-    index("lead_org_stage_idx").on(t.organizationId, t.stageId, t.position),
+    // Una inscripción por contacto y camada (cuando hay camada asignada).
+    uniqueIndex("enrollment_contact_cohort_uq")
+      .on(t.contactId, t.cohortId)
+      .where(sql`${t.cohortId} IS NOT NULL`),
+    // Un solo lead general (sin camada) por contacto — reemplaza lead_contact_uq.
+    uniqueIndex("enrollment_contact_general_uq")
+      .on(t.contactId)
+      .where(sql`${t.cohortId} IS NULL`),
+    index("enrollment_org_stage_idx").on(t.organizationId, t.stageId, t.position),
+    index("enrollment_org_cohort_idx").on(t.organizationId, t.cohortId),
+    index("enrollment_seller_idx").on(t.sellerId),
+    index("enrollment_company_idx").on(t.companyId),
   ]
+);
+
+/** 004 — Licencia de software asociada (0 o 1) a una inscripción. */
+export const license = pgTable(
+  "license",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    enrollmentId: text("enrollment_id")
+      .notNull()
+      .unique()
+      .references(() => enrollment.id, { onDelete: "cascade" }),
+    /** 005 (DV-004) — de qué software del catálogo es esta licencia. */
+    softwareId: text("software_id")
+      .notNull()
+      .references(() => software.id, { onDelete: "restrict" }),
+    assigned: boolean("assigned").notNull().default(false),
+    assignedAt: timestamp("assigned_at"),
+    expiresAt: timestamp("expires_at"),
+  },
+  (t) => [
+    index("license_org_idx").on(t.organizationId),
+    index("license_software_idx").on(t.softwareId),
+  ]
+);
+
+/**
+ * 004 — Regla de automatización (evento → canal → plantilla). Solo modelo en
+ * esta fase; sin lógica de disparo (Fase 4/7).
+ */
+export const automationRule = pgTable(
+  "automation_rule",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    triggerEvent: text("trigger_event", {
+      enum: ["enrollment_created", "license_assigned", "cohort_starts_soon"],
+    }).notNull(),
+    channel: text("channel", { enum: ["email", "whatsapp"] }).notNull(),
+    templateId: text("template_id"),
+    templateBody: text("template_body"),
+    active: boolean("active").notNull().default(false),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [index("automation_rule_org_idx").on(t.organizationId)]
 );
 
 export const conversation = pgTable(
@@ -447,4 +712,27 @@ export const agentTestCase = pgTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [index("test_case_run_idx").on(t.runId)]
+);
+
+/**
+ * 005 iteración 3 — Formulario personalizado de captación para embeber en el
+ * sitio externo del dueño. `courseId` NULLABLE: puede ser genérico o estar
+ * atado a un curso de interés puntual (contracts implícito: POST público
+ * `/api/public/forms/[formId]/submit`, sin autenticación, mismo patrón que
+ * `/api/public/courses`).
+ */
+export const intakeForm = pgTable(
+  "intake_form",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    courseId: text("course_id").references(() => course.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("intake_form_org_idx").on(t.organizationId)]
 );

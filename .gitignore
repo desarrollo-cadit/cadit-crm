@@ -39,4 +39,12 @@ Thumbs.db
 .claude/settings.local.json
 .playwright-mcp/
 .tmp-seed-demo.mjs
+.tmp-seed-academic.mjs
 .dev-media/
+
+# --- Skill registry index (regenerable) ---
+.atl/
+
+# --- CodeGraph / Gentle AI: estado local de la herramienta (no compartir) ---
+.codegraph/
+.gga

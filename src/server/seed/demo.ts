@@ -156,7 +156,9 @@ export async function seedDemo(
         .delete(schema.conversation)
         .where(inArray(schema.conversation.id, convIds));
     }
-    await db.delete(schema.lead).where(inArray(schema.lead.contactId, prevIds));
+    await db
+      .delete(schema.enrollment)
+      .where(inArray(schema.enrollment.contactId, prevIds));
     await db.delete(schema.contact).where(inArray(schema.contact.id, prevIds));
   }
   // KB y corridas demo previas
@@ -229,10 +231,11 @@ export async function seedDemo(
       });
     }
 
-    await db.insert(schema.lead).values({
-      id: newId("lead"),
+    await db.insert(schema.enrollment).values({
+      id: newId("enrollment"),
       organizationId,
       contactId,
+      cohortId: null,
       stageId: stageByName.get(demo.stage) ?? fallbackStage,
       position: position++,
       lastActivityAt: new Date(now - lastMessage * HOURS),

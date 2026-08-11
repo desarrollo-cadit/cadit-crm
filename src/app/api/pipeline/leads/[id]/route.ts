@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
@@ -10,8 +10,10 @@ export const dynamic = "force-dynamic";
 type Params = { params: Promise<{ id: string }> };
 
 const patchSchema = z.object({
-  stageId: z.string().min(1),
-  position: z.number().int().min(0),
+  stageId: z.string().min(1).optional(),
+  position: z.number().int().min(0).optional(),
+  /** 004 — asigna/reasigna la camada de la inscripción; null = vuelve a lead general. */
+  cohortId: z.string().min(1).nullable().optional(),
 });
 
 export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
@@ -20,35 +22,54 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
   if (!body.ok) return body.response;
 
   const db = getDb();
-  const stage = await db
-    .select({ id: schema.pipelineStage.id })
-    .from(schema.pipelineStage)
-    .where(
-      scoped(
-        schema.pipelineStage.organizationId,
-        session.organizationId,
-        eq(schema.pipelineStage.id, body.data.stageId)
+
+  if (body.data.stageId) {
+    const stage = await db
+      .select({ id: schema.pipelineStage.id })
+      .from(schema.pipelineStage)
+      .where(
+        scoped(
+          schema.pipelineStage.organizationId,
+          session.organizationId,
+          eq(schema.pipelineStage.id, body.data.stageId)
+        )
       )
-    )
-    .limit(1);
-  if (!stage[0]) return apiError(422, "invalid_stage", "Etapa inexistente");
+      .limit(1);
+    if (!stage[0]) return apiError(422, "invalid_stage", "Etapa inexistente");
+  }
+
+  if (body.data.cohortId) {
+    const cohort = await db
+      .select({ id: schema.cohort.id })
+      .from(schema.cohort)
+      .where(
+        scoped(
+          schema.cohort.organizationId,
+          session.organizationId,
+          eq(schema.cohort.id, body.data.cohortId)
+        )
+      )
+      .limit(1);
+    if (!cohort[0]) return apiError(422, "invalid_cohort", "Camada inexistente");
+  }
 
   const updated = await db
-    .update(schema.lead)
+    .update(schema.enrollment)
     .set({
-      stageId: body.data.stageId,
-      position: body.data.position,
+      ...(body.data.stageId ? { stageId: body.data.stageId } : {}),
+      ...(body.data.position !== undefined ? { position: body.data.position } : {}),
+      ...(body.data.cohortId !== undefined ? { cohortId: body.data.cohortId } : {}),
       updatedAt: new Date(),
     })
     .where(
       scoped(
-        schema.lead.organizationId,
+        schema.enrollment.organizationId,
         session.organizationId,
-        eq(schema.lead.id, id)
+        eq(schema.enrollment.id, id)
       )
     )
     .returning();
-  if (!updated[0]) return apiError(404, "not_found", "Lead no encontrado");
+  if (!updated[0]) return apiError(404, "not_found", "Inscripción no encontrada");
 
   // Notifica a la bandeja para que la etapa se refleje en vivo (panel de
   // detalles y punto de etapa de la lista) sin recargar.
@@ -56,8 +77,9 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
     .select({ id: schema.conversation.id })
     .from(schema.conversation)
     .where(
-      and(
-        eq(schema.conversation.organizationId, session.organizationId),
+      scoped(
+        schema.conversation.organizationId,
+        session.organizationId,
         eq(schema.conversation.contactId, updated[0].contactId),
         eq(schema.conversation.isTest, false)
       )

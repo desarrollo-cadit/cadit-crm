@@ -1,13 +1,18 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 
 export const dynamic = "force-dynamic";
 
-/** Datos completos del kanban: etapas ordenadas + tarjetas con su contacto. */
-export const GET = withAuth(async (session) => {
+/**
+ * Datos completos del kanban: etapas ordenadas + tarjetas con su contacto.
+ * 004 — sin `cohortId`: tablero GENERAL de ventas (enrollment.cohort_id
+ * NULL). Con `cohortId`: tablero de esa camada puntual.
+ */
+export const GET = withAuth(async (session, req: Request) => {
   const db = getDb();
+  const cohortId = new URL(req.url).searchParams.get("cohortId");
 
   const stages = await db
     .select()
@@ -15,14 +20,18 @@ export const GET = withAuth(async (session) => {
     .where(scoped(schema.pipelineStage.organizationId, session.organizationId))
     .orderBy(asc(schema.pipelineStage.position));
 
-  const leads = await db
+  const cohortFilter = cohortId
+    ? eq(schema.enrollment.cohortId, cohortId)
+    : isNull(schema.enrollment.cohortId);
+
+  const enrollments = await db
     .select({
-      lead: schema.lead,
+      enrollment: schema.enrollment,
       contact: schema.contact,
       conversationId: schema.conversation.id,
     })
-    .from(schema.lead)
-    .innerJoin(schema.contact, eq(schema.lead.contactId, schema.contact.id))
+    .from(schema.enrollment)
+    .innerJoin(schema.contact, eq(schema.enrollment.contactId, schema.contact.id))
     .leftJoin(
       schema.conversation,
       and(
@@ -30,8 +39,10 @@ export const GET = withAuth(async (session) => {
         eq(schema.conversation.isTest, false)
       )
     )
-    .where(scoped(schema.lead.organizationId, session.organizationId))
-    .orderBy(asc(schema.lead.position));
+    .where(
+      scoped(schema.enrollment.organizationId, session.organizationId, cohortFilter)
+    )
+    .orderBy(asc(schema.enrollment.position));
 
   return Response.json({
     stages: stages.map((s) => ({
@@ -40,11 +51,12 @@ export const GET = withAuth(async (session) => {
       position: s.position,
       kind: s.kind,
     })),
-    leads: leads.map((r) => ({
-      id: r.lead.id,
-      stageId: r.lead.stageId,
-      position: r.lead.position,
-      lastActivityAt: r.lead.lastActivityAt?.toISOString() ?? null,
+    enrollments: enrollments.map((r) => ({
+      id: r.enrollment.id,
+      stageId: r.enrollment.stageId,
+      cohortId: r.enrollment.cohortId,
+      position: r.enrollment.position,
+      lastActivityAt: r.enrollment.lastActivityAt?.toISOString() ?? null,
       contact: {
         id: r.contact.id,
         name: r.contact.name,

@@ -1,5 +1,6 @@
-import { asc, desc, eq } from "drizzle-orm";
+import { asc, desc, eq, isNull } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
+import { scoped } from "@/lib/db/tenant";
 import { newId } from "@/lib/db/ids";
 import { getEnv, isAiConfigured } from "@/lib/env";
 import { chatJson, type ChatMessage } from "@/lib/ai";
@@ -112,7 +113,13 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   const history = await db
     .select()
     .from(schema.message)
-    .where(eq(schema.message.conversationId, conversationId))
+    .where(
+      scoped(
+        schema.message.organizationId,
+        organizationId,
+        eq(schema.message.conversationId, conversationId)
+      )
+    )
     .orderBy(desc(schema.message.createdAt))
     .limit(20);
   history.reverse();
@@ -274,6 +281,11 @@ export async function applyHandoff(
   });
 }
 
+/**
+ * 004 — Mueve el LEAD GENERAL del contacto (sin `cohort_id`): el agente de
+ * IA opera desde la conversación de WhatsApp, no desde una camada concreta
+ * (ver research.md DV-005/T010).
+ */
 async function moveLeadToStage(
   organizationId: string,
   contactId: string,
@@ -281,9 +293,16 @@ async function moveLeadToStage(
 ): Promise<void> {
   const db = getDb();
   await db
-    .update(schema.lead)
+    .update(schema.enrollment)
     .set({ stageId, updatedAt: new Date(), lastActivityAt: new Date() })
-    .where(eq(schema.lead.contactId, contactId));
+    .where(
+      scoped(
+        schema.enrollment.organizationId,
+        organizationId,
+        eq(schema.enrollment.contactId, contactId),
+        isNull(schema.enrollment.cohortId)
+      )
+    );
 }
 
 async function appendLeadNote(

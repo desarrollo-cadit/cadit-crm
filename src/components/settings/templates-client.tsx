@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 
 const STATUS_BADGE: Record<
@@ -22,14 +23,19 @@ const STATUS_BADGE: Record<
 
 export function TemplatesClient() {
   const [templates, setTemplates] = useState<TemplateDto[]>([]);
+  const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
   const refetch = useCallback(async () => {
     const res = await fetch("/api/templates").catch(() => null);
-    if (!res?.ok) return;
+    if (!res?.ok) {
+      setLoading(false);
+      return;
+    }
     const data = (await res.json()) as { templates: TemplateDto[] };
     setTemplates(data.templates);
+    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -78,7 +84,13 @@ export function TemplatesClient() {
       <CreateForm onCreated={() => void refetch()} />
 
       <div className="space-y-2">
-        {templates.map((t) => (
+        {loading ? (
+          <>
+            <Skeleton className="h-20 w-full" />
+            <Skeleton className="h-20 w-full" />
+          </>
+        ) : null}
+        {!loading && templates.map((t) => (
           <div key={t.id} className="rounded-lg border bg-card p-4">
             <div className="flex items-center justify-between gap-3">
               <p className="font-mono text-sm font-medium">
@@ -97,7 +109,7 @@ export function TemplatesClient() {
             )}
           </div>
         ))}
-        {templates.length === 0 && (
+        {!loading && templates.length === 0 && (
           <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
             Sin plantillas todavía. Crea la primera arriba — por ejemplo un
             «seguimos disponibles, ¿retomamos tu cotización?» para

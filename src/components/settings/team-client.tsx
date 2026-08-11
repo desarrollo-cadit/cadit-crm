@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 
 type Member = {
   id: string;
@@ -19,18 +20,26 @@ type Member = {
 
 export function TeamClient() {
   const [members, setMembers] = useState<Member[]>([]);
+  const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [tempPassword, setTempPassword] = useState("");
+  // 005 (DV-001) — rol funcional de la cuenta nueva: acceso completo
+  // (ventas/coordinación) o restringido (soporte, sin datos financieros).
+  const [role, setRole] = useState<"member" | "soporte">("member");
   const [created, setCreated] = useState<{ email: string; password: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const refetch = useCallback(async () => {
     const res = await fetch("/api/settings/team").catch(() => null);
-    if (!res?.ok) return;
+    if (!res?.ok) {
+      setLoading(false);
+      return;
+    }
     const data = (await res.json()) as { members: Member[] };
     setMembers(data.members);
+    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -54,7 +63,7 @@ export function TeamClient() {
     const res = await fetch("/api/settings/team", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name, email, password: tempPassword }),
+      body: JSON.stringify({ name, email, password: tempPassword, role }),
     }).catch(() => null);
     setSaving(false);
     if (!res?.ok) {
@@ -68,6 +77,7 @@ export function TeamClient() {
     setName("");
     setEmail("");
     setTempPassword("");
+    setRole("member");
     void refetch();
   }
 
@@ -100,6 +110,20 @@ export function TeamClient() {
                 onChange={(e) => setEmail(e.target.value)}
               />
             </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="team-role">Rol</Label>
+            <select
+              id="team-role"
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+              value={role}
+              onChange={(e) => setRole(e.target.value as "member" | "soporte")}
+            >
+              <option value="member">Ventas / Coordinación (acceso completo)</option>
+              <option value="soporte">
+                Soporte (sin dashboard financiero ni montos)
+              </option>
+            </select>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="team-password">Contraseña temporal</Label>
@@ -143,7 +167,13 @@ export function TeamClient() {
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Miembros
         </p>
-        {members.map((m) => (
+        {loading && (
+          <>
+            <Skeleton className="h-14 w-full" />
+            <Skeleton className="h-14 w-full" />
+          </>
+        )}
+        {!loading && members.map((m) => (
           <div
             key={m.id}
             className="flex items-center gap-3 rounded-lg border bg-card px-4 py-3"
@@ -154,7 +184,11 @@ export function TeamClient() {
               <p className="text-xs text-muted-foreground">{m.email}</p>
             </div>
             <Badge variant={m.role === "owner" ? "default" : "secondary"}>
-              {m.role === "owner" ? "Propietario" : "Miembro"}
+              {m.role === "owner"
+                ? "Propietario"
+                : m.role === "soporte"
+                  ? "Soporte"
+                  : "Miembro"}
             </Badge>
           </div>
         ))}

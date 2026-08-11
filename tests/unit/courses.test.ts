@@ -1,0 +1,402 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+/**
+ * 004 FR-001/FR-002 + 005 FR-005 (T008/T013): createCourse/createCohort
+ * insertan scoped por organización; createCohort/updateCohort aceptan los
+ * campos nuevos de 005 (teacherId, cost, frequency, classroom, syllabusUrl,
+ * softwareIds); listCohorts resuelve teacher/software.
+ *
+ * Post-revisión (hallazgo del reviewer de pre-commit): createCohort/
+ * updateCohort validan que courseId/teacherId/softwareIds pertenezcan a la
+ * organización ANTES de insertar/actualizar (validateCohortForeignKeys) —
+ * cada test que provee alguno de esos campos ahora tiene que "responder"
+ * ese select adicional en `selectQueue`, en el mismo orden en que
+ * createCohort/updateCohort las dispara: courseId → teacherId → softwareIds.
+ */
+
+const inserts: { table: unknown; values: unknown }[] = [];
+const updates: { table: unknown; set: unknown }[] = [];
+const deletes: { table: unknown }[] = [];
+const selectQueue: unknown[][] = [];
+
+function thenableChain(rows: unknown[]) {
+  const chain: Record<string, unknown> = {};
+  for (const m of ["from", "innerJoin", "leftJoin", "where", "orderBy", "limit"]) {
+    chain[m] = () => chain;
+  }
+  (chain as { then: unknown }).then = (resolve: (v: unknown) => void) =>
+    Promise.resolve(rows).then(resolve);
+  return chain;
+}
+
+vi.mock("@/lib/db", () => ({
+  getDb: () => ({
+    select: () => thenableChain(selectQueue.shift() ?? []),
+    insert: (table: unknown) => ({
+      values: (values: unknown) => {
+        inserts.push({ table, values });
+        return Promise.resolve([values]);
+      },
+    }),
+    update: (table: unknown) => ({
+      set: (set: unknown) => {
+        updates.push({ table, set });
+        return {
+          where: () => ({
+            returning: () =>
+              Promise.resolve([{ id: "coh_updated", ...(set as object) }]),
+          }),
+        };
+      },
+    }),
+    delete: (table: unknown) => {
+      deletes.push({ table });
+      return { where: () => Promise.resolve([]) };
+    },
+  }),
+  schema: new Proxy(
+    {},
+    {
+      get: (_t, tableName) =>
+        new Proxy(
+          {},
+          { get: (_t2, col) => `${String(tableName)}.${String(col)}` }
+        ),
+    }
+  ),
+}));
+
+/** Empuja el resultado de una validación de FK exitosa (fila encontrada). */
+function pushCourseExists() {
+  selectQueue.push([{ id: "crs_revit" }]);
+}
+function pushTeacherExists(id = "tch_1") {
+  selectQueue.push([{ id }]);
+}
+function pushSoftwareExists(...ids: string[]) {
+  selectQueue.push(ids.map((id) => ({ id })));
+}
+
+describe("courses: createCourse / createCohort (004)", () => {
+  beforeEach(() => {
+    inserts.length = 0;
+    updates.length = 0;
+    deletes.length = 0;
+    selectQueue.length = 0;
+  });
+
+  it("createCourse inserta con organizationId y devuelve el id generado", async () => {
+    const { createCourse } = await import("@/server/courses");
+    const id = await createCourse("org_1", { name: "Revit" });
+
+    expect(id).toMatch(/^crs_/);
+    expect(inserts).toHaveLength(1);
+    const values = inserts[0]!.values as { organizationId: string; name: string };
+    expect(values.organizationId).toBe("org_1");
+    expect(values.name).toBe("Revit");
+  });
+
+  it("createCohort inserta con organizationId, courseId y defaults nullables", async () => {
+    pushCourseExists();
+    const { createCohort } = await import("@/server/courses");
+    const result = await createCohort("org_1", {
+      courseId: "crs_revit",
+      startDate: new Date("2026-08-04"),
+    });
+
+    if (!result.ok) throw new Error(result.message);
+    expect(result.id).toMatch(/^coh_/);
+    expect(inserts).toHaveLength(1); // sin softwareIds: un solo insert
+    const values = inserts[0]!.values as {
+      organizationId: string;
+      courseId: string;
+      teacherId: string | null;
+      capacity: number | null;
+      cost: number | null;
+    };
+    expect(values.organizationId).toBe("org_1");
+    expect(values.courseId).toBe("crs_revit");
+    expect(values.teacherId).toBeNull();
+    expect(values.capacity).toBeNull();
+    expect(values.cost).toBeNull();
+  });
+
+  it("createCohort (005 FR-005) acepta teacherId/cost/frequency/classroom/syllabusUrl", async () => {
+    pushCourseExists();
+    pushTeacherExists();
+    const { createCohort } = await import("@/server/courses");
+    const result = await createCohort("org_1", {
+      courseId: "crs_revit",
+      startDate: new Date("2026-08-04"),
+      teacherId: "tch_1",
+      cost: 76000,
+      frequency: "lunes y miércoles 18:30-20:30",
+      classroom: "Aula 3",
+      syllabusUrl: "https://example.com/temario.pdf",
+    });
+
+    if (!result.ok) throw new Error(result.message);
+    const values = inserts[0]!.values as {
+      teacherId: string;
+      cost: number;
+      frequency: string;
+      classroom: string;
+      syllabusUrl: string;
+    };
+    expect(values.teacherId).toBe("tch_1");
+    expect(values.cost).toBe(76000);
+    expect(values.frequency).toBe("lunes y miércoles 18:30-20:30");
+    expect(values.classroom).toBe("Aula 3");
+    expect(values.syllabusUrl).toBe("https://example.com/temario.pdf");
+  });
+
+  it("createCohort (005 DV-004) con softwareIds inserta filas en cohort_software", async () => {
+    pushCourseExists();
+    pushSoftwareExists("sw_1", "sw_2");
+    const { createCohort } = await import("@/server/courses");
+    const result = await createCohort("org_1", {
+      courseId: "crs_revit",
+      startDate: new Date("2026-08-04"),
+      softwareIds: ["sw_1", "sw_2"],
+    });
+
+    if (!result.ok) throw new Error(result.message);
+    expect(inserts).toHaveLength(2); // cohort + cohort_software
+    const bridgeValues = inserts[1]!.values as { cohortId: string; softwareId: string }[];
+    expect(bridgeValues).toEqual([
+      { cohortId: result.id, softwareId: "sw_1" },
+      { cohortId: result.id, softwareId: "sw_2" },
+    ]);
+  });
+
+  it("createCohort rechaza un teacherId que no pertenece a la organización (hallazgo del reviewer)", async () => {
+    pushCourseExists();
+    selectQueue.push([]); // teacher: ninguna fila → no pertenece a esta org
+    const { createCohort } = await import("@/server/courses");
+    const result = await createCohort("org_1", {
+      courseId: "crs_revit",
+      startDate: new Date("2026-08-04"),
+      teacherId: "tch_de_otra_org",
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("no debería haber insertado");
+    expect(result.code).toBe("invalid_body");
+    expect(inserts).toHaveLength(0);
+  });
+
+  it("createCohort rechaza un softwareId que no pertenece a la organización (hallazgo del reviewer)", async () => {
+    pushCourseExists();
+    selectQueue.push([{ id: "sw_1" }]); // pidió sw_1 y sw_2, solo sw_1 pertenece a la org
+    const { createCohort } = await import("@/server/courses");
+    const result = await createCohort("org_1", {
+      courseId: "crs_revit",
+      startDate: new Date("2026-08-04"),
+      softwareIds: ["sw_1", "sw_de_otra_org"],
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("no debería haber insertado");
+    expect(result.code).toBe("invalid_body");
+    expect(inserts).toHaveLength(0);
+  });
+
+  it("updateCohort (005 T008) solo actualiza los campos presentes en el input", async () => {
+    const { updateCohort } = await import("@/server/courses");
+    const result = await updateCohort("org_1", "coh_1", { cost: 90000 });
+
+    expect(result.ok).toBe(true);
+    expect(updates).toHaveLength(1);
+    const set = updates[0]!.set as Record<string, unknown>;
+    expect(set.cost).toBe(90000);
+    expect("frequency" in set).toBe(false);
+    expect("teacherId" in set).toBe(false);
+  });
+
+  it("updateCohort con softwareIds reemplaza la relación (delete + insert)", async () => {
+    pushSoftwareExists("sw_3");
+    const { updateCohort } = await import("@/server/courses");
+    await updateCohort("org_1", "coh_1", { softwareIds: ["sw_3"] });
+
+    expect(deletes).toHaveLength(1);
+    expect(inserts).toHaveLength(1);
+    const bridgeValues = inserts[0]!.values as { cohortId: string; softwareId: string }[];
+    expect(bridgeValues).toEqual([{ cohortId: "coh_1", softwareId: "sw_3" }]);
+  });
+
+  it("updateCohort rechaza un courseId que no pertenece a la organización (hallazgo del reviewer)", async () => {
+    selectQueue.push([]); // course: ninguna fila
+    const { updateCohort } = await import("@/server/courses");
+    const result = await updateCohort("org_1", "coh_1", { courseId: "crs_de_otra_org" });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("no debería haber actualizado");
+    expect(result.code).toBe("invalid_body");
+    expect(updates).toHaveLength(0);
+  });
+
+  it("listCohorts (005 T008) incluye teacher/software resueltos", async () => {
+    selectQueue.push(
+      [
+        {
+          cohort: {
+            id: "coh_1",
+            courseId: "crs_revit",
+            startDate: new Date("2026-08-04"),
+            endDate: null,
+            cost: 76000,
+            frequency: null,
+            classroom: null,
+            syllabusUrl: null,
+            capacity: 20,
+            whatsappGroupLink: null,
+            status: "planificada",
+          },
+          course: { id: "crs_revit", name: "Revit" },
+          teacher: { id: "tch_1", name: "Ing. Paola Suárez" },
+        },
+      ],
+      [{ cohortId: "coh_1", software: { id: "sw_1", name: "Revit" } }]
+    );
+
+    const { listCohorts } = await import("@/server/courses");
+    const rows = await listCohorts("org_1");
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.teacher).toEqual({ id: "tch_1", name: "Ing. Paola Suárez" });
+    expect(rows[0]!.software).toEqual([{ id: "sw_1", name: "Revit" }]);
+  });
+
+  it("createCohort (005 T029, US4, FR-006) calcula licenseWarnings sin bloquear la creación", async () => {
+    pushCourseExists();
+    pushSoftwareExists("sw_1");
+    selectQueue.push(
+      [{ name: "Revit", totalLicenses: 5 }], // availableLicenses: software
+      [{ n: 5 }] // availableLicenses: assignedCount === total → available 0
+    );
+    const { createCohort } = await import("@/server/courses");
+    const result = await createCohort("org_1", {
+      courseId: "crs_revit",
+      startDate: new Date("2026-08-04"),
+      capacity: 10,
+      softwareIds: ["sw_1"],
+    });
+
+    if (!result.ok) throw new Error(result.message);
+    expect(result.id).toMatch(/^coh_/);
+    expect(result.licenseWarnings).toEqual([
+      { softwareId: "sw_1", softwareName: "Revit", capacity: 10, available: 0 },
+    ]);
+  });
+
+  it("createCohort (005, US4) sin capacidad o sin software declarado no genera licenseWarnings", async () => {
+    pushCourseExists();
+    const { createCohort } = await import("@/server/courses");
+    const result = await createCohort("org_1", {
+      courseId: "crs_revit",
+      startDate: new Date("2026-08-04"),
+    });
+    if (!result.ok) throw new Error(result.message);
+    expect(result.licenseWarnings).toEqual([]);
+  });
+
+  it("createCohort (005 T034, US5, FR-008) calcula scheduleWarnings sin bloquear la creación", async () => {
+    pushCourseExists();
+    pushTeacherExists();
+    selectQueue.push([
+      {
+        cohort: {
+          id: "coh_other",
+          courseId: "crs_1",
+          startDate: new Date("2026-08-01"),
+          endDate: new Date("2026-09-30"),
+        },
+        course: { id: "crs_1", name: "Civil3D" },
+      },
+    ]);
+    const { createCohort } = await import("@/server/courses");
+    const result = await createCohort("org_1", {
+      courseId: "crs_revit",
+      startDate: new Date("2026-09-15"),
+      teacherId: "tch_1",
+    });
+
+    if (!result.ok) throw new Error(result.message);
+    expect(result.id).toMatch(/^coh_/);
+    expect(result.scheduleWarnings).toHaveLength(1);
+    expect(result.scheduleWarnings[0]!.cohortId).toBe("coh_other");
+  });
+
+  it("updateCourse solo actualiza los campos presentes en el input (feedback en vivo: faltaba editar cursos)", async () => {
+    const { updateCourse } = await import("@/server/courses");
+    const result = await updateCourse("org_1", "crs_1", { name: "Revit Arquitectura" });
+
+    expect(result).not.toBeNull();
+    expect(updates).toHaveLength(1);
+    const set = updates[0]!.set as Record<string, unknown>;
+    expect(set.name).toBe("Revit Arquitectura");
+    expect("description" in set).toBe(false);
+  });
+
+  it("createCohort (005, US5) sin teacherId no genera scheduleWarnings", async () => {
+    pushCourseExists();
+    const { createCohort } = await import("@/server/courses");
+    const result = await createCohort("org_1", {
+      courseId: "crs_revit",
+      startDate: new Date("2026-08-04"),
+    });
+    if (!result.ok) throw new Error(result.message);
+    expect(result.scheduleWarnings).toEqual([]);
+  });
+
+  it("createCohort (iteración 2) acepta name/startTime/endTime para el calendario", async () => {
+    pushCourseExists();
+    const { createCohort } = await import("@/server/courses");
+    const result = await createCohort("org_1", {
+      courseId: "crs_revit",
+      startDate: new Date("2026-08-04"),
+      name: "Revit Arquitectura 4",
+      startTime: "18:30",
+      endTime: "20:30",
+    });
+
+    if (!result.ok) throw new Error(result.message);
+    const values = inserts[0]!.values as {
+      name: string;
+      startTime: string;
+      endTime: string;
+    };
+    expect(values.name).toBe("Revit Arquitectura 4");
+    expect(values.startTime).toBe("18:30");
+    expect(values.endTime).toBe("20:30");
+  });
+
+  it("createCohort (iteración 2) sin name/startTime/endTime usa null (curso queda como nombre principal)", async () => {
+    pushCourseExists();
+    const { createCohort } = await import("@/server/courses");
+    const result = await createCohort("org_1", {
+      courseId: "crs_revit",
+      startDate: new Date("2026-08-04"),
+    });
+
+    if (!result.ok) throw new Error(result.message);
+    const values = inserts[0]!.values as {
+      name: string | null;
+      startTime: string | null;
+      endTime: string | null;
+    };
+    expect(values.name).toBeNull();
+    expect(values.startTime).toBeNull();
+    expect(values.endTime).toBeNull();
+  });
+
+  it("updateCohort (iteración 2) solo actualiza name/startTime/endTime cuando vienen en el input", async () => {
+    const { updateCohort } = await import("@/server/courses");
+    await updateCohort("org_1", "coh_1", { name: "Revit Arquitectura 4" });
+
+    const set = updates[0]!.set as Record<string, unknown>;
+    expect(set.name).toBe("Revit Arquitectura 4");
+    expect("startTime" in set).toBe(false);
+    expect("endTime" in set).toBe(false);
+  });
+});

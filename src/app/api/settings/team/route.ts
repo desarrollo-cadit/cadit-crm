@@ -13,6 +13,7 @@ export const GET = withAuth(async (session) => {
   const members = await db
     .select({
       id: schema.member.id,
+      userId: schema.member.userId,
       role: schema.member.role,
       createdAt: schema.member.createdAt,
       name: schema.user.name,
@@ -24,6 +25,9 @@ export const GET = withAuth(async (session) => {
   return Response.json({
     members: members.map((m) => ({
       id: m.id,
+      // 005 (US2) — sellerId de una inscripción referencia user.id, no
+      // member.id; se expone acá para poblar el selector de vendedor.
+      userId: m.userId,
       role: m.role,
       name: m.name,
       email: m.email,
@@ -36,6 +40,9 @@ const createSchema = z.object({
   name: z.string().trim().min(1).max(120),
   email: z.string().trim().email(),
   password: z.string().min(8).max(128),
+  // 005 (DV-001) — rol funcional de la cuenta nueva. "owner" queda reservado
+  // al alta inicial de la organización, no se puede crear por acá.
+  role: z.enum(["member", "soporte"]).optional().default("member"),
 });
 
 /** Alta de cuenta de equipo (owner only): email + contraseña temporal (FR-061). */
@@ -75,7 +82,7 @@ export const POST = withAuth(async (session, req: Request) => {
       id: newId("member"),
       organizationId: session.organizationId,
       userId: newUserId,
-      role: "member",
+      role: body.data.role,
     })
     .onConflictDoNothing();
 
