@@ -136,7 +136,8 @@ export async function seedAcademicDemo(
     organizationId,
     phone: DEMO_PHONES[0],
     waIdentity: DEMO_PHONES[0]!,
-    name: "Valentina Rojas (demo académico)",
+    firstName: "Valentina",
+    lastName: "Rojas (demo académico)",
     source: "whatsapp",
   });
   await db.insert(schema.enrollment).values({
@@ -155,7 +156,8 @@ export async function seedAcademicDemo(
     organizationId,
     phone: DEMO_PHONES[1],
     waIdentity: DEMO_PHONES[1]!,
-    name: "Diego Fernández (demo académico)",
+    firstName: "Diego",
+    lastName: "Fernández (demo académico)",
     source: "feria-2026",
     utmCampaign: "feria_capacitaciones_agosto",
   });
@@ -184,7 +186,8 @@ export async function seedAcademicDemo(
     organizationId,
     phone: DEMO_PHONES[2],
     waIdentity: DEMO_PHONES[2]!,
-    name: "Renata Ibarra (demo académico)",
+    firstName: "Renata",
+    lastName: "Ibarra (demo académico)",
   });
   await db.insert(schema.enrollment).values({
     id: newId("enrollment"),

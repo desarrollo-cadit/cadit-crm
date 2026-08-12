@@ -120,7 +120,10 @@ export async function getOrCreateContactByIdentity(
       waIdentity: resolved.identity,
       phone: resolved.phone,
       waUserId: resolved.waUserId,
-      name: resolved.profileName?.trim() || displayFallback(resolved),
+      // 005 iteración 6 — el perfil de WhatsApp da UN string, no separado en
+      // nombre/apellido; va entero a firstName, lastName queda NULL (se
+      // completa a mano si hace falta, no se intenta adivinar el split).
+      firstName: resolved.profileName?.trim() || displayFallback(resolved),
     })
     .onConflictDoNothing({
       target: [schema.contact.organizationId, schema.contact.waIdentity],

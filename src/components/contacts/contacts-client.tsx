@@ -11,7 +11,7 @@ import {
   Search,
 } from "lucide-react";
 import type { ContactDto } from "@/lib/types";
-import { formatPhone } from "@/lib/utils";
+import { formatPhone, fullName } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -139,7 +139,7 @@ export function ContactsClient() {
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Buscar por nombre o teléfono…"
+              placeholder="Buscar por nombre, apellido o teléfono…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className="w-72 pl-8"
@@ -191,7 +191,7 @@ export function ContactsClient() {
                     <TableCell>
                       <input
                         type="checkbox"
-                        aria-label={`Seleccionar ${c.name}`}
+                        aria-label={`Seleccionar ${fullName(c)}`}
                         className="accent-primary"
                         checked={selected.has(c.id)}
                         onChange={() => toggleSelected(c.id)}
@@ -199,11 +199,11 @@ export function ContactsClient() {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2.5">
-                        <ContactAvatar name={c.name} seed={c.id} size="sm" />
+                        <ContactAvatar name={fullName(c)} seed={c.id} size="sm" />
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="truncate text-sm font-medium">
-                              {c.name}
+                              {fullName(c)}
                             </span>
                             {c.archivedAt && (
                               <Badge variant="secondary">Archivado</Badge>
@@ -312,6 +312,12 @@ export function ContactsClient() {
   );
 }
 
+/**
+ * Iteración 6 (feedback en vivo: "si le da a editar solo se edita nombre y
+ * eso... es clave poder editar todo") — antes solo tocaba nombre/notas.
+ * `phone`/identidad de WhatsApp quedan afuera a propósito (ver
+ * `src/app/api/contacts/[id]/route.ts`).
+ */
 function EditDialog({
   contact,
   onClose,
@@ -319,9 +325,22 @@ function EditDialog({
 }: {
   contact: ContactDto;
   onClose: () => void;
-  onSave: (patch: { name: string; notes: string }) => Promise<void>;
+  onSave: (patch: {
+    firstName: string;
+    lastName: string | null;
+    email: string | null;
+    nationalId: string | null;
+    source: string | null;
+    utmCampaign: string | null;
+    notes: string | null;
+  }) => Promise<void>;
 }) {
-  const [name, setName] = useState(contact.name);
+  const [firstName, setFirstName] = useState(contact.firstName);
+  const [lastName, setLastName] = useState(contact.lastName ?? "");
+  const [email, setEmail] = useState(contact.email ?? "");
+  const [nationalId, setNationalId] = useState(contact.nationalId ?? "");
+  const [source, setSource] = useState(contact.source ?? "");
+  const [utmCampaign, setUtmCampaign] = useState(contact.utmCampaign ?? "");
   const [notes, setNotes] = useState(contact.notes ?? "");
 
   return (
@@ -330,20 +349,79 @@ function EditDialog({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-lg border bg-card p-5 shadow-xl"
+        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg border bg-card p-5 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="mb-4 font-semibold">Editar contacto</h3>
         <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium" htmlFor="edit-first-name">
+                Nombre
+              </label>
+              <Input
+                id="edit-first-name"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium" htmlFor="edit-last-name">
+                Apellido
+              </label>
+              <Input
+                id="edit-last-name"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+              />
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Teléfono: {formatPhone(contact.phone)} — no editable acá (es la
+            identidad de WhatsApp del contacto).
+          </p>
           <div className="space-y-1.5">
-            <label className="text-sm font-medium" htmlFor="edit-name">
-              Nombre
+            <label className="text-sm font-medium" htmlFor="edit-email">
+              Email
             </label>
             <Input
-              id="edit-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              id="edit-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
             />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium" htmlFor="edit-national-id">
+              Cédula / identificación
+            </label>
+            <Input
+              id="edit-national-id"
+              value={nationalId}
+              onChange={(e) => setNationalId(e.target.value)}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium" htmlFor="edit-source">
+                Origen
+              </label>
+              <Input
+                id="edit-source"
+                value={source}
+                onChange={(e) => setSource(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium" htmlFor="edit-utm">
+                Campaña (UTM)
+              </label>
+              <Input
+                id="edit-utm"
+                value={utmCampaign}
+                onChange={(e) => setUtmCampaign(e.target.value)}
+              />
+            </div>
           </div>
           <div className="space-y-1.5">
             <label className="text-sm font-medium" htmlFor="edit-notes">
@@ -362,8 +440,18 @@ function EditDialog({
             Cancelar
           </Button>
           <Button
-            disabled={!name.trim()}
-            onClick={() => void onSave({ name: name.trim(), notes })}
+            disabled={!firstName.trim()}
+            onClick={() =>
+              void onSave({
+                firstName: firstName.trim(),
+                lastName: lastName.trim() || null,
+                email: email.trim() || null,
+                nationalId: nationalId.trim() || null,
+                source: source.trim() || null,
+                utmCampaign: utmCampaign.trim() || null,
+                notes: notes.trim() || null,
+              })
+            }
           >
             Guardar
           </Button>

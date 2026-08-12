@@ -131,7 +131,10 @@ export type CohortDto = {
 
 export type ContactDto = {
   id: string;
-  name: string;
+  /** 005 iteración 6 — reemplaza el `name` único de antes. */
+  firstName: string;
+  /** null: contactos de WhatsApp/formulario público solo traen un string. */
+  lastName: string | null;
   /** null en contactos que llegaron solo con BSUID (003). */
   phone: string | null;
   notes: string | null;

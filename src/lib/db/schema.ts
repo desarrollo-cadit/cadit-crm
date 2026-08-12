@@ -121,7 +121,16 @@ export const contact = pgTable(
     phone: text("phone"),
     /** Business-Scoped User ID si se conoce (003). */
     waUserId: text("wa_user_id"),
-    name: text("name").notNull(),
+    /**
+     * 005 iteración 6 (feedback en vivo: "quiero que contacto tenga nombre y
+     * apellido por separado") — reemplaza el `name` único de antes (ya
+     * migrado y eliminado). Contactos de origen WhatsApp/formulario público
+     * solo traen UN string (perfil de WhatsApp, campo "Nombre" del form) —
+     * ese string entero va a `firstName`, `lastName` queda NULL; se completa
+     * a mano después si hace falta.
+     */
+    firstName: text("first_name").notNull(),
+    lastName: text("last_name"),
     notes: text("notes"),
     /** 004 — de dónde llegó el contacto (texto libre, p. ej. "feria-2026"). */
     source: text("source"),
@@ -138,7 +147,7 @@ export const contact = pgTable(
   (t) => [
     uniqueIndex("contact_org_wa_identity_uq").on(t.organizationId, t.waIdentity),
     index("contact_org_wa_user_id_idx").on(t.organizationId, t.waUserId),
-    index("contact_org_name_idx").on(t.organizationId, t.name),
+    index("contact_org_name_idx").on(t.organizationId, t.firstName),
     // 005 (DV-003) — unicidad de email/celular por organización, cuando no es NULL.
     uniqueIndex("contact_org_email_uq")
       .on(t.organizationId, t.email)

@@ -39,3 +39,12 @@ export function formatPhone(phone: string | null | undefined): string {
   // 003: contactos BSUID pueden no tener teléfono.
   return phone ? `+${phone}` : "Sin teléfono";
 }
+
+/**
+ * 005 iteración 6 (feedback en vivo: "quiero que contacto tenga nombre y
+ * apellido por separado") — nombre completo para mostrar; `lastName` puede
+ * ser null (contactos de WhatsApp/formulario público solo traen un string).
+ */
+export function fullName(c: { firstName: string; lastName?: string | null }): string {
+  return c.lastName ? `${c.firstName} ${c.lastName}` : c.firstName;
+}

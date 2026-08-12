@@ -92,6 +92,24 @@ export function requireFullAccess<Args extends unknown[]>(
   });
 }
 
+/** Parsea query params con un esquema Zod; inválido → Response 422. */
+export function parseQuery<S extends z.ZodTypeAny>(
+  url: URL,
+  schema: S
+): { ok: true; data: z.infer<S> } | { ok: false; response: Response } {
+  const parsed = schema.safeParse(Object.fromEntries(url.searchParams));
+  if (!parsed.success) {
+    const detail = parsed.error.issues
+      .map((i) => `${i.path.join(".") || "query"}: ${i.message}`)
+      .join("; ");
+    return {
+      ok: false,
+      response: apiError(422, "invalid_query", detail),
+    };
+  }
+  return { ok: true, data: parsed.data };
+}
+
 /** Parsea el body JSON con un esquema Zod; inválido → Response 422. */
 export async function parseBody<T>(
   req: Request,

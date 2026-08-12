@@ -124,7 +124,7 @@ describe("submitIntakeForm (iteración 3, formularios de captación)", () => {
     if (result.ok) expect(result.contactId).toBe("ct_new");
 
     const contactInsert = inserts.find((i) =>
-      String((i.values as { name?: string }).name) === "Xavier Pérez"
+      String((i.values as { firstName?: string }).firstName) === "Xavier Pérez"
     );
     expect(contactInsert).toBeDefined();
     const values = contactInsert!.values as {

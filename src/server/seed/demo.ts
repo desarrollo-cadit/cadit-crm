@@ -2,6 +2,7 @@ import { eq, inArray } from "drizzle-orm";
 import type { getDb } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
+import { scoped } from "@/lib/db/tenant";
 
 /**
  * Negocio de demostración "Ferretería El Martillo" (FR-075).
@@ -140,7 +141,9 @@ export async function seedDemo(
   const prevContacts = await db
     .select({ id: schema.contact.id })
     .from(schema.contact)
-    .where(inArray(schema.contact.phone, demoPhones));
+    .where(
+      scoped(schema.contact.organizationId, organizationId, inArray(schema.contact.phone, demoPhones))
+    );
   const prevIds = prevContacts.map((c) => c.id);
   if (prevIds.length > 0) {
     const prevConvs = await db
@@ -191,7 +194,9 @@ export async function seedDemo(
       organizationId,
       phone: demo.phone,
       waIdentity: demo.phone,
-      name: demo.name,
+      // 005 iteración 6 — demo genérica, sin apellido separado por dato;
+      // el string completo va a firstName (no se intenta adivinar el split).
+      firstName: demo.name,
       notes: demo.notes ?? null,
     });
 

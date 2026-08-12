@@ -50,9 +50,9 @@ function formatDaysOfWeek(daysOfWeek: string | null) {
  */
 const STATUS_BADGE: Record<
   CohortDto["status"],
-  { label: string; variant: "secondary" | "success" | "outline" }
+  { label: string; variant: "warning" | "success" | "outline" }
 > = {
-  planificada: { label: "Planificada", variant: "secondary" },
+  planificada: { label: "Planificada", variant: "warning" },
   en_curso: { label: "En curso", variant: "success" },
   finalizada: { label: "Finalizada", variant: "outline" },
 };

@@ -51,7 +51,12 @@ const baseEnrollment = {
   academiaOnlineAccessAt: null,
 };
 
-const baseContact = { name: "Diego Fernández", phone: "59899123456", email: "diego@example.com" };
+const baseContact = {
+  firstName: "Diego",
+  lastName: "Fernández",
+  phone: "59899123456",
+  email: "diego@example.com",
+};
 const baseLicense = {
   assigned: true,
   assignedAt: new Date("2026-08-02"),

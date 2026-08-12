@@ -1,11 +1,12 @@
 import { z } from "zod";
-import { apiError, parseBody, withAuth } from "@/lib/api";
+import { apiError, parseBody, requireFullAccess } from "@/lib/api";
 import { createEnrollment } from "@/server/enrollments";
 
 export const dynamic = "force-dynamic";
 
 const contactSchema = z.object({
-  name: z.string().trim().min(1).max(120),
+  firstName: z.string().trim().min(1).max(120),
+  lastName: z.string().trim().max(120).optional(),
   phone: z
     .string()
     .trim()
@@ -27,8 +28,12 @@ const createSchema = z.object({
   companyId: z.string().min(1).nullable().optional(),
 });
 
-// 005 (T019, US2, contracts/enrollments.md) — alta comercial de una inscripción.
-export const POST = withAuth(async (session, req: Request) => {
+// 005 (T019, US2, contracts/enrollments.md) — alta comercial de una
+// inscripción; acepta monto/cuotas/factura/vendedor, por eso
+// `requireFullAccess` (FR-016) igual que el PATCH en [id]/route.ts —
+// soporte no debe poder fijar datos financieros ni al crear ni al editar
+// (hallazgo del reviewer, iteración 6).
+export const POST = requireFullAccess(async (session, req: Request) => {
   const body = await parseBody(req, createSchema);
   if (!body.ok) return body.response;
 

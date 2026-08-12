@@ -5,7 +5,8 @@ import { scoped } from "@/lib/db/tenant";
 export function serializeContact(c: typeof schema.contact.$inferSelect) {
   return {
     id: c.id,
-    name: c.name,
+    firstName: c.firstName,
+    lastName: c.lastName,
     phone: c.phone,
     notes: c.notes,
     source: c.source,

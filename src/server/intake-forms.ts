@@ -130,7 +130,10 @@ export async function submitIntakeForm(
     .values({
       id: newId("contact"),
       organizationId,
-      name: input.name,
+      // 005 iteración 6 — el formulario público da UN string ("Nombre"), no
+      // separado en nombre/apellido; va entero a firstName (mismo criterio
+      // que un contacto de WhatsApp), lastName queda NULL.
+      firstName: input.name,
       phone,
       waIdentity: phone,
       notes: input.notes ?? null,

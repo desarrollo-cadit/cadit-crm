@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { UserPlus } from "lucide-react";
+import { Download, UserPlus } from "lucide-react";
 import type { CohortRosterDto, RosterEntryDto } from "@/server/enrollments";
 import type { CompanyDto } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { EnrollForm } from "@/components/enrollments/enroll-form";
 import { EnrollmentCommercialForm } from "@/components/enrollments/enrollment-commercial-form";
 
@@ -42,7 +43,16 @@ function formatDate(iso: string | null) {
  * para corregir cédula/factura/recibo/empresa/monto/cuotas/vendedor de una
  * inscripción ya creada (antes solo se podían fijar al inscribir).
  */
-export function RosterClient({ cohortId }: { cohortId: string }) {
+export function RosterClient({
+  cohortId,
+  canEnroll = true,
+}: {
+  cohortId: string;
+  /** 005 iteración 6 (hallazgo del reviewer) — POST /api/enrollments acepta
+   * datos financieros y ahora exige `requireFullAccess`; soporte no debe ver
+   * un botón que le va a devolver 403. */
+  canEnroll?: boolean;
+}) {
   const [roster, setRoster] = useState<CohortRosterDto | null>(null);
   const [companies, setCompanies] = useState<CompanyDto[]>([]);
   const [members, setMembers] = useState<MemberOption[]>([]);
@@ -145,9 +155,20 @@ export function RosterClient({ cohortId }: { cohortId: string }) {
             <p className="text-xs text-muted-foreground">{roster.cohort.courseName}</p>
           )}
         </div>
-        <Button size="sm" onClick={() => setShowEnrollForm(true)}>
-          <UserPlus className="h-4 w-4" /> Inscribir alumno
-        </Button>
+        <div className="flex items-center gap-2">
+          <a
+            href={`/api/cohorts/${cohortId}/export`}
+            download
+            className={cn(buttonVariants({ size: "sm", variant: "outline" }))}
+          >
+            <Download className="h-4 w-4" /> Exportar CSV
+          </a>
+          {canEnroll && (
+            <Button size="sm" onClick={() => setShowEnrollForm(true)}>
+              <UserPlus className="h-4 w-4" /> Inscribir alumno
+            </Button>
+          )}
+        </div>
       </header>
 
       <div className="flex-1 overflow-y-auto p-6">

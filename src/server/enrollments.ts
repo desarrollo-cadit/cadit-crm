@@ -3,13 +3,15 @@ import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { normalizeMx } from "@/lib/meta/client";
+import { fullName } from "@/lib/utils";
 
 /** 005 (US2, contracts/enrollments.md) — alta comercial de una inscripción. */
 export type CreateEnrollmentInput = {
   cohortId: string;
   contactId?: string | null;
   contact?: {
-    name: string;
+    firstName: string;
+    lastName?: string | null;
     phone: string;
     email?: string | null;
     nationalId?: string | null;
@@ -126,7 +128,8 @@ export async function createEnrollment(
       .values({
         id: newId("contact"),
         organizationId,
-        name: input.contact!.name,
+        firstName: input.contact!.firstName,
+        lastName: input.contact!.lastName ?? null,
         phone,
         waIdentity: phone,
         email: input.contact!.email ?? null,
@@ -256,7 +259,7 @@ export function buildRosterEntry(
 ): RosterEntryDto {
   const base: RosterEntryDto = {
     id: enrollment.id,
-    contact: { name: contact.name, phone: contact.phone, email: contact.email },
+    contact: { name: fullName(contact), phone: contact.phone, email: contact.email },
     checklist: {
       licenseAssigned: license?.assigned ?? false,
       licenseSoftwareId: license?.assigned ? license.softwareId : null,
@@ -324,7 +327,7 @@ export async function getCohortRoster(
         eq(schema.enrollment.cohortId, cohortId)
       )
     )
-    .orderBy(asc(schema.contact.name));
+    .orderBy(asc(schema.contact.firstName));
 
   return {
     cohort: {
@@ -338,6 +341,55 @@ export async function getCohortRoster(
     },
     enrollments: rows.map((r) => buildRosterEntry(role, r.enrollment, r.contact, r.license)),
   };
+}
+
+function csvField(value: string | null): string {
+  const v = value ?? "";
+  // RFC 4180: entrecomillar si tiene coma, comilla o salto de línea; comillas escapadas duplicándolas.
+  return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+}
+
+/**
+ * Iteración 6 (feedback en vivo: "exportar en formato csv los alumnos de esa
+ * camada, solo nombre apellido y correo") — deliberadamente NO reusa
+ * `getCohortRoster`/`buildRosterEntry` (esos exponen mucho más que 3 campos,
+ * y acá el pedido es explícito: sin monto/factura/checklist/teléfono en el
+ * archivo exportado).
+ */
+export async function exportCohortRosterCsv(
+  organizationId: string,
+  cohortId: string
+): Promise<string | null> {
+  const db = getDb();
+  const cohortRows = await db
+    .select({ id: schema.cohort.id })
+    .from(schema.cohort)
+    .where(scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, cohortId)))
+    .limit(1);
+  if (!cohortRows[0]) return null;
+
+  const rows = await db
+    .select({
+      firstName: schema.contact.firstName,
+      lastName: schema.contact.lastName,
+      email: schema.contact.email,
+    })
+    .from(schema.enrollment)
+    .innerJoin(schema.contact, eq(schema.enrollment.contactId, schema.contact.id))
+    .where(
+      scoped(
+        schema.enrollment.organizationId,
+        organizationId,
+        eq(schema.enrollment.cohortId, cohortId)
+      )
+    )
+    .orderBy(asc(schema.contact.firstName));
+
+  const lines = [
+    "nombre,apellido,correo",
+    ...rows.map((r) => [csvField(r.firstName), csvField(r.lastName), csvField(r.email)].join(",")),
+  ];
+  return lines.join("\r\n");
 }
 
 /** 005 (T023, FR-013/FR-014) — checklist de onboarding, accesible a cualquier rol. */

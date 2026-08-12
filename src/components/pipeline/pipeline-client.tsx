@@ -14,7 +14,7 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { MessageSquareText, Settings2, Trophy, XCircle } from "lucide-react";
-import type { StageDto } from "@/lib/types";
+import type { CohortDto, StageDto } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
@@ -38,13 +38,21 @@ export function PipelineClient() {
   const [loading, setLoading] = useState(true);
   const [activeLead, setActiveLead] = useState<BoardEnrollment | null>(null);
   const [managing, setManaging] = useState(false);
+  const [cohorts, setCohorts] = useState<CohortDto[]>([]);
+  // Iteración 6 (feedback en vivo: "poder filtrar en pipeline, por camada,
+  // por sin asignar camada") — "unassigned" = comportamiento original (004,
+  // sin param); "all" = todas; o un cohortId puntual.
+  const [cohortFilter, setCohortFilter] = useState<string>("unassigned");
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
   );
 
   const refetch = useCallback(async () => {
-    const res = await fetch("/api/pipeline/board").catch(() => null);
+    setLoading(true);
+    const params =
+      cohortFilter === "unassigned" ? "" : `?cohortId=${encodeURIComponent(cohortFilter)}`;
+    const res = await fetch(`/api/pipeline/board${params}`).catch(() => null);
     if (!res?.ok) {
       setLoading(false);
       return;
@@ -56,11 +64,20 @@ export function PipelineClient() {
     setStages(data.stages);
     setLeads(data.enrollments);
     setLoading(false);
-  }, []);
+  }, [cohortFilter]);
 
   useEffect(() => {
     void refetch();
   }, [refetch]);
+
+  useEffect(() => {
+    void (async () => {
+      const res = await fetch("/api/cohorts").catch(() => null);
+      if (!res?.ok) return;
+      const data = (await res.json()) as { cohorts: CohortDto[] };
+      setCohorts(data.cohorts);
+    })();
+  }, []);
 
   function onDragStart(event: DragStartEvent) {
     const lead = leads.find((l) => l.id === event.active.id);
@@ -92,9 +109,25 @@ export function PipelineClient() {
     <div className="flex h-full flex-col">
       <header className="flex items-center justify-between border-b px-6 py-4">
         <h2 className="font-semibold">Pipeline</h2>
-        <Button variant="outline" size="sm" onClick={() => setManaging(true)}>
-          <Settings2 className="h-4 w-4" /> Gestionar etapas
-        </Button>
+        <div className="flex items-center gap-2">
+          <select
+            aria-label="Filtrar por camada"
+            className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+            value={cohortFilter}
+            onChange={(e) => setCohortFilter(e.target.value)}
+          >
+            <option value="unassigned">Sin camada (lead general)</option>
+            <option value="all">Todas las camadas</option>
+            {cohorts.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name ?? c.courseName}
+              </option>
+            ))}
+          </select>
+          <Button variant="outline" size="sm" onClick={() => setManaging(true)}>
+            <Settings2 className="h-4 w-4" /> Gestionar etapas
+          </Button>
+        </div>
       </header>
 
       <div className="flex-1 overflow-x-auto p-4">

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { CompanyDto, ContactDto } from "@/lib/types";
+import { fullName } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,7 +36,8 @@ export function EnrollForm({
   const [contactResults, setContactResults] = useState<ContactDto[]>([]);
   const [contactId, setContactId] = useState<string | null>(null);
 
-  const [name, setName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [nationalId, setNationalId] = useState("");
@@ -89,7 +91,7 @@ export function EnrollForm({
       setError("Elegí un contacto existente o cambiá a 'Contacto nuevo'");
       return;
     }
-    if (mode === "new" && (!name.trim() || !phone.trim())) {
+    if (mode === "new" && (!firstName.trim() || !phone.trim())) {
       setError("Nombre y celular son obligatorios para un contacto nuevo");
       return;
     }
@@ -101,7 +103,8 @@ export function EnrollForm({
         ? { contactId }
         : {
             contact: {
-              name: name.trim(),
+              firstName: firstName.trim(),
+              lastName: lastName.trim() || undefined,
               phone: phone.trim(),
               email: email.trim() || undefined,
               nationalId: nationalId.trim() || undefined,
@@ -164,9 +167,23 @@ export function EnrollForm({
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label htmlFor="enr-name">Nombre</Label>
-                <Input id="enr-name" value={name} onChange={(e) => setName(e.target.value)} />
+                <Label htmlFor="enr-first-name">Nombre</Label>
+                <Input
+                  id="enr-first-name"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                />
               </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="enr-last-name">Apellido</Label>
+                <Input
+                  id="enr-last-name"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="enr-phone">Celular</Label>
                 <Input
@@ -213,7 +230,7 @@ export function EnrollForm({
                       className={`block w-full px-3 py-1.5 text-left text-sm hover:bg-accent ${contactId === c.id ? "bg-accent" : ""}`}
                       onClick={() => setContactId(c.id)}
                     >
-                      {c.name} · {c.phone}
+                      {fullName(c)} · {c.phone}
                     </button>
                   </li>
                 ))}

@@ -1,9 +1,15 @@
 import { and, asc, eq, isNull } from "drizzle-orm";
-import { withAuth } from "@/lib/api";
+import { z } from "zod";
+import { parseQuery, withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
+import { fullName } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
+
+const querySchema = z.object({
+  cohortId: z.string().min(1).optional(),
+});
 
 /**
  * Datos completos del kanban: etapas ordenadas + tarjetas con su contacto.
@@ -11,8 +17,10 @@ export const dynamic = "force-dynamic";
  * NULL). Con `cohortId`: tablero de esa camada puntual.
  */
 export const GET = withAuth(async (session, req: Request) => {
+  const query = parseQuery(new URL(req.url), querySchema);
+  if (!query.ok) return query.response;
+  const cohortId = query.data.cohortId ?? null;
   const db = getDb();
-  const cohortId = new URL(req.url).searchParams.get("cohortId");
 
   const stages = await db
     .select()
@@ -20,9 +28,16 @@ export const GET = withAuth(async (session, req: Request) => {
     .where(scoped(schema.pipelineStage.organizationId, session.organizationId))
     .orderBy(asc(schema.pipelineStage.position));
 
-  const cohortFilter = cohortId
-    ? eq(schema.enrollment.cohortId, cohortId)
-    : isNull(schema.enrollment.cohortId);
+  // Iteración 6 (feedback en vivo: "poder filtrar en pipeline, por camada,
+  // por sin asignar camada") — sin param: sin camada (comportamiento
+  // original, 004); `cohortId=<id>`: esa camada puntual; `cohortId=all`:
+  // todas las inscripciones sin filtrar por camada (vista general nueva).
+  const cohortFilter =
+    cohortId === "all"
+      ? undefined
+      : cohortId
+        ? eq(schema.enrollment.cohortId, cohortId)
+        : isNull(schema.enrollment.cohortId);
 
   const enrollments = await db
     .select({
@@ -59,7 +74,7 @@ export const GET = withAuth(async (session, req: Request) => {
       lastActivityAt: r.enrollment.lastActivityAt?.toISOString() ?? null,
       contact: {
         id: r.contact.id,
-        name: r.contact.name,
+        name: fullName(r.contact),
         phone: r.contact.phone,
       },
       conversationId: r.conversationId,

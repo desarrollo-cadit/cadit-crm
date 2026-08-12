@@ -1,6 +1,7 @@
 import { and, desc, eq, gt, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
+import { fullName } from "@/lib/utils";
 import { isWindowOpen, windowRemainingMs } from "@/server/inbox/window";
 
 export type ConversationDto = {
@@ -119,7 +120,7 @@ export function serializeConversation(
 ): ConversationDto {
   return {
     id: c.id,
-    contact: { id: contact.id, name: contact.name, phone: contact.phone },
+    contact: { id: contact.id, name: fullName(contact), phone: contact.phone },
     stageName,
     aiEnabled: c.aiEnabled,
     handoffAt: c.handoffAt?.toISOString() ?? null,

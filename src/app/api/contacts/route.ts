@@ -1,6 +1,6 @@
 import { desc, ilike, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
-import { apiError, parseBody, withAuth } from "@/lib/api";
+import { apiError, parseBody, parseQuery, withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
@@ -12,6 +12,15 @@ export const dynamic = "force-dynamic";
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 
+const listQuerySchema = z.object({
+  q: z.string().trim().optional(),
+  archived: z.string().optional(),
+  // .catch(): query params de listado/paginación son tolerantes por diseño
+  // (un page/pageSize inválido vuelve al default en vez de 422).
+  page: z.coerce.number().int().min(1).catch(1),
+  pageSize: z.coerce.number().int().min(1).max(MAX_PAGE_SIZE).catch(DEFAULT_PAGE_SIZE),
+});
+
 /**
  * Iteración 3 (Parte C) — paginación real de servidor (page/pageSize), no
  * solo corte del array en el cliente: la tabla nueva de Contactos no puede
@@ -19,19 +28,17 @@ const MAX_PAGE_SIZE = 100;
  * cortaba en JS después de traer 200 filas, lo que rompía la paginación).
  */
 export const GET = withAuth(async (session, req: Request) => {
-  const url = new URL(req.url);
-  const q = url.searchParams.get("q")?.trim();
-  const includeArchived = url.searchParams.get("archived") === "true";
-  const page = Math.max(1, Number(url.searchParams.get("page") ?? "1") || 1);
-  const pageSize = Math.min(
-    MAX_PAGE_SIZE,
-    Math.max(1, Number(url.searchParams.get("pageSize") ?? String(DEFAULT_PAGE_SIZE)) || DEFAULT_PAGE_SIZE)
-  );
+  const query = parseQuery(new URL(req.url), listQuerySchema);
+  if (!query.ok) return query.response;
+  const { page, pageSize } = query.data;
+  const q = query.data.q?.trim();
+  const includeArchived = query.data.archived === "true";
 
   const db = getDb();
   const searchCondition = q
     ? or(
-        ilike(schema.contact.name, `%${q}%`),
+        ilike(schema.contact.firstName, `%${q}%`),
+        ilike(schema.contact.lastName, `%${q}%`),
         ilike(schema.contact.phone, `%${q}%`)
       )
     : undefined;
@@ -63,7 +70,8 @@ export const GET = withAuth(async (session, req: Request) => {
 });
 
 const createSchema = z.object({
-  name: z.string().trim().min(1).max(120),
+  firstName: z.string().trim().min(1).max(120),
+  lastName: z.string().trim().max(120).optional(),
   phone: z
     .string()
     .trim()
@@ -87,7 +95,8 @@ export const POST = withAuth(async (session, req: Request) => {
     .values({
       id: newId("contact"),
       organizationId: session.organizationId,
-      name: body.data.name,
+      firstName: body.data.firstName,
+      lastName: body.data.lastName ?? null,
       phone,
       waIdentity: phone,
       notes: body.data.notes ?? null,
