@@ -196,7 +196,7 @@ export async function updateTeacher(
   return { ok: true, teacher: serializeTeacher(teacher, courseIds) };
 }
 
-/** 005 (T033, DV-006) — camada en conflicto de horario con otra del mismo profesor. */
+/** 005 (T033, DV-006) — cohorte en conflicto de horario con otra del mismo profesor. */
 export type ScheduleConflict = {
   cohortId: string;
   courseId: string;
@@ -223,9 +223,9 @@ function rangesOverlap(
 }
 
 /**
- * 005 (T033, DV-006, FR-008) — camadas del mismo profesor cuyo rango de
+ * 005 (T033, DV-006, FR-008) — cohortes del mismo profesor cuyo rango de
  * fechas se superpone con [startDate, endDate]. No bloquea nada — solo
- * informa; `excludeCohortId` evita que una camada se compare consigo misma
+ * informa; `excludeCohortId` evita que una cohorte se compare consigo misma
  * (alta nueva ya insertada, o edición de una existente).
  */
 export async function findScheduleConflicts(

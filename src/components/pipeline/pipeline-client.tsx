@@ -39,8 +39,8 @@ export function PipelineClient() {
   const [activeLead, setActiveLead] = useState<BoardEnrollment | null>(null);
   const [managing, setManaging] = useState(false);
   const [cohorts, setCohorts] = useState<CohortDto[]>([]);
-  // Iteración 6 (feedback en vivo: "poder filtrar en pipeline, por camada,
-  // por sin asignar camada") — "unassigned" = comportamiento original (004,
+  // Iteración 6 (feedback en vivo: "poder filtrar en pipeline, por cohorte,
+  // por sin asignar cohorte") — "unassigned" = comportamiento original (004,
   // sin param); "all" = todas; o un cohortId puntual.
   const [cohortFilter, setCohortFilter] = useState<string>("unassigned");
 
@@ -111,13 +111,13 @@ export function PipelineClient() {
         <h2 className="font-semibold">Pipeline</h2>
         <div className="flex items-center gap-2">
           <select
-            aria-label="Filtrar por camada"
+            aria-label="Filtrar por cohorte"
             className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
             value={cohortFilter}
             onChange={(e) => setCohortFilter(e.target.value)}
           >
-            <option value="unassigned">Sin camada (lead general)</option>
-            <option value="all">Todas las camadas</option>
+            <option value="unassigned">Sin cohorte (lead general)</option>
+            <option value="all">Todas las cohortes</option>
             {cohorts.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name ?? c.courseName}

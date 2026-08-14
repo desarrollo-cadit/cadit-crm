@@ -14,9 +14,9 @@ import { createTeacher } from "@/server/teachers";
  * académicos demo previos de la organización (por teléfono) y reinserta.
  *
  * Cubre los 5 escenarios de `specs/004-modelo-academico/spec.md`:
- * - US1: un contacto con lead general (sin camada).
- * - US2: un curso con una camada.
- * - US3: un contacto con lead general + inscripciones en DOS camadas.
+ * - US1: un contacto con lead general (sin cohorte).
+ * - US2: un curso con una cohorte.
+ * - US3: un contacto con lead general + inscripciones en DOS cohortes.
  * - US5: un contacto con `source`/`utm_campaign`.
  */
 
@@ -41,34 +41,68 @@ export async function seedAcademicDemo(
   if (prevIds.length > 0) {
     await db
       .delete(schema.enrollment)
-      .where(inArray(schema.enrollment.contactId, prevIds));
-    await db.delete(schema.contact).where(inArray(schema.contact.id, prevIds));
+      .where(
+        scoped(
+          schema.enrollment.organizationId,
+          organizationId,
+          inArray(schema.enrollment.contactId, prevIds)
+        )
+      );
+    await db
+      .delete(schema.contact)
+      .where(
+        scoped(
+          schema.contact.organizationId,
+          organizationId,
+          inArray(schema.contact.id, prevIds)
+        )
+      );
   }
-  const prevCourses = await db
-    .select({ id: schema.course.id })
-    .from(schema.course)
-    .where(scoped(schema.course.organizationId, organizationId));
   // Solo se limpian los cursos demo (por nombre) — no se toca un curso real.
   const demoCourseNames = ["Revit", "Civil 3D"];
   const demoCourses = await db
-    .select({ id: schema.course.id, name: schema.course.name })
+    .select({ id: schema.course.id })
     .from(schema.course)
-    .where(inArray(schema.course.id, prevCourses.map((c) => c.id)));
-  const demoCourseIds = demoCourses
-    .filter((c) => demoCourseNames.includes(c.name))
-    .map((c) => c.id);
+    .where(
+      scoped(
+        schema.course.organizationId,
+        organizationId,
+        inArray(schema.course.name, demoCourseNames)
+      )
+    );
+  const demoCourseIds = demoCourses.map((c) => c.id);
   if (demoCourseIds.length > 0) {
     const demoCohorts = await db
       .select({ id: schema.cohort.id })
       .from(schema.cohort)
-      .where(inArray(schema.cohort.courseId, demoCourseIds));
+      .where(
+        scoped(
+          schema.cohort.organizationId,
+          organizationId,
+          inArray(schema.cohort.courseId, demoCourseIds)
+        )
+      );
     const demoCohortIds = demoCohorts.map((c) => c.id);
     if (demoCohortIds.length > 0) {
       await db
         .delete(schema.cohort)
-        .where(inArray(schema.cohort.id, demoCohortIds));
+        .where(
+          scoped(
+            schema.cohort.organizationId,
+            organizationId,
+            inArray(schema.cohort.id, demoCohortIds)
+          )
+        );
     }
-    await db.delete(schema.course).where(inArray(schema.course.id, demoCourseIds));
+    await db
+      .delete(schema.course)
+      .where(
+        scoped(
+          schema.course.organizationId,
+          organizationId,
+          inArray(schema.course.id, demoCourseIds)
+        )
+      );
   }
 
   // --- Etapas académicas (US1/US2/US3) ---
@@ -84,15 +118,22 @@ export async function seedAcademicDemo(
     throw new Error("Etapas académicas no sembradas");
   }
 
-  // --- Curso + dos camadas (US2) ---
-  const revitCourseId = await createCourse(organizationId, {
+  // --- Curso + dos cohortes (US2) ---
+  const revitCourse = await createCourse(organizationId, {
     name: "Revit",
     description: "Modelado BIM para arquitectura",
   });
-  const civilCourseId = await createCourse(organizationId, {
+  const civilCourse = await createCourse(organizationId, {
     name: "Civil 3D",
     description: "Diseño e infraestructura civil",
   });
+  // Igual que las cohortes de abajo: el seed no pasa categoría, así que un
+  // fallo acá sería un bug del propio seed, no un caso de negocio.
+  if (!revitCourse.ok || !civilCourse.ok) {
+    throw new Error("seed académico: no se pudieron crear los cursos");
+  }
+  const revitCourseId = revitCourse.id;
+  const civilCourseId = civilCourse.id;
   // 005 (DV-005) — profesor como entidad propia, ya no texto libre.
   const paolaTeacherId = await createTeacher(organizationId, {
     name: "Ing. Paola Suárez",
@@ -129,7 +170,7 @@ export async function seedAcademicDemo(
   const revitCohortBId = revitCohortB.id;
   const civilCohortId = civilCohort.id;
 
-  // --- Contacto A: solo lead general, sin camada (US1) ---
+  // --- Contacto A: solo lead general, sin cohorte (US1) ---
   const contactAId = newId("contact");
   await db.insert(schema.contact).values({
     id: contactAId,
@@ -149,7 +190,7 @@ export async function seedAcademicDemo(
     position: 0,
   });
 
-  // --- Contacto B: lead general + inscripción a la camada A de Revit (US1+US2+US3) ---
+  // --- Contacto B: lead general + inscripción a la cohorte A de Revit (US1+US2+US3) ---
   const contactBId = newId("contact");
   await db.insert(schema.contact).values({
     id: contactBId,
@@ -179,7 +220,7 @@ export async function seedAcademicDemo(
     enrolledAt: new Date("2026-07-20"),
   });
 
-  // --- Contacto C: inscripto en DOS camadas distintas, sin lead general (US3) ---
+  // --- Contacto C: inscripto en DOS cohortes distintas, sin lead general (US3) ---
   const contactCId = newId("contact");
   await db.insert(schema.contact).values({
     id: contactCId,

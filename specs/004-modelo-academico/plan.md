@@ -1,4 +1,4 @@
-# Implementation Plan: Modelo académico — cursos, camadas e inscripciones (Fase 1)
+# Implementation Plan: Modelo académico — cursos, cohortes e inscripciones (Fase 1)
 
 **Branch**: `004-modelo-academico` | **Date**: 2026-08-10 | **Spec**: [spec.md](spec.md)
 
@@ -7,15 +7,15 @@
 ## Summary
 
 Reconvertir el pipeline de ventas (`pipeline_stage` + `lead`) para que sirva DOS
-funciones a la vez: CRM de ventas general de la academia (leads sin camada asignada —
-el comportamiento de hoy, sin cambios) y gestión de inscripciones por camada. Se
+funciones a la vez: CRM de ventas general de la academia (leads sin cohorte asignada —
+el comportamiento de hoy, sin cambios) y gestión de inscripciones por cohorte. Se
 agregan `course`, `cohort`, `license` y `automation_rule` (solo modelo), y se
 renombra/extiende `lead`→`enrollment` con `cohort_id` **opcional**: NULL = lead
-general, con valor = inscripción a esa camada. Se siembran las 7 etapas académicas
+general, con valor = inscripción a esa cohorte. Se siembran las 7 etapas académicas
 como `pipeline_stage` por organización (compartidas por ambos contextos), y el
 tablero kanban existente (`PipelineClient`/`StageManager`/`/api/pipeline/board`)
 filtra por `cohort_id` sin cambios de UI — sin filtro muestra el tablero general, con
-`cohortId` muestra el de esa camada. `onLeadActivity` (auto-creación de tarjeta al
+`cohortId` muestra el de esa cohorte. `onLeadActivity` (auto-creación de tarjeta al
 primer mensaje de WhatsApp, en `src/server/inbox/lead-activity.ts`) queda **intacto**
 en su lógica: sigue creando el lead general de siempre. Arranque en limpio (sin
 backfill de datos reales, confirmado en el spec — y aún menos relevante ahora que
@@ -44,9 +44,9 @@ Fase 3 cuando haya pantallas)
 
 **Project Type**: Aplicación web monolítica existente (sin paquetes nuevos)
 
-**Performance Goals**: sin objetivos nuevos — el tablero filtrado por camada debe
+**Performance Goals**: sin objetivos nuevos — el tablero filtrado por cohorte debe
 responder en el mismo orden de magnitud que hoy responde filtrado por organización
-(pocas decenas/cientos de inscripciones por camada)
+(pocas decenas/cientos de inscripciones por cohorte)
 
 **Constraints**: multi-tenant real (`organization_id NOT NULL` + `scoped()` en toda
 query nueva); migraciones re-ejecutables e idempotentes; sin nuevas dependencias
@@ -109,7 +109,7 @@ src/
 │   └── ai/pipeline.ts       # moveLeadToStage/appendLeadNote → ajustar a N enrollments
 ├── app/api/pipeline/
 │   ├── board/route.ts      # + query param cohortId (sin filtro = tablero general)
-│   ├── leads/[id]/route.ts  # + campo cohortId en el PATCH (asignar/reasignar camada)
+│   ├── leads/[id]/route.ts  # + campo cohortId en el PATCH (asignar/reasignar cohorte)
 │   └── stages/route.ts      # sin cambios de contrato
 └── components/pipeline/
     ├── pipeline-client.tsx # + prop/paso de cohortId al fetch (sin rediseño)
@@ -119,7 +119,7 @@ drizzle/
 └── 0003_<nombre>.sql        # migración generada por drizzle-kit generate
 
 scripts/seed/
-└── demo.ts                  # + curso/camada/inscripción de ejemplo (Criterio de aceptación)
+└── demo.ts                  # + curso/cohorte/inscripción de ejemplo (Criterio de aceptación)
 ```
 
 **Structure Decision**: se extiende el monolito existente, sin paquetes nuevos.

@@ -67,10 +67,33 @@ export type StageDto = {
 };
 
 /** 005 — Catálogo de cursos (Fase 1, sin cambios de forma). */
+/** 006 — categoría del catálogo, para filtrar en el sitio comercial. */
+export type CourseCategoryDto = {
+  id: string;
+  name: string;
+  slug: string;
+};
+
+/** Mismas uniones que el schema y que `courseContentSchema` (no `string`). */
+export type CourseLevel = "inicial" | "intermedio" | "avanzado";
+export type CourseModality = "en_vivo" | "asincronico" | "presencial";
+
 export type CourseDto = {
   id: string;
   name: string;
   description: string | null;
+  /* 006 — ficha comercial que consume el sitio externo vía /api/public/courses. */
+  slug: string;
+  tagline: string | null;
+  categoryId: string | null;
+  level: CourseLevel | null;
+  modality: CourseModality | null;
+  durationWeeks: number | null;
+  hoursPerWeek: number | null;
+  imageUrl: string | null;
+  learningObjectives: string[];
+  targetAudience: string | null;
+  syllabusUrl: string | null;
 };
 
 /** 005 (DV-005) — profesor como entidad propia. */
@@ -81,7 +104,7 @@ export type TeacherDto = {
   hourlyRate: number | null;
   /** 005 iteración 5 — email de contacto (identidad mínima; sin cuenta/login todavía). */
   email: string | null;
-  /** 005 iteración 2 — cursos que dicta (teacher_course), para filtrar el selector de camada. */
+  /** 005 iteración 2 — cursos que dicta (teacher_course), para filtrar el selector de cohorte. */
   courseIds: string[];
   /** 005 iteración 5 — true si tiene foto en `/api/teachers/:id/photo`. */
   hasPhoto: boolean;
@@ -103,12 +126,12 @@ export type CompanyDto = {
   taxId: string | null;
 };
 
-/** 005 (T008) — camada con teacher/software resueltos. */
+/** 005 (T008) — cohorte con teacher/software resueltos. */
 export type CohortDto = {
   id: string;
   courseId: string;
   courseName: string;
-  /** 005 iteración 2 — nombre propio de la camada; null = usar courseName. */
+  /** 005 iteración 2 — nombre propio de la cohorte; null = usar courseName. */
   name: string | null;
   startDate: string;
   endDate: string | null;

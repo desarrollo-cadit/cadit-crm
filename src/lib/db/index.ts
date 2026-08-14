@@ -31,4 +31,15 @@ export function getDb() {
   return cachedDb;
 }
 
+/**
+ * Conexión de base: el cliente normal o una transacción abierta. Las funciones
+ * que escriben la aceptan para poder componerse dentro de una transacción del
+ * llamador (p. ej. guardar curso y temario de una sola vez). Vive acá y no en
+ * un módulo de dominio para que dos dominios que se componen no tengan que
+ * importarse entre sí solo por el tipo.
+ */
+export type DbOrTx =
+  | ReturnType<typeof getDb>
+  | Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
+
 export { schema };

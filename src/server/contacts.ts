@@ -39,7 +39,7 @@ export async function getContactById(
 
 /**
  * Etapa actual del LEAD GENERAL del contacto (si existe) — 004: el panel de
- * contacto opera desde la conversación de WhatsApp, no desde una camada
+ * contacto opera desde la conversación de WhatsApp, no desde una cohorte
  * concreta, así que resuelve el `enrollment` sin `cohort_id` (ver
  * research.md DV-005/T010).
  */

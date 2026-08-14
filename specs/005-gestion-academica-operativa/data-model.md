@@ -50,7 +50,7 @@ Empresa para facturación B2B opcional de una inscripción.
 
 ## `cohort_software` (nueva, puente N:N)
 
-Qué software(s) declara usar una camada — para poder chequear disponibilidad de
+Qué software(s) declara usar una cohorte — para poder chequear disponibilidad de
 licencias (FR-006).
 
 | Campo | Tipo | Notas |
@@ -150,9 +150,9 @@ cohort N──1 teacher (opcional)
 
 - No bajar `software.total_licenses` por debajo de licencias `assigned` (FR-004).
 - No asignar una licencia si no queda pool disponible (FR-003).
-- Advertencia (no bloqueo) si el cupo de una camada supera las licencias
+- Advertencia (no bloqueo) si el cupo de una cohorte supera las licencias
   disponibles de su software declarado (FR-006).
-- Advertencia (no bloqueo) si un profesor queda con camadas de fechas
+- Advertencia (no bloqueo) si un profesor queda con cohortes de fechas
   superpuestas (FR-008).
 - `seller_id`, si viene, debe ser un `user_id` con membresía activa en
   `session.organizationId`.

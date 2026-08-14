@@ -3,13 +3,21 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Plus } from "lucide-react";
-import type { CohortDto, CourseDto, SoftwareDto, TeacherDto } from "@/lib/types";
+import type {
+  CohortDto,
+  CourseCategoryDto,
+  CourseDto,
+  SoftwareDto,
+  TeacherDto,
+} from "@/lib/types";
+import { WEEKDAY_LABELS } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CohortForm, CourseQuickForm } from "@/components/academic/cohort-form";
+import { Skeleton } from "@/components/ui/skeleton";
+import { CohortForm } from "@/components/academic/cohort-form";
+import { CourseForm } from "@/components/academic/course-form";
 import { SoftwareForm } from "@/components/academic/software-form";
 import { TeacherForm } from "@/components/academic/teacher-form";
-import { Skeleton } from "../ui/skeleton";
 
 const TABS = [
   { key: "courses", label: "Cursos" },
@@ -33,13 +41,11 @@ function formatCost(cost: number | null) {
   return `$${cost.toLocaleString("es-MX")}`;
 }
 
-const DAY_LABELS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
-
 function formatDaysOfWeek(daysOfWeek: string | null) {
   if (!daysOfWeek) return null;
   return daysOfWeek
     .split(",")
-    .map((d) => DAY_LABELS[Number(d)])
+    .map((d) => WEEKDAY_LABELS[Number(d)])
     .join(", ");
 }
 
@@ -60,7 +66,7 @@ const STATUS_BADGE: Record<
 /**
  * 005 (T014, US1) — pantalla de gestión académica. Iteración 2 (feedback en
  * vivo del dueño) suma pestañas Cursos/Software/Profesores: antes solo se
- * podían crear desde selectores dentro del formulario de camada, sin forma
+ * podían crear desde selectores dentro del formulario de cohorte, sin forma
  * de verlos listados ni editarlos fuera de ahí.
  */
 export function AcademicClient() {
@@ -70,7 +76,11 @@ export function AcademicClient() {
   const [cohorts, setCohorts] = useState<CohortDto[]>([]);
   const [teachers, setTeachers] = useState<TeacherDto[]>([]);
   const [software, setSoftware] = useState<SoftwareDto[]>([]);
-  const [showCourseForm, setShowCourseForm] = useState<{ mode: "create" } | { mode: "edit"; course: CourseDto } | null>(null);
+  const [categories, setCategories] = useState<CourseCategoryDto[]>([]);
+  const [loadError, setLoadError] = useState(false);
+  const [showCourseForm, setShowCourseForm] = useState<
+    { mode: "create" } | { mode: "edit"; course: CourseDto } | null
+  >(null);
   const [cohortForm, setCohortForm] = useState<
     { mode: "create" } | { mode: "edit"; cohort: CohortDto } | null
   >(null);
@@ -81,31 +91,41 @@ export function AcademicClient() {
     { mode: "create" } | { mode: "edit"; teacher: TeacherDto } | null
   >(null);
 
+  /**
+   * Cada recurso se lee por separado y un fallo NO se traga en silencio: si
+   * alguno falla, se marca `loadError`, porque una lista vacía por un 500 es
+   * indistinguible de una organización sin datos. `setLoading(false)` va en
+   * `finally` — un body malformado tiraba dentro del callback y dejaba el
+   * esqueleto de carga para siempre.
+   */
   const refetch = useCallback(async () => {
     setLoading(true);
-    const [coursesRes, cohortsRes, teachersRes, softwareRes] = await Promise.all([
-      fetch("/api/courses").catch(() => null),
-      fetch("/api/cohorts").catch(() => null),
-      fetch("/api/teachers").catch(() => null),
-      fetch("/api/software").catch(() => null),
-    ]);
-    if (coursesRes?.ok) {
-      const data = (await coursesRes.json()) as { courses: CourseDto[] };
-      setCourses(data.courses);
+    let failed = false;
+
+    async function read<T>(url: string, apply: (data: T) => void) {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(String(res.status));
+        apply((await res.json()) as T);
+      } catch {
+        failed = true;
+      }
     }
-    if (cohortsRes?.ok) {
-      const data = (await cohortsRes.json()) as { cohorts: CohortDto[] };
-      setCohorts(data.cohorts);
+
+    try {
+      await Promise.all([
+        read<{ courses: CourseDto[] }>("/api/courses", (d) => setCourses(d.courses)),
+        read<{ cohorts: CohortDto[] }>("/api/cohorts", (d) => setCohorts(d.cohorts)),
+        read<{ teachers: TeacherDto[] }>("/api/teachers", (d) => setTeachers(d.teachers)),
+        read<{ software: SoftwareDto[] }>("/api/software", (d) => setSoftware(d.software)),
+        read<{ categories: CourseCategoryDto[] }>("/api/course-categories", (d) =>
+          setCategories(d.categories)
+        ),
+      ]);
+    } finally {
+      setLoadError(failed);
+      setLoading(false);
     }
-    if (teachersRes?.ok) {
-      const data = (await teachersRes.json()) as { teachers: TeacherDto[] };
-      setTeachers(data.teachers);
-    }
-    if (softwareRes?.ok) {
-      const data = (await softwareRes.json()) as { software: SoftwareDto[] };
-      setSoftware(data.software);
-    }
-    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -131,7 +151,7 @@ export function AcademicClient() {
                 disabled={courses.length === 0}
                 onClick={() => setCohortForm({ mode: "create" })}
               >
-                <Plus className="h-4 w-4" /> Nueva camada
+                <Plus className="h-4 w-4" /> Nueva cohorte
               </Button>
             </>
           )}
@@ -176,12 +196,24 @@ export function AcademicClient() {
             ))}
           </div>
         )}
+
+        {!loading && loadError && (
+          <div className="mb-4 flex items-center justify-between gap-4 rounded-lg border border-destructive/50 px-4 py-3">
+            <p className="text-sm text-destructive">
+              No se pudieron cargar todos los datos. Lo que ves abajo puede estar
+              incompleto.
+            </p>
+            <Button variant="outline" size="sm" onClick={() => void refetch()}>
+              Reintentar
+            </Button>
+          </div>
+        )}
         {!loading && tab === "cohorts" &&
           (cohorts.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-              <p className="text-sm font-medium">Sin camadas</p>
+              <p className="text-sm font-medium">Sin cohorte</p>
               <p className="max-w-sm text-xs text-muted-foreground">
-                Creá un curso y después una camada con costo, horario, aula,
+                Creá un curso y después una cohorte con costo, horario, aula,
                 temario, software y profesor.
               </p>
             </div>
@@ -231,7 +263,7 @@ export function AcademicClient() {
                   <div className="flex shrink-0 items-center gap-1.5">
                     <Link href={`/cohorts/${cohort.id}`}>
                       <Button variant="ghost" size="sm">
-                        Ver camada
+                        Ver cohorte
                       </Button>
                     </Link>
                     <Button
@@ -258,10 +290,21 @@ export function AcademicClient() {
                   className="flex items-start justify-between gap-4 rounded-lg border bg-card px-4 py-3"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">{c.name}</p>
-                    {c.description && (
-                      <p className="mt-0.5 text-xs text-muted-foreground">{c.description}</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-medium">{c.name}</p>
+                      {c.categoryId && (
+                        <Badge variant="secondary">
+                          {categories.find((cat) => cat.id === c.categoryId)?.name ??
+                            "Categoría"}
+                        </Badge>
+                      )}
+                    </div>
+                    {(c.tagline ?? c.description) && (
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {c.tagline ?? c.description}
+                      </p>
                     )}
+                    <p className="mt-0.5 text-xs text-muted-foreground">/cursos/{c.slug}</p>
                   </div>
                   <Button
                     variant="ghost"
@@ -363,13 +406,15 @@ export function AcademicClient() {
       </div>
 
       {showCourseForm && (
-        <CourseQuickForm
+        <CourseForm
           initial={showCourseForm.mode === "edit" ? showCourseForm.course : null}
+          categories={categories}
           onClose={() => setShowCourseForm(null)}
           onSaved={() => {
             setShowCourseForm(null);
             void refetch();
           }}
+          onCategoryCreated={(c) => setCategories((prev) => [...prev, c])}
         />
       )}
 

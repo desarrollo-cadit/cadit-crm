@@ -65,5 +65,5 @@ POST /api/enrollments
 | Status | code | Cuándo |
 |---|---|---|
 | 409 | `duplicate` | email o celular ya usado por otro contacto de la organización (DV-002/DV-003) |
-| 409 | `duplicate` | ya existe una inscripción de ese contacto en esa camada (`enrollment_contact_cohort_uq`, Fase 1) |
+| 409 | `duplicate` | ya existe una inscripción de ese contacto en esa cohorte (`enrollment_contact_cohort_uq`, Fase 1) |
 | 422 | `invalid_body` | `cohortId` inexistente, `sellerId` no es miembro de la org, ni `contactId` ni `contact` presentes |

@@ -2,21 +2,17 @@
 
 import { useMemo, useState } from "react";
 import type { CohortDto, CourseDto, SoftwareDto, TeacherDto } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { cn, WEEKDAY_LABELS } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 
 function toDateInput(iso: string | null) {
   return iso ? iso.slice(0, 10) : "";
 }
 
-/** 0=lunes..6=domingo — mismo orden que el calendario semanal. */
-const DAY_LABELS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
-
 /**
- * 005 (T014, US1, FR-005) — alta/edición de una camada con toda la
+ * 005 (T014, US1, FR-005) — alta/edición de una cohorte con toda la
  * información operativa: costo, horario, aula, temario, software y
  * profesor. `initial` presente = edición (PATCH); ausente = alta (POST).
  */
@@ -47,13 +43,12 @@ export function CohortForm({
   const [startTime, setStartTime] = useState(initial?.startTime ?? "");
   const [endTime, setEndTime] = useState(initial?.endTime ?? "");
   // 005 iteración 4 — días de la semana en que dicta, para el calendario
-  // semanal (feedback en vivo: antes no existía, la camada aparecía todos
+  // semanal (feedback en vivo: antes no existía, la cohorte aparecía todos
   // los días del rango). Índices 0=lunes..6=domingo.
   const [daysOfWeek, setDaysOfWeek] = useState<number[]>(
     initial?.daysOfWeek ? initial.daysOfWeek.split(",").map(Number) : []
   );
   const [classroom, setClassroom] = useState(initial?.classroom ?? "");
-  const [syllabusUrl, setSyllabusUrl] = useState(initial?.syllabusUrl ?? "");
   const [capacity, setCapacity] = useState(initial?.capacity?.toString() ?? "");
   const [softwareIds, setSoftwareIds] = useState<string[]>(
     initial?.software.map((s) => s.id) ?? []
@@ -63,7 +58,7 @@ export function CohortForm({
   const [error, setError] = useState<string | null>(null);
   // 005 (US4/US5, FR-006/FR-008) — advertencias no bloqueantes que devuelve
   // la API tras guardar (licencias insuficientes / choque de horario del
-  // profesor). La camada ya quedó guardada; esto solo informa.
+  // profesor). La cohorte ya quedó guardada; esto solo informa.
   const [warnings, setWarnings] = useState<string[] | null>(null);
 
   // 005 iteración 2 — filtra el selector de profesor por el curso elegido
@@ -125,7 +120,6 @@ export function CohortForm({
       endTime: endTime || null,
       daysOfWeek: daysOfWeek.length > 0 ? daysOfWeek.join(",") : null,
       classroom: classroom.trim() || null,
-      syllabusUrl: syllabusUrl.trim() || null,
       capacity: capacity.trim() ? Number(capacity) : null,
       softwareIds,
     };
@@ -142,7 +136,7 @@ export function CohortForm({
       const body = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      setError(body?.error?.message ?? "No se pudo guardar la camada");
+      setError(body?.error?.message ?? "No se pudo guardar la cohorte");
       return;
     }
 
@@ -162,7 +156,7 @@ export function CohortForm({
     ];
     if (messages.length > 0) {
       setWarnings(messages);
-      return; // la camada ya está guardada; el usuario cierra el aviso para continuar.
+      return; // la cohorte ya está guardada; el usuario cierra el aviso para continuar.
     }
     onSaved();
   }
@@ -177,7 +171,7 @@ export function CohortForm({
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="mb-4 font-semibold">
-          {initial ? "Editar camada" : "Nueva camada"}
+          {initial ? "Editar cohorte" : "Nueva cohorte"}
         </h3>
 
         <div className="space-y-3">
@@ -201,7 +195,7 @@ export function CohortForm({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="cohort-name">Nombre de la camada</Label>
+            <Label htmlFor="cohort-name">Nombre de la cohorte</Label>
             <Input
               id="cohort-name"
               placeholder="Revit Arquitectura 4 — dejalo vacío para usar el nombre del curso"
@@ -329,7 +323,7 @@ export function CohortForm({
           <div className="space-y-1.5">
             <Label>Días de la semana</Label>
             <div className="flex flex-wrap gap-1.5">
-              {DAY_LABELS.map((label, i) => (
+              {WEEKDAY_LABELS.map((label, i) => (
                 <button
                   key={label}
                   type="button"
@@ -346,7 +340,7 @@ export function CohortForm({
               ))}
             </div>
             <p className="text-[11px] text-muted-foreground">
-              Sin días marcados, la camada se muestra en TODOS los días entre
+              Sin días marcados, la cohorte se muestra en TODOS los días entre
               inicio y fin en el calendario.
             </p>
           </div>
@@ -360,15 +354,9 @@ export function CohortForm({
                 onChange={(e) => setClassroom(e.target.value)}
               />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="cohort-syllabus">URL del temario</Label>
-              <Input
-                id="cohort-syllabus"
-                value={syllabusUrl}
-                onChange={(e) => setSyllabusUrl(e.target.value)}
-              />
-            </div>
           </div>
+          {/* 006 — el temario dejó de editarse acá: es del curso, no de la
+              edición. La cohorte lo hereda de su curso. */}
 
           <div className="space-y-1.5">
             <Label>Software</Label>
@@ -398,7 +386,7 @@ export function CohortForm({
         {warnings && (
           <div className="mt-3 space-y-1 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">
             <p className="font-medium">
-              La camada se guardó, pero revisá lo siguiente:
+              La cohorte se guardó, pero revisá lo siguiente:
             </p>
             <ul className="list-disc space-y-0.5 pl-4">
               {warnings.map((w) => (
@@ -421,76 +409,6 @@ export function CohortForm({
               </Button>
             </>
           )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/**
- * Alta/edición de un curso (nombre + descripción). `initial` presente =
- * edición (PATCH `/api/courses/:id`); ausente = alta (POST `/api/courses`).
- * Antes solo existía el alta rápida — feedback en vivo: no había forma de
- * editar un curso ya creado ni de verlos listados fuera del selector de la
- * camada.
- */
-export function CourseQuickForm({
-  initial,
-  onClose,
-  onSaved,
-}: {
-  initial?: CourseDto | null;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const [name, setName] = useState(initial?.name ?? "");
-  const [description, setDescription] = useState(initial?.description ?? "");
-  const [saving, setSaving] = useState(false);
-
-  async function submit() {
-    if (!name.trim()) return;
-    setSaving(true);
-    await fetch(initial ? `/api/courses/${initial.id}` : "/api/courses", {
-      method: initial ? "PATCH" : "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: name.trim(), description: description.trim() || null }),
-    }).catch(() => null);
-    setSaving(false);
-    onSaved();
-  }
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-md rounded-lg border bg-card p-5 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="mb-4 font-semibold">{initial ? "Editar curso" : "Nuevo curso"}</h3>
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="course-name">Nombre</Label>
-            <Input id="course-name" value={name} onChange={(e) => setName(e.target.value)} />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="course-description">Descripción</Label>
-            <Textarea
-              id="course-description"
-              rows={3}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </div>
-        </div>
-        <div className="mt-4 flex justify-end gap-2">
-          <Button variant="ghost" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button disabled={!name.trim() || saving} onClick={() => void submit()}>
-            {saving ? "Guardando…" : "Guardar"}
-          </Button>
         </div>
       </div>
     </div>

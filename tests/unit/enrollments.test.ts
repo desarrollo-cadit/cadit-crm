@@ -319,7 +319,7 @@ describe("updateEnrollmentCommercial (005 iteración 2)", () => {
 });
 
 /**
- * Iteración 6 — exportCohortRosterCsv: camada inexistente → null (404 en la
+ * Iteración 6 — exportCohortRosterCsv: cohorte inexistente → null (404 en la
  * ruta), formato RFC 4180 (header + escapado de coma/comilla/salto de línea),
  * y que NO incluya ningún campo financiero (deliberadamente no reusa
  * buildRosterEntry).
@@ -329,7 +329,7 @@ describe("exportCohortRosterCsv (005 iteración 6)", () => {
     selectQueue.length = 0;
   });
 
-  it("camada inexistente en la organización → null", async () => {
+  it("cohorte inexistente en la organización → null", async () => {
     selectQueue.push([]); // cohort: ninguna fila scopeada
 
     const { exportCohortRosterCsv } = await import("@/server/enrollments");
@@ -359,7 +359,26 @@ describe("exportCohortRosterCsv (005 iteración 6)", () => {
     );
   });
 
-  it("camada sin inscripciones → CSV solo con el header", async () => {
+  it("neutraliza fórmulas: un nombre que arranca con = + - @ no se ejecuta en Excel", async () => {
+    selectQueue.push(
+      [{ id: "coh_1" }],
+      [
+        { firstName: "=1+1", lastName: "+cmd|calc", email: "-x@example.com" },
+        { firstName: "@SUM(A1)", lastName: "Normal", email: null },
+      ]
+    );
+
+    const { exportCohortRosterCsv } = await import("@/server/enrollments");
+    const result = await exportCohortRosterCsv("org_1", "coh_1");
+    const lines = result!.split("\r\n");
+
+    // Apóstrofo delante de todo lo que empieza con un caracter de fórmula: el
+    // nombre puede venir del formulario público sin autenticar.
+    expect(lines[1]).toBe("'=1+1,'+cmd|calc,'-x@example.com");
+    expect(lines[2]).toBe("'@SUM(A1),Normal,");
+  });
+
+  it("cohorte sin inscripciones → CSV solo con el header", async () => {
     selectQueue.push([{ id: "coh_1" }], []);
 
     const { exportCohortRosterCsv } = await import("@/server/enrollments");

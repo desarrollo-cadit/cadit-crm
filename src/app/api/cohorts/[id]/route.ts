@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
-import { getCohort, updateCohort } from "@/server/courses";
+import { cohortInputSchema, getCohort, updateCohort } from "@/server/courses";
 
 export const dynamic = "force-dynamic";
 
@@ -13,31 +13,10 @@ export const GET = withAuth(async (session, _req: Request, ctx: Params) => {
   return Response.json({ cohort });
 });
 
-const timeHHMM = z
-  .string()
-  .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Formato de hora inválido (HH:MM)")
-  .nullable();
-
 const patchSchema = z.object({
   courseId: z.string().min(1).optional(),
-  name: z.string().trim().max(200).nullable().optional(),
   startDate: z.coerce.date().optional(),
-  endDate: z.coerce.date().nullable().optional(),
-  teacherId: z.string().min(1).nullable().optional(),
-  cost: z.number().int().nullable().optional(),
-  frequency: z.string().max(200).nullable().optional(),
-  startTime: timeHHMM.optional(),
-  endTime: timeHHMM.optional(),
-  daysOfWeek: z
-    .string()
-    .regex(/^[0-6](,[0-6])*$/, "CSV de índices de día 0-6")
-    .nullable()
-    .optional(),
-  classroom: z.string().max(120).nullable().optional(),
-  syllabusUrl: z.string().max(2000).nullable().optional(),
-  capacity: z.number().int().min(0).nullable().optional(),
-  whatsappGroupLink: z.string().max(2000).nullable().optional(),
-  softwareIds: z.array(z.string().min(1)).optional(),
+  ...cohortInputSchema,
 });
 
 export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {

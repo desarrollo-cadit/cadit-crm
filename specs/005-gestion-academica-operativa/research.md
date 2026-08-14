@@ -62,8 +62,8 @@ teléfono — descartado por el gap de BSUID recién descrito.
 `total_licenses`). La tabla `license` (Fase 1) gana `software_id` (FK NOT NULL a
 `software`). Disponibles = `software.total_licenses - count(license WHERE
 software_id = X AND assigned = true)`. Nueva tabla puente `cohort_software`
-(`cohort_id`, `software_id`) para que una camada declare qué software(s) usa
-(N:N — ej. una camada "Revit Arq + Estructura + MEP" podría declarar solo
+(`cohort_id`, `software_id`) para que una cohorte declare qué software(s) usa
+(N:N — ej. una cohorte "Revit Arq + Estructura + MEP" podría declarar solo
 "Revit", o varias si en el futuro se separan por versión).
 
 **Rationale**: `license` ya existía desde la Fase 1 como un booleano por
@@ -84,7 +84,7 @@ explícitamente fuera de alcance (ver spec.md, Assumptions).
 (FK nullable a `teacher`).
 
 **Rationale**: Detectar choques de horario (FR-008) requiere poder agrupar
-camadas por el MISMO profesor de forma confiable — comparar strings ("Juan
+cohortes por el MISMO profesor de forma confiable — comparar strings ("Juan
 Pérez" vs "juan perez" vs "Juan P.") no es confiable. Sin datos de producción
 reales todavía (mismo criterio que Fase 1: arranque en limpio, sin backfill).
 
@@ -94,12 +94,12 @@ variaciones de escritura.
 
 ## DV-006: Detección de choque de horario
 
-**Decision**: Al crear/editar una camada con `teacher_id`, comparar el rango
-`[start_date, end_date]` contra las demás camadas del mismo profesor en la
+**Decision**: Al crear/editar una cohorte con `teacher_id`, comparar el rango
+`[start_date, end_date]` contra las demás cohortes del mismo profesor en la
 organización. Superposición = `existing.start_date <= new.end_date AND
 (existing.end_date IS NULL OR existing.end_date >= new.start_date)` (si
 `end_date` es NULL se trata como "sigue en curso" a efectos de la comparación).
-Devuelve la lista de camadas en conflicto en la respuesta; NO bloquea la
+Devuelve la lista de cohortes en conflicto en la respuesta; NO bloquea la
 creación/edición (FR-008 es una advertencia).
 
 **Rationale**: El horario detallado (día de semana + franja) se guarda como

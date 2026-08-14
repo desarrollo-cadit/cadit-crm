@@ -8,7 +8,7 @@ type Db = ReturnType<typeof getDb>;
 
 /**
  * 004 — Las 7 etapas académicas, compartidas por el tablero general de
- * ventas (enrollment.cohort_id NULL) y por cada tablero de camada. `kind`
+ * ventas (enrollment.cohort_id NULL) y por cada tablero de cohorte. `kind`
  * reusa el concepto de "ancla no borrable" ya existente en pipeline_stage.
  */
 const ACADEMIC_STAGES: {

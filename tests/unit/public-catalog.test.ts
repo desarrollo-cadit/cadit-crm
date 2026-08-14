@@ -5,16 +5,21 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * resuelve la única organización de la instancia (0 o 2+ → null, ambiguo);
  * el DTO de catálogo público nunca expone campos de `contact`/`enrollment`/
  * `license`/`teacher`/`cost`/etc.; 404 en curso inexistente. El filtrado
- * real de "camada ya iniciada" (start_date > now()) se construye en SQL y se
+ * real de "cohorte ya iniciada" (start_date > now()) se construye en SQL y se
  * verifica en vivo (T047) — acá se verifica la FORMA del DTO, mismo criterio
  * que `enrollment-constraints.test.ts`.
+ *
+ * 006 — el DTO crece con la ficha comercial (tagline, categoría, nivel,
+ * modalidad, duración, imagen) y el detalle suma temario estructurado. La
+ * garantía FR-022 no se relaja: los tests de abajo verifican explícitamente
+ * que ningún campo de alumno/dinero se cuele en el DTO nuevo.
  */
 
 const selectQueue: unknown[][] = [];
 
 function thenableChain(rows: unknown[]) {
   const chain: Record<string, unknown> = {};
-  for (const m of ["from", "where", "orderBy", "limit"]) {
+  for (const m of ["from", "leftJoin", "where", "orderBy", "limit"]) {
     chain[m] = () => chain;
   }
   (chain as { then: unknown }).then = (resolve: (v: unknown) => void) =>
@@ -37,6 +42,29 @@ vi.mock("@/lib/db", () => ({
     }
   ),
 }));
+
+/** Fila tal como la devuelve `publicCourseColumns` (curso + join de categoría). */
+function courseRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "crs_1",
+    slug: "revit-arquitectura",
+    name: "Revit Arquitectura",
+    tagline: null,
+    description: "Curso de BIM",
+    imageUrl: null,
+    level: null,
+    modality: null,
+    durationWeeks: null,
+    hoursPerWeek: null,
+    learningObjectives: null,
+    targetAudience: null,
+    syllabusUrl: null,
+    categoryId: null,
+    categoryName: null,
+    categorySlug: null,
+    ...overrides,
+  };
+}
 
 beforeEach(() => {
   selectQueue.length = 0;
@@ -62,12 +90,24 @@ describe("resolveSoleOrganizationId (T041, DV-010)", () => {
   });
 });
 
-describe("listPublicCourses (T041, FR-020/FR-021/FR-022)", () => {
-  it("el DTO solo trae id/name/description/nextCohorts — nunca datos internos", async () => {
+describe("listPublicCourses (T041/006, FR-020/FR-021/FR-022)", () => {
+  it("expone la ficha comercial y NADA más (FR-022)", async () => {
     selectQueue.push(
-      [{ id: "org_1" }], // resolveSoleOrganizationId
-      [{ id: "crs_1", name: "Revit Arquitectura", description: "Curso de BIM" }], // courses
-      [{ id: "coh_1", courseId: "crs_1", startDate: new Date("2026-09-15") }] // cohorts futuras
+      [{ id: "org_1" }],
+      [
+        courseRow({
+          tagline: "Modelá en BIM desde cero",
+          level: "inicial",
+          modality: "en_vivo",
+          durationWeeks: 12,
+          hoursPerWeek: 4,
+          imageUrl: "https://x/portada.jpg",
+          categoryId: "cat_1",
+          categoryName: "BIM",
+          categorySlug: "bim",
+        }),
+      ],
+      [{ id: "coh_1", courseId: "crs_1", startDate: new Date("2026-09-15") }]
     );
     const { listPublicCourses } = await import("@/server/public-catalog");
 
@@ -76,13 +116,27 @@ describe("listPublicCourses (T041, FR-020/FR-021/FR-022)", () => {
     expect(courses).toEqual([
       {
         id: "crs_1",
+        slug: "revit-arquitectura",
         name: "Revit Arquitectura",
-        description: "Curso de BIM",
+        tagline: "Modelá en BIM desde cero",
+        imageUrl: "https://x/portada.jpg",
+        category: { id: "cat_1", name: "BIM", slug: "bim" },
+        level: "inicial",
+        modality: "en_vivo",
+        durationWeeks: 12,
+        hoursPerWeek: 4,
         nextCohorts: [{ id: "coh_1", startDate: "2026-09-15T00:00:00.000Z" }],
       },
     ]);
-    expect(Object.keys(courses[0]!)).toEqual(["id", "name", "description", "nextCohorts"]);
+    // La cohorte pública sigue exponiendo SOLO id y fecha: ni costo ni cupo ni profesor.
     expect(Object.keys(courses[0]!.nextCohorts[0]!)).toEqual(["id", "startDate"]);
+  });
+
+  it("un curso sin categoría asignada devuelve category: null, no un objeto a medias", async () => {
+    selectQueue.push([{ id: "org_1" }], [courseRow()], []);
+    const { listPublicCourses } = await import("@/server/public-catalog");
+    const courses = await listPublicCourses();
+    expect(courses[0]!.category).toBeNull();
   });
 
   it("sin organización resoluble, devuelve lista vacía (no explota ni expone nada)", async () => {
@@ -91,39 +145,80 @@ describe("listPublicCourses (T041, FR-020/FR-021/FR-022)", () => {
     expect(await listPublicCourses()).toEqual([]);
   });
 
-  it("curso sin camadas futuras → nextCohorts vacío, no un error (edge case spec.md)", async () => {
-    selectQueue.push([{ id: "org_1" }], [{ id: "crs_1", name: "Revit", description: null }], []);
+  it("curso sin cohortes futuras → nextCohorts vacío, no un error (edge case spec.md)", async () => {
+    selectQueue.push([{ id: "org_1" }], [courseRow()], []);
     const { listPublicCourses } = await import("@/server/public-catalog");
     const courses = await listPublicCourses();
     expect(courses[0]!.nextCohorts).toEqual([]);
   });
 });
 
-describe("getPublicCourse (T041, FR-020/FR-021)", () => {
+describe("getPublicCourse (T041/006, FR-020/FR-021/FR-022)", () => {
   it("404 (null) si el curso no existe en la organización de la instancia", async () => {
     selectQueue.push([{ id: "org_1" }], []); // resolveSoleOrganizationId, courseRows vacío
     const { getPublicCourse } = await import("@/server/public-catalog");
     expect(await getPublicCourse("crs_x")).toBeNull();
   });
 
-  it("syllabusUrl toma el de la primera camada futura que lo declare; null si ninguna", async () => {
+  it("006 — el temario sale del curso (módulos ordenados), no de la cohorte", async () => {
     selectQueue.push(
       [{ id: "org_1" }],
-      [{ id: "crs_1", name: "Revit", description: "..." }],
       [
-        { id: "coh_1", startDate: new Date("2026-09-01"), syllabusUrl: null },
-        { id: "coh_2", startDate: new Date("2026-10-01"), syllabusUrl: "https://x/temario.pdf" },
+        courseRow({
+          syllabusUrl: "https://x/temario.pdf",
+          learningObjectives: ["Modelar en Revit", "Documentar un proyecto"],
+          targetAudience: "Arquitectos y estudiantes",
+        }),
+      ],
+      [{ id: "coh_1", courseId: "crs_1", startDate: new Date("2026-10-01") }],
+      [
+        { title: "Fundamentos", topics: ["Interfaz", "Niveles"] },
+        { title: "Documentación", topics: ["Planos"] },
       ]
     );
     const { getPublicCourse } = await import("@/server/public-catalog");
-    const course = await getPublicCourse("crs_1");
+
+    const course = await getPublicCourse("revit-arquitectura");
+
     expect(course?.syllabusUrl).toBe("https://x/temario.pdf");
-    expect(Object.keys(course!)).toEqual([
-      "id",
-      "name",
-      "description",
-      "syllabusUrl",
-      "nextCohorts",
+    expect(course?.modules).toEqual([
+      { title: "Fundamentos", topics: ["Interfaz", "Niveles"] },
+      { title: "Documentación", topics: ["Planos"] },
     ]);
+    expect(course?.learningObjectives).toEqual([
+      "Modelar en Revit",
+      "Documentar un proyecto",
+    ]);
+    expect(course?.targetAudience).toBe("Arquitectos y estudiantes");
+  });
+
+  it("curso sin objetivos ni temario cargados devuelve arrays vacíos, no null", async () => {
+    selectQueue.push([{ id: "org_1" }], [courseRow()], [], []);
+    const { getPublicCourse } = await import("@/server/public-catalog");
+    const course = await getPublicCourse("crs_1");
+    expect(course?.learningObjectives).toEqual([]);
+    expect(course?.modules).toEqual([]);
+  });
+
+  it("FR-022 — el detalle nunca incluye costo, cupo, profesor ni datos de alumnos", async () => {
+    selectQueue.push([{ id: "org_1" }], [courseRow()], [], []);
+    const { getPublicCourse } = await import("@/server/public-catalog");
+    const course = await getPublicCourse("crs_1");
+
+    const serialized = JSON.stringify(course);
+    for (const forbidden of [
+      "cost",
+      "capacity",
+      "teacher",
+      "contact",
+      "enrollment",
+      "license",
+      "amount",
+      "invoice",
+      "classroom",
+      "whatsapp",
+    ]) {
+      expect(serialized.toLowerCase()).not.toContain(forbidden);
+    }
   });
 });

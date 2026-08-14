@@ -35,7 +35,16 @@ vi.mock("@/lib/db", () => ({
     insert: (table: unknown) => ({
       values: (values: unknown) => {
         inserts.push({ table, values });
-        return Promise.resolve([values]);
+        // 006 — `createCourse` encadena `.returning()` para devolver la fila
+        // persistida; el resto de los inserts se sigue await-eando directo.
+        const result = Promise.resolve([values]) as Promise<unknown[]> & {
+          returning?: () => Promise<unknown[]>;
+        };
+        result.returning = () =>
+          Promise.resolve([
+            { createdAt: new Date("2026-08-12"), ...(values as object) },
+          ]);
+        return result;
       },
     }),
     update: (table: unknown) => ({
@@ -86,10 +95,12 @@ describe("courses: createCourse / createCohort (004)", () => {
   });
 
   it("createCourse inserta con organizationId y devuelve el id generado", async () => {
+    selectQueue.push([]); // 006 — resolución del slug: ninguno ocupado
     const { createCourse } = await import("@/server/courses");
-    const id = await createCourse("org_1", { name: "Revit" });
+    const result = await createCourse("org_1", { name: "Revit" });
 
-    expect(id).toMatch(/^crs_/);
+    if (!result.ok) throw new Error(result.message);
+    expect(result.id).toMatch(/^crs_/);
     expect(inserts).toHaveLength(1);
     const values = inserts[0]!.values as { organizationId: string; name: string };
     expect(values.organizationId).toBe("org_1");
@@ -121,7 +132,7 @@ describe("courses: createCourse / createCohort (004)", () => {
     expect(values.cost).toBeNull();
   });
 
-  it("createCohort (005 FR-005) acepta teacherId/cost/frequency/classroom/syllabusUrl", async () => {
+  it("createCohort (005 FR-005) acepta teacherId/cost/frequency/classroom", async () => {
     pushCourseExists();
     pushTeacherExists();
     const { createCohort } = await import("@/server/courses");
@@ -132,7 +143,6 @@ describe("courses: createCourse / createCohort (004)", () => {
       cost: 76000,
       frequency: "lunes y miércoles 18:30-20:30",
       classroom: "Aula 3",
-      syllabusUrl: "https://example.com/temario.pdf",
     });
 
     if (!result.ok) throw new Error(result.message);
@@ -141,13 +151,14 @@ describe("courses: createCourse / createCohort (004)", () => {
       cost: number;
       frequency: string;
       classroom: string;
-      syllabusUrl: string;
     };
     expect(values.teacherId).toBe("tch_1");
     expect(values.cost).toBe(76000);
     expect(values.frequency).toBe("lunes y miércoles 18:30-20:30");
     expect(values.classroom).toBe("Aula 3");
-    expect(values.syllabusUrl).toBe("https://example.com/temario.pdf");
+    // 006 — `syllabusUrl` ya no es un campo de la cohorte; ver el test de
+    // herencia desde el curso más abajo.
+    expect(values).not.toHaveProperty("syllabusUrl");
   });
 
   it("createCohort (005 DV-004) con softwareIds inserta filas en cohort_software", async () => {
@@ -247,12 +258,11 @@ describe("courses: createCourse / createCohort (004)", () => {
             cost: 76000,
             frequency: null,
             classroom: null,
-            syllabusUrl: null,
             capacity: 20,
             whatsappGroupLink: null,
             status: "planificada",
           },
-          course: { id: "crs_revit", name: "Revit" },
+          course: { id: "crs_revit", name: "Revit", syllabusUrl: null },
           teacher: { id: "tch_1", name: "Ing. Paola Suárez" },
         },
       ],
@@ -265,6 +275,39 @@ describe("courses: createCourse / createCohort (004)", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]!.teacher).toEqual({ id: "tch_1", name: "Ing. Paola Suárez" });
     expect(rows[0]!.software).toEqual([{ id: "sw_1", name: "Revit" }]);
+  });
+
+  it("listCohorts (006) hereda el temario del curso, no de la cohorte", async () => {
+    selectQueue.push(
+      [
+        {
+          cohort: {
+            id: "coh_1",
+            courseId: "crs_revit",
+            startDate: new Date("2026-08-04"),
+            endDate: null,
+            cost: null,
+            frequency: null,
+            classroom: null,
+            capacity: null,
+            whatsappGroupLink: null,
+            status: "planificada",
+          },
+          course: {
+            id: "crs_revit",
+            name: "Revit",
+            syllabusUrl: "https://example.com/temario-revit.pdf",
+          },
+          teacher: null,
+        },
+      ],
+      []
+    );
+
+    const { listCohorts } = await import("@/server/courses");
+    const rows = await listCohorts("org_1");
+
+    expect(rows[0]!.syllabusUrl).toBe("https://example.com/temario-revit.pdf");
   });
 
   it("createCohort (005 T029, US4, FR-006) calcula licenseWarnings sin bloquear la creación", async () => {

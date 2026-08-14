@@ -14,7 +14,7 @@ const querySchema = z.object({
 /**
  * Datos completos del kanban: etapas ordenadas + tarjetas con su contacto.
  * 004 — sin `cohortId`: tablero GENERAL de ventas (enrollment.cohort_id
- * NULL). Con `cohortId`: tablero de esa camada puntual.
+ * NULL). Con `cohortId`: tablero de esa cohorte puntual.
  */
 export const GET = withAuth(async (session, req: Request) => {
   const query = parseQuery(new URL(req.url), querySchema);
@@ -28,10 +28,10 @@ export const GET = withAuth(async (session, req: Request) => {
     .where(scoped(schema.pipelineStage.organizationId, session.organizationId))
     .orderBy(asc(schema.pipelineStage.position));
 
-  // Iteración 6 (feedback en vivo: "poder filtrar en pipeline, por camada,
-  // por sin asignar camada") — sin param: sin camada (comportamiento
-  // original, 004); `cohortId=<id>`: esa camada puntual; `cohortId=all`:
-  // todas las inscripciones sin filtrar por camada (vista general nueva).
+  // Iteración 6 (feedback en vivo: "poder filtrar en pipeline, por cohorte,
+  // por sin asignar cohorte") — sin param: sin cohorte (comportamiento
+  // original, 004); `cohortId=<id>`: esa cohorte puntual; `cohortId=all`:
+  // todas las inscripciones sin filtrar por cohorte (vista general nueva).
   const cohortFilter =
     cohortId === "all"
       ? undefined

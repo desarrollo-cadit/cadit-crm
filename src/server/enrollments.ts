@@ -202,7 +202,7 @@ export type EnrollmentCommercialDto = {
 };
 
 /* ============================================================
- * US3 — Roster de camada compartido + checklist de onboarding
+ * US3 — Roster de cohorte compartido + checklist de onboarding
  * (contracts/cohort-roster.md)
  * ============================================================ */
 
@@ -210,12 +210,12 @@ export type CohortRosterDto = {
   cohort: {
     id: string;
     courseId: string;
-    /** 005 iteración 2 — nombre propio de la camada; null = usar courseName. */
+    /** 005 iteración 2 — nombre propio de la cohorte; null = usar courseName. */
     name: string | null;
     courseName: string;
     startDate: string;
     endDate: string | null;
-    /** Software declarado por la camada (cohort_software) — opciones para asignar licencia. */
+    /** Software declarado por la cohorte (cohort_software) — opciones para asignar licencia. */
     software: { id: string; name: string }[];
   };
   enrollments: RosterEntryDto[];
@@ -283,7 +283,7 @@ export function buildRosterEntry(
   };
 }
 
-/** 005 (T022) — roster completo de una camada, DTO variando según `role`. */
+/** 005 (T022) — roster completo de una cohorte, DTO variando según `role`. */
 export async function getCohortRoster(
   organizationId: string,
   cohortId: string,
@@ -344,14 +344,20 @@ export async function getCohortRoster(
 }
 
 function csvField(value: string | null): string {
-  const v = value ?? "";
+  let v = value ?? "";
+  // Anti inyección de fórmulas: Excel/Sheets ejecutan una celda que arranca con
+  // = + - @ (o tab/CR, que algunos parsers descartan antes de mirar el resto).
+  // El nombre puede venir de un formulario público SIN autenticar, así que un
+  // `=HYPERLINK(...)` o un `=cmd|...` llegaría hasta la máquina de quien abre
+  // el export. El apóstrofo inicial hace que la planilla lo trate como texto.
+  if (/^[=+\-@\t\r]/.test(v)) v = `'${v}`;
   // RFC 4180: entrecomillar si tiene coma, comilla o salto de línea; comillas escapadas duplicándolas.
   return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
 }
 
 /**
  * Iteración 6 (feedback en vivo: "exportar en formato csv los alumnos de esa
- * camada, solo nombre apellido y correo") — deliberadamente NO reusa
+ * cohorte, solo nombre apellido y correo") — deliberadamente NO reusa
  * `getCohortRoster`/`buildRosterEntry` (esos exponen mucho más que 3 campos,
  * y acá el pedido es explícito: sin monto/factura/checklist/teléfono en el
  * archivo exportado).

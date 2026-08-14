@@ -176,7 +176,7 @@ export const pipelineStage = pgTable(
   (t) => [index("stage_org_pos_idx").on(t.organizationId, t.position)]
 );
 
-/** 005 — Docente que dicta camadas (DV-005: entidad propia, no texto libre). */
+/** 005 — Docente que dicta cohortes (DV-005: entidad propia, no texto libre). */
 export const teacher = pgTable(
   "teacher",
   {
@@ -246,6 +246,28 @@ export const company = pgTable(
 /**
  * 004 — Catálogo de cursos que dicta el área de capacitaciones (p. ej. "Revit").
  */
+/**
+ * 006 — Categoría del catálogo ("IA", "BIM", "Diseño"). Tabla propia y no un
+ * texto libre en `course` para que el sitio comercial pueda filtrar por un id
+ * estable aunque se renombre la categoría, y para no depender de que quien
+ * carga el curso escriba siempre igual.
+ */
+export const courseCategory = pgTable(
+  "course_category",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    /** Identificador para URLs del sitio comercial (`/cursos?categoria=ia`). */
+    slug: text("slug").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("course_category_org_slug_uq").on(t.organizationId, t.slug)]
+);
+
 export const course = pgTable(
   "course",
   {
@@ -255,16 +277,82 @@ export const course = pgTable(
       .references(() => organization.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     description: text("description"),
+    /* --- 006: contenido de la página pública del curso ---
+     * El sitio comercial arma la landing del curso consumiendo
+     * `/api/public/courses`; hasta 005 solo existían `name`/`description`, que
+     * no alcanzan para una ficha de curso real. Todo lo de acá abajo es
+     * OPCIONAL: un curso sin cargar sigue sirviéndose igual que antes. */
+    /** URL pública del curso (`/cursos/<slug>`) — evita exponer el id interno. */
+    slug: text("slug").notNull(),
+    /** Descripción corta para tarjetas del catálogo; `description` es el cuerpo largo. */
+    tagline: text("tagline"),
+    categoryId: text("category_id").references(() => courseCategory.id, {
+      onDelete: "set null",
+    }),
+    level: text("level", { enum: ["inicial", "intermedio", "avanzado"] }),
+    modality: text("modality", { enum: ["en_vivo", "asincronico", "presencial"] }),
+    durationWeeks: integer("duration_weeks"),
+    hoursPerWeek: integer("hours_per_week"),
+    imageUrl: text("image_url"),
+    /** Bullets de "qué vas a aprender" — jsonb, mismo criterio que lab.transcript. */
+    learningObjectives: jsonb("learning_objectives").$type<string[]>(),
+    /** A quién está dirigido / conocimientos previos, en texto libre. */
+    targetAudience: text("target_audience"),
+    /**
+     * 006 — el temario en PDF vive acá y NO en `cohort`: es del curso, no de
+     * una edición puntual. Hasta 005 estaba en `cohort.syllabus_url`, lo que
+     * obligaba a repetirlo en cada cohorte; la migración 0015 lo subió acá y la
+     * cohorte ahora lo hereda al serializarse.
+     */
+    syllabusUrl: text("syllabus_url"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
-  (t) => [index("course_org_idx").on(t.organizationId)]
+  (t) => [
+    index("course_org_idx").on(t.organizationId),
+    index("course_category_idx").on(t.categoryId),
+    uniqueIndex("course_org_slug_uq").on(t.organizationId, t.slug),
+  ]
+);
+
+/**
+ * 006 — Temario estructurado del curso: un módulo por fila, con sus temas.
+ * Estructurado y no un PDF suelto para que el sitio comercial pueda
+ * renderizarlo (acordeón de módulos) y para poder corregir un tema sin
+ * regenerar un archivo. Convive con `course.syllabus_url`, que sigue siendo
+ * el PDF descargable.
+ */
+export const courseModule = pgTable(
+  "course_module",
+  {
+    id: text("id").primaryKey(),
+    // Multi-tenancy (constitución III): organization_id explícito aunque se
+    // pueda derivar de course_id — toda query pasa por `scoped()`.
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    courseId: text("course_id")
+      .notNull()
+      .references(() => course.id, { onDelete: "cascade" }),
+    /** Orden de aparición en la web; contiguo desde 0, lo reasigna el server. */
+    position: integer("position").notNull(),
+    title: text("title").notNull(),
+    /** Temas del módulo, en orden. */
+    topics: jsonb("topics").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  // Org-first, como el resto de las tablas de dominio: toda lectura del temario
+  // filtra por organización y curso antes de ordenar por posición.
+  (t) => [
+    index("course_module_course_idx").on(t.organizationId, t.courseId, t.position),
+  ]
 );
 
 /**
  * 005 iteración 2 — Puente N:N: qué curso(s) dicta un profesor. Sin `id`
  * propio, mismo patrón que `cohort_software`. Usado para filtrar el selector
- * de profesor de una camada por curso (feedback en vivo del dueño).
+ * de profesor de una cohorte por curso (feedback en vivo del dueño).
  */
 export const teacherCourse = pgTable(
   "teacher_course",
@@ -284,7 +372,7 @@ export const teacherCourse = pgTable(
 
 /**
  * 004 — Camada: una edición concreta de un `course`, con fechas y profesor
- * propios. Varias camadas pueden compartir curso.
+ * propios. Varias cohortes pueden compartir curso.
  */
 export const cohort = pgTable(
   "cohort",
@@ -296,7 +384,7 @@ export const cohort = pgTable(
     courseId: text("course_id")
       .notNull()
       .references(() => course.id, { onDelete: "restrict" }),
-    /** 005 iteración 2 — nombre propio de la camada; NULL = usar course.name. */
+    /** 005 iteración 2 — nombre propio de la cohorte; NULL = usar course.name. */
     name: text("name"),
     startDate: timestamp("start_date").notNull(),
     endDate: timestamp("end_date"),
@@ -312,7 +400,7 @@ export const cohort = pgTable(
     startTime: text("start_time"),
     endTime: text("end_time"),
     /**
-     * 005 iteración 4 — qué días de la semana dicta esta camada dentro de
+     * 005 iteración 4 — qué días de la semana dicta esta cohorte dentro de
      * [start_date, end_date], para poder dibujarla en el calendario semanal
      * (antes aparecía TODOS los días del rango, fines de semana incluidos).
      * CSV de índices 0=lunes..6=domingo (mismo orden que WEEKDAYS del
@@ -321,7 +409,8 @@ export const cohort = pgTable(
      */
     daysOfWeek: text("days_of_week"),
     classroom: text("classroom"),
-    syllabusUrl: text("syllabus_url"),
+    // 006 — `syllabus_url` se movió a `course`: el temario es del curso, no de
+    // la edición. La cohorte lo sigue exponiendo en su DTO, heredado del curso.
     capacity: integer("capacity"),
     whatsappGroupLink: text("whatsapp_group_link"),
     status: text("status", {
@@ -339,7 +428,7 @@ export const cohort = pgTable(
 );
 
 /**
- * 005 — Puente N:N: qué software(s) declara usar una camada (DV-004,
+ * 005 — Puente N:N: qué software(s) declara usar una cohorte (DV-004,
  * FR-006). Sin `id` propio, es una tabla puente pura.
  */
 export const cohortSoftware = pgTable(
@@ -361,8 +450,8 @@ export const cohortSoftware = pgTable(
 /**
  * 004 — Reemplaza a `lead`. `cohort_id` NULL = lead general de ventas de la
  * academia (mismo rol que el `lead` de antes, sin cambio de comportamiento);
- * con `cohort_id` asignada, es la inscripción a esa camada puntual. Un mismo
- * contacto puede tener su lead general Y N inscripciones a camadas distintas.
+ * con `cohort_id` asignada, es la inscripción a esa cohorte puntual. Un mismo
+ * contacto puede tener su lead general Y N inscripciones a cohortes distintas.
  */
 export const enrollment = pgTable(
   "enrollment",
@@ -408,11 +497,11 @@ export const enrollment = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [
-    // Una inscripción por contacto y camada (cuando hay camada asignada).
+    // Una inscripción por contacto y cohorte (cuando hay cohorte asignada).
     uniqueIndex("enrollment_contact_cohort_uq")
       .on(t.contactId, t.cohortId)
       .where(sql`${t.cohortId} IS NOT NULL`),
-    // Un solo lead general (sin camada) por contacto — reemplaza lead_contact_uq.
+    // Un solo lead general (sin cohorte) por contacto — reemplaza lead_contact_uq.
     uniqueIndex("enrollment_contact_general_uq")
       .on(t.contactId)
       .where(sql`${t.cohortId} IS NULL`),

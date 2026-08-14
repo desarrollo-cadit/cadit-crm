@@ -1,4 +1,4 @@
-# Specification Quality Checklist: Modelo académico — cursos, camadas e inscripciones (Fase 1)
+# Specification Quality Checklist: Modelo académico — cursos, cohortes e inscripciones (Fase 1)
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-08-10

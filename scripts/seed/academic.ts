@@ -51,7 +51,7 @@ if (!force && !(await isAcademicDemoEmpty(db, org.id))) {
 
 const result = await seedAcademicDemo(db, org.id);
 console.log(
-  `[seed:academic] Demo académica cargada: ${result.courses} cursos, ${result.cohorts} camadas, ${result.enrollments} inscripciones`
+  `[seed:academic] Demo académica cargada: ${result.courses} cursos, ${result.cohorts} cohortes, ${result.enrollments} inscripciones`
 );
 await sql.end();
 process.exit(0);

@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 /**
  * 005 iteración 2 — alta/edición del catálogo de software desde la pestaña
  * "Software" de /academico (feedback en vivo: no había forma de ver/editar
- * el catálogo fuera del selector de camada). `initial` presente = edición
+ * el catálogo fuera del selector de cohorte). `initial` presente = edición
  * (PATCH `/api/software/:id`, que ya valida no bajar de lo asignado);
  * ausente = alta (POST `/api/software`).
  *

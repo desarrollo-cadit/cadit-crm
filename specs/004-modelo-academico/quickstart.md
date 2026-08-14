@@ -13,8 +13,8 @@ kanban existente.
    Al generar, `drizzle-kit` va a preguntar si `lead` se renombra a `enrollment`
    (en vez de dropear+crear) — confirmar el rename (ver `research.md` DV-004).
 
-2. Extender `scripts/seed/demo.ts` con: un contacto SIN camada (lead general), un
-   curso, una camada, y una inscripción con camada — y ejecutar:
+2. Extender `scripts/seed/demo.ts` con: un contacto SIN cohorte (lead general), un
+   curso, una cohorte, y una inscripción con cohorte — y ejecutar:
 
    ```bash
    pnpm seed:demo
@@ -32,7 +32,7 @@ kanban existente.
      distinta → debe insertar sin error.
    - Insertar una segunda `enrollment` para el mismo par `(contact_id, cohort_id)` →
      debe fallar por `enrollment_contact_cohort_uq`.
-   - Insertar una segunda `enrollment` sin camada para un contacto que ya tiene un
+   - Insertar una segunda `enrollment` sin cohorte para un contacto que ya tiene un
      lead general → debe fallar por `enrollment_contact_general_uq`.
 
 5. Verificar que la auto-creación de WhatsApp sigue igual (FR-010/SC-005): con los
@@ -42,7 +42,7 @@ kanban existente.
    `lead`.
 
 6. Con la app corriendo, abrir el pipeline (`/pipeline`):
-   - Sin filtro: ver el tablero general con los leads sin camada.
+   - Sin filtro: ver el tablero general con los leads sin cohorte.
    - Confirmar que se pueden arrastrar tarjetas entre columnas (drag & drop existente,
      ahora sobre `enrollment`).
    - Vía `PATCH /api/pipeline/leads/[id]` con `{ cohortId: "coh_..." }` (curl o script),

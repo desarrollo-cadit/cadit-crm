@@ -283,7 +283,7 @@ export async function applyHandoff(
 
 /**
  * 004 — Mueve el LEAD GENERAL del contacto (sin `cohort_id`): el agente de
- * IA opera desde la conversación de WhatsApp, no desde una camada concreta
+ * IA opera desde la conversación de WhatsApp, no desde una cohorte concreta
  * (ver research.md DV-005/T010).
  */
 async function moveLeadToStage(

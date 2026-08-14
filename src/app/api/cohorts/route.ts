@@ -1,57 +1,35 @@
 import { z } from "zod";
-import { apiError, parseBody, withAuth } from "@/lib/api";
-import { createCohort, listCohorts } from "@/server/courses";
+import { apiError, parseBody, parseQuery, withAuth } from "@/lib/api";
+import { cohortInputSchema, createCohort, listCohorts } from "@/server/courses";
 
 export const dynamic = "force-dynamic";
 
 const listQuerySchema = z.object({ courseId: z.string().min(1).optional() });
 
-// 005 (US1) — listado con teacher/software resueltos (listCohorts, T008);
-// necesario para la pantalla de gestión académica (T014). No estaba en el
-// enunciado literal de T012 (que solo mencionaba POST), pero listCohorts ya
-// se construyó exactamente para esto — ver reporte final de la fase.
+/**
+ * `withAuth` y no `requireFullAccess`: el DTO incluye `cost`, que es el precio
+ * de lista de la cohorte — dato de catálogo, no financiero. FR-016 restringe los
+ * montos de inscripción y facturación (ver `/api/enrollments` y
+ * `/api/dashboard/finance`), y FR-017 le da a soporte acceso a la vista de
+ * cohorte. Decisión del dueño, iteración 006.
+ */
 export const GET = withAuth(async (session, req: Request) => {
-  const parsedQuery = listQuerySchema.safeParse(
-    Object.fromEntries(new URL(req.url).searchParams)
-  );
-  if (!parsedQuery.success) {
-    return apiError(422, "invalid_query", "courseId inválido");
-  }
+  const query = parseQuery(new URL(req.url), listQuerySchema);
+  if (!query.ok) return query.response;
+
   const rows = await listCohorts(session.organizationId, {
-    courseId: parsedQuery.data.courseId,
+    courseId: query.data.courseId,
   });
   return Response.json({ cohorts: rows });
 });
 
-const timeHHMM = z
-  .string()
-  .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Formato de hora inválido (HH:MM)")
-  .nullable();
-
 const createSchema = z.object({
   courseId: z.string().min(1),
-  name: z.string().trim().max(200).nullable().optional(),
   startDate: z.coerce.date(),
-  endDate: z.coerce.date().nullable().optional(),
-  teacherId: z.string().min(1).nullable().optional(),
-  cost: z.number().int().nullable().optional(),
-  frequency: z.string().max(200).nullable().optional(),
-  startTime: timeHHMM.optional(),
-  endTime: timeHHMM.optional(),
-  // 005 iteración 4 — CSV "0,2" (lunes=0..domingo=6); vacío/null = sin días específicos.
-  daysOfWeek: z
-    .string()
-    .regex(/^[0-6](,[0-6])*$/, "CSV de índices de día 0-6")
-    .nullable()
-    .optional(),
-  classroom: z.string().max(120).nullable().optional(),
-  syllabusUrl: z.string().max(2000).nullable().optional(),
-  capacity: z.number().int().min(0).nullable().optional(),
-  whatsappGroupLink: z.string().max(2000).nullable().optional(),
-  softwareIds: z.array(z.string().min(1)).optional(),
+  ...cohortInputSchema,
 });
 
-// 005 (T012, US1) — planificar una camada completa (FR-005).
+// 005 (T012, US1) — planificar una cohorte completa (FR-005).
 export const POST = withAuth(async (session, req: Request) => {
   const body = await parseBody(req, createSchema);
   if (!body.ok) return body.response;

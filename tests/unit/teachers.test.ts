@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * 005 (T035, US5, DV-006, FR-008): superposición de rango de fechas
- * detectada entre dos camadas del MISMO profesor; camadas de profesores
+ * detectada entre dos cohortes del MISMO profesor; cohortes de profesores
  * distintos no generan advertencia; `endDate` NULL se trata como "en curso".
  */
 
@@ -90,7 +90,7 @@ function cohortRow(
 }
 
 describe("findScheduleConflicts (T033, DV-006)", () => {
-  it("detecta superposición entre dos camadas del mismo profesor", async () => {
+  it("detecta superposición entre dos cohortes del mismo profesor", async () => {
     const { findScheduleConflicts } = await import("@/server/teachers");
     selectQueue.push([cohortRow("coh_existing", "2026-08-01", "2026-09-30")]);
 
@@ -133,7 +133,7 @@ describe("findScheduleConflicts (T033, DV-006)", () => {
     expect(conflicts).toHaveLength(1);
   });
 
-  it("excluye la propia camada (excludeCohortId) al editar", async () => {
+  it("excluye la propia cohorte (excludeCohortId) al editar", async () => {
     const { findScheduleConflicts } = await import("@/server/teachers");
     selectQueue.push([cohortRow("coh_self", "2026-08-01", "2026-09-30")]);
 

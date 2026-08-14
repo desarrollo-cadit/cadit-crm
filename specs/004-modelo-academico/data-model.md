@@ -16,13 +16,13 @@ Todas las tablas nuevas llevan `organization_id NOT NULL` con índice org-first
 
 Índices: `course_org_idx (organization_id)`.
 
-## `cohort` (nueva) — "camada"
+## `cohort` (nueva) — "cohorte"
 
 | Columna | Tipo | Notas |
 |---|---|---|
 | `id` | text PK | prefijo `coh_` |
 | `organization_id` | text NOT NULL → `organization.id` | `onDelete: cascade` |
-| `course_id` | text NOT NULL → `course.id` | `onDelete: restrict` (no borrar curso con camadas) |
+| `course_id` | text NOT NULL → `course.id` | `onDelete: restrict` (no borrar curso con cohortes) |
 | `start_date` | timestamp NOT NULL | |
 | `end_date` | timestamp | nullable |
 | `professor` | text | nullable |
@@ -40,7 +40,7 @@ Todas las tablas nuevas llevan `organization_id NOT NULL` con índice org-first
 | `id` | text PK | prefijo `enr_` (antes `ld_`) |
 | `organization_id` | text NOT NULL → `organization.id` | igual que `lead` hoy |
 | `contact_id` | text NOT NULL → `contact.id` | igual que `lead` hoy |
-| `cohort_id` | text **NULLABLE** → `cohort.id` | `onDelete: restrict`. **NULL = lead general de ventas** (equivalente al `lead` de hoy); con valor = inscripción a esa camada |
+| `cohort_id` | text **NULLABLE** → `cohort.id` | `onDelete: restrict`. **NULL = lead general de ventas** (equivalente al `lead` de hoy); con valor = inscripción a esa cohorte |
 | `stage_id` | text NOT NULL → `pipeline_stage.id` | igual que `lead` hoy (ver DV-001) |
 | `position` | integer NOT NULL default 0 | igual que `lead` hoy |
 | `enrolled_at` | timestamp | nullable — fecha en que pasó a `inscripto` (solo aplica cuando tiene `cohort_id`) |
@@ -49,25 +49,25 @@ Todas las tablas nuevas llevan `organization_id NOT NULL` con índice org-first
 
 Índices:
 - `enrollment_contact_cohort_uq` UNIQUE PARCIAL `(contact_id, cohort_id) WHERE
-  cohort_id IS NOT NULL` — una inscripción por contacto y camada.
+  cohort_id IS NOT NULL` — una inscripción por contacto y cohorte.
 - `enrollment_contact_general_uq` UNIQUE PARCIAL `(contact_id) WHERE cohort_id IS
   NULL` — un solo lead general por contacto (reemplaza a `lead_contact_uq`, ver
   research.md DV-003).
 - `enrollment_org_stage_idx (organization_id, stage_id, position)` — igual que
   `lead_org_stage_idx` hoy.
 - `enrollment_org_cohort_idx (organization_id, cohort_id)` — para el filtro del
-  tablero por camada (FR-007); también sirve para el filtro `cohort_id IS NULL` del
+  tablero por cohorte (FR-007); también sirve para el filtro `cohort_id IS NULL` del
   tablero general.
 
-**Relaciones**: un `contact` → a lo sumo 1 `enrollment` sin camada (su lead general) +
-N `enrollment` con camada (una por `cohort` distinta). Una `cohort` → N `enrollment`.
+**Relaciones**: un `contact` → a lo sumo 1 `enrollment` sin cohorte (su lead general) +
+N `enrollment` con cohorte (una por `cohort` distinta). Una `cohort` → N `enrollment`.
 Cada `enrollment` → exactamente 1 `pipeline_stage` (su etapa actual).
 
 **Transiciones**:
 - **De etapa**: la etapa (`stage_id`) se mueve entre las 7 sembradas vía el mismo
   mecanismo de drag&drop / `PATCH /api/pipeline/leads/[id]` que ya existe — sin
   reglas de transición nuevas impuestas por el backend en esta fase.
-- **De camada**: `cohort_id` pasa de `NULL` a un valor (o entre valores) vía el mismo
+- **De cohorte**: `cohort_id` pasa de `NULL` a un valor (o entre valores) vía el mismo
   endpoint (`PATCH /api/pipeline/leads/[id]`, ahora acepta `cohortId` en el body) —
   no crea una fila nueva, no reinicia la etapa (FR-008, DV-007).
 
@@ -113,8 +113,8 @@ Sin cambios en columnas existentes (`wa_identity`, `phone`, `wa_user_id`, etc.).
 
 - Borrar `course` con `cohort` dependientes → **bloqueado** (`onDelete: restrict`).
 - Borrar `cohort` con `enrollment` dependientes → **bloqueado** (`onDelete:
-  restrict`) — si hace falta "vaciar" una camada, se reasigna cada `enrollment` a otra
-  camada o se vuelve a `cohort_id = NULL` (lead general) antes de borrar.
+  restrict`) — si hace falta "vaciar" una cohorte, se reasigna cada `enrollment` a otra
+  cohorte o se vuelve a `cohort_id = NULL` (lead general) antes de borrar.
 - Borrar `enrollment` con `license` asociada → **cascada** (`onDelete: cascade`).
 - Borrar `pipeline_stage` con `enrollment` dependientes → sin cambios respecto al
   comportamiento actual de `lead` (la API de stages ya exige `moveTo` antes de borrar).

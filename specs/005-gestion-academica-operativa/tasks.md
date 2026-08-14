@@ -54,13 +54,13 @@ pueden empezar.
 
 ---
 
-## Phase 3: User Story 1 - Planificar una camada con toda la información operativa (Priority: P1) 🎯 MVP
+## Phase 3: User Story 1 - Planificar una cohorte con toda la información operativa (Priority: P1) 🎯 MVP
 
-**Goal**: coordinación crea/edita una camada con costo, horario, aula, temario,
+**Goal**: coordinación crea/edita una cohorte con costo, horario, aula, temario,
 software y profesor, sin volver a la planilla.
 
-**Independent Test**: crear curso + camada indicando todos los campos vía API;
-`GET` esa camada y confirmar que todos quedaron guardados.
+**Independent Test**: crear curso + cohorte indicando todos los campos vía API;
+`GET` esa cohorte y confirmar que todos quedaron guardados.
 
 - [X] T006 [US1] Crear `src/server/teachers.ts`: `createTeacher`,
       `listTeachers` (scoped por organización)
@@ -86,9 +86,9 @@ software y profesor, sin volver a la planilla.
 - [X] T014 [US1] Pantalla de gestión académica para coordinación:
       `src/components/academic/cohort-form.tsx` +
       `src/app/(app)/academico/page.tsx` — listar/crear/editar cursos y
-      camadas (costo, horario, aula, temario, software, profesor)
+      cohortes (costo, horario, aula, temario, software, profesor)
 
-**Checkpoint**: coordinación puede planificar una camada completa sin Excel.
+**Checkpoint**: coordinación puede planificar una cohorte completa sin Excel.
 
 ---
 
@@ -121,15 +121,15 @@ con mensaje explícito.
       `sellerId` no-miembro → 422
 - [X] T021 [US2] Formulario de inscripción para ventas:
       `src/components/enrollments/enroll-form.tsx` + pantalla de alta (dentro
-      de la vista de camada o como acción propia)
+      de la vista de cohorte o como acción propia)
 
 **Checkpoint**: ventas inscribe sin Excel, sin duplicar contactos.
 
 ---
 
-## Phase 5: User Story 3 - Soporte hace seguimiento del onboarding por camada (Priority: P1)
+## Phase 5: User Story 3 - Soporte hace seguimiento del onboarding por cohorte (Priority: P1)
 
-**Goal**: pantalla de camada compartida entre soporte y ventas/coordinación,
+**Goal**: pantalla de cohorte compartida entre soporte y ventas/coordinación,
 con checklist de onboarding; soporte nunca ve datos financieros.
 
 **Independent Test**: `GET` el roster como rol `soporte` → no trae
@@ -151,7 +151,7 @@ con checklist de onboarding; soporte nunca ve datos financieros.
       DTO oculta campos financieros cuando `role === "soporte"` y los incluye
       para cualquier otro rol; `updateChecklist` persiste cada campo
       independientemente
-- [X] T027 [US3] Pantalla compartida de camada:
+- [X] T027 [US3] Pantalla compartida de cohorte:
       `src/components/cohorts/roster-client.tsx` +
       `src/app/(app)/cohorts/[id]/page.tsx` — lista de inscripciones +
       checklist editable; oculta la sección financiera en el cliente cuando el
@@ -165,17 +165,17 @@ con checklist de onboarding; soporte nunca ve datos financieros.
 ## Phase 6: User Story 4 - Inventario de licencias con alerta de faltante (Priority: P2)
 
 **Goal**: pool de licencias por software; bloqueo al asignar sin stock;
-advertencia al planificar una camada que lo supera.
+advertencia al planificar una cohorte que lo supera.
 
 **Independent Test**: configurar total de licencias, asignar hasta agotar →
-409/422 en la siguiente asignación; camada con cupo > disponibles → advertencia
+409/422 en la siguiente asignación; cohorte con cupo > disponibles → advertencia
 no bloqueante.
 
 - [X] T028 [US4] Crear `src/server/licenses.ts`: `availableLicenses(softwareId)`,
       `assignLicense(enrollmentId, softwareId)` (rechaza si `available === 0`,
       FR-003), `unassignLicense(enrollmentId)` (libera el pool)
 - [X] T029 [US4] En `src/server/courses.ts` (`createCohort`/`updateCohort`):
-      calcular y devolver `licenseWarnings` cuando `capacity` de la camada
+      calcular y devolver `licenseWarnings` cuando `capacity` de la cohorte
       supera `availableLicenses` de alguno de sus `software` declarados
       (FR-006, no bloquea)
 - [X] T030 [US4] `src/app/api/enrollments/[id]/license/route.ts` (`PUT` asignar
@@ -195,10 +195,10 @@ no bloqueante.
 
 ## Phase 7: User Story 5 - Alertar choques de horario de un profesor (Priority: P3)
 
-**Goal**: advertencia (no bloqueo) al asignar a un profesor una camada
+**Goal**: advertencia (no bloqueo) al asignar a un profesor una cohorte
 superpuesta con otra que ya tiene.
 
-**Independent Test**: dos camadas del mismo profesor con fechas superpuestas →
+**Independent Test**: dos cohortes del mismo profesor con fechas superpuestas →
 advertencia en la respuesta al guardar la segunda; la creación NO se bloquea.
 
 - [X] T033 [US5] En `src/server/teachers.ts`: `findScheduleConflicts(teacherId,
@@ -206,9 +206,9 @@ advertencia en la respuesta al guardar la segunda; la creación NO se bloquea.
       fechas (DV-006; `endDate` NULL = "en curso")
 - [X] T034 [US5] Integrar en `src/server/courses.ts`
       (`createCohort`/`updateCohort`): devolver `scheduleWarnings` con las
-      camadas en conflicto, sin bloquear (FR-008)
+      cohortes en conflicto, sin bloquear (FR-008)
 - [X] T035 [P] [US5] Test unitario en `tests/unit/teachers.test.ts` (nuevo):
-      superposición detectada entre dos camadas del mismo profesor; camadas de
+      superposición detectada entre dos cohortes del mismo profesor; cohortes de
       profesores distintos no generan advertencia; `endDate` NULL se trata como
       en curso
 
@@ -218,10 +218,10 @@ advertencia en la respuesta al guardar la segunda; la creación NO se bloquea.
 
 ## Phase 8: User Story 6 - Calendario y dashboard financiero (Priority: P3)
 
-**Goal**: calendario de camadas por fecha; panel en el home con facturación del
+**Goal**: calendario de cohortes por fecha; panel en el home con facturación del
 mes vs. el anterior, solo para acceso completo.
 
-**Independent Test**: camadas con fechas distintas aparecen ubicadas en el
+**Independent Test**: cohortes con fechas distintas aparecen ubicadas en el
 calendario; el home muestra el total facturado del mes actual vs. el anterior
 para el rol con acceso completo, y 403 para `soporte`.
 
@@ -249,7 +249,7 @@ para el rol con acceso completo, y 403 para `soporte`.
 exponer el CRM.
 
 **Independent Test**: sin sesión, `GET /api/public/courses` devuelve 200 con
-cursos y camadas futuras; una camada ya iniciada NO aparece; la respuesta nunca
+cursos y cohortes futuras; una cohorte ya iniciada NO aparece; la respuesta nunca
 incluye datos de alumnos.
 
 - [X] T041 [US7] Crear `src/server/public-catalog.ts`: `resolveSoleOrganizationId()`
@@ -260,7 +260,7 @@ incluye datos de alumnos.
 - [X] T043 [US7] `src/app/api/public/courses/[id]/route.ts` (`GET`, sin
       `withAuth`, 404 si no existe)
 - [X] T044 [P] [US7] Test unitario en `tests/unit/public-catalog.test.ts`
-      (nuevo): excluye camadas iniciadas/finalizadas; el DTO no expone ningún
+      (nuevo): excluye cohortes iniciadas/finalizadas; el DTO no expone ningún
       campo de `contact`/`enrollment`/`license`; 404 en curso inexistente
 
 **Checkpoint**: el sitio externo consume el catálogo sin acceso al CRM.
@@ -299,7 +299,7 @@ incluye datos de alumnos.
     distintos.
   - US2 (T015-T021) depende de que exista `company` (propia) y reutiliza
     `contact`/`courses` de la Fase 1 — no depende de US1 en código, solo en
-    orden lógico de negocio (inscribir requiere una camada creada).
+    orden lógico de negocio (inscribir requiere una cohorte creada).
   - US3 (T022-T027) depende de que `enrollment` tenga los campos comerciales
     (T002) y de US1/US2 para tener datos que mostrar en el roster.
   - US4 (T028-T032) depende de `software`/`license.software_id` (T002, T007) —
@@ -333,7 +333,7 @@ incluye datos de alumnos.
 
 1. Completar Phase 1 (Setup) y Phase 2 (Foundational).
 2. Completar Phase 3 (US1) → Phase 4 (US2) → Phase 5 (US3), en ese orden: cada
-   una es prerequisito de negocio de la siguiente (planificar camada → inscribir
+   una es prerequisito de negocio de la siguiente (planificar cohorte → inscribir
    → hacer seguimiento).
 3. **Parar y validar**: correr `quickstart.md` pasos 1-2 y 5-6 contra Postgres
    real (Constitución IX).
@@ -344,7 +344,7 @@ incluye datos de alumnos.
 ### Entrega incremental
 
 1. Setup + Foundational → base lista.
-2. US1 → coordinación planifica camadas completas.
+2. US1 → coordinación planifica cohortes completas.
 3. US2 → ventas inscribe sin duplicar.
 4. US3 → soporte hace seguimiento — **cierre del MVP**, las dos planillas ya no
    hacen falta.

@@ -4,10 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { CohortDto } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { cn, WEEKDAY_LABELS } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-
-const WEEKDAYS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 /** Eje horario visible — cubre clases diurnas y nocturnas típicas. */
 const DAY_START_MIN = 7 * 60; // 07:00
 const DAY_END_MIN = 22 * 60; // 22:00
@@ -53,7 +51,7 @@ type PositionedSession = {
  * 005 iteración 4 (feedback en vivo: "no fue hecho como pensaba que se vea,
  * estilo Google Calendar, que se vean los horarios de comienzo a fin") —
  * vista SEMANAL con eje horario, no una grilla de mes con el horario como
- * texto al lado. Cada camada aparece SOLO en los días de la semana que
+ * texto al lado. Cada cohorte aparece SOLO en los días de la semana que
  * declara (`daysOfWeek`, iteración 4) dentro de su rango
  * [startDate, endDate] — antes aparecía en TODOS los días del rango
  * (fines de semana incluidos) porque ese campo no existía.
@@ -61,27 +59,45 @@ type PositionedSession = {
 export function CalendarClient() {
   const [cohorts, setCohorts] = useState<CohortDto[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
+  const [currentTime, setCurrentTime] = useState(() => new Date());
 
+  // Un fallo no se traga: un calendario vacío por un 500 es indistinguible de
+  // una semana sin clases. Mismo criterio que la pantalla de gestión académica.
   const refetch = useCallback(async () => {
     setLoading(true);
-    const res = await fetch("/api/cohorts").catch(() => null);
-    setLoading(false);
-    if (!res?.ok) return;
-    const data = (await res.json()) as { cohorts: CohortDto[] };
-    setCohorts(data.cohorts);
+    try {
+      const res = await fetch("/api/cohorts");
+      if (!res.ok) throw new Error(String(res.status));
+      const data = (await res.json()) as { cohorts: CohortDto[] };
+      setCohorts(data.cohorts);
+      setLoadError(false);
+    } catch {
+      setLoadError(true);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
     void refetch();
   }, [refetch]);
 
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 60 * 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
   const weekDays = useMemo(
     () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
     [weekStart]
   );
 
-  // Sesiones posicionadas para la semana visible: por cada camada, por cada
+  // Sesiones posicionadas para la semana visible: por cada cohorte, por cada
   // día de la semana que declara (o todos si no declaró ninguno), si ese día
   // cae dentro de [startDate, endDate] Y en la semana que se está mostrando.
   const { timed, allDayByDay } = useMemo(() => {
@@ -125,6 +141,17 @@ export function CalendarClient() {
   }, [cohorts, weekDays]);
 
   const today = isoDay(new Date());
+  const currentMinutes =
+    currentTime.getHours() * 60 + currentTime.getMinutes();
+
+  const currentTimeTop =
+    (currentMinutes - DAY_START_MIN) * PX_PER_MIN;
+
+  const isCurrentTimeVisible =
+    isoDay(currentTime) === today &&
+    currentMinutes >= DAY_START_MIN &&
+    currentMinutes <= DAY_END_MIN;
+
   const hours = useMemo(
     () => Array.from({ length: (DAY_END_MIN - DAY_START_MIN) / 60 + 1 }, (_, i) => DAY_START_MIN / 60 + i),
     []
@@ -150,6 +177,17 @@ export function CalendarClient() {
       </header>
 
       <div className="flex-1 overflow-auto p-4">
+        {!loading && loadError && (
+          <div className="mb-4 flex items-center justify-between gap-4 rounded-lg border border-destructive/50 px-4 py-3">
+            <p className="text-sm text-destructive">
+              No se pudieron cargar las cohortes. El calendario puede estar vacío
+              por error, no por falta de clases.
+            </p>
+            <Button variant="outline" size="sm" onClick={() => void refetch()}>
+              Reintentar
+            </Button>
+          </div>
+        )}
         {loading ? (
           <p className="text-sm text-muted-foreground">Cargando…</p>
         ) : (
@@ -165,12 +203,12 @@ export function CalendarClient() {
                     isoDay(day) === today && "bg-brand-tint text-brand-text"
                   )}
                 >
-                  {WEEKDAYS[i]} <span className="text-muted-foreground">{day.getDate()}</span>
+                  {WEEKDAY_LABELS[i]} <span className="text-muted-foreground">{day.getDate()}</span>
                 </div>
               ))}
             </div>
 
-            {/* Fila de "todo el día" (camadas sin startTime/endTime) */}
+            {/* Fila de "todo el día" (cohortes sin startTime/endTime) */}
             <div className="grid grid-cols-[56px_repeat(7,1fr)] gap-px border-b">
               <div className="py-1 text-right text-[10px] text-muted-foreground">todo el día</div>
               {weekDays.map((_, i) => (
@@ -207,6 +245,15 @@ export function CalendarClient() {
                   className="relative border-l"
                   style={{ height: AXIS_HEIGHT }}
                 >
+                  {isCurrentTimeVisible && isoDay(day) === today && (
+                    <div
+                      className="pointer-events-none absolute left-0 right-0 z-20"
+                      style={{ top: currentTimeTop }}
+                    >
+                      <div className="absolute -left-1.5 -top-[4.5px] h-3 w-3 rounded-full bg-red-500" />
+                      <div className="h-0.5 w-full bg-red-500" />
+                    </div>
+                  )}
                   {hours.map((h) => (
                     <div
                       key={h}

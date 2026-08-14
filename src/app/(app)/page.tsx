@@ -28,7 +28,7 @@ export default async function HomePage() {
       <div className="flex-1 overflow-y-auto p-6">
         {!fullAccess && (
           <p className="mb-4 text-sm text-muted-foreground">
-            Bienvenido/a — usá el menú para ir a la bandeja o a tus camadas.
+            Bienvenido/a — usá el menú para ir a la bandeja o a tus cohortes.
           </p>
         )}
         <div className="grid gap-4 sm:grid-cols-2">

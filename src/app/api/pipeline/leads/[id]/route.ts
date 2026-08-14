@@ -12,7 +12,7 @@ type Params = { params: Promise<{ id: string }> };
 const patchSchema = z.object({
   stageId: z.string().min(1).optional(),
   position: z.number().int().min(0).optional(),
-  /** 004 — asigna/reasigna la camada de la inscripción; null = vuelve a lead general. */
+  /** 004 — asigna/reasigna la cohorte de la inscripción; null = vuelve a lead general. */
   cohortId: z.string().min(1).nullable().optional(),
 });
 

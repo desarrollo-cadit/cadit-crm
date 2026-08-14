@@ -28,6 +28,9 @@ const prefixes = {
   company: "cia",
   // 005 iteración 3 — formularios personalizados de captación (intake).
   intakeForm: "frm",
+  // 006 — contenido comercial del curso (catálogo público).
+  courseCategory: "cat",
+  courseModule: "mod",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

@@ -1,4 +1,4 @@
-# Tasks: Modelo académico + CRM de ventas — cursos, camadas e inscripciones (Fase 1)
+# Tasks: Modelo académico + CRM de ventas — cursos, cohortes e inscripciones (Fase 1)
 
 **Input**: Design documents from `/specs/004-modelo-academico/`
 
@@ -40,9 +40,9 @@ implementarse y validarse de forma independiente.
 - [X] T005 [P] Test unitario (ajustado: verificación de forma del schema, sin
       DB de test — ver nota al pie) de los dos índices únicos parciales de `enrollment` en
       `tests/unit/enrollment-constraints.test.ts`: dos filas con mismo
-      `(contact_id, cohort_id)` fallan; dos filas sin camada para el mismo contacto
-      fallan; combinaciones válidas (misma persona, camadas distintas, o una general
-      + una con camada) insertan sin error
+      `(contact_id, cohort_id)` fallan; dos filas sin cohorte para el mismo contacto
+      fallan; combinaciones válidas (misma persona, cohortes distintas, o una general
+      + una con cohorte) insertan sin error
 
 **Checkpoint**: schema y migración listos — las user stories pueden empezar.
 
@@ -63,11 +63,11 @@ como hoy, ahora sobre `enrollment` con `cohort_id NULL`.
       (research.md DV-005)
 - [X] T007 [US1] Actualizar `src/app/api/pipeline/board/route.ts`: usar
       `schema.enrollment`; sin `cohortId` filtrar `cohort_id IS NULL` (tablero
-      general); con `cohortId` filtrar por esa camada; renombrar el campo de
+      general); con `cohortId` filtrar por esa cohorte; renombrar el campo de
       respuesta `leads`→`enrollments` (contracts/pipeline-board.md)
 - [X] T008 [US1] Actualizar `src/app/api/pipeline/leads/[id]/route.ts`: operar sobre
       `schema.enrollment`; aceptar `cohortId` opcional (`string | null`) en el body
-      del `PATCH` para asignar/reasignar camada sin crear fila nueva
+      del `PATCH` para asignar/reasignar cohorte sin crear fila nueva
       (contracts/pipeline-board.md, FR-008)
 - [X] T009 [US1] Actualizar `src/components/pipeline/pipeline-client.tsx`: tipo
       `BoardLead`→`BoardEnrollment` (agregar `cohortId`), el fetch/estado pasa a leer
@@ -76,7 +76,7 @@ como hoy, ahora sobre `enrollment` con `cohort_id NULL`.
       `src/server/contacts.ts` (`getContactStage`) para operar sobre
       `schema.enrollment` filtrando explícitamente `cohort_id IS NULL` (el lead
       general) por `contactId` — el agente de IA y el panel de contacto operan desde
-      la conversación de WhatsApp, no desde una camada concreta. **Ampliado durante
+      la conversación de WhatsApp, no desde una cohorte concreta. **Ampliado durante
       la implementación** (no estaban mapeados en el plan original): también
       `src/app/api/bot/reset/route.ts` (reinicio del lead general al resetear una
       conversación de prueba) y `src/app/api/pipeline/stages/[id]/route.ts`
@@ -93,11 +93,11 @@ como hoy, ahora sobre `enrollment` con `cohort_id NULL`.
 
 ---
 
-## Phase 4: User Story 2 - Planificar una camada y verla como tablero propio (Priority: P1)
+## Phase 4: User Story 2 - Planificar una cohorte y verla como tablero propio (Priority: P1)
 
-**Goal**: poder crear curso + camada y consultar su tablero vacío filtrado.
+**Goal**: poder crear curso + cohorte y consultar su tablero vacío filtrado.
 
-**Independent Test**: crear curso+camada por script, `GET
+**Independent Test**: crear curso+cohorte por script, `GET
 /api/pipeline/board?cohortId=...` devuelve etapas sin inscripciones.
 
 - [X] T012 [US2] Crear `src/server/courses.ts` con `createCourse`/`createCohort`
@@ -106,33 +106,33 @@ como hoy, ahora sobre `enrollment` con `cohort_id NULL`.
       es un seed genérico — es la demo fija "Ferretería El Martillo" (negocio de
       ejemplo del CRM original), no el lugar para datos académicos. Se creó un seed
       independiente (`src/server/seed/academic.ts` + `scripts/seed/academic.ts` +
-      script `pnpm seed:academic`) que siembra 2 cursos y 3 camadas usando los
+      script `pnpm seed:academic`) que siembra 2 cursos y 3 cohortes usando los
       helpers de T012
 
-**Checkpoint**: se puede planificar una camada y ver su tablero (vacío) filtrado.
+**Checkpoint**: se puede planificar una cohorte y ver su tablero (vacío) filtrado.
 
 ---
 
-## Phase 5: User Story 3 - Un contacto se inscribe en más de una camada sin conflicto (Priority: P1)
+## Phase 5: User Story 3 - Un contacto se inscribe en más de una cohorte sin conflicto (Priority: P1)
 
 **Goal**: demostrar la relación N:N central de la fase — un contacto con su lead
-general y/o inscripciones en camadas distintas, sin conflicto.
+general y/o inscripciones en cohortes distintas, sin conflicto.
 
-**Independent Test**: seed con el mismo contacto en dos camadas distintas inserta sin
-error; el mismo par `(contacto, camada)` repetido falla.
+**Independent Test**: seed con el mismo contacto en dos cohortes distintas inserta sin
+error; el mismo par `(contacto, cohorte)` repetido falla.
 
 - [X] T014 [US3] El mismo `src/server/seed/academic.ts` (T013) siembra el contacto
-      "Diego Fernández" con lead general + inscripción a la camada A de Revit, y el
-      contacto "Renata Ibarra" inscripto en DOS camadas distintas (Revit camada B +
+      "Diego Fernández" con lead general + inscripción a la cohorte A de Revit, y el
+      contacto "Renata Ibarra" inscripto en DOS cohortes distintas (Revit cohorte B +
       Civil 3D) sin lead general — demuestra la coexistencia de FR-004/FR-005
 - [X] T015 [P] [US3] Sin DB de test para round-trip de constraints (ver nota de
       T005). La invariante ("un `contact_id` puede repetirse en `cohort_id`
       distintos, pero no en el mismo par") queda probada estructuralmente por
       `tests/unit/enrollment-constraints.test.ts` (T005: el índice único parcial
       solo cubre `(contact_id, cohort_id)`, nunca `contact_id` solo cuando hay
-      camada) + verificación en vivo real contra Postgres en quickstart.md paso 4
+      cohorte) + verificación en vivo real contra Postgres en quickstart.md paso 4
 
-**Checkpoint**: un contacto puede tener lead general + N inscripciones a camadas,
+**Checkpoint**: un contacto puede tener lead general + N inscripciones a cohortes,
 todas independientes.
 
 ---
@@ -140,9 +140,9 @@ todas independientes.
 ## Phase 6: User Story 4 - Mover una inscripción de etapa reutilizando el kanban existente (Priority: P2)
 
 **Goal**: confirmar que el drag & drop existente sigue funcionando sin cambios de UI,
-tanto en el tablero general como en el de una camada.
+tanto en el tablero general como en el de una cohorte.
 
-**Independent Test**: mover una tarjeta en `/pipeline` (con o sin filtro de camada) y
+**Independent Test**: mover una tarjeta en `/pipeline` (con o sin filtro de cohorte) y
 confirmar que persiste solo esa inscripción.
 
 - [X] T016 [US4] Revisado `src/components/pipeline/pipeline-client.tsx`
@@ -154,7 +154,7 @@ confirmar que persiste solo esa inscripción.
       máquina): `pnpm db:migrate` + `pnpm seed:academic` + `PATCH
       /api/pipeline/leads/[id]` moviendo etapa (equivalente al drag & drop) y
       asignando `cohortId` — la tarjeta persiste el cambio de etapa y desaparece del
-      tablero general al asignarle camada, apareciendo filtrada en
+      tablero general al asignarle cohorte, apareciendo filtrada en
       `/api/pipeline/board?cohortId=...`. La constraint `enrollment_contact_cohort_uq`
       frenó correctamente un intento de duplicar `(contact_id, cohort_id)` (FR-004)
 
@@ -185,8 +185,8 @@ confirmar que persiste solo esa inscripción.
       `pnpm lint` (0 errores), `pnpm build` (compila, 56 rutas), `pnpm test` (24
       archivos, 123 tests, todos en verde)
 - [X] T021 Verificado en vivo: `pnpm db:migrate` aplicó la migración contra Postgres
-      real, `pnpm seed:academic` sembró 2 cursos/3 camadas/5 inscripciones, y
-      `/api/pipeline/board` (con y sin filtro de camada) + `PATCH
+      real, `pnpm seed:academic` sembró 2 cursos/3 cohortes/5 inscripciones, y
+      `/api/pipeline/board` (con y sin filtro de cohorte) + `PATCH
       /api/pipeline/leads/[id]` confirmaron el comportamiento de `quickstart.md`
       paso 6 (ver detalle en T017)
 - [X] T022 `Status` de `specs/004-modelo-academico/spec.md` actualizado a
@@ -203,7 +203,7 @@ confirmar que persiste solo esa inscripción.
   — BLOQUEA todas las user stories.
 - **User Stories (Phase 3-7)**: todas dependen de Foundational. US1 (T006-T011) y US2
   (T012-T013) pueden avanzar en paralelo (archivos distintos). US3 (T014-T015)
-  depende de que T006 y T013 ya existan (usa el lead general Y una camada sembrada).
+  depende de que T006 y T013 ya existan (usa el lead general Y una cohorte sembrada).
   US4 (T016-T017) depende de T007-T009 (contrato del board/patch ya migrado). US5
   (T018-T019) es independiente del resto salvo T002.
 - **Polish (T020-T022)**: depende de que todas las stories elegidas estén completas.
@@ -229,13 +229,13 @@ confirmar que persiste solo esa inscripción.
 2. Completar Phase 3 (US1) — el CRM de ventas general sigue andando igual que hoy,
    ahora sobre `enrollment`.
 3. **Parar y validar**: correr `quickstart.md` pasos 1, 2 (parcial) y 5 (WhatsApp).
-4. Recién ahí sumar US2/US3 (gestión académica por camada) y US4/US5.
+4. Recién ahí sumar US2/US3 (gestión académica por cohorte) y US4/US5.
 
 ### Entrega incremental
 
 1. Setup + Foundational → base lista.
 2. US1 → el CRM de ventas no se rompe (riesgo más alto de la fase, va primero).
-3. US2 → se puede planificar una camada.
+3. US2 → se puede planificar una cohorte.
 4. US3 → un contacto puede tener varias inscripciones sin conflicto (el requisito
    central del pivot original).
 5. US4 → confirma que la UI existente no tiene regresiones.

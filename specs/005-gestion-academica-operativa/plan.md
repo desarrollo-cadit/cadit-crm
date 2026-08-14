@@ -51,7 +51,7 @@ interno" aunque no sea cross-tenant)
 **Scale/Scope**: 3 tablas nuevas (`software`, `teacher`, `company`) + 1 tabla
 puente (`cohort_software`) + columnas nuevas en `contact`, `cohort`, `enrollment`,
 `license`; ~8 endpoints nuevos o modificados; 1 rol nuevo; 4 pantallas nuevas
-(roster de camada, calendario, dashboard financiero, gestión de catálogos) fuera
+(roster de cohorte, calendario, dashboard financiero, gestión de catálogos) fuera
 del alcance de este `plan.md` de diseño de datos — se detallan en `tasks.md`
 
 ## Constitution Check

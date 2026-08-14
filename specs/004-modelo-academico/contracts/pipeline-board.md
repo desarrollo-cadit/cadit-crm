@@ -13,7 +13,7 @@ Devuelve todas las etapas y todos los `lead` de la organización del usuario en 
 
 ```
 GET /api/pipeline/board                      (tablero GENERAL — CRM de ventas)
-GET /api/pipeline/board?cohortId=<coh_...>    (tablero de UNA camada)
+GET /api/pipeline/board?cohortId=<coh_...>    (tablero de UNA cohorte)
 → 200 { stages: StageDto[], enrollments: BoardEnrollment[] }
 ```
 
@@ -24,7 +24,7 @@ GET /api/pipeline/board?cohortId=<coh_...>    (tablero de UNA camada)
   conceptualmente, un lead general (no existe `cohort_id` todavía), el tablero sin
   filtro sigue mostrando exactamente lo mismo que muestra hoy.
 - **Con `cohortId`**: devuelve las mismas etapas pero solo las `enrollment` de esa
-  camada.
+  cohorte.
 - `cohortId` que no pertenece a la organización del usuario en sesión → tratado como
   "sin resultados" (vía `scoped()`), nunca como error que filtre datos de otro tenant.
 
@@ -56,7 +56,7 @@ PATCH /api/pipeline/leads/[id]
 Body: { stageId?: string, position?: number, cohortId?: string | null }
 ```
 
-- `cohortId` es el campo nuevo (FR-008/DV-007): asigna o reasigna la camada de un
+- `cohortId` es el campo nuevo (FR-008/DV-007): asigna o reasigna la cohorte de un
   `enrollment` existente sin crear una fila nueva. `cohortId: null` explícito lo
   vuelve a lead general.
 - Sigue operando sobre la misma fila (ahora `enrollment` en vez de `lead`); el resto
@@ -76,7 +76,7 @@ Body: { stageId?: string, position?: number, cohortId?: string | null }
 
 ## Fuera de esta fase
 
-Cursos y camadas se crean por seed script / Drizzle Studio en Fase 1 (criterio de
+Cursos y cohortes se crean por seed script / Drizzle Studio en Fase 1 (criterio de
 aceptación del spec) — no hay endpoints CRUD públicos de `course`/`cohort` todavía;
-esos llegan en Fase 3 junto con sus pantallas (incluido el selector de camada para
+esos llegan en Fase 3 junto con sus pantallas (incluido el selector de cohorte para
 asignarla desde la UI).

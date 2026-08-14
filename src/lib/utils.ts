@@ -48,3 +48,31 @@ export function formatPhone(phone: string | null | undefined): string {
 export function fullName(c: { firstName: string; lastName?: string | null }): string {
   return c.lastName ? `${c.firstName} ${c.lastName}` : c.firstName;
 }
+
+/**
+ * 006 — Normaliza un texto a slug de URL. Tiene que dar EXACTAMENTE lo mismo
+ * que el backfill SQL de `drizzle/0014_bored_ricochet.sql` (acentos planchados,
+ * todo lo no alfanumérico a guiones, fallback `curso`): si divergen, un curso
+ * migrado y uno creado desde la app terminan con slugs distintos para el mismo
+ * nombre.
+ */
+export function slugify(value: string): string {
+  const slug = value
+    .normalize("NFD")
+    // Marcas diacríticas combinantes que deja NFD (tildes, diéresis, la ~ de ñ).
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || "curso";
+}
+
+/**
+ * Días de la semana en el ORDEN que define el contrato de
+ * `cohort.days_of_week`: el índice de este array ES el número que se persiste
+ * en ese CSV (0=lunes … 6=domingo). Vive acá y no en cada pantalla porque el
+ * selector de la cohorte, el resumen del listado y el calendario tienen que
+ * mapear el mismo índice — con tres copias, una termina desfasada y la cohorte
+ * se dibuja el día equivocado.
+ */
+export const WEEKDAY_LABELS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"] as const;

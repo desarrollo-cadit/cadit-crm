@@ -1,6 +1,6 @@
 # Contrato: `GET /api/cohorts/:id/roster`
 
-Vista compartida de camada (US3, FR-014/FR-017): la ven tanto
+Vista compartida de cohorte (US3, FR-014/FR-017): la ven tanto
 ventas/coordinación como soporte, pero el DTO varía según `session.role` — es la
 MISMA ruta, no dos rutas separadas, porque ambos roles necesitan ver la lista de
 alumnos y su checklist (solo cambian los campos financieros).
@@ -77,5 +77,5 @@ servidor.
 
 | Status | code | Cuándo |
 |---|---|---|
-| 404 | `not_found` | la camada o la inscripción no existe en la organización de la sesión |
+| 404 | `not_found` | la cohorte o la inscripción no existe en la organización de la sesión |
 | 403 | `forbidden` | (no aplica a esta ruta — el roster es accesible por ambos roles; ver `dashboard/finance` para el caso 403) |

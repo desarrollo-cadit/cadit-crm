@@ -38,7 +38,7 @@ describe("enrollment: índices únicos parciales (FR-004)", () => {
     expect(where.sql).not.toContain("NOT NULL");
   });
 
-  it("cohort_id NO es NOT NULL — un enrollment puede existir sin camada (lead general)", () => {
+  it("cohort_id NO es NOT NULL — un enrollment puede existir sin cohorte (lead general)", () => {
     const { columns } = getTableConfig(schema.enrollment);
     const cohortIdColumn = columns.find((c) => c.name === "cohort_id");
     expect(cohortIdColumn?.notNull).toBe(false);

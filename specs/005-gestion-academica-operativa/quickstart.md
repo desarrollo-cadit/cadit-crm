@@ -14,18 +14,18 @@
 2. Catálogos base — crear al menos:
    - Un software con licencias (`POST /api/software`, ej. "Revit", 5 licencias).
    - Un profesor (`POST /api/teachers`).
-   - Un curso + una camada que declare ese software y ese profesor, con costo,
+   - Un curso + una cohorte que declare ese software y ese profesor, con costo,
      horario, aula y temario (`POST /api/courses`, `POST /api/cohorts`).
 
 3. Probar la alerta de licencias (US4):
-   - Crear una segunda camada del mismo software con más cupo que licencias
+   - Crear una segunda cohorte del mismo software con más cupo que licencias
      disponibles → confirmar que la respuesta incluye la advertencia.
    - Asignar licencias a inscripciones hasta agotar el pool → confirmar que la
      siguiente asignación devuelve 409/422 explicando que no hay stock.
 
 4. Probar el choque de horario (US5):
-   - Asignar al mismo profesor dos camadas con fechas superpuestas → confirmar
-     que la respuesta trae la advertencia con la camada en conflicto; confirmar
+   - Asignar al mismo profesor dos cohortes con fechas superpuestas → confirmar
+     que la respuesta trae la advertencia con la cohorte en conflicto; confirmar
      que la creación NO se bloquea.
 
 5. Inscribir un alumno (US2, `POST /api/enrollments`):
@@ -56,11 +56,11 @@
 8. Endpoint público (US7):
    - Sin ninguna cookie/sesión, `GET /api/public/courses` → confirmar 200 con
      los cursos y sus próximos comienzos.
-   - Confirmar que una camada ya iniciada NO aparece en `nextCohorts`.
+   - Confirmar que una cohorte ya iniciada NO aparece en `nextCohorts`.
    - Confirmar que la respuesta no contiene ningún campo de alumno/monto.
 
 9. Calendario (US6):
-   - Con varias camadas de fechas distintas cargadas, abrir la vista de
+   - Con varias cohortes de fechas distintas cargadas, abrir la vista de
      calendario y confirmar que cada una aparece ubicada en su rango de fechas.
 
 10. Gate técnico de cierre de fase:

@@ -5,7 +5,11 @@ export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ id: string }> };
 
-/** 005 (T043, US7, contracts/public-courses.md) — sin `withAuth`, 404 si no existe. */
+/**
+ * 005 (T043, US7, contracts/public-courses.md) — sin `withAuth`, 404 si no
+ * existe. 006: el segmento acepta el `slug` público (`/cursos/ai-automation`)
+ * además del id interno, sin cambiar la forma de la ruta.
+ */
 export async function GET(_req: Request, ctx: Params) {
   const { id } = await ctx.params;
   const course = await getPublicCourse(id);

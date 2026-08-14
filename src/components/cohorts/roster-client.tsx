@@ -31,7 +31,7 @@ function formatDate(iso: string | null) {
 
 /**
  * 005 (T027, US3, contracts/cohort-roster.md) — pantalla compartida de
- * camada: lista de inscripciones + checklist editable. Oculta la sección
+ * cohorte: lista de inscripciones + checklist editable. Oculta la sección
  * financiera en el cliente cuando el DTO no la trae (FR-016/FR-017) —
  * además de la regla dura de servidor en `buildRosterEntry` (T022).
  *
@@ -66,6 +66,7 @@ export function RosterClient({
     next: boolean;
   } | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const refetch = useCallback(async () => {
     const res = await fetch(`/api/cohorts/${cohortId}/roster`).catch(() => null);
@@ -101,16 +102,35 @@ export function RosterClient({
     })();
   }, []);
 
+  /** Mensaje de error de las acciones del roster, mostrado inline. */
+  async function errorMessage(res: Response | null, fallback: string) {
+    const body = (await res?.json().catch(() => null)) as {
+      error?: { message?: string };
+    } | null;
+    return body?.error?.message ?? fallback;
+  }
+
+  /**
+   * Un fallo acá NO puede pasar desapercibido: el checklist es el registro de
+   * "ya le mandé el correo de T&C" / "ya le instalé el software". Si el PATCH
+   * falla y solo se refetchea, el tilde vuelve atrás sin explicación y el
+   * operador cree que quedó guardado.
+   */
   async function patchChecklist(
     enrollmentId: string,
     field: (typeof CHECKLIST_ITEMS)[number]["key"] | "hadOwnLicense",
     value: string | boolean | null
   ) {
-    await fetch(`/api/enrollments/${enrollmentId}/checklist`, {
+    const res = await fetch(`/api/enrollments/${enrollmentId}/checklist`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ [field]: value }),
     }).catch(() => null);
+    if (!res?.ok) {
+      setActionError(await errorMessage(res, "No se pudo guardar el cambio del checklist"));
+    } else {
+      setActionError(null);
+    }
     void refetch();
   }
 
@@ -120,19 +140,23 @@ export function RosterClient({
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ softwareId }),
     }).catch(() => null);
-    if (res && !res.ok) {
-      const body = (await res.json().catch(() => null)) as {
-        error?: { message?: string };
-      } | null;
-      alert(body?.error?.message ?? "No se pudo asignar la licencia");
+    if (!res?.ok) {
+      setActionError(await errorMessage(res, "No se pudo asignar la licencia"));
+    } else {
+      setActionError(null);
     }
     void refetch();
   }
 
   async function unassignLicense(enrollmentId: string) {
-    await fetch(`/api/enrollments/${enrollmentId}/license`, {
+    const res = await fetch(`/api/enrollments/${enrollmentId}/license`, {
       method: "DELETE",
     }).catch(() => null);
+    if (!res?.ok) {
+      setActionError(await errorMessage(res, "No se pudo liberar la licencia"));
+    } else {
+      setActionError(null);
+    }
     void refetch();
   }
 
@@ -172,6 +196,14 @@ export function RosterClient({
       </header>
 
       <div className="flex-1 overflow-y-auto p-6">
+        {actionError && (
+          <div className="mb-4 flex items-center justify-between gap-4 rounded-lg border border-destructive/50 px-4 py-3">
+            <p className="text-sm text-destructive">{actionError}</p>
+            <Button variant="ghost" size="sm" onClick={() => setActionError(null)}>
+              Cerrar
+            </Button>
+          </div>
+        )}
         {!roster ? (
           <p className="text-sm text-muted-foreground">Cargando…</p>
         ) : roster.enrollments.length === 0 ? (
@@ -245,7 +277,7 @@ export function RosterClient({
                     </label>
                   ) : (
                     <span className="text-muted-foreground">
-                      Sin software declarado en la camada
+                      Sin software declarado en la cohorte
                     </span>
                   )}
                   {CHECKLIST_ITEMS.map((item) => (

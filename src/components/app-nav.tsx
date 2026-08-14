@@ -3,15 +3,15 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+// FlaskConical y Sparkles quedan fuera mientras el grupo "Inteligencia
+// artificial" del menú esté comentado más abajo.
 import {
   CalendarDays,
-  FlaskConical,
   GraduationCap,
   Inbox,
   Kanban,
   LogOut,
   Settings,
-  Sparkles,
   Users,
 } from "lucide-react";
 import type { Branding } from "@/lib/branding";
@@ -41,13 +41,13 @@ const NAV_GROUPS = [
       { href: "/calendar", label: "Calendario", icon: CalendarDays },
     ],
   },
-  {
-    label: "Inteligencia artificial",
-    items: [
-      { href: "/agent", label: "Agente", icon: Sparkles },
-      { href: "/lab", label: "Laboratorio", icon: FlaskConical },
-    ],
-  },
+  // {
+  //   label: "Inteligencia artificial",
+  //   items: [
+  //     { href: "/agent", label: "Agente", icon: Sparkles },
+  //     { href: "/lab", label: "Laboratorio", icon: FlaskConical },
+  //   ],
+  // },
 ] as const;
 
 export function AppNav({
