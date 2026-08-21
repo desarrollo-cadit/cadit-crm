@@ -586,6 +586,99 @@ async function main() {
     JSON.stringify(echoImg?.media)
   );
 
+  console.log("\n== dashboard/finance: los totales NO mezclan monedas ==");
+  // Dos inscripciones del mes en curso, en monedas distintas. Si el panel
+  // vuelve a sumar `amount` ignorando `currency`, este bloque falla: 150000
+  // UYU y 1200 USD no pueden colapsar en un solo número.
+  const courseFin = await api("/api/courses", {
+    method: "POST",
+    // `published: false` a propósito: este curso es de prueba y NO debe
+    // aparecer nunca en el catálogo público del sitio comercial (007).
+    body: JSON.stringify({
+      name: `Curso Finanzas E2E ${Date.now()}`,
+      published: false,
+    }),
+  });
+  const courseFinId = courseFin.json?.course?.id;
+  ok("curso de prueba creado", Boolean(courseFinId), JSON.stringify(courseFin.json));
+
+  const cohortFin = await api("/api/cohorts", {
+    method: "POST",
+    body: JSON.stringify({
+      courseId: courseFinId,
+      startDate: new Date().toISOString(),
+    }),
+  });
+  const cohortFinId = cohortFin.json?.cohort?.id;
+  ok("cohorte de prueba creada", Boolean(cohortFinId), JSON.stringify(cohortFin.json));
+
+  const stamp = Date.now();
+  const enrUyu = await api("/api/enrollments", {
+    method: "POST",
+    body: JSON.stringify({
+      cohortId: cohortFinId,
+      contact: { firstName: "Alumna", lastName: "Uruguaya", phone: `598${stamp}`.slice(0, 15) },
+      amount: 150000,
+      currency: "UYU",
+    }),
+  });
+  ok("inscripción en UYU creada", enrUyu.res.status === 201, JSON.stringify(enrUyu.json));
+
+  const enrUsd = await api("/api/enrollments", {
+    method: "POST",
+    body: JSON.stringify({
+      cohortId: cohortFinId,
+      contact: { firstName: "Alumno", lastName: "Dolarizado", phone: `1${stamp}`.slice(0, 15) },
+      amount: 1200,
+      currency: "USD",
+    }),
+  });
+  ok("inscripción en USD creada", enrUsd.res.status === 201, JSON.stringify(enrUsd.json));
+
+  const fin = await api("/api/dashboard/finance");
+  ok("GET /api/dashboard/finance responde 200", fin.res.ok, JSON.stringify(fin.json));
+
+  const totals = fin.json?.currentMonth?.totals ?? [];
+  const uyu = totals.find((t) => t.currency === "UYU")?.total ?? 0;
+  const usd = totals.find((t) => t.currency === "USD")?.total ?? 0;
+  ok(
+    "el total en UYU incluye la inscripción en pesos",
+    uyu >= 150000,
+    JSON.stringify(totals)
+  );
+  ok(
+    "el total en USD es el de dólares SOLO (1200), no la suma cruzada",
+    usd >= 1200 && usd < 150000,
+    JSON.stringify(totals)
+  );
+  ok(
+    "ninguna moneda absorbió a la otra (regresión del bug de suma cruzada)",
+    uyu !== usd && !totals.some((t) => t.total === uyu + usd),
+    JSON.stringify(totals)
+  );
+  ok(
+    "el endpoint declara las monedas con movimiento",
+    Array.isArray(fin.json?.currencies) &&
+      fin.json.currencies.includes("UYU") &&
+      fin.json.currencies.includes("USD"),
+    JSON.stringify(fin.json?.currencies)
+  );
+  ok(
+    "la tendencia trae los totales por moneda en cada mes",
+    Array.isArray(fin.json?.trend) &&
+      fin.json.trend.every((p) => Array.isArray(p.totals)),
+    JSON.stringify(fin.json?.trend?.[0])
+  );
+
+  // Camino infeliz: soporte no ve nada financiero (FR-016) — la regla dura
+  // sigue en pie después del cambio de forma de la respuesta.
+  const finTypes = fin.json?.currentMonth?.totals?.map((t) => typeof t.total) ?? [];
+  ok(
+    "todos los totales son números (nunca null)",
+    finTypes.length > 0 && finTypes.every((t) => t === "number"),
+    JSON.stringify(finTypes)
+  );
+
   console.log(`\n===== ${checks - failures}/${checks} checks OK, ${failures} fallos =====`);
   process.exit(failures > 0 ? 1 : 0);
 }

@@ -1,5 +1,5 @@
 import { requireFullAccess } from "@/lib/api";
-import { monthlyRevenue, revenueTrend } from "@/server/finance";
+import { activeCurrencies, monthlyRevenue, revenueTrend } from "@/server/finance";
 
 export const dynamic = "force-dynamic";
 
@@ -9,11 +9,20 @@ export const dynamic = "force-dynamic";
  * `role: "soporte"` sin llegar a calcular nada financiero. Iteración 2 suma
  * `trend` (últimos 6 meses) para el gráfico del home — mismo endpoint, no
  * hace falta uno nuevo.
+ *
+ * 007 (corrección) — los totales viajan separados por moneda y se agrega
+ * `currencies`: qué monedas tuvieron movimiento, para que el panel sepa
+ * cuántas pestañas mostrar sin recorrer la serie.
  */
 export const GET = requireFullAccess(async (session) => {
   const [dashboard, trend] = await Promise.all([
     monthlyRevenue(session.organizationId),
     revenueTrend(session.organizationId),
   ]);
-  return Response.json({ ...dashboard, trend });
+  const currencies = activeCurrencies([
+    dashboard.currentMonth,
+    dashboard.previousMonth,
+    ...trend,
+  ]);
+  return Response.json({ ...dashboard, trend, currencies });
 });

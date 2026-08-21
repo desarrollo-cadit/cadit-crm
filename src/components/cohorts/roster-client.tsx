@@ -16,7 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { cn, formatAmount } from "@/lib/utils";
 import { EnrollForm } from "@/components/enrollments/enroll-form";
 import { EnrollmentCommercialForm } from "@/components/enrollments/enrollment-commercial-form";
 
@@ -39,13 +39,8 @@ function formatDate(iso: string | null) {
   });
 }
 
-/** 007 — símbolo por moneda (los alumnos de Paraguay pagan en guaraníes). */
-const CURRENCY_SYMBOL: Record<string, string> = { UYU: "$", PYG: "Gs. ", USD: "US$" };
-
-function formatAmount(amount: number | null | undefined, currency: string | undefined) {
-  if (amount === null || amount === undefined) return "—";
-  return `${CURRENCY_SYMBOL[currency ?? "UYU"] ?? "$"}${amount.toLocaleString("es-UY")}`;
-}
+// 007 — `formatAmount` (símbolo por moneda) vive en `@/lib/utils`: el panel de
+// facturación imprime los mismos importes y no deben divergir.
 
 /**
  * 007 — cuántos de los 4 pasos de onboarding están hechos, para poder verlo

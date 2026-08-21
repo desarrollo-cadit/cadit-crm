@@ -68,6 +68,28 @@ export function slugify(value: string): string {
 }
 
 /**
+ * 007 — Símbolo por moneda (los alumnos de Paraguay pagan en guaraníes). Vive
+ * acá por el mismo motivo que `WEEKDAY_LABELS`: el roster, el panel de
+ * facturación y el formulario de inscripción muestran los mismos importes, y
+ * con una copia por pantalla la que se olvide de una moneda nueva la imprime
+ * con el símbolo de otra.
+ */
+const CURRENCY_SYMBOL: Record<string, string> = {
+  UYU: "$",
+  PYG: "Gs. ",
+  USD: "US$",
+};
+
+/** Importe con el símbolo de SU moneda; nunca asume pesos. */
+export function formatAmount(
+  amount: number | null | undefined,
+  currency: string | undefined
+): string {
+  if (amount === null || amount === undefined) return "—";
+  return `${CURRENCY_SYMBOL[currency ?? "UYU"] ?? "$"}${amount.toLocaleString("es-UY")}`;
+}
+
+/**
  * Días de la semana en el ORDEN que define el contrato de
  * `cohort.days_of_week`: el índice de este array ES el número que se persiste
  * en ese CSV (0=lunes … 6=domingo). Vive acá y no en cada pantalla porque el
