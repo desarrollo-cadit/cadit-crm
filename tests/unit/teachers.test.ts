@@ -182,10 +182,15 @@ describe("updateTeacher / listTeachers / getTeacher (iteración 2)", () => {
 
     expect(deletes).toHaveLength(1);
     expect(inserts).toHaveLength(1);
-    const values = inserts[0]!.values as { teacherId: string; courseId: string }[];
+    // Igual que en `cohort_software`: la organización se escribe explícita.
+    const values = inserts[0]!.values as {
+      organizationId: string;
+      teacherId: string;
+      courseId: string;
+    }[];
     expect(values).toEqual([
-      { teacherId: "tch_1", courseId: "crs_1" },
-      { teacherId: "tch_1", courseId: "crs_2" },
+      { organizationId: "org_1", teacherId: "tch_1", courseId: "crs_1" },
+      { organizationId: "org_1", teacherId: "tch_1", courseId: "crs_2" },
     ]);
     if (!result.ok) throw new Error(result.message);
     expect(result.teacher.courseIds).toEqual(["crs_1", "crs_2"]);

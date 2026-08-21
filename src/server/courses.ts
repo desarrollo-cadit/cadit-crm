@@ -487,7 +487,7 @@ export async function createCohort(
   });
   if (input.softwareIds && input.softwareIds.length > 0) {
     await db.insert(schema.cohortSoftware).values(
-      input.softwareIds.map((softwareId) => ({ cohortId: id, softwareId }))
+      input.softwareIds.map((softwareId) => ({ organizationId, cohortId: id, softwareId }))
     );
   }
 
@@ -566,10 +566,16 @@ export async function updateCohort(
   if (input.softwareIds !== undefined) {
     await db
       .delete(schema.cohortSoftware)
-      .where(eq(schema.cohortSoftware.cohortId, cohortId));
+      .where(
+        scoped(
+          schema.cohortSoftware.organizationId,
+          organizationId,
+          eq(schema.cohortSoftware.cohortId, cohortId)
+        )
+      );
     if (input.softwareIds.length > 0) {
       await db.insert(schema.cohortSoftware).values(
-        input.softwareIds.map((softwareId) => ({ cohortId, softwareId }))
+        input.softwareIds.map((softwareId) => ({ organizationId, cohortId, softwareId }))
       );
     }
   }
@@ -579,7 +585,9 @@ export async function updateCohort(
     const finalSoftwareIds =
       input.softwareIds !== undefined
         ? input.softwareIds
-        : (await resolveSoftwareByCohort(db, [cohortId])).get(cohortId)?.map((s) => s.id) ?? [];
+        : (await resolveSoftwareByCohort(db, organizationId, [cohortId]))
+            .get(cohortId)
+            ?.map((s) => s.id) ?? [];
     licenseWarnings = await computeLicenseWarnings(organizationId, finalSoftwareIds, cohort.capacity);
   }
 
@@ -652,6 +660,7 @@ function serializeCohort(
 /** En una sola query para todas las cohortes: evita el N+1 del listado. */
 async function resolveSoftwareByCohort(
   db: DbOrTx,
+  organizationId: string,
   cohortIds: string[]
 ): Promise<Map<string, SoftwareRef[]>> {
   const map = new Map<string, SoftwareRef[]>();
@@ -663,7 +672,13 @@ async function resolveSoftwareByCohort(
       schema.software,
       eq(schema.cohortSoftware.softwareId, schema.software.id)
     )
-    .where(inArray(schema.cohortSoftware.cohortId, cohortIds));
+    .where(
+      scoped(
+        schema.cohortSoftware.organizationId,
+        organizationId,
+        inArray(schema.cohortSoftware.cohortId, cohortIds)
+      )
+    );
   for (const r of rows) {
     const list = map.get(r.cohortId) ?? [];
     list.push({ id: r.software.id, name: r.software.name });
@@ -693,6 +708,7 @@ export async function listCohorts(
 
   const softwareByCohort = await resolveSoftwareByCohort(
     db,
+    organizationId,
     rows.map((r) => r.cohort.id)
   );
 
@@ -720,7 +736,7 @@ export async function getCohort(organizationId: string, cohortId: string) {
   const row = rows[0];
   if (!row) return null;
 
-  const softwareByCohort = await resolveSoftwareByCohort(db, [cohortId]);
+  const softwareByCohort = await resolveSoftwareByCohort(db, organizationId, [cohortId]);
   return serializeCohort(
     row.cohort,
     row.course,

@@ -11,6 +11,17 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
+/**
+ * 007 — Monedas admitidas en los importes. Hasta 006 los montos eran un
+ * entero suelto que asumía UNA sola moneda; con alumnos de Uruguay y de
+ * Paraguay en la misma cohorte, sumar $57.000 (UYU) con 10.000.000 (PYG) en
+ * la misma columna daba totales de facturación sin sentido. El importe
+ * sigue siendo entero (sin centavos, DV-008): lo que se agrega es de QUÉ
+ * moneda es ese entero.
+ */
+export const CURRENCIES = ["UYU", "PYG", "USD"] as const;
+export type Currency = (typeof CURRENCIES)[number];
+
 /* ============================================================
  * Auth (Better Auth + plugin organization)
  * ============================================================ */
@@ -124,10 +135,11 @@ export const contact = pgTable(
     /**
      * 005 iteración 6 (feedback en vivo: "quiero que contacto tenga nombre y
      * apellido por separado") — reemplaza el `name` único de antes (ya
-     * migrado y eliminado). Contactos de origen WhatsApp/formulario público
-     * solo traen UN string (perfil de WhatsApp, campo "Nombre" del form) —
-     * ese string entero va a `firstName`, `lastName` queda NULL; se completa
-     * a mano después si hace falta.
+     * migrado y eliminado). Los contactos de origen WhatsApp solo traen UN
+     * string (el perfil de WhatsApp): ese string entero va a `firstName` y
+     * `lastName` queda NULL. El formulario público SÍ acepta apellido
+     * separado (iteración 7) y sigue siendo opcional para no romper los
+     * formularios ya embebidos en sitios externos.
      */
     firstName: text("first_name").notNull(),
     lastName: text("last_name"),
@@ -305,6 +317,14 @@ export const course = pgTable(
      * cohorte ahora lo hereda al serializarse.
      */
     syllabusUrl: text("syllabus_url"),
+    /**
+     * 007 — si el curso sale o no en el catálogo público. Hay cursos que
+     * existen solo puertas adentro (talleres a medida, capacitaciones
+     * in-company, ediciones combinadas): necesitan cohortes e inscripciones
+     * en el CRM, pero NO deben aparecer en cadit.com.uy. Default `true`
+     * para que los cursos ya cargados sigan publicándose igual que antes.
+     */
+    published: boolean("published").notNull().default(true),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -357,6 +377,15 @@ export const courseModule = pgTable(
 export const teacherCourse = pgTable(
   "teacher_course",
   {
+    // Multi-tenancy (constitución III): explícito aunque se pueda derivar de
+    // `teacher_id`, mismo criterio que `course_module`. Sin esta columna la
+    // seguridad dependía de que CADA llamador filtrara el padre por
+    // organización antes de tocar el puente: hoy todos lo hacen, pero una
+    // call site nueva que se olvide filtra en silencio y sin error de
+    // compilación. Con la columna, `scoped()` lo vuelve inexpresable.
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
     teacherId: text("teacher_id")
       .notNull()
       .references(() => teacher.id, { onDelete: "cascade" }),
@@ -367,6 +396,7 @@ export const teacherCourse = pgTable(
   (t) => [
     primaryKey({ columns: [t.teacherId, t.courseId] }),
     index("teacher_course_course_idx").on(t.courseId),
+    index("teacher_course_org_idx").on(t.organizationId),
   ]
 );
 
@@ -394,6 +424,8 @@ export const cohort = pgTable(
     }),
     /** 005 — moneda entera, mismo criterio que enrollment.amount (DV-008). */
     cost: integer("cost"),
+    /** 007 — de qué moneda es `cost`. Ver CURRENCIES. */
+    currency: text("currency", { enum: CURRENCIES }).notNull().default("UYU"),
     /** 005 — horario en texto libre, ej. "lunes y miércoles 18:30-20:30". */
     frequency: text("frequency"),
     /** 005 iteración 2 — horario de inicio/fin en texto "HH:MM", para el calendario. */
@@ -434,6 +466,10 @@ export const cohort = pgTable(
 export const cohortSoftware = pgTable(
   "cohort_software",
   {
+    /** Multi-tenancy (constitución III) — ver el comentario de `teacherCourse`. */
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
     cohortId: text("cohort_id")
       .notNull()
       .references(() => cohort.id, { onDelete: "cascade" }),
@@ -444,6 +480,7 @@ export const cohortSoftware = pgTable(
   (t) => [
     primaryKey({ columns: [t.cohortId, t.softwareId] }),
     index("cohort_software_software_idx").on(t.softwareId),
+    index("cohort_software_org_idx").on(t.organizationId),
   ]
 );
 
@@ -474,6 +511,12 @@ export const enrollment = pgTable(
     lastActivityAt: timestamp("last_activity_at"),
     /** 005 — datos comerciales (DV-008, FR-009). */
     amount: integer("amount"),
+    /**
+     * 007 — de qué moneda es `amount`. Dos alumnos de la MISMA cohorte
+     * pueden pagar en monedas distintas (Uruguay/Paraguay), así que la
+     * moneda es del pago, no de la cohorte. Ver CURRENCIES.
+     */
+    currency: text("currency", { enum: CURRENCIES }).notNull().default("UYU"),
     installments: integer("installments"),
     paymentNotes: text("payment_notes"),
     /** 005 — cédula del contacto al momento de inscribir. */
@@ -488,11 +531,29 @@ export const enrollment = pgTable(
     companyId: text("company_id").references(() => company.id, {
       onDelete: "restrict",
     }),
+    /**
+     * 005 iteración 7 — curso que le interesa al lead, como FK y no como el
+     * texto de `contact.source`: el lead general (cohortId NULL) es la unidad
+     * de interés comercial, así que el origen tiene que vivir acá y no en el
+     * contacto (un contacto puede tener N leads) ni en el nombre del
+     * formulario (renombrarlo dejaría huérfanas las tarjetas viejas).
+     * Cuando el lead se convierte, `cohortId` ya trae su curso vía cohorte.
+     */
+    interestCourseId: text("interest_course_id").references(() => course.id, {
+      onDelete: "set null",
+    }),
     /** 005 — checklist de onboarding de soporte (DV-007, FR-013). */
     termsEmailSentAt: timestamp("terms_email_sent_at"),
     softwareInstalledAt: timestamp("software_installed_at"),
     hadOwnLicense: boolean("had_own_license").notNull().default(false),
     academiaOnlineAccessAt: timestamp("academia_online_access_at"),
+    /**
+     * 007 — cuándo se le mandó el correo de bienvenida + invitación al grupo
+     * de WhatsApp. Un correo no se puede "desenviar": esta marca es lo que
+     * evita mandarlo dos veces por un doble click. El de términos de licencia
+     * usa `termsEmailSentAt`, que ya existía.
+     */
+    welcomeEmailSentAt: timestamp("welcome_email_sent_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -509,6 +570,10 @@ export const enrollment = pgTable(
     index("enrollment_org_cohort_idx").on(t.organizationId, t.cohortId),
     index("enrollment_seller_idx").on(t.sellerId),
     index("enrollment_company_idx").on(t.companyId),
+    index("enrollment_org_interest_course_idx").on(
+      t.organizationId,
+      t.interestCourseId
+    ),
   ]
 );
 

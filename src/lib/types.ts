@@ -94,6 +94,8 @@ export type CourseDto = {
   learningObjectives: string[];
   targetAudience: string | null;
   syllabusUrl: string | null;
+  /** 007 — si el curso sale en el catálogo público de la web. */
+  published: boolean;
 };
 
 /** 005 (DV-005) — profesor como entidad propia. */
@@ -143,6 +145,8 @@ export type CohortDto = {
   /** Referencia mínima del profesor asignado (no el TeacherDto completo con courseIds/hourlyRate). */
   teacher: { id: string; name: string } | null;
   cost: number | null;
+  /** 007 — de qué moneda es `cost`. */
+  currency: "UYU" | "PYG" | "USD";
   frequency: string | null;
   classroom: string | null;
   syllabusUrl: string | null;

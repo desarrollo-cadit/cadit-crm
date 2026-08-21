@@ -313,7 +313,13 @@ export async function getCohortRoster(
     .select({ id: schema.software.id, name: schema.software.name })
     .from(schema.cohortSoftware)
     .innerJoin(schema.software, eq(schema.software.id, schema.cohortSoftware.softwareId))
-    .where(eq(schema.cohortSoftware.cohortId, cohortId));
+    .where(
+      scoped(
+        schema.cohortSoftware.organizationId,
+        organizationId,
+        eq(schema.cohortSoftware.cohortId, cohortId)
+      )
+    );
 
   const rows = await db
     .select({ enrollment: schema.enrollment, contact: schema.contact, license: schema.license })

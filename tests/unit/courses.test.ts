@@ -173,10 +173,17 @@ describe("courses: createCourse / createCohort (004)", () => {
 
     if (!result.ok) throw new Error(result.message);
     expect(inserts).toHaveLength(2); // cohort + cohort_software
-    const bridgeValues = inserts[1]!.values as { cohortId: string; softwareId: string }[];
+    // La organización viaja en cada fila del puente (constitución III): sin
+    // ella, `scoped()` no puede filtrar el puente y la seguridad vuelve a
+    // depender de que el llamador se acuerde de validar el padre.
+    const bridgeValues = inserts[1]!.values as {
+      organizationId: string;
+      cohortId: string;
+      softwareId: string;
+    }[];
     expect(bridgeValues).toEqual([
-      { cohortId: result.id, softwareId: "sw_1" },
-      { cohortId: result.id, softwareId: "sw_2" },
+      { organizationId: "org_1", cohortId: result.id, softwareId: "sw_1" },
+      { organizationId: "org_1", cohortId: result.id, softwareId: "sw_2" },
     ]);
   });
 
@@ -231,8 +238,14 @@ describe("courses: createCourse / createCohort (004)", () => {
 
     expect(deletes).toHaveLength(1);
     expect(inserts).toHaveLength(1);
-    const bridgeValues = inserts[0]!.values as { cohortId: string; softwareId: string }[];
-    expect(bridgeValues).toEqual([{ cohortId: "coh_1", softwareId: "sw_3" }]);
+    const bridgeValues = inserts[0]!.values as {
+      organizationId: string;
+      cohortId: string;
+      softwareId: string;
+    }[];
+    expect(bridgeValues).toEqual([
+      { organizationId: "org_1", cohortId: "coh_1", softwareId: "sw_3" },
+    ]);
   });
 
   it("updateCohort rechaza un courseId que no pertenece a la organización (hallazgo del reviewer)", async () => {

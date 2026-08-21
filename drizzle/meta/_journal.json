@@ -120,6 +120,34 @@
       "when": 1786561085498,
       "tag": "0016_ambitious_sphinx",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1786738696880,
+      "tag": "0017_concerned_dreaming_celestial",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1786979429699,
+      "tag": "0018_overrated_the_captain",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1786990843544,
+      "tag": "0019_talented_firestar",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1787239978768,
+      "tag": "0020_medical_wendigo",
+      "breakpoints": true
     }
   ]
 }

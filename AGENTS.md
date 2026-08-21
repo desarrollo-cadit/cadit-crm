@@ -31,10 +31,11 @@ accionable para code review.
 
 ## Seguridad y dependencias
 
-- Ninguna dependencia externa nueva en runtime salvo WhatsApp Cloud API o el
-  adaptador OpenRouter-compatible del LLM (constitución del proyecto,
-  `.specify/memory/constitution.md`, Principio II) — nada de S3/R2, email,
-  Stripe, Google.
+- Ninguna dependencia externa nueva en runtime salvo las TRES permitidas por
+  la constitución (`.specify/memory/constitution.md` 1.3.0, Principio II):
+  WhatsApp Cloud API, el adaptador OpenRouter-compatible del LLM (opcional) y
+  Microsoft Graph para el correo transaccional a alumnos (tras `src/lib/m365`)
+  — nada de S3/R2, Stripe, Google u otros servicios externos.
 - Secretos nunca al cliente ni a logs; cifrados en reposo.
 
 ## Estilo y comentarios

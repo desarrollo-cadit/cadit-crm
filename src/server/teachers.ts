@@ -23,6 +23,7 @@ export async function createTeacher(
 /** Resuelve los cursos que dicta cada profesor de un conjunto (teacher_course). */
 async function resolveCoursesByTeacher(
   db: ReturnType<typeof getDb>,
+  organizationId: string,
   teacherIds: string[]
 ): Promise<Map<string, string[]>> {
   const map = new Map<string, string[]>();
@@ -30,7 +31,13 @@ async function resolveCoursesByTeacher(
   const rows = await db
     .select({ teacherId: schema.teacherCourse.teacherId, courseId: schema.teacherCourse.courseId })
     .from(schema.teacherCourse)
-    .where(inArray(schema.teacherCourse.teacherId, teacherIds));
+    .where(
+      scoped(
+        schema.teacherCourse.organizationId,
+        organizationId,
+        inArray(schema.teacherCourse.teacherId, teacherIds)
+      )
+    );
   for (const r of rows) {
     const list = map.get(r.teacherId) ?? [];
     list.push(r.courseId);
@@ -107,7 +114,11 @@ export async function listTeachers(organizationId: string) {
     .from(schema.teacher)
     .where(scoped(schema.teacher.organizationId, organizationId))
     .orderBy(asc(schema.teacher.name));
-  const courseMap = await resolveCoursesByTeacher(db, rows.map((r) => r.id));
+  const courseMap = await resolveCoursesByTeacher(
+    db,
+    organizationId,
+    rows.map((r) => r.id)
+  );
   return rows.map((r) => serializeTeacher(r, courseMap.get(r.id) ?? []));
 }
 
@@ -123,7 +134,7 @@ export async function getTeacher(organizationId: string, teacherId: string) {
     .limit(1);
   const teacher = rows[0];
   if (!teacher) return null;
-  const courseMap = await resolveCoursesByTeacher(db, [teacherId]);
+  const courseMap = await resolveCoursesByTeacher(db, organizationId, [teacherId]);
   return serializeTeacher(teacher, courseMap.get(teacherId) ?? []);
 }
 
@@ -181,10 +192,18 @@ export async function updateTeacher(
   if (!teacher) return { ok: false, status: 404, code: "not_found", message: "Profesor no encontrado" };
 
   if (input.courseIds !== undefined) {
-    await db.delete(schema.teacherCourse).where(eq(schema.teacherCourse.teacherId, teacherId));
+    await db
+      .delete(schema.teacherCourse)
+      .where(
+        scoped(
+          schema.teacherCourse.organizationId,
+          organizationId,
+          eq(schema.teacherCourse.teacherId, teacherId)
+        )
+      );
     if (input.courseIds.length > 0) {
       await db.insert(schema.teacherCourse).values(
-        input.courseIds.map((courseId) => ({ teacherId, courseId }))
+        input.courseIds.map((courseId) => ({ organizationId, teacherId, courseId }))
       );
     }
   }
@@ -192,7 +211,7 @@ export async function updateTeacher(
   const courseIds =
     input.courseIds !== undefined
       ? input.courseIds
-      : (await resolveCoursesByTeacher(db, [teacherId])).get(teacherId) ?? [];
+      : (await resolveCoursesByTeacher(db, organizationId, [teacherId])).get(teacherId) ?? [];
   return { ok: true, teacher: serializeTeacher(teacher, courseIds) };
 }
 
