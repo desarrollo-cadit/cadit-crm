@@ -56,9 +56,10 @@ funciona igual.
 Ver [.specify/memory/constitution.md](.specify/memory/constitution.md).
 
 - **Soberanía (II, endurecida)**: dependencias de runtime SOLO WhatsApp Cloud
-  API + proveedor LLM OpenRouter-compatible opcional. PROHIBIDO en v1
-  introducir S3/R2, email, Stripe, Google u otros servicios externos. Auth y
-  BD self-hosted.
+  API, proveedor LLM OpenRouter-compatible opcional, y Microsoft Graph para el
+  correo transaccional a alumnos (constitución 1.3.0, tras `src/lib/m365`).
+  PROHIBIDO en v1 introducir S3/R2, Stripe, Google u otros servicios externos.
+  Auth y BD self-hosted.
 - **Seguridad (I)**: secretos cifrados en reposo (AES-256-GCM, `lib/crypto`);
   jamás al cliente ni a logs. El token de WhatsApp solo muestra sus últimos 4.
 - **Multi-tenancy (III)**: `organization_id` NOT NULL en toda tabla de dominio;

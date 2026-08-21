@@ -1,0 +1,89 @@
+<!--
+  MUESTRA — Correo de términos de licencia ATC.
+
+  Reglas de correo, NO de web (esto se ve mayormente en Outlook de escritorio,
+  que renderiza con el motor de Word):
+    · Maquetado con <table>, no con flex ni grid.
+    · CSS EN LÍNEA en cada etiqueta; las hojas de estilo <style> las descartan
+      varios clientes (Gmail recorta, Outlook ignora buena parte).
+    · Ancho fijo de 600px: es lo que entra en el panel de lectura de Outlook.
+    · Sin imágenes de fondo, sin webfonts, sin JavaScript.
+    · Colores con contraste propio: nunca depender del modo oscuro del cliente.
+
+  Variables a reemplazar por el servidor: {{nombre}}, {{curso}}, {{software}},
+  {{fechaInicio}}, {{fechaFin}}, {{academia}}, {{contactoSoporte}}.
+-->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0;padding:0;background-color:#f4f4f5;">
+  <tr>
+    <td align="center" style="padding:24px 12px;">
+
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:100%;background-color:#ffffff;border-radius:8px;border:1px solid #e4e4e7;">
+
+        <!-- Encabezado -->
+        <tr>
+          <td style="padding:24px 32px;border-bottom:1px solid #e4e4e7;">
+            <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:18px;font-weight:bold;color:#18181b;">
+              {{academia}}
+            </p>
+            <p style="margin:4px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#71717a;">
+              Autodesk Training Center
+            </p>
+          </td>
+        </tr>
+
+        <!-- Cuerpo -->
+        <tr>
+          <td style="padding:32px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:24px;color:#27272a;">
+            <p style="margin:0 0 16px;">Hola {{nombre}},</p>
+
+            <p style="margin:0 0 16px;">
+              Te escribimos porque durante el curso <strong>{{curso}}</strong> vas a
+              usar una licencia educativa de <strong>{{software}}</strong> que
+              {{academia}} pone a tu disposición.
+            </p>
+
+            <p style="margin:0 0 8px;font-weight:bold;">Términos de uso</p>
+
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px;">
+              <tr>
+                <td style="padding:12px 16px;background-color:#fafafa;border-left:3px solid #18181b;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:22px;color:#3f3f46;">
+                  1. La licencia es <strong>personal e intransferible</strong>: se
+                  asigna a tu correo y no puede compartirse.<br />
+                  2. Es de uso <strong>exclusivamente educativo</strong>, dentro del
+                  curso. No habilita trabajo comercial ni profesional.<br />
+                  3. Está vigente del <strong>{{fechaInicio}}</strong> al
+                  <strong>{{fechaFin}}</strong>. Al terminar, el acceso se revoca.<br />
+                  4. No está permitido instalarla en equipos de terceros ni
+                  redistribuir los instaladores.<br />
+                  5. El incumplimiento habilita a Autodesk y a {{academia}} a
+                  revocar el acceso sin aviso previo.
+                </td>
+              </tr>
+            </table>
+
+            <p style="margin:0 0 20px;">
+              Al usar la licencia entendemos que aceptás estos términos, junto con el
+              acuerdo de licencia de usuario final de Autodesk.
+            </p>
+
+            <p style="margin:0;">
+              Si algo no te queda claro o tenés problemas con la instalación,
+              respondé este correo o escribinos a {{contactoSoporte}}.
+            </p>
+          </td>
+        </tr>
+
+        <!-- Pie -->
+        <tr>
+          <td style="padding:20px 32px;border-top:1px solid #e4e4e7;background-color:#fafafa;border-radius:0 0 8px 8px;">
+            <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:#71717a;">
+              {{academia}} — Autodesk Training Center<br />
+              Recibís este correo porque estás inscripto en {{curso}}.
+            </p>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+</table>
