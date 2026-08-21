@@ -11,7 +11,8 @@ const config = [
       "drizzle/**",
       "scripts/**",
       "next-env.d.ts",
-      ".tmp-seed-demo.mjs",
+      // Bundles temporales de esbuild (seeds e importador): código generado.
+      ".tmp-*.mjs",
     ],
   },
   ...compat.extends("next/core-web-vitals", "next/typescript"),

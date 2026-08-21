@@ -21,7 +21,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "seed:demo": "esbuild scripts/seed/demo.ts --bundle --platform=node --format=esm --outfile=.tmp-seed-demo.mjs --alias:@=./src --packages=external && node .tmp-seed-demo.mjs",
-    "seed:academic": "esbuild scripts/seed/academic.ts --bundle --platform=node --format=esm --outfile=.tmp-seed-academic.mjs --alias:@=./src --packages=external && node .tmp-seed-academic.mjs"
+    "seed:academic": "esbuild scripts/seed/academic.ts --bundle --platform=node --format=esm --outfile=.tmp-seed-academic.mjs --alias:@=./src --packages=external && node .tmp-seed-academic.mjs",
+    "import:cadit": "esbuild scripts/import/cadit-2026.ts --bundle --platform=node --format=esm --outfile=.tmp-import-cadit.mjs --alias:@=./src --packages=external && node --env-file=.env .tmp-import-cadit.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

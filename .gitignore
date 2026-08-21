@@ -40,6 +40,8 @@ Thumbs.db
 .playwright-mcp/
 .tmp-seed-demo.mjs
 .tmp-seed-academic.mjs
+.tmp-import-cadit.mjs
+dev.log
 .dev-media/
 
 # --- Skill registry index (regenerable) ---
