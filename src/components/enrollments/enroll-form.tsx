@@ -5,6 +5,7 @@ import type { CompanyDto, ContactDto } from "@/lib/types";
 import { fullName } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -43,6 +44,8 @@ export function EnrollForm({
   const [nationalId, setNationalId] = useState("");
 
   const [amount, setAmount] = useState("");
+  // 007 — moneda del pago: los alumnos de Paraguay pagan en guaraníes.
+  const [currency, setCurrency] = useState<"UYU" | "PYG" | "USD">("UYU");
   const [installments, setInstallments] = useState("");
   const [paymentNotes, setPaymentNotes] = useState("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
@@ -111,6 +114,7 @@ export function EnrollForm({
             },
           }),
       amount: amount.trim() ? Number(amount) : null,
+      currency,
       installments: installments.trim() ? Number(installments) : null,
       paymentNotes: paymentNotes.trim() || null,
       invoiceNumber: invoiceNumber.trim() || null,
@@ -243,13 +247,27 @@ export function EnrollForm({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="enr-amount">Monto</Label>
-              <Input
-                id="enr-amount"
-                type="number"
-                min={0}
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-              />
+              <div className="flex gap-2">
+                <Input
+                  id="enr-amount"
+                  type="number"
+                  min={0}
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                />
+                <Select
+                  aria-label="Moneda"
+                  className="w-auto px-2"
+                  value={currency}
+                  onChange={(e) =>
+                    setCurrency(e.target.value as "UYU" | "PYG" | "USD")
+                  }
+                >
+                  <option value="UYU">$U</option>
+                  <option value="PYG">Gs.</option>
+                  <option value="USD">US$</option>
+                </Select>
+              </div>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="enr-installments">Cuotas</Label>

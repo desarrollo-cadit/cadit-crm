@@ -1,8 +1,9 @@
 import { and, asc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
+import type { Currency } from "@/lib/db/schema";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
-import { normalizeMx } from "@/lib/meta/client";
+import { normalizePhoneOrRaw } from "@/lib/phone";
 import { fullName } from "@/lib/utils";
 
 /** 005 (US2, contracts/enrollments.md) — alta comercial de una inscripción. */
@@ -17,6 +18,8 @@ export type CreateEnrollmentInput = {
     nationalId?: string | null;
   };
   amount?: number | null;
+  /** 007 — de qué moneda es `amount`. Default UYU. */
+  currency?: Currency;
   installments?: number | null;
   paymentNotes?: string | null;
   invoiceNumber?: string | null;
@@ -122,7 +125,7 @@ export async function createEnrollment(
     contactId = contactRows[0].id;
     nationalIdForRecord = contactRows[0].nationalId;
   } else {
-    const phone = normalizeMx(input.contact!.phone);
+    const phone = normalizePhoneOrRaw(input.contact!.phone);
     const inserted = await db
       .insert(schema.contact)
       .values({
@@ -172,6 +175,7 @@ export async function createEnrollment(
       stageId,
       enrolledAt: new Date(),
       amount: input.amount ?? null,
+      currency: input.currency ?? "UYU",
       installments: input.installments ?? null,
       paymentNotes: input.paymentNotes ?? null,
       nationalId: nationalIdForRecord,
@@ -191,6 +195,8 @@ export type EnrollmentCommercialDto = {
   cohortId: string | null;
   stageId: string;
   amount: number | null;
+  /** 007 — de qué moneda es `amount`: dos alumnos de la MISMA cohorte pueden pagar en monedas distintas. */
+  currency: Currency;
   installments: number | null;
   paymentNotes: string | null;
   nationalId: string | null;
@@ -217,6 +223,8 @@ export type CohortRosterDto = {
     endDate: string | null;
     /** Software declarado por la cohorte (cohort_software) — opciones para asignar licencia. */
     software: { id: string; name: string }[];
+    /** 007 — sin enlace no se puede mandar la bienvenida; la UI lo avisa. */
+    whatsappGroupLink: string | null;
   };
   enrollments: RosterEntryDto[];
 };
@@ -234,8 +242,11 @@ export type RosterEntryDto = {
     hadOwnLicense: boolean;
     academiaOnlineAccessAt: string | null;
   };
+  /** 007 — cuándo se envió la bienvenida + invitación al grupo; null = nunca. */
+  welcomeEmailSentAt: string | null;
   // Campos financieros — SOLO presentes cuando role !== "soporte" (FR-016).
   amount?: number | null;
+  currency?: Currency;
   installments?: number | null;
   paymentNotes?: string | null;
   nationalId?: string | null;
@@ -268,11 +279,13 @@ export function buildRosterEntry(
       hadOwnLicense: enrollment.hadOwnLicense,
       academiaOnlineAccessAt: enrollment.academiaOnlineAccessAt?.toISOString() ?? null,
     },
+    welcomeEmailSentAt: enrollment.welcomeEmailSentAt?.toISOString() ?? null,
   };
   if (role === "soporte") return base;
   return {
     ...base,
     amount: enrollment.amount,
+    currency: enrollment.currency,
     installments: enrollment.installments,
     paymentNotes: enrollment.paymentNotes,
     nationalId: enrollment.nationalId,
@@ -299,6 +312,7 @@ export async function getCohortRoster(
       courseName: schema.course.name,
       startDate: schema.cohort.startDate,
       endDate: schema.cohort.endDate,
+      whatsappGroupLink: schema.cohort.whatsappGroupLink,
     })
     .from(schema.cohort)
     .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
@@ -344,6 +358,7 @@ export async function getCohortRoster(
       startDate: cohort.startDate.toISOString(),
       endDate: cohort.endDate?.toISOString() ?? null,
       software: softwareRows,
+      whatsappGroupLink: cohort.whatsappGroupLink,
     },
     enrollments: rows.map((r) => buildRosterEntry(role, r.enrollment, r.contact, r.license)),
   };
@@ -456,6 +471,7 @@ export function serializeEnrollmentCommercial(
     cohortId: e.cohortId,
     stageId: e.stageId,
     amount: e.amount,
+    currency: e.currency,
     installments: e.installments,
     paymentNotes: e.paymentNotes,
     nationalId: e.nationalId,
@@ -469,6 +485,7 @@ export function serializeEnrollmentCommercial(
 
 export type UpdateEnrollmentCommercialInput = Partial<{
   amount: number | null;
+  currency: Currency;
   installments: number | null;
   paymentNotes: string | null;
   nationalId: string | null;
@@ -535,6 +552,7 @@ export async function updateEnrollmentCommercial(
 
   const set: Record<string, unknown> = { updatedAt: new Date() };
   if (input.amount !== undefined) set.amount = input.amount;
+  if (input.currency !== undefined) set.currency = input.currency;
   if (input.installments !== undefined) set.installments = input.installments;
   if (input.paymentNotes !== undefined) set.paymentNotes = input.paymentNotes;
   if (input.nationalId !== undefined) set.nationalId = input.nationalId;

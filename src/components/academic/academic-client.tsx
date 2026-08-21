@@ -63,6 +63,95 @@ const STATUS_BADGE: Record<
   finalizada: { label: "Finalizada", variant: "outline" },
 };
 
+const STATUS_ORDER: CohortDto["status"][] = ["planificada", "en_curso", "finalizada"];
+
+/**
+ * 007 — Qué estados quedan seleccionados al tocar un chip del filtro.
+ *
+ * Es una función pura y exportada A PROPÓSITO: la primera versión de este
+ * filtro invertía la selección (tocar "Planificada" dejaba las OTRAS dos) y
+ * ni typecheck ni build lo detectaron, porque era lógica de interacción. Con
+ * esto separado, el caso queda cubierto por tests.
+ *
+ * Reglas: desde "todas" seleccionadas, tocar un estado significa "solo
+ * este"; después suma/saca de a uno; y quedarse sin ninguno equivale a no
+ * filtrar, así que vuelve a todas.
+ */
+export function nextStatusFilter(
+  current: ReadonlySet<CohortDto["status"]>,
+  clicked: CohortDto["status"],
+  all: readonly CohortDto["status"][] = STATUS_ORDER
+): Set<CohortDto["status"]> {
+  if (current.size === all.length) return new Set([clicked]);
+  const next = new Set(current);
+  if (next.has(clicked)) next.delete(clicked);
+  else next.add(clicked);
+  return next.size === 0 ? new Set(all) : next;
+}
+
+/**
+ * 007 (feedback en vivo: "deberíamos poder filtrar por todos, cursos
+ * planificados, en curso y finalizados... que se pueda elegir cuáles
+ * mostrar") — filtro por estado, de selección MÚLTIPLE: con 41 camadas
+ * cargadas, la lista completa es casi toda archivo, y lo que se quiere ver
+ * día a día es planificadas + en curso.
+ *
+ * Cada chip lleva su conteo: así se ve cuántas hay de cada estado sin tener
+ * que activarlo para descubrirlo.
+ */
+function CohortStatusFilter({
+  cohorts,
+  value,
+  onChange,
+}: {
+  cohorts: CohortDto[];
+  value: Set<CohortDto["status"]>;
+  onChange: (next: Set<CohortDto["status"]>) => void;
+}) {
+  const counts = STATUS_ORDER.map((s) => ({
+    status: s,
+    count: cohorts.filter((c) => c.status === s).length,
+  }));
+  const allOn = value.size === STATUS_ORDER.length;
+
+  const toggle = (status: CohortDto["status"]) =>
+    onChange(nextStatusFilter(value, status));
+
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-2">
+      <span className="text-xs text-muted-foreground">Mostrar:</span>
+      <button
+        type="button"
+        aria-pressed={allOn}
+        className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+          allOn ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent"
+        }`}
+        onClick={() => onChange(new Set(STATUS_ORDER))}
+      >
+        Todas ({cohorts.length})
+      </button>
+      {counts.map(({ status, count }) => (
+        // El chip se pinta según su estado REAL. Antes se apagaba cuando
+        // estaban las tres activas, así que se veía apagado estando
+        // encendido: al tocarlo hacía lo contrario de lo que parecía.
+        <button
+          key={status}
+          type="button"
+          aria-pressed={value.has(status)}
+          className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+            value.has(status)
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:bg-accent"
+          }`}
+          onClick={() => toggle(status)}
+        >
+          {STATUS_BADGE[status].label} ({count})
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /**
  * 005 (T014, US1) — pantalla de gestión académica. Iteración 2 (feedback en
  * vivo del dueño) suma pestañas Cursos/Software/Profesores: antes solo se
@@ -71,6 +160,16 @@ const STATUS_BADGE: Record<
  */
 export function AcademicClient() {
   const [tab, setTab] = useState<Tab>("courses");
+  /**
+   * 007 (feedback en vivo: "deberíamos poder filtrar por todos, cursos
+   * planificados, en curso y finalizados") — filtro por estado de la camada.
+   * Es un conjunto y no un valor único porque el caso más pedido es ver dos
+   * a la vez (planificadas + en curso) y esconder el archivo de finalizadas.
+   * Arranca con los tres marcados: el comportamiento de antes.
+   */
+  const [statusFilter, setStatusFilter] = useState<Set<CohortDto["status"]>>(
+    new Set(["planificada", "en_curso", "finalizada"])
+  );
   const [loading, setLoading] = useState(false);
   const [courses, setCourses] = useState<CourseDto[]>([]);
   const [cohorts, setCohorts] = useState<CohortDto[]>([]);
@@ -90,6 +189,8 @@ export function AcademicClient() {
   const [teacherForm, setTeacherForm] = useState<
     { mode: "create" } | { mode: "edit"; teacher: TeacherDto } | null
   >(null);
+
+  const visibleCohorts = cohorts.filter((c) => statusFilter.has(c.status));
 
   /**
    * Cada recurso se lee por separado y un fallo NO se traga en silencio: si
@@ -208,6 +309,13 @@ export function AcademicClient() {
             </Button>
           </div>
         )}
+        {!loading && tab === "cohorts" && cohorts.length > 0 && (
+          <CohortStatusFilter
+            cohorts={cohorts}
+            value={statusFilter}
+            onChange={setStatusFilter}
+          />
+        )}
         {!loading && tab === "cohorts" &&
           (cohorts.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
@@ -217,9 +325,13 @@ export function AcademicClient() {
                 temario, software y profesor.
               </p>
             </div>
+          ) : visibleCohorts.length === 0 ? (
+            <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+              Ninguna camada coincide con el filtro.
+            </p>
           ) : (
             <ul className="space-y-2">
-              {cohorts.map((cohort) => (
+              {visibleCohorts.map((cohort) => (
                 <li
                   key={cohort.id}
                   className="flex items-start justify-between gap-4 rounded-lg border bg-card px-4 py-3"

@@ -50,6 +50,15 @@ export function CohortForm({
   );
   const [classroom, setClassroom] = useState(initial?.classroom ?? "");
   const [capacity, setCapacity] = useState(initial?.capacity?.toString() ?? "");
+  /**
+   * 007 — El enlace del grupo ya se guardaba (columna
+   * `whatsapp_group_link`, 005) pero no había dónde cargarlo: quedaba solo
+   * para el seed y ninguna pantalla lo pedía. Es por
+   * cohorte y no por curso porque cada edición tiene su propio grupo.
+   */
+  const [whatsappGroupLink, setWhatsappGroupLink] = useState(
+    initial?.whatsappGroupLink ?? ""
+  );
   const [softwareIds, setSoftwareIds] = useState<string[]>(
     initial?.software.map((s) => s.id) ?? []
   );
@@ -121,6 +130,7 @@ export function CohortForm({
       daysOfWeek: daysOfWeek.length > 0 ? daysOfWeek.join(",") : null,
       classroom: classroom.trim() || null,
       capacity: capacity.trim() ? Number(capacity) : null,
+      whatsappGroupLink: whatsappGroupLink.trim() || null,
       softwareIds,
     };
     const res = await fetch(
@@ -287,6 +297,19 @@ export function CohortForm({
                 onChange={(e) => setCapacity(e.target.value)}
               />
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="cohort-whatsapp">Grupo de WhatsApp</Label>
+            <Input
+              id="cohort-whatsapp"
+              placeholder="https://chat.whatsapp.com/…"
+              value={whatsappGroupLink}
+              onChange={(e) => setWhatsappGroupLink(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Enlace de invitación al grupo de esta camada.
+            </p>
           </div>
 
           <div className="space-y-1.5">

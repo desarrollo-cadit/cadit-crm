@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CURRENCIES } from "@/lib/db/schema";
 import { apiError, parseBody, requireFullAccess } from "@/lib/api";
 import { updateEnrollmentCommercial } from "@/server/enrollments";
 
@@ -8,6 +9,8 @@ type Params = { params: Promise<{ id: string }> };
 
 const patchSchema = z.object({
   amount: z.number().int().nullable().optional(),
+  // 007 — moneda del importe (UYU por defecto; PYG para los alumnos de Paraguay).
+  currency: z.enum(CURRENCIES).optional(),
   installments: z.number().int().min(0).nullable().optional(),
   paymentNotes: z.string().max(2000).nullable().optional(),
   nationalId: z.string().max(120).nullable().optional(),
