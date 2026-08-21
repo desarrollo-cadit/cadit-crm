@@ -10,11 +10,18 @@ import { scoped } from "@/lib/db/tenant";
  * actividad. Sin cambios de comportamiento respecto al `lead` de antes de
  * 004 — solo cambia la tabla destino y el conflict target (partial unique
  * `enrollment_contact_general_uq`, ver research.md DV-005).
+ *
+ * 005 iteración 7 — `interestCourseId` opcional: el formulario de captación
+ * atado a un curso lo manda para que el lead sepa de qué curso viene. Es
+ * atribución de PRIMER contacto: si el lead ya tiene un curso de interés no
+ * se pisa (`coalesce`), porque el dato sirve justamente para saber por dónde
+ * entró. La ingesta de WhatsApp no lo manda y se comporta igual que antes.
  */
 export async function onLeadActivity(
   organizationId: string,
   contactId: string,
-  at: Date
+  at: Date,
+  interestCourseId?: string | null
 ): Promise<void> {
   const db = getDb();
 
@@ -34,7 +41,17 @@ export async function onLeadActivity(
   if (existing[0]) {
     await db
       .update(schema.enrollment)
-      .set({ lastActivityAt: at, updatedAt: new Date() })
+      .set({
+        lastActivityAt: at,
+        updatedAt: new Date(),
+        // `coalesce` en SQL: rellena el curso solo si la tarjeta todavía no
+        // tenía uno. Sin sobrescribir el primer origen.
+        ...(interestCourseId
+          ? {
+              interestCourseId: sql`coalesce(${schema.enrollment.interestCourseId}, ${interestCourseId})`,
+            }
+          : {}),
+      })
       .where(eq(schema.enrollment.id, existing[0].id));
     return;
   }
@@ -74,6 +91,7 @@ export async function onLeadActivity(
       stageId: firstStage[0].id,
       position: (maxPos[0]?.max ?? -1) + 1,
       lastActivityAt: at,
+      interestCourseId: interestCourseId ?? null,
     })
     .onConflictDoNothing({
       target: [schema.enrollment.contactId],

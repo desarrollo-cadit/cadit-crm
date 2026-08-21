@@ -28,6 +28,9 @@ export type BoardEnrollment = {
   cohortId: string | null;
   position: number;
   lastActivityAt: string | null;
+  /** 005 iteración 7 — curso del formulario por el que entró el lead. */
+  interestCourseId: string | null;
+  interestCourseName: string | null;
   contact: { id: string; name: string; phone: string | null };
   conversationId: string | null;
 };
@@ -231,6 +234,14 @@ function LeadCard({ lead, overlay = false }: { lead: BoardEnrollment; overlay?: 
         <ContactAvatar name={lead.contact.name} seed={lead.contact.id} size="sm" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{lead.contact.name}</p>
+          {lead.interestCourseName && (
+            <p
+              className="truncate text-[11px] font-medium text-primary"
+              title={`Curso de interés: ${lead.interestCourseName}`}
+            >
+              {lead.interestCourseName}
+            </p>
+          )}
           <p className="text-[11px] text-muted-foreground">
             {lead.lastActivityAt
               ? `Actividad: ${formatTime(lead.lastActivityAt)}`

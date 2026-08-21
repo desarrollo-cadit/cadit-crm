@@ -1,6 +1,7 @@
 import { asc, desc, eq, inArray, like, ne } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, schema, type DbOrTx } from "@/lib/db";
+import { CURRENCIES, type Currency } from "@/lib/db/schema";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { slugify } from "@/lib/utils";
@@ -62,6 +63,8 @@ export type CourseContentInput = {
   learningObjectives?: string[] | null;
   targetAudience?: string | null;
   syllabusUrl?: string | null;
+  /** 007 — si sale o no en el catálogo público. Default `true` en el alta. */
+  published?: boolean;
 };
 
 /**
@@ -119,6 +122,7 @@ export const courseContentSchema = {
   learningObjectives: z.array(z.string().trim().min(1).max(300)).max(30).nullable().optional(),
   targetAudience: z.string().max(4000).nullable().optional(),
   syllabusUrl: httpUrl.nullable().optional(),
+  published: z.boolean().optional(),
 };
 
 export type CreateCourseResult =
@@ -171,6 +175,9 @@ export async function createCourse(
       learningObjectives: input.learningObjectives ?? null,
       targetAudience: input.targetAudience ?? null,
       syllabusUrl: input.syllabusUrl ?? null,
+      // 007 — un curso nuevo se publica salvo que se diga lo contrario:
+      // el caso normal es el curso del catálogo.
+      published: input.published ?? true,
     })
     .returning();
   // `insert().returning()` de una fila: o devuelve la fila o lanza.
@@ -249,6 +256,7 @@ export async function updateCourse(
         : {}),
       ...(input.targetAudience !== undefined ? { targetAudience: input.targetAudience } : {}),
       ...(input.syllabusUrl !== undefined ? { syllabusUrl: input.syllabusUrl } : {}),
+      ...(input.published !== undefined ? { published: input.published } : {}),
       updatedAt: new Date(),
     })
     .where(scoped(schema.course.organizationId, organizationId, eq(schema.course.id, courseId)))
@@ -313,6 +321,8 @@ export type CohortInput = {
   teacherId?: string | null;
   /** 005 — moneda entera (DV-008). */
   cost?: number | null;
+  /** 007 — de qué moneda es `cost`. */
+  currency?: Currency;
   frequency?: string | null;
   /** 005 iteración 2 — horario "HH:MM" para el calendario. */
   startTime?: string | null;
@@ -352,6 +362,7 @@ export const cohortInputSchema = {
   endDate: z.coerce.date().nullable().optional(),
   teacherId: z.string().min(1).nullable().optional(),
   cost: z.number().int().min(0).nullable().optional(),
+  currency: z.enum(CURRENCIES).optional(),
   frequency: z.string().max(200).nullable().optional(),
   startTime: timeHHMM.optional(),
   endTime: timeHHMM.optional(),
@@ -477,6 +488,7 @@ export async function createCohort(
     endDate: input.endDate ?? null,
     teacherId: input.teacherId ?? null,
     cost: input.cost ?? null,
+    currency: input.currency ?? "UYU",
     frequency: input.frequency ?? null,
     startTime: input.startTime ?? null,
     endTime: input.endTime ?? null,
@@ -541,6 +553,7 @@ export async function updateCohort(
       ...(input.endDate !== undefined ? { endDate: input.endDate } : {}),
       ...(input.teacherId !== undefined ? { teacherId: input.teacherId } : {}),
       ...(input.cost !== undefined ? { cost: input.cost } : {}),
+      ...(input.currency !== undefined ? { currency: input.currency } : {}),
       ...(input.frequency !== undefined ? { frequency: input.frequency } : {}),
       ...(input.startTime !== undefined ? { startTime: input.startTime } : {}),
       ...(input.endTime !== undefined ? { endTime: input.endTime } : {}),
@@ -645,6 +658,7 @@ function serializeCohort(
     daysOfWeek: cohort.daysOfWeek,
     teacher: teacher ? { id: teacher.id, name: teacher.name } : null,
     cost: cohort.cost,
+    currency: cohort.currency,
     frequency: cohort.frequency,
     classroom: cohort.classroom,
     // 006 — el temario es del curso, no de la edición: la cohorte lo hereda.

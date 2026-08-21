@@ -99,5 +99,37 @@ describe("onLeadActivity — lead general de ventas (004 FR-010)", () => {
 
     expect(inserts).toHaveLength(0);
     expect(updates).toHaveLength(1);
+    // Sin curso de interés no se toca la columna (ingesta de WhatsApp).
+    expect(updates[0]!.set).not.toHaveProperty("interestCourseId");
+  });
+
+  /**
+   * 005 iteración 7 — curso de interés: viene del formulario de captación
+   * atado a un curso y es atribución de PRIMER contacto.
+   */
+  it("lead nuevo con curso de interés → lo guarda en interest_course_id", async () => {
+    selectQueue.push([], [{ id: "stg_lead" }], [{ max: -1 }]);
+
+    const { onLeadActivity } = await import("@/server/inbox/lead-activity");
+    await onLeadActivity("org_1", "ct_1", new Date(), "crs_revit");
+
+    const values = inserts[0]!.values as { interestCourseId: string | null };
+    expect(values.interestCourseId).toBe("crs_revit");
+  });
+
+  it("lead existente con curso de interés → lo rellena con coalesce, sin pisar el primero", async () => {
+    selectQueue.push([{ id: "enr_existing" }]);
+
+    const { onLeadActivity } = await import("@/server/inbox/lead-activity");
+    await onLeadActivity("org_1", "ct_1", new Date(), "crs_autocad");
+
+    expect(inserts).toHaveLength(0);
+    expect(updates).toHaveLength(1);
+    // El valor es un fragmento SQL `coalesce(...)`: la garantía de "no pisar"
+    // la da Postgres, acá solo se verifica que la columna se actualiza así y
+    // no con una asignación directa.
+    const set = updates[0]!.set as { interestCourseId?: unknown };
+    expect(set.interestCourseId).toBeDefined();
+    expect(JSON.stringify(set.interestCourseId)).toContain("coalesce");
   });
 });

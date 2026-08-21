@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import type { CourseCategoryDto, CourseDto } from "@/lib/types";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -105,6 +106,9 @@ export function CourseForm({
   const [modulesLoaded, setModulesLoaded] = useState(!initial);
   const [modulesError, setModulesError] = useState(false);
   const [newCategory, setNewCategory] = useState("");
+  // 007 — un curso nuevo se publica por defecto; los talleres a medida y las
+  // capacitaciones in-company se destildan para que no salgan en la web.
+  const [published, setPublished] = useState(initial?.published ?? true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -165,6 +169,7 @@ export function CourseForm({
       syllabusUrl: syllabusUrl.trim() || null,
       learningObjectives: textToTopics(objectives),
       targetAudience: targetAudience.trim() || null,
+      published,
       // Omitir `modules` deja el temario como está; mandarlo lo reemplaza.
       ...(modulesLoaded
         ? {
@@ -230,6 +235,25 @@ export function CourseForm({
               </p>
             </div>
           </div>
+
+          <label className="flex items-start gap-2.5 rounded-md border p-3">
+            <Checkbox
+              className="mt-0.5"
+              checked={published}
+              onChange={(e) => setPublished(e.target.checked)}
+            />
+            <span className="space-y-0.5">
+              <span className="block text-sm font-medium">
+                Publicar en el catálogo web
+              </span>
+              <span className="block text-xs text-muted-foreground">
+                Destildalo para talleres a medida y capacitaciones in-company:
+                el curso sigue existiendo en el CRM, con sus cohortes e
+                inscripciones, pero no aparece en tu sitio ni recibe leads del
+                formulario público.
+              </span>
+            </span>
+          </label>
 
           <div className="space-y-1.5">
             <Label htmlFor="course-tagline">Frase corta</Label>

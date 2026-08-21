@@ -44,9 +44,15 @@ export const GET = withAuth(async (session, req: Request) => {
       enrollment: schema.enrollment,
       contact: schema.contact,
       conversationId: schema.conversation.id,
+      // 005 iteración 7 — curso de interés del lead (de qué formulario vino).
+      interestCourseName: schema.course.name,
     })
     .from(schema.enrollment)
     .innerJoin(schema.contact, eq(schema.enrollment.contactId, schema.contact.id))
+    .leftJoin(
+      schema.course,
+      eq(schema.enrollment.interestCourseId, schema.course.id)
+    )
     .leftJoin(
       schema.conversation,
       and(
@@ -72,6 +78,8 @@ export const GET = withAuth(async (session, req: Request) => {
       cohortId: r.enrollment.cohortId,
       position: r.enrollment.position,
       lastActivityAt: r.enrollment.lastActivityAt?.toISOString() ?? null,
+      interestCourseId: r.enrollment.interestCourseId,
+      interestCourseName: r.interestCourseName,
       contact: {
         id: r.contact.id,
         name: fullName(r.contact),

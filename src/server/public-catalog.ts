@@ -206,6 +206,10 @@ export async function listPublicCourses(filter?: {
       scoped(
         schema.course.organizationId,
         organizationId,
+        // 007 — el catálogo público muestra SOLO los cursos publicados: los
+        // talleres a medida y capacitaciones in-company existen en el CRM
+        // (con sus cohortes e inscripciones) pero no salen en la web.
+        eq(schema.course.published, true),
         filter?.categorySlug ? eq(schema.courseCategory.slug, filter.categorySlug) : undefined
       )
     )
@@ -241,6 +245,9 @@ export async function getPublicCourse(
       scoped(
         schema.course.organizationId,
         organizationId,
+        // 007 — un curso no publicado responde 404 también en el detalle: si
+        // no está en el listado, su landing tampoco existe.
+        eq(schema.course.published, true),
         or(eq(schema.course.slug, idOrSlug), eq(schema.course.id, idOrSlug))
       )
     )

@@ -6,11 +6,11 @@ import {
   publicFormRateLimit,
   tooManyRequests,
 } from "@/lib/rate-limit";
-import { publicLeadSchema, submitIntakeForm } from "@/server/intake-forms";
+import { publicLeadSchema, submitCourseInterest } from "@/server/intake-forms";
 
 export const dynamic = "force-dynamic";
 
-type Params = { params: Promise<{ formId: string }> };
+type Params = { params: Promise<{ id: string }> };
 
 /** 007 — preflight del navegador cuando el sitio postea desde otro dominio. */
 export function OPTIONS(req: Request) {
@@ -18,21 +18,21 @@ export function OPTIONS(req: Request) {
 }
 
 /**
- * 005 iteración 3 — endpoint público (SIN autenticación, mismo patrón que
- * `/api/public/courses`) para que el sitio externo del dueño mande los datos
- * de un formulario de captación embebido. 404 si el formulario no existe en
- * la única organización de la instancia (mono-tenant, DV-010).
+ * 005 iteración 8 — captación pública POR CURSO (sin auth, mismo patrón que
+ * el resto de `/api/public`). El sitio comercial ya consume el catálogo y
+ * tiene el `slug` de cada curso, así que la página de un curso postea acá
+ * directamente y el lead entra atribuido a ESE curso — sin provisionar ni
+ * mantener sincronizado un id de formulario por curso.
  *
- * 005 iteración 8 — sigue siendo la puerta de las campañas con nombre
- * propio ("Feria 2026"); para la página de un curso del catálogo la puerta
- * es `/api/public/courses/<slug>/submit`, que no necesita provisionar nada.
- * Las dos comparten `publicLeadSchema`: un solo contrato de body.
+ * El segmento acepta slug o id interno, igual que el GET del detalle.
+ * 404 si el curso no existe o no está publicado en la única organización de
+ * la instancia (mono-tenant, DV-010).
  */
 export async function POST(req: Request, ctx: Params) {
-  const { formId } = await ctx.params;
+  const { id } = await ctx.params;
 
-  // 007 — mismo balde por IP que la puerta por curso: el límite es del
-  // formulario público, no de una ruta puntual.
+  // 007 — El límite corre ANTES de tocar la base: es lo que protege de un
+  // script que dispara envíos, con o sin navegador (CORS no frena a curl).
   const rl = publicFormRateLimit();
   if (!checkRateLimit(`public-form:${clientIp(req)}`, rl).allowed) {
     return withCors(req, tooManyRequests(rl.windowMs));
@@ -41,7 +41,7 @@ export async function POST(req: Request, ctx: Params) {
   const body = await parseBody(req, publicLeadSchema);
   if (!body.ok) return withCors(req, body.response);
 
-  const result = await submitIntakeForm(formId, {
+  const result = await submitCourseInterest(id, {
     name: body.data.name,
     lastName: body.data.lastName ?? null,
     phone: body.data.phone,

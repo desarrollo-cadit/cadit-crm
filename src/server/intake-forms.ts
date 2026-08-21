@@ -1,8 +1,9 @@
-import { asc, eq, gte, like, sql } from "drizzle-orm";
+import { asc, eq, gte, like, or, sql } from "drizzle-orm";
+import { z } from "zod";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
-import { normalizeMx } from "@/lib/meta/client";
+import { normalizePhoneOrRaw } from "@/lib/phone";
 import { onLeadActivity } from "@/server/inbox/lead-activity";
 import { resolveSoleOrganizationId } from "@/server/public-catalog";
 
@@ -78,17 +79,120 @@ export type IntakeFormSubmitResult =
   | { ok: true; contactId: string }
   | { ok: false; status: 404; code: "not_found"; message: string };
 
+export type PublicLeadInput = {
+  name: string;
+  lastName?: string | null;
+  phone: string;
+  email?: string | null;
+  notes?: string | null;
+};
+
+/**
+ * 005 iteración 8 — contrato ÚNICO del body de captación pública, compartido
+ * por las dos puertas (`/api/public/forms/<id>/submit` y
+ * `/api/public/courses/<slug>/submit`). Vive acá y no en cada route para que
+ * un sitio externo no tenga que aprenderse dos formas del mismo formulario.
+ */
+export const publicLeadSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  // 005 iteración 7 — apellido separado. OPCIONAL a propósito: los sitios
+  // externos que ya tienen el snippet viejo embebido siguen funcionando y el
+  // contacto queda como antes (todo en `name`).
+  lastName: z.string().trim().max(120).optional(),
+  phone: z
+    .string()
+    .trim()
+    .regex(/^\d{7,15}$/, "Teléfono en dígitos, con código de país (ej. 5215512345678)"),
+  email: z.string().trim().email().max(200).optional(),
+  // 005 iteración 4 (feedback en vivo: "el campo mensaje que llena el
+  // usuario en mi web") — nombre de cara al formulario externo; se guarda
+  // en contact.notes (mismo campo que ya se ve en la tabla de contactos).
+  message: z.string().max(4000).optional(),
+});
+
+/**
+ * 005 iteración 3 — alta del contacto + lead a partir de una captación
+ * pública. Busca/crea el contacto (reusa el criterio del alta manual:
+ * waIdentity = teléfono normalizado, onConflictDoNothing en el índice
+ * existente) y asegura el lead general reusando `onLeadActivity` (ya tiene
+ * su lógica de crear/actualizar).
+ *
+ * 005 iteración 8 — extraída de `submitIntakeForm` para que la entrada por
+ * curso del catálogo (`submitCourseInterest`) no duplique el alta. Lo único
+ * que cambia entre las dos puertas es de dónde salen `source` e
+ * `interestCourseId`.
+ */
+async function registerPublicLead(
+  organizationId: string,
+  source: string,
+  interestCourseId: string | null,
+  input: PublicLeadInput
+): Promise<IntakeFormSubmitResult> {
+  const db = getDb();
+  // 007 — misma normalización que la importación de planillas: si no, el
+  // lead que entra por la web queda con "098574165" y el alumno ya cargado
+  // con "59898574165", y son dos contactos para la misma persona.
+  const phone = normalizePhoneOrRaw(input.phone);
+
+  const inserted = await db
+    .insert(schema.contact)
+    .values({
+      id: newId("contact"),
+      organizationId,
+      // 005 iteración 7 — la captación pública ya manda apellido aparte
+      // (`lastName`, opcional para no romper los formularios ya embebidos):
+      // cuando no viene, `name` va entero a firstName y lastName queda NULL,
+      // igual que un contacto de WhatsApp.
+      firstName: input.name,
+      lastName: input.lastName ?? null,
+      phone,
+      waIdentity: phone,
+      notes: input.notes ?? null,
+      email: input.email ?? null,
+      source,
+    })
+    .onConflictDoNothing({
+      target: [schema.contact.organizationId, schema.contact.waIdentity],
+    })
+    .returning();
+
+  let contactId = inserted[0]?.id;
+  if (!contactId) {
+    // Ya existía (mismo teléfono): reutiliza el contacto, sin pisar su source.
+    const existing = await db
+      .select({ id: schema.contact.id })
+      .from(schema.contact)
+      .where(scoped(schema.contact.organizationId, organizationId, eq(schema.contact.waIdentity, phone)))
+      .limit(1);
+    contactId = existing[0]?.id;
+  }
+  if (!contactId) {
+    // Carrera extremadamente improbable: ni insert ni select encontraron fila.
+    return {
+      ok: false,
+      status: 404,
+      code: "not_found",
+      message: "No se pudo registrar el contacto",
+    };
+  }
+
+  await onLeadActivity(organizationId, contactId, new Date(), interestCourseId);
+
+  return { ok: true, contactId };
+}
+
 /**
  * 005 iteración 3 — resuelve el `intake_form` en la única organización de la
  * instancia (mismo criterio mono-tenant que `resolveSoleOrganizationId`,
- * DV-010), busca/crea el contacto con `source: "formulario:<nombre>"`
- * (reusa el criterio de alta manual: waIdentity = normalizeMx(phone),
- * onConflictDoNothing en el índice existente) y asegura el lead general
- * reusando `onLeadActivity` (ya tiene su lógica de crear/actualizar).
+ * DV-010) y registra el lead con `source: "formulario:<nombre>"`.
+ *
+ * 005 iteración 7 — el curso del formulario viaja al lead como FK
+ * (`enrollment.interest_course_id`); `source` sigue existiendo pero como
+ * texto informativo, no como la forma de saber de qué curso vino.
  */
 export async function submitIntakeForm(
   formId: string,
-  input: { name: string; phone: string; email?: string | null; notes?: string | null }
+  input: PublicLeadInput
 ): Promise<IntakeFormSubmitResult> {
   const organizationId = await resolveSoleOrganizationId();
   if (!organizationId) {
@@ -122,52 +226,69 @@ export async function submitIntakeForm(
     };
   }
 
-  const phone = normalizeMx(input.phone);
-  const source = `formulario:${form.name}`;
+  return registerPublicLead(
+    organizationId,
+    `formulario:${form.name}`,
+    form.courseId,
+    input
+  );
+}
 
-  const inserted = await db
-    .insert(schema.contact)
-    .values({
-      id: newId("contact"),
-      organizationId,
-      // 005 iteración 6 — el formulario público da UN string ("Nombre"), no
-      // separado en nombre/apellido; va entero a firstName (mismo criterio
-      // que un contacto de WhatsApp), lastName queda NULL.
-      firstName: input.name,
-      phone,
-      waIdentity: phone,
-      notes: input.notes ?? null,
-      email: input.email ?? null,
-      source,
-    })
-    .onConflictDoNothing({
-      target: [schema.contact.organizationId, schema.contact.waIdentity],
-    })
-    .returning();
+/**
+ * 005 iteración 8 — captación DIRECTA por curso del catálogo, sin
+ * `intake_form` de por medio: `POST /api/public/courses/<slug>/submit`. El
+ * sitio comercial ya consume el catálogo público y tiene el `slug` de cada
+ * curso, así que no hace falta provisionar ni mantener sincronizado un id de
+ * formulario por curso — la clave ES el curso.
+ *
+ * Acepta slug o id interno, igual que `getPublicCourse`, para que las URLs
+ * publicadas con id sigan resolviendo. Los formularios con nombre de
+ * /settings/forms siguen existiendo para las campañas donde el origen tiene
+ * que llamarse distinto ("Feria 2026").
+ */
+export async function submitCourseInterest(
+  idOrSlug: string,
+  input: PublicLeadInput
+): Promise<IntakeFormSubmitResult> {
+  const notFound = {
+    ok: false,
+    status: 404,
+    code: "not_found",
+    message: "Curso no encontrado",
+  } as const;
 
-  let contactId = inserted[0]?.id;
-  if (!contactId) {
-    // Ya existía (mismo teléfono): reutiliza el contacto, sin pisar su source.
-    const existing = await db
-      .select({ id: schema.contact.id })
-      .from(schema.contact)
-      .where(scoped(schema.contact.organizationId, organizationId, eq(schema.contact.waIdentity, phone)))
-      .limit(1);
-    contactId = existing[0]?.id;
-  }
-  if (!contactId) {
-    // Carrera extremadamente improbable: ni insert ni select encontraron fila.
-    return {
-      ok: false,
-      status: 404,
-      code: "not_found",
-      message: "No se pudo registrar el contacto",
-    };
-  }
+  const organizationId = await resolveSoleOrganizationId();
+  if (!organizationId) return notFound;
 
-  await onLeadActivity(organizationId, contactId, new Date());
+  const db = getDb();
+  const courseRows = await db
+    .select({ id: schema.course.id, name: schema.course.name })
+    .from(schema.course)
+    .where(
+      scoped(
+        schema.course.organizationId,
+        organizationId,
+        // 007 — mismo criterio que el catálogo público: si el curso no se
+        // publica, su landing no existe y esta puerta tampoco. Los talleres
+        // internos no reciben leads del sitio.
+        eq(schema.course.published, true),
+        or(eq(schema.course.slug, idOrSlug), eq(schema.course.id, idOrSlug))
+      )
+    )
+    .limit(1);
+  const course = courseRows[0];
+  if (!course) return notFound;
 
-  return { ok: true, contactId };
+  // Mismo prefijo `formulario:` que las otras captaciones públicas: así el
+  // badge del sidebar (`countRecentFormArrivals`) y el tag de la tabla de
+  // contactos siguen funcionando sin cambios. La atribución de verdad no es
+  // este texto, es `enrollment.interest_course_id`.
+  return registerPublicLead(
+    organizationId,
+    `formulario:${course.name}`,
+    course.id,
+    input
+  );
 }
 
 const FORM_ARRIVAL_WINDOW_MS = 48 * 60 * 60 * 1000;

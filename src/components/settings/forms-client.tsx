@@ -45,8 +45,12 @@ export function FormsClient() {
       <p className="text-sm text-muted-foreground">
         Cada formulario tiene una URL pública de envío para pegar en tu sitio
         externo. Los contactos que lleguen así quedan marcados con un tag de
-        origen «Formulario: nombre» en la tabla de Contactos.
+        origen «Formulario: nombre» en la tabla de Contactos, y si el
+        formulario está atado a un curso, su tarjeta del pipeline muestra ese
+        curso como interés.
       </p>
+
+      <CourseEndpointNote />
 
       <CreateForm courses={courses} onCreated={() => void refetch()} />
 
@@ -66,6 +70,40 @@ export function FormsClient() {
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * 005 iteración 8 — cada curso del catálogo ya tiene su URL de captación sin
+ * que haya que crear nada acá. Sin este aviso el dueño termina creando un
+ * formulario por curso a mano, que es justo lo que la ruta por curso evita.
+ */
+function CourseEndpointNote() {
+  const [origin, setOrigin] = useState("");
+  useEffect(() => setOrigin(window.location.origin), []);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>¿Un formulario por curso? No hace falta</CardTitle>
+        <CardDescription>
+          Cada curso del catálogo ya tiene su propia URL de captación, con su
+          dirección web (slug). El lead entra atribuido a ese curso solo.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Input
+          readOnly
+          value={`${origin}/api/public/courses/<slug-del-curso>/submit`}
+          className="font-mono text-xs"
+        />
+        <p className="mt-2 text-xs text-muted-foreground">
+          Los formularios de acá abajo son para campañas con nombre propio
+          («Feria 2026», «Anuncio de septiembre»), cuando querés distinguir el
+          origen del genérico del catálogo.
+        </p>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -164,6 +202,7 @@ function FormCard({ form }: { form: IntakeFormDto }) {
   headers: { "content-type": "application/json" },
   body: JSON.stringify({
     name: "Nombre del interesado",
+    lastName: "opcional — apellido, si tu formulario lo pide aparte",
     phone: "5215512345678",
     email: "opcional@ejemplo.com",
     message: "opcional — lo que el interesado escriba en el campo mensaje",
@@ -171,7 +210,7 @@ function FormCard({ form }: { form: IntakeFormDto }) {
 });`;
   const curlSnippet = `curl -X POST "${url}" \\
   -H "content-type: application/json" \\
-  -d '{"name":"Nombre del interesado","phone":"5215512345678"}'`;
+  -d '{"name":"Nombre","lastName":"Apellido","phone":"5215512345678"}'`;
 
   async function copy() {
     await navigator.clipboard.writeText(url).catch(() => null);

@@ -164,4 +164,152 @@ describe("submitIntakeForm (iteración 3, formularios de captación)", () => {
     // Sin inserción nueva de enrollment: solo un update (last_activity_at).
     expect(updates).toHaveLength(1);
   });
+
+  /**
+   * 005 iteración 7 — apellido separado y curso de interés como FK. El
+   * `source` de texto sigue existiendo, pero de qué curso vino el lead ahora
+   * se sabe por `enrollment.interest_course_id`.
+   */
+  it("formulario atado a un curso: guarda el apellido y propaga el curso al lead", async () => {
+    selectQueue.push(
+      [{ id: "org_1" }], // resolveSoleOrganizationId
+      [
+        {
+          id: "frm_1",
+          organizationId: "org_1",
+          name: "Landing Revit",
+          courseId: "crs_revit",
+        },
+      ], // form atado al curso
+      [], // onLeadActivity: sin lead general existente
+      [{ id: "stg_lead" }], // primera etapa abierta
+      [{ max: -1 }]
+    );
+    insertReturnQueue.push([{ id: "ct_new" }]);
+
+    const { submitIntakeForm } = await import("@/server/intake-forms");
+    const result = await submitIntakeForm("frm_1", {
+      name: "Xavier",
+      lastName: "Pérez",
+      phone: "5215512345678",
+    });
+
+    expect(result.ok).toBe(true);
+
+    const contactValues = inserts[0]!.values as {
+      firstName: string;
+      lastName: string | null;
+    };
+    expect(contactValues.firstName).toBe("Xavier");
+    expect(contactValues.lastName).toBe("Pérez");
+
+    const leadInsert = inserts.find(
+      (i) => (i.values as { cohortId?: unknown }).cohortId === null
+    );
+    expect(
+      (leadInsert!.values as { interestCourseId: string | null }).interestCourseId
+    ).toBe("crs_revit");
+  });
+
+  it("sin apellido (snippet viejo ya embebido en un sitio): lastName queda NULL y el alta funciona igual", async () => {
+    selectQueue.push(
+      [{ id: "org_1" }],
+      [{ id: "frm_1", organizationId: "org_1", name: "Landing Revit", courseId: null }],
+      [],
+      [{ id: "stg_lead" }],
+      [{ max: -1 }]
+    );
+    insertReturnQueue.push([{ id: "ct_new" }]);
+
+    const { submitIntakeForm } = await import("@/server/intake-forms");
+    const result = await submitIntakeForm("frm_1", {
+      name: "Xavier Pérez",
+      phone: "5215512345678",
+    });
+
+    expect(result.ok).toBe(true);
+    const contactValues = inserts[0]!.values as {
+      firstName: string;
+      lastName: string | null;
+    };
+    expect(contactValues.firstName).toBe("Xavier Pérez");
+    expect(contactValues.lastName).toBeNull();
+  });
+});
+
+/**
+ * 005 iteración 8 — captación directa por curso del catálogo, sin
+ * `intake_form` de por medio: la página del curso postea a
+ * `/api/public/courses/<slug>/submit` y el lead entra atribuido a ese curso.
+ */
+describe("submitCourseInterest (iteración 8, captación por curso)", () => {
+  beforeEach(() => {
+    selectQueue.length = 0;
+    insertReturnQueue.length = 0;
+    inserts.length = 0;
+    updates.length = 0;
+    vi.resetModules();
+  });
+
+  it("404 si el slug no existe en la organización de la instancia", async () => {
+    selectQueue.push(
+      [{ id: "org_1" }], // resolveSoleOrganizationId
+      [] // curso no encontrado
+    );
+
+    const { submitCourseInterest } = await import("@/server/intake-forms");
+    const result = await submitCourseInterest("curso-inexistente", {
+      name: "Xavier",
+      phone: "5215512345678",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.status).toBe(404);
+      expect(result.code).toBe("not_found");
+    }
+    // Nada se dio de alta cuando el curso no existe.
+    expect(inserts).toHaveLength(0);
+  });
+
+  it("slug válido: crea el contacto y atribuye el lead a ese curso, sin intake_form", async () => {
+    selectQueue.push(
+      [{ id: "org_1" }], // resolveSoleOrganizationId
+      [{ id: "crs_revit", name: "Revit" }], // curso por slug
+      [], // onLeadActivity: sin lead general existente
+      [{ id: "stg_lead" }], // primera etapa abierta
+      [{ max: -1 }]
+    );
+    insertReturnQueue.push([{ id: "ct_new" }]);
+
+    const { submitCourseInterest } = await import("@/server/intake-forms");
+    const result = await submitCourseInterest("revit", {
+      name: "Xavier",
+      lastName: "Pérez",
+      phone: "5215512345678",
+      notes: "quiero info",
+    });
+
+    expect(result.ok).toBe(true);
+
+    const contactValues = inserts[0]!.values as {
+      firstName: string;
+      lastName: string | null;
+      source: string;
+      waIdentity: string;
+    };
+    expect(contactValues.firstName).toBe("Xavier");
+    expect(contactValues.lastName).toBe("Pérez");
+    // Mismo prefijo que el resto de la captación pública: el badge del
+    // sidebar y el tag de contactos siguen funcionando sin cambios.
+    expect(contactValues.source).toBe("formulario:Revit");
+    expect(contactValues.waIdentity).toBe("525512345678");
+
+    const leadInsert = inserts.find(
+      (i) => (i.values as { cohortId?: unknown }).cohortId === null
+    );
+    expect(
+      (leadInsert!.values as { interestCourseId: string | null }).interestCourseId
+    ).toBe("crs_revit");
+  });
 });
