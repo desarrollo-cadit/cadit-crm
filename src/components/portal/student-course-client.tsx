@@ -13,26 +13,36 @@ import {
   Video,
   X,
 } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import {
   ApprovalBadge,
-  AttendanceBar,
   ClassTime,
   EmptyNote,
   PortalCard,
-  SectionTitle,
   formatDate,
 } from "@/components/portal/student-bits";
 import type { ApprovalValue } from "@/components/portal/student-bits";
+import { StudentMilestones, type Milestone } from "@/components/portal/student-milestones";
 
 /**
- * 015 (US1, US3, US4) — Una cursada del alumno, en detalle.
+ * 015/024 — Una cursada del alumno.
  *
- * Tres preguntas, en este orden: cómo voy, qué clases hubo y cómo me fue en
- * cada una, y qué evaluaciones tengo. Nada de compañeros: ni nombres, ni
- * notas, ni asistencia ajena (FR-002). No es un filtro de pantalla — esos
- * datos no salen del servidor.
+ * 024 — Era un listado hacia abajo: asistencia, evaluaciones, clases, avisos y
+ * material, uno atrás del otro. Con doce clases eso son tres pantallas de
+ * scroll, y lo que la persona vino a buscar —el enlace de la próxima, la
+ * devolución de una entrega— queda enterrado.
+ *
+ * Ahora se separa en dos planos:
+ *
+ *  - **Fijo, al costado**: dónde está parada. El recorrido y el avance no son
+ *    una sección más; son la respuesta a "¿cómo voy?", que es la pregunta con
+ *    la que se entra.
+ *  - **En pestañas**: el detalle, agrupado por lo que se viene a HACER.
+ *    Clases (entrar, ver la grabación), Evaluaciones (cómo me fue), Material
+ *    (bajar algo), Avisos (enterarme). Cuatro tareas distintas, cuatro
+ *    lugares — y no cuatro secciones compitiendo por el mismo scroll.
  */
 
 type AttendanceStatus = "presente" | "tarde" | "ausente" | "justificado";
@@ -65,6 +75,8 @@ type Detail = {
     attendancePct: number | null;
     attendedCount: number;
     eligibleCount: number;
+    totalClasses: number;
+    completedClasses: number;
     minAttendancePct: number | null;
     approval: ApprovalValue;
     approvalReasons: string[];
@@ -73,8 +85,15 @@ type Detail = {
   };
   timezone: string;
   classes: ClassRow[];
-  announcements: { id: string; title: string; body: string; authorName: string | null; createdAt: string }[];
+  announcements: {
+    id: string;
+    title: string;
+    body: string;
+    authorName: string | null;
+    createdAt: string;
+  }[];
   resources: { id: string; title: string; url: string; kind: string }[];
+  milestones: Milestone[];
 };
 
 const ASISTENCIA: Record<
@@ -103,9 +122,12 @@ const ASISTENCIA: Record<
   },
 };
 
+type TabKey = "clases" | "evaluaciones" | "material" | "avisos";
+
 export function StudentCourseClient({ enrollmentId }: { enrollmentId: string }) {
   const [data, setData] = useState<Detail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<TabKey>("clases");
 
   useEffect(() => {
     void (async () => {
@@ -133,20 +155,33 @@ export function StudentCourseClient({ enrollmentId }: { enrollmentId: string }) 
 
   if (!data) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-6">
         <Skeleton className="h-5 w-32" />
-        <Skeleton className="h-9 w-64" />
-        <Skeleton className="h-32 w-full" />
-        <Skeleton className="h-64 w-full" />
+        <Skeleton className="h-10 w-72" />
+        <div className="grid gap-5 lg:grid-cols-[1fr_21rem]">
+          <Skeleton className="h-64 w-full rounded-lg" />
+          <Skeleton className="h-72 w-full rounded-lg" />
+        </div>
       </div>
     );
   }
 
   const { course } = data;
-  const dictadas = data.classes.filter((c) => !c.canceled);
+  const canceladas = data.classes.filter((c) => c.canceled).length;
+
+  const pestanas: { key: TabKey; label: string; count: number | null }[] = [
+    { key: "clases", label: "Clases", count: data.classes.length || null },
+    {
+      key: "evaluaciones",
+      label: "Evaluaciones",
+      count: course.assessments.length || null,
+    },
+    { key: "material", label: "Material", count: data.resources.length || null },
+    { key: "avisos", label: "Avisos", count: data.announcements.length || null },
+  ];
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-7">
       <div className="space-y-3">
         <Volver />
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -167,151 +202,209 @@ export function StudentCourseClient({ enrollmentId }: { enrollmentId: string }) 
         </p>
       </div>
 
-      <PortalCard>
-        <SectionTitle>Mi asistencia</SectionTitle>
-        <div className="mt-3">
-          <AttendanceBar
-            pct={course.attendancePct}
-            min={course.minAttendancePct}
-            attended={course.attendedCount}
-            eligible={course.eligibleCount}
-          />
+      {/*
+        024 — El recorrido va PRIMERO en celular y al costado en escritorio.
+        Es contexto permanente, no una sección que se lee una vez y se deja
+        atrás — y en el teléfono, al final, quedaba después de doce clases de
+        scroll.
+      */}
+      <div className="grid gap-5 lg:grid-cols-[1fr_21rem] lg:items-start">
+        <div className="order-2 min-w-0 space-y-5 lg:order-1">
+          <ProgressCard course={course} />
+
+          <div>
+            <div
+              role="tablist"
+              aria-label="Secciones de la cursada"
+              className="flex gap-1 overflow-x-auto border-b border-border"
+            >
+              {pestanas.map((p) => (
+                <button
+                  key={p.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === p.key}
+                  onClick={() => setTab(p.key)}
+                  className={cn(
+                    // 44px de alto: el portal se usa en el celular.
+                    "relative flex min-h-[44px] shrink-0 items-center gap-2 px-3.5 text-sm font-medium transition-colors",
+                    tab === p.key
+                      ? "text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {p.label}
+                  {p.count !== null && (
+                    <span
+                      className={cn(
+                        "rounded-full px-1.5 py-0.5 text-[10.5px] font-semibold tabular-nums",
+                        tab === p.key
+                          ? "bg-brand-soft text-brand-text"
+                          : "bg-secondary text-text-3"
+                      )}
+                    >
+                      {p.count}
+                    </span>
+                  )}
+                  {tab === p.key && (
+                    <span
+                      className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-brand"
+                      aria-hidden
+                    />
+                  )}
+                </button>
+              ))}
+            </div>
+
+            <div className="pt-5">
+              {tab === "clases" && (
+                <ClasesTab
+                  classes={data.classes}
+                  academyZone={data.timezone}
+                  canceladas={canceladas}
+                />
+              )}
+              {tab === "evaluaciones" && (
+                <EvaluacionesTab assessments={course.assessments} />
+              )}
+              {tab === "material" && <MaterialTab resources={data.resources} />}
+              {tab === "avisos" && <AvisosTab announcements={data.announcements} />}
+            </div>
+          </div>
         </div>
+
+        {/*
+          En celular el recorrido va PRIMERO. Al final quedaba después de doce
+          clases de scroll, y es la respuesta a "¿cómo voy?" — la pregunta con
+          la que se entra. En escritorio vuelve a la derecha, donde acompaña
+          sin empujar el detalle hacia abajo.
+        */}
+        <div className="order-1 space-y-5 lg:order-2">
+          <StudentMilestones milestones={data.milestones} />
+          {course.certificate && !course.certificate.revokedAt && (
+            <CertificateCard cert={course.certificate} />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+ * Avance y asistencia, juntos
+ * ============================================================ */
+
+function ProgressCard({ course }: { course: Detail["course"] }) {
+  const avance =
+    course.totalClasses > 0
+      ? Math.round((course.completedClasses / course.totalClasses) * 100)
+      : null;
+  const alcanza =
+    course.attendancePct === null ||
+    course.minAttendancePct === null ||
+    course.attendancePct >= course.minAttendancePct;
+
+  return (
+    <PortalCard className="space-y-5">
+      {avance !== null && (
+        <div className="space-y-2">
+          <div className="flex items-baseline justify-between gap-2">
+            <p className="text-sm font-medium">
+              Clase {course.completedClasses} de {course.totalClasses}
+            </p>
+            <p className="text-xs text-text-3">
+              {course.completedClasses >= course.totalClasses
+                ? "cursada completa"
+                : `faltan ${course.totalClasses - course.completedClasses}`}
+            </p>
+          </div>
+          <Progress value={avance} label={`Avance del curso, ${avance}%`} />
+        </div>
+      )}
+
+      <div className="space-y-2 border-t border-border pt-4">
+        <div className="flex items-baseline justify-between gap-2">
+          <p className="text-sm font-medium">Mi asistencia</p>
+          {course.attendancePct !== null && (
+            <p className="text-xs text-text-3">
+              {course.attendedCount} de {course.eligibleCount} clases
+              {course.minAttendancePct !== null && ` · mínimo ${course.minAttendancePct}%`}
+            </p>
+          )}
+        </div>
+
+        {course.attendancePct === null ? (
+          // DV-003 — no se dibuja una barra en cero: 0% porque nadie pasó
+          // lista no es 0% porque no vino.
+          <p className="text-sm text-text-3">
+            Todavía no se registró asistencia en esta cursada.
+          </p>
+        ) : (
+          <>
+            <p
+              className={cn(
+                "text-2xl font-semibold tabular-nums",
+                !alcanza && "text-danger"
+              )}
+            >
+              {course.attendancePct}%
+            </p>
+            <Progress
+              value={course.attendancePct}
+              marker={course.minAttendancePct}
+              tone={alcanza ? "success" : "danger"}
+              label={`Asistencia ${course.attendancePct}%`}
+            />
+          </>
+        )}
+
         {course.approvalReasons.length > 0 && (
-          <ul className="mt-3 space-y-1">
+          <ul className="space-y-1 pt-1">
             {course.approvalReasons.map((r) => (
-              <li key={r} className="text-sm text-text-3">
+              <li key={r} className="text-xs text-text-3">
                 {r}
               </li>
             ))}
           </ul>
         )}
-      </PortalCard>
+      </div>
+    </PortalCard>
+  );
+}
 
-      {data.announcements.length > 0 && (
-        <section className="space-y-3">
-          <SectionTitle>Avisos de la cohorte</SectionTitle>
-          <div className="space-y-3">
-            {data.announcements.map((a) => (
-              <PortalCard key={a.id}>
-                <div className="flex items-start gap-3">
-                  <Megaphone className="mt-0.5 h-4 w-4 shrink-0 text-text-3" strokeWidth={1.7} />
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold">{a.title}</p>
-                    <p className="mt-1 whitespace-pre-line text-sm text-text-2">{a.body}</p>
-                    <p className="mt-2 text-xs text-text-3">
-                      {a.authorName ?? "La academia"} · {formatDate(a.createdAt)}
-                    </p>
-                  </div>
-                </div>
-              </PortalCard>
-            ))}
-          </div>
-        </section>
-      )}
+/* ============================================================
+ * Pestaña: clases
+ * ============================================================ */
 
-      {data.resources.length > 0 && (
-        <section className="space-y-3">
-          <SectionTitle>Material del curso</SectionTitle>
-          <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border">
-            {data.resources.map((r) => (
-              <li key={r.id}>
-                <a
-                  href={r.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex min-h-[52px] items-center gap-3 px-4 py-3 text-sm transition-colors hover:bg-accent"
-                >
-                  <FileText className="h-4 w-4 shrink-0 text-text-3" strokeWidth={1.7} />
-                  <span className="min-w-0 flex-1 truncate font-medium">{r.title}</span>
-                  <span className="shrink-0 text-xs uppercase text-text-3">{r.kind}</span>
-                </a>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+function ClasesTab({
+  classes,
+  academyZone,
+  canceladas,
+}: {
+  classes: ClassRow[];
+  academyZone: string;
+  canceladas: number;
+}) {
+  if (classes.length === 0) {
+    return (
+      <EmptyNote title="Esta cursada todavía no tiene cronograma">
+        Cuando la academia lo genere vas a ver acá cada clase, su tema y tu
+        asistencia.
+      </EmptyNote>
+    );
+  }
 
-      {course.assessments.length > 0 && (
-        <section className="space-y-3">
-          <SectionTitle>Mis evaluaciones</SectionTitle>
-          <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border">
-            {course.assessments.map((a) => (
-              <li
-                key={a.name}
-                className="flex items-center justify-between gap-3 px-4 py-3"
-              >
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-medium">{a.name}</span>
-                  {!a.required && (
-                    <span className="text-xs text-text-3">No obligatoria</span>
-                  )}
-                </span>
-                {/*
-                  FR-005 — sin corregir se muestra PENDIENTE, jamás
-                  desaprobada. Marcar como reprobado a quien todavía no fue
-                  evaluado es acusarlo de algo que no pasó.
-                */}
-                {a.passed === null ? (
-                  <span className="shrink-0 rounded-full border border-border bg-secondary px-2.5 py-0.5 text-xs font-medium text-text-2">
-                    Sin corregir
-                  </span>
-                ) : a.passed ? (
-                  <span className="shrink-0 rounded-full border border-success-border bg-success-soft px-2.5 py-0.5 text-xs font-medium text-success">
-                    Aprobada
-                  </span>
-                ) : (
-                  <span className="shrink-0 rounded-full border border-danger-border bg-danger-soft px-2.5 py-0.5 text-xs font-medium text-danger">
-                    Desaprobada
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      <section className="space-y-3">
-        <SectionTitle>Mis clases</SectionTitle>
-        {data.classes.length === 0 ? (
-          <EmptyNote title="Esta cursada todavía no tiene cronograma">
-            Cuando la academia lo genere vas a ver acá cada clase, su tema y tu
-            asistencia.
-          </EmptyNote>
-        ) : (
-          <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border">
-            {data.classes.map((c) => (
-              <ClassRowItem key={c.id ?? c.number} row={c} academyZone={data.timezone} />
-            ))}
-          </ul>
-        )}
-        {dictadas.length !== data.classes.length && (
-          <p className="text-xs text-text-3">
-            Las clases canceladas no cuentan para tu porcentaje de asistencia.
-          </p>
-        )}
-      </section>
-
-      {course.certificate && !course.certificate.revokedAt && (
-        <section className="space-y-3">
-          <SectionTitle>Mi certificado</SectionTitle>
-          <PortalCard className="flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">
-                Emitido el {formatDate(course.certificate.issuedAt)}
-              </p>
-              <p className="text-xs text-text-3">
-                Código <span className="font-mono">{course.certificate.code}</span>
-              </p>
-            </div>
-            <Link
-              href={`/verificar/${course.certificate.code}`}
-              className="inline-flex h-10 items-center rounded-md border border-input px-4 text-sm font-medium transition-colors hover:bg-accent"
-            >
-              Ver y compartir
-            </Link>
-          </PortalCard>
-        </section>
+  return (
+    <div className="space-y-3">
+      <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+        {classes.map((c) => (
+          <ClassRowItem key={c.id ?? c.number} row={c} academyZone={academyZone} />
+        ))}
+      </ul>
+      {canceladas > 0 && (
+        <p className="text-xs text-text-3">
+          Las clases canceladas no cuentan para tu porcentaje de asistencia.
+        </p>
       )}
     </div>
   );
@@ -392,6 +485,166 @@ function ClassRowItem({ row, academyZone }: { row: ClassRow; academyZone: string
   );
 }
 
+/* ============================================================
+ * Pestaña: evaluaciones
+ * ============================================================ */
+
+function EvaluacionesTab({
+  assessments,
+}: {
+  assessments: { name: string; required: boolean; passed: boolean | null }[];
+}) {
+  if (assessments.length === 0) {
+    return (
+      <EmptyNote title="Esta cursada todavía no tiene evaluaciones cargadas">
+        Cuando la academia las cargue vas a ver acá cuáles aprobaste y cuáles
+        faltan corregir.
+      </EmptyNote>
+    );
+  }
+
+  return (
+    <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+      {assessments.map((a) => (
+        <li key={a.name} className="flex items-center justify-between gap-3 px-4 py-3.5">
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-medium">{a.name}</span>
+            {!a.required && <span className="text-xs text-text-3">No obligatoria</span>}
+          </span>
+          {/*
+            FR-005 — sin corregir se muestra PENDIENTE, jamás desaprobada.
+            Marcar como reprobado a quien todavía no fue evaluado es acusarlo
+            de algo que no pasó.
+          */}
+          {a.passed === null ? (
+            <span className="shrink-0 rounded-full border border-border bg-secondary px-2.5 py-0.5 text-xs font-medium text-text-2">
+              Sin corregir
+            </span>
+          ) : a.passed ? (
+            <span className="shrink-0 rounded-full border border-success-border bg-success-soft px-2.5 py-0.5 text-xs font-medium text-success">
+              Aprobada
+            </span>
+          ) : (
+            <span className="shrink-0 rounded-full border border-danger-border bg-danger-soft px-2.5 py-0.5 text-xs font-medium text-danger">
+              Desaprobada
+            </span>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/* ============================================================
+ * Pestaña: material
+ * ============================================================ */
+
+function MaterialTab({
+  resources,
+}: {
+  resources: { id: string; title: string; url: string; kind: string }[];
+}) {
+  if (resources.length === 0) {
+    return (
+      <EmptyNote title="Todavía no hay material publicado">
+        Las guías, ejemplos y enlaces que suba la academia o tu profesor
+        aparecen acá.
+      </EmptyNote>
+    );
+  }
+
+  return (
+    <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+      {resources.map((r) => (
+        <li key={r.id}>
+          <a
+            href={r.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex min-h-[52px] items-center gap-3 px-4 py-3 text-sm transition-colors hover:bg-accent"
+          >
+            <FileText className="h-4 w-4 shrink-0 text-text-3" strokeWidth={1.7} />
+            <span className="min-w-0 flex-1 truncate font-medium">{r.title}</span>
+            <span className="shrink-0 text-xs uppercase text-text-3">{r.kind}</span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/* ============================================================
+ * Pestaña: avisos
+ * ============================================================ */
+
+function AvisosTab({
+  announcements,
+}: {
+  announcements: {
+    id: string;
+    title: string;
+    body: string;
+    authorName: string | null;
+    createdAt: string;
+  }[];
+}) {
+  if (announcements.length === 0) {
+    return (
+      <EmptyNote title="No hay avisos de la camada">
+        Cuando la academia o tu profesor publiquen uno, lo vas a ver acá con su
+        autor y su fecha.
+      </EmptyNote>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {announcements.map((a) => (
+        <PortalCard key={a.id}>
+          <div className="flex items-start gap-3">
+            <Megaphone className="mt-0.5 h-4 w-4 shrink-0 text-text-3" strokeWidth={1.7} />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold">{a.title}</p>
+              <p className="mt-1 whitespace-pre-line text-sm text-text-2">{a.body}</p>
+              <p className="mt-2 text-xs text-text-3">
+                {a.authorName ?? "La academia"} · {formatDate(a.createdAt)}
+              </p>
+            </div>
+          </div>
+        </PortalCard>
+      ))}
+    </div>
+  );
+}
+
+/* ============================================================ */
+
+function CertificateCard({
+  cert,
+}: {
+  cert: { code: string; issuedAt: string; revokedAt: string | null };
+}) {
+  return (
+    <PortalCard className="space-y-3">
+      <p className="text-[13px] font-semibold tracking-tight text-text-2">
+        Tu certificado
+      </p>
+      <div>
+        <p className="text-sm font-medium">Emitido el {formatDate(cert.issuedAt)}</p>
+        <p className="text-xs text-text-3">
+          Código <span className="font-mono">{cert.code}</span>
+        </p>
+      </div>
+      <Link
+        href={`/verificar/${cert.code}`}
+        className="inline-flex h-10 w-full items-center justify-center rounded-md border border-input px-4 text-sm font-medium transition-colors hover:bg-accent"
+      >
+        Ver y compartir
+      </Link>
+    </PortalCard>
+  );
+}
+
 function Volver() {
   return (
     <Link
@@ -403,4 +656,3 @@ function Volver() {
     </Link>
   );
 }
-

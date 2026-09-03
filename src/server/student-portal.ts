@@ -687,6 +687,8 @@ export type StudentCourseDetailDto = {
   classes: StudentClassDto[];
   announcements: AnnouncementDto[];
   resources: ResourceDto[];
+  /** 024 — Dónde estoy, qué logré, qué falta. Ver `buildMilestones`. */
+  milestones: StudentMilestone[];
 };
 
 /**
@@ -840,7 +842,43 @@ export async function studentCourseDetail(
       : Promise.resolve([]),
   ]);
 
-  return { course, timezone: clock.timezone, classes, announcements, resources };
+  /**
+   * 024 — El recorrido. Se arma acá, en el servidor, y no en la pantalla: es
+   * lo que el alumno lee sobre sí mismo, y la regla de qué se puede afirmar
+   * no puede quedar a criterio de quien escriba el próximo componente.
+   */
+  const milestones = buildMilestones({
+    enrolledAt: mia.enrollment.enrolledAt,
+    classes: sesiones
+      .filter((s) => !s.canceledAt)
+      .map((s) => ({ date: s.date, number: s.number })),
+    attendancePct: course.attendancePct,
+    minAttendancePct: course.minAttendancePct,
+    assessments: evaluaciones.map((a) => {
+      const mio = resultados.find((r) => r.assessmentId === a.id);
+      return {
+        name: a.name,
+        required: a.required,
+        passed: mio?.passed ?? null,
+        // La fecha del hito es la de la CORRECCIÓN, no la de la evaluación:
+        // el logro es que se aprobó, y eso pasó cuando alguien la corrigió.
+        at: mio?.updatedAt ?? null,
+      };
+    }),
+    certificate: certificados[0]
+      ? { issuedAt: certificados[0].issuedAt, revokedAt: certificados[0].revokedAt }
+      : null,
+    now,
+  });
+
+  return {
+    course,
+    timezone: clock.timezone,
+    classes,
+    announcements,
+    resources,
+    milestones,
+  };
 }
 
 /* ============================================================
@@ -1171,4 +1209,178 @@ export async function studentNavCourses(
     label: r.courseName ?? r.cohortName ?? "Mi cursada",
     active: r.status !== "finalizada",
   }));
+}
+
+/* ============================================================
+ * 024 — El recorrido de la cursada
+ * ============================================================ */
+
+export type MilestoneState =
+  /** Pasó, y el sistema tiene con qué probarlo. */
+  | "cumplido"
+  /** Está pasando ahora. */
+  | "en_curso"
+  /** Todavía no pasó. */
+  | "pendiente"
+  /** Pasó el momento y NO se alcanzó. Solo cuando hay datos para afirmarlo. */
+  | "no_alcanzado"
+  /** El sistema no puede decir nada: no hay dato cargado. */
+  | "sin_datos";
+
+export type StudentMilestone = {
+  key: string;
+  label: string;
+  detail: string | null;
+  state: MilestoneState;
+  /** Fecha del hecho si ya pasó, o la esperada si falta. `null` = no aplica. */
+  at: string | null;
+};
+
+/**
+ * 024 — Los hitos de una cursada: dónde estoy, qué logré, qué falta.
+ *
+ * **Pura**, y con una regla que la gobierna entera: *un hito solo se marca
+ * cumplido si el sistema tiene con qué probarlo*.
+ *
+ * Es la misma regla que hizo existir `sin_datos` en el legajo (013/T030) y
+ * `pendiente` en las evaluaciones (010/FR-005), y acá pesa más que en ningún
+ * lado: esto es lo que la persona lee sobre su propio recorrido. Una medalla
+ * regalada no motiva a nadie —se nota—, y una que dice "no alcanzado" cuando
+ * en realidad nadie cargó el dato es una acusación.
+ *
+ * Por eso NO hay puntos, ni niveles, ni rachas: nada que el sistema tenga que
+ * inventar. Cada hito es un hecho con fecha, o un hecho que todavía no pasó.
+ */
+export function buildMilestones(input: {
+  enrolledAt: Date | null;
+  /** Clases NO canceladas, ordenadas por fecha. */
+  classes: { date: Date; number: number }[];
+  attendancePct: number | null;
+  minAttendancePct: number | null;
+  assessments: { name: string; required: boolean; passed: boolean | null; at: Date | null }[];
+  certificate: { issuedAt: Date; revokedAt: Date | null } | null;
+  now: Date;
+}): StudentMilestone[] {
+  const hitos: StudentMilestone[] = [];
+  const ahora = input.now.getTime();
+  const paso = (d: Date | null) => d !== null && d.getTime() <= ahora;
+
+  /* -- Arranque -------------------------------------------- */
+  if (input.enrolledAt) {
+    hitos.push({
+      key: "inscripcion",
+      label: "Te inscribiste",
+      detail: null,
+      state: "cumplido",
+      at: input.enrolledAt.toISOString(),
+      });
+  }
+
+  const clases = [...input.classes].sort((a, b) => a.date.getTime() - b.date.getTime());
+  const primera = clases[0];
+  const ultima = clases[clases.length - 1];
+
+  if (primera) {
+    hitos.push({
+      key: "primera-clase",
+      label: "Primera clase",
+      detail: null,
+      state: paso(primera.date) ? "cumplido" : "pendiente",
+      at: primera.date.toISOString(),
+    });
+  }
+
+  /* -- La mitad: el punto donde una cursada se siente larga -- */
+  if (clases.length >= 4) {
+    const mitad = clases[Math.ceil(clases.length / 2) - 1]!;
+    hitos.push({
+      key: "mitad",
+      label: "Mitad de la cursada",
+      detail: `Clase ${mitad.number} de ${clases.length}`,
+      state: paso(mitad.date) ? "cumplido" : "pendiente",
+      at: mitad.date.toISOString(),
+    });
+  }
+
+  /* -- Cada evaluación, con su nombre real ------------------ */
+  for (const [i, evaluacion] of input.assessments.entries()) {
+    hitos.push({
+      key: `evaluacion-${i}`,
+      label: evaluacion.name,
+      detail: evaluacion.required ? null : "No obligatoria",
+      /**
+       * FR-005 de 010 — sin corregir es PENDIENTE, jamás desaprobada. Es la
+       * regla que más veces se rompe sola cuando alguien escribe
+       * `passed ? ... : ...` sin mirar el `null`.
+       */
+      state:
+        evaluacion.passed === true
+          ? "cumplido"
+          : evaluacion.passed === false
+            ? "no_alcanzado"
+            : "pendiente",
+      at: evaluacion.at?.toISOString() ?? null,
+    });
+  }
+
+  /* -- Asistencia: un estado, no una fecha ------------------ */
+  if (input.minAttendancePct !== null) {
+    hitos.push({
+      key: "asistencia",
+      label: `Asistencia mínima (${input.minAttendancePct}%)`,
+      detail:
+        input.attendancePct === null
+          ? "Todavía no se registró asistencia"
+          : `Vas ${input.attendancePct}%`,
+      /**
+       * `sin_datos` y no "no alcanzado": **0% porque nadie pasó lista no es 0%
+       * porque no vino**. Es la corrección de 013/T034, y acá es la diferencia
+       * entre informar y acusar.
+       */
+      state:
+        input.attendancePct === null
+          ? "sin_datos"
+          : input.attendancePct >= input.minAttendancePct
+            ? "cumplido"
+            : "no_alcanzado",
+      at: null,
+    });
+  }
+
+  if (ultima && clases.length > 1) {
+    hitos.push({
+      key: "ultima-clase",
+      label: "Última clase",
+      detail: null,
+      state: paso(ultima.date) ? "cumplido" : "pendiente",
+      at: ultima.date.toISOString(),
+    });
+  }
+
+  /* -- El final ---------------------------------------------- */
+  hitos.push({
+    key: "certificado",
+    label: "Certificado",
+    detail: input.certificate?.revokedAt
+      ? "Anulado — consultá con la academia"
+      : input.certificate
+        ? null
+        : "Se emite al terminar, con la asistencia y las evaluaciones cumplidas",
+    state: input.certificate
+      ? input.certificate.revokedAt
+        ? "no_alcanzado"
+        : "cumplido"
+      : "pendiente",
+    at: input.certificate?.issuedAt.toISOString() ?? null,
+  });
+
+  /**
+   * El PRIMER hito pendiente con fecha es "donde estoy parado". Se marca acá y
+   * no en la pantalla para que las tres audiencias que algún día lo miren vean
+   * lo mismo — y porque "el siguiente" es una regla, no una decisión visual.
+   */
+  const siguiente = hitos.find((h) => h.state === "pendiente" && h.at !== null);
+  if (siguiente) siguiente.state = "en_curso";
+
+  return hitos;
 }

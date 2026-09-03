@@ -115,6 +115,7 @@ de construir la función y el permiso al mismo tiempo.
 | [016](016-entregas/spec.md) | Entregas y corrección | El alumno entrega (por enlace) y el profesor registra la corrección. | 014, 015 |
 | [017](017-chat-y-notificaciones/spec.md) | Chat y notificaciones | Canal por cohorte + privado alumno↔profesor, sobre SSE. Avisos in-app y por correo. | 014, 015 |
 | [023](023-aulas-virtuales/spec.md) | Aulas virtuales | Las 5 cuentas de Zoom como recurso, asignables por cohorte y por clase, con detector de choques de horario. **Sin integración**: el choque es un problema de calendario y se resuelve con `classInstant()`. Deja a la 018 como comodidad opcional, no como requisito. | 009, 013 |
+| [024](024-recorrido-del-alumno/spec.md) | Recorrido del alumno | El portal deja de listar datos y muestra un CAMINO: dónde estoy, qué logré, qué falta. Sin puntos ni medallas — un hito solo se marca cumplido si el sistema puede probarlo. La cursada se separa en pestañas. | 015, 023 |
 | [018](018-zoom-automatico/spec.md) | Zoom automático | *Idea, sin comprometer.* Crear reuniones y adjudicar grabaciones solo. Exigiría una CUARTA dependencia de runtime. **La 023 le sacó la urgencia**: qué aula usa cada clase y si se pisan ya se responde sin la API. | 013, 023 |
 | [019](019-checkout-y-alta-automatica/spec.md) | Checkout y alta automática | *Idea a futuro.* Compra en la web → inscripción → cuenta, sin intervención. Exigiría una TERCERA enmienda constitucional (pasarela de pago). | 012, 015 |
 
