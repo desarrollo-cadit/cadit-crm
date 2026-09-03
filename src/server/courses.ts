@@ -65,6 +65,8 @@ export type CourseContentInput = {
   syllabusUrl?: string | null;
   /** 007 — si sale o no en el catálogo público. Default `true` en el alta. */
   published?: boolean;
+  /** 009/010 — asistencia mínima por defecto de las cohortes de este curso. */
+  minAttendancePct?: number | null;
 };
 
 /**
@@ -123,6 +125,7 @@ export const courseContentSchema = {
   targetAudience: z.string().max(4000).nullable().optional(),
   syllabusUrl: httpUrl.nullable().optional(),
   published: z.boolean().optional(),
+  minAttendancePct: z.number().int().min(0).max(100).nullable().optional(),
 };
 
 export type CreateCourseResult =
@@ -178,6 +181,7 @@ export async function createCourse(
       // 007 — un curso nuevo se publica salvo que se diga lo contrario:
       // el caso normal es el curso del catálogo.
       published: input.published ?? true,
+      minAttendancePct: input.minAttendancePct ?? null,
     })
     .returning();
   // `insert().returning()` de una fila: o devuelve la fila o lanza.
@@ -257,6 +261,7 @@ export async function updateCourse(
       ...(input.targetAudience !== undefined ? { targetAudience: input.targetAudience } : {}),
       ...(input.syllabusUrl !== undefined ? { syllabusUrl: input.syllabusUrl } : {}),
       ...(input.published !== undefined ? { published: input.published } : {}),
+      ...(input.minAttendancePct !== undefined ? { minAttendancePct: input.minAttendancePct } : {}),
       updatedAt: new Date(),
     })
     .where(scoped(schema.course.organizationId, organizationId, eq(schema.course.id, courseId)))
@@ -323,6 +328,8 @@ export type CohortInput = {
   cost?: number | null;
   /** 007 — de qué moneda es `cost`. */
   currency?: Currency;
+  /** 009/010 — asistencia mínima para aprobar; null = hereda del curso. */
+  minAttendancePct?: number | null;
   frequency?: string | null;
   /** 005 iteración 2 — horario "HH:MM" para el calendario. */
   startTime?: string | null;
@@ -336,6 +343,15 @@ export type CohortInput = {
   classroom?: string | null;
   capacity?: number | null;
   whatsappGroupLink?: string | null;
+  /**
+   * 023 (FR-002) — El aula virtual de la camada. Sus clases la heredan.
+   *
+   * Se expone ESTE campo y no `meetingUrl`: esa columna de texto libre existe
+   * desde la 013 pero nunca tuvo formulario, y por eso las 41 camadas reales
+   * la tienen vacía. Sigue viva como último escalón de `resolveMeetingUrl`,
+   * para no romper una instalación que la haya cargado por otra vía.
+   */
+  virtualRoomId?: string | null;
   /** 005 (DV-004) — software(s) que declara usar la cohorte. */
   softwareIds?: string[];
 };
@@ -363,6 +379,7 @@ export const cohortInputSchema = {
   teacherId: z.string().min(1).nullable().optional(),
   cost: z.number().int().min(0).nullable().optional(),
   currency: z.enum(CURRENCIES).optional(),
+  minAttendancePct: z.number().int().min(0).max(100).nullable().optional(),
   frequency: z.string().max(200).nullable().optional(),
   startTime: timeHHMM.optional(),
   endTime: timeHHMM.optional(),
@@ -375,6 +392,7 @@ export const cohortInputSchema = {
   classroom: z.string().max(120).nullable().optional(),
   capacity: z.number().int().min(0).nullable().optional(),
   whatsappGroupLink: z.string().max(2000).nullable().optional(),
+  virtualRoomId: z.string().min(1).nullable().optional(),
   softwareIds: z.array(z.string().min(1)).optional(),
 };
 
@@ -489,6 +507,7 @@ export async function createCohort(
     teacherId: input.teacherId ?? null,
     cost: input.cost ?? null,
     currency: input.currency ?? "UYU",
+    minAttendancePct: input.minAttendancePct ?? null,
     frequency: input.frequency ?? null,
     startTime: input.startTime ?? null,
     endTime: input.endTime ?? null,
@@ -496,6 +515,7 @@ export async function createCohort(
     classroom: input.classroom ?? null,
     capacity: input.capacity ?? null,
     whatsappGroupLink: input.whatsappGroupLink ?? null,
+    virtualRoomId: input.virtualRoomId ?? null,
   });
   if (input.softwareIds && input.softwareIds.length > 0) {
     await db.insert(schema.cohortSoftware).values(
@@ -554,6 +574,7 @@ export async function updateCohort(
       ...(input.teacherId !== undefined ? { teacherId: input.teacherId } : {}),
       ...(input.cost !== undefined ? { cost: input.cost } : {}),
       ...(input.currency !== undefined ? { currency: input.currency } : {}),
+      ...(input.minAttendancePct !== undefined ? { minAttendancePct: input.minAttendancePct } : {}),
       ...(input.frequency !== undefined ? { frequency: input.frequency } : {}),
       ...(input.startTime !== undefined ? { startTime: input.startTime } : {}),
       ...(input.endTime !== undefined ? { endTime: input.endTime } : {}),
@@ -563,6 +584,7 @@ export async function updateCohort(
       ...(input.whatsappGroupLink !== undefined
         ? { whatsappGroupLink: input.whatsappGroupLink }
         : {}),
+      ...(input.virtualRoomId !== undefined ? { virtualRoomId: input.virtualRoomId } : {}),
       updatedAt: new Date(),
     })
     .where(
@@ -574,7 +596,7 @@ export async function updateCohort(
     )
     .returning();
   const cohort = updated[0];
-  if (!cohort) return { ok: false, status: 404, code: "not_found", message: "Camada no encontrada" };
+  if (!cohort) return { ok: false, status: 404, code: "not_found", message: "Cohorte no encontrada" };
 
   if (input.softwareIds !== undefined) {
     await db
@@ -630,6 +652,31 @@ type SoftwareRef = { id: string; name: string };
  * `status` sigue existiendo en el schema pero la serialización SIEMPRE
  * devuelve el valor calculado, nunca el guardado.
  */
+/**
+ * 011 (US3) — El precio que rige para una cohorte.
+ *
+ * La cohorte pisa al curso, igual que `resolveMinAttendance`. Es la misma
+ * forma de la 009 a propósito: dos reglas de herencia que se leen distinto
+ * son dos oportunidades de equivocarse.
+ *
+ * **El precio y su moneda viajan JUNTOS.** Separarlos permite el estado
+ * imposible "10.000 sin moneda", y con UYU y PYG conviviendo eso es una
+ * diferencia de mil veces (007).
+ */
+export function resolveListPrice(
+  cohort: { cost: number | null; currency: string | null },
+  course: { listPrice: number | null; listCurrency: string | null }
+): { price: number; currency: string } | null {
+  if (cohort.cost !== null && cohort.cost > 0) {
+    return { price: cohort.cost, currency: cohort.currency ?? "UYU" };
+  }
+  if (course.listPrice !== null && course.listPrice > 0) {
+    return { price: course.listPrice, currency: course.listCurrency ?? "UYU" };
+  }
+  // Ninguno de los dos: no hay precio, y eso NO es cero — es "no se sabe".
+  return null;
+}
+
 export function computeCohortStatus(
   startDate: Date,
   endDate: Date | null,
@@ -659,6 +706,17 @@ function serializeCohort(
     teacher: teacher ? { id: teacher.id, name: teacher.name } : null,
     cost: cohort.cost,
     currency: cohort.currency,
+    /**
+     * 011 (US3) — El precio de lista ya RESUELTO: propio de la cohorte, o
+     * heredado del curso. Se resuelve acá y no en cada pantalla para que la
+     * regla viva en un solo lugar, igual que el mínimo de asistencia.
+     *
+     * `null` significa **no hay precio cargado**, que no es lo mismo que
+     * cero — y con 191 inscripciones sin monto, confundirlos sería registrar
+     * media academia como gratuita.
+     */
+    listPrice: resolveListPrice(cohort, course),
+    minAttendancePct: cohort.minAttendancePct,
     frequency: cohort.frequency,
     classroom: cohort.classroom,
     // 006 — el temario es del curso, no de la edición: la cohorte lo hereda.
@@ -666,6 +724,13 @@ function serializeCohort(
     syllabusUrl: course.syllabusUrl,
     capacity: cohort.capacity,
     whatsappGroupLink: cohort.whatsappGroupLink,
+    /**
+     * 023 — Viaja el ID y no la URL: esta es la superficie del STAFF, y la
+     * pantalla que la consume necesita saber CUÁL aula está elegida para
+     * marcarla en el selector, no abrirla. La URL la resuelve
+     * `resolveMeetingUrl` cuando hay que mostrarle el enlace a alguien.
+     */
+    virtualRoomId: cohort.virtualRoomId,
     status: computeCohortStatus(cohort.startDate, cohort.endDate),
     software,
   };

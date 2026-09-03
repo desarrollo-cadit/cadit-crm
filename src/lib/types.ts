@@ -96,6 +96,8 @@ export type CourseDto = {
   syllabusUrl: string | null;
   /** 007 — si el curso sale en el catálogo público de la web. */
   published: boolean;
+  /** 009/010 — asistencia mínima por defecto de sus cohortes. */
+  minAttendancePct: number | null;
 };
 
 /** 005 (DV-005) — profesor como entidad propia. */
@@ -106,6 +108,12 @@ export type TeacherDto = {
   hourlyRate: number | null;
   /** 005 iteración 5 — email de contacto (identidad mínima; sin cuenta/login todavía). */
   email: string | null;
+  /**
+   * 023 — Título profesional ("Arquitecto"), texto libre. Va al catálogo
+   * PÚBLICO junto con la foto: quien mira una cohorte en la web quiere saber
+   * quién se la dicta.
+   */
+  title: string | null;
   /** 005 iteración 2 — cursos que dicta (teacher_course), para filtrar el selector de cohorte. */
   courseIds: string[];
   /** 005 iteración 5 — true si tiene foto en `/api/teachers/:id/photo`. */
@@ -147,11 +155,15 @@ export type CohortDto = {
   cost: number | null;
   /** 007 — de qué moneda es `cost`. */
   currency: "UYU" | "PYG" | "USD";
+  /** 009/010 — asistencia mínima para aprobar; null = hereda del curso. */
+  minAttendancePct: number | null;
   frequency: string | null;
   classroom: string | null;
   syllabusUrl: string | null;
   capacity: number | null;
   whatsappGroupLink: string | null;
+  /** 023 (FR-002) — Aula virtual de la camada; sus clases la heredan. */
+  virtualRoomId: string | null;
   status: "planificada" | "en_curso" | "finalizada";
   software: { id: string; name: string }[];
 };

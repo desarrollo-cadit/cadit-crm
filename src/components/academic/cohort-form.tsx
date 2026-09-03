@@ -1,11 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { CohortDto, CourseDto, SoftwareDto, TeacherDto } from "@/lib/types";
 import { cn, WEEKDAY_LABELS } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
+
+/** 023 — Lo mínimo del aula para poder elegirla: nombre e id. */
+type RoomOption = { id: string; name: string };
 
 function toDateInput(iso: string | null) {
   return iso ? iso.slice(0, 10) : "";
@@ -49,6 +53,22 @@ export function CohortForm({
     initial?.daysOfWeek ? initial.daysOfWeek.split(",").map(Number) : []
   );
   const [classroom, setClassroom] = useState(initial?.classroom ?? "");
+  /**
+   * 023 — Las aulas se piden acá y no vienen del padre: el formulario es lo
+   * único que las necesita, y bajarlas siempre encarecería la pantalla de
+   * gestión entera para una lista de cinco que casi nunca cambia.
+   */
+  const [virtualRoomId, setVirtualRoomId] = useState(initial?.virtualRoomId ?? "");
+  const [rooms, setRooms] = useState<RoomOption[]>([]);
+
+  useEffect(() => {
+    void (async () => {
+      const res = await fetch("/api/virtual-rooms").catch(() => null);
+      if (!res?.ok) return;
+      const body = (await res.json()) as { rooms: RoomOption[] };
+      setRooms(body.rooms);
+    })();
+  }, []);
   const [capacity, setCapacity] = useState(initial?.capacity?.toString() ?? "");
   /**
    * 007 — El enlace del grupo ya se guardaba (columna
@@ -56,6 +76,13 @@ export function CohortForm({
    * para el seed y ninguna pantalla lo pedía. Es por
    * cohorte y no por curso porque cada edición tiene su propio grupo.
    */
+  /**
+   * 009/010 — mínimo de asistencia para aprobar. Vacío = hereda el del curso.
+   * Sin esto cargado, la regla de aprobación solo mira las evaluaciones.
+   */
+  const [minAttendancePct, setMinAttendancePct] = useState(
+    initial?.minAttendancePct?.toString() ?? ""
+  );
   const [whatsappGroupLink, setWhatsappGroupLink] = useState(
     initial?.whatsappGroupLink ?? ""
   );
@@ -129,8 +156,12 @@ export function CohortForm({
       endTime: endTime || null,
       daysOfWeek: daysOfWeek.length > 0 ? daysOfWeek.join(",") : null,
       classroom: classroom.trim() || null,
+      // Cadena vacía = "sin aula", y eso se manda como null: el schema del
+      // servidor acepta null y rechaza el string vacío.
+      virtualRoomId: virtualRoomId || null,
       capacity: capacity.trim() ? Number(capacity) : null,
       whatsappGroupLink: whatsappGroupLink.trim() || null,
+      minAttendancePct: minAttendancePct.trim() ? Number(minAttendancePct) : null,
       softwareIds,
     };
     const res = await fetch(
@@ -173,7 +204,7 @@ export function CohortForm({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
       onClick={onClose}
     >
       <div
@@ -300,6 +331,19 @@ export function CohortForm({
           </div>
 
           <div className="space-y-1.5">
+            <Label htmlFor="cohort-minasist">Asistencia mínima para aprobar (%)</Label>
+            <Input
+              id="cohort-minasist"
+              type="number"
+              min={0}
+              max={100}
+              placeholder="vacío = el del curso"
+              value={minAttendancePct}
+              onChange={(e) => setMinAttendancePct(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-1.5">
             <Label htmlFor="cohort-whatsapp">Grupo de WhatsApp</Label>
             <Input
               id="cohort-whatsapp"
@@ -308,7 +352,7 @@ export function CohortForm({
               onChange={(e) => setWhatsappGroupLink(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              Enlace de invitación al grupo de esta camada.
+              Enlace de invitación al grupo de esta cohorte.
             </p>
           </div>
 
@@ -368,14 +412,41 @@ export function CohortForm({
             </p>
           </div>
 
+          {/*
+            023 — Ahora hay DOS aulas y decirle "Aula" a las dos garantiza que
+            alguien cargue el Zoom en la física. La de siempre pasa a llamarse
+            por lo que es.
+          */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="cohort-classroom">Aula</Label>
+              <Label htmlFor="cohort-classroom">Aula física</Label>
               <Input
                 id="cohort-classroom"
+                placeholder="Aula 3"
                 value={classroom}
                 onChange={(e) => setClassroom(e.target.value)}
               />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="cohort-room">Aula virtual</Label>
+              <Select
+                id="cohort-room"
+                value={virtualRoomId}
+                onChange={(e) => setVirtualRoomId(e.target.value)}
+              >
+                <option value="">Sin aula asignada</option>
+                {rooms.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name}
+                  </option>
+                ))}
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {rooms.length === 0
+                  ? "Cargá tus salas de reunión en la pestaña Aulas."
+                  : "Todas las clases de la camada la heredan."}
+              </p>
             </div>
           </div>
           {/* 006 — el temario dejó de editarse acá: es del curso, no de la
@@ -407,7 +478,7 @@ export function CohortForm({
         {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
 
         {warnings && (
-          <div className="mt-3 space-y-1 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">
+          <div className="mt-3 space-y-1 rounded-md border border-warning-border bg-warning-soft p-3 text-xs text-warning">
             <p className="font-medium">
               La cohorte se guardó, pero revisá lo siguiente:
             </p>

@@ -49,6 +49,20 @@ if (!force && !(await isAcademicDemoEmpty(db, org.id))) {
   process.exit(1);
 }
 
+/**
+ * RLS — La app se conecta como `cadit_app`, un rol SUJETO a las políticas
+ * `tenant_isolation`. Sin `app.current_org` declarada, toda inserción cae con
+ * `new row violates row-level security policy`.
+ *
+ * El seed no pasa por `withAuth` —no hay pedido ni sesión—, así que declara el
+ * alcance a mano, igual que hace `withOrganizationScope` para los webhooks y
+ * el catálogo público. `set_config(..., false)` afecta a la sesión entera y no
+ * a una transacción, que es lo que corresponde acá: el seed escribe en muchas
+ * tablas y en varias transacciones.
+ */
+await sql`select set_config('app.current_org', ${org.id}, false)`;
+await sql`select set_config('app.current_actor', 'seed:academic', false)`;
+
 const result = await seedAcademicDemo(db, org.id);
 console.log(
   `[seed:academic] Demo académica cargada: ${result.courses} cursos, ${result.cohorts} cohortes, ${result.enrollments} inscripciones`

@@ -31,6 +31,24 @@ const prefixes = {
   // 006 — contenido comercial del curso (catálogo público).
   courseCategory: "cat",
   courseModule: "mod",
+  // 008 — cobranza: la cuota que se debe y el pago que entró.
+  installment: "inst",
+  payment: "pay",
+  // 009 — clases dictadas y asistencia por alumno.
+  classSession: "cls",
+  attendance: "att",
+  // 010 — evaluaciones, sus resultados y el certificado.
+  assessment: "asm",
+  assessmentResult: "res",
+  certificate: "cert",
+  // 012 — identidad de portal (alumno/profesor) y roles de staff configurables.
+  accountLink: "alk",
+  role: "rol",
+  // 013 — material de cursada (enlaces, no archivos) y avisos por cohorte.
+  resource: "res",
+  announcement: "anc",
+  // 023 — las salas de reunión de la academia (las cuentas de Zoom).
+  virtualRoom: "aula",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

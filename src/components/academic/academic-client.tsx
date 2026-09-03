@@ -2,7 +2,16 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import {
+  CalendarDays,
+  Clock,
+  KeyRound,
+  MapPin,
+  Plus,
+  Trash2,
+  UserRound,
+  Wallet,
+} from "lucide-react";
 import type {
   CohortDto,
   CourseCategoryDto,
@@ -18,12 +27,16 @@ import { CohortForm } from "@/components/academic/cohort-form";
 import { CourseForm } from "@/components/academic/course-form";
 import { SoftwareForm } from "@/components/academic/software-form";
 import { TeacherForm } from "@/components/academic/teacher-form";
+import { RoomsPanel } from "@/components/academic/rooms-panel";
 
 const TABS = [
   { key: "courses", label: "Cursos" },
-  { key: "cohorts", label: "Camadas" },
+  { key: "cohorts", label: "Cohortes" },
   { key: "software", label: "Software" },
   { key: "teachers", label: "Profesores" },
+  // 023 — Las salas de reunión. Van acá y no en Configuración porque se tocan
+  // armando el cronograma, no una vez al instalar.
+  { key: "rooms", label: "Aulas" },
 ] as const;
 type Tab = (typeof TABS)[number]["key"];
 
@@ -66,6 +79,33 @@ const STATUS_BADGE: Record<
 const STATUS_ORDER: CohortDto["status"][] = ["planificada", "en_curso", "finalizada"];
 
 /**
+ * 021 — Una pieza de dato con su ícono.
+ *
+ * Existe para que la ficha de una cohorte se ESCANEE en vez de leerse: cinco
+ * datos separados por puntos medios obligan a recorrer la oración entera para
+ * encontrar el aula.
+ */
+function Dato({
+  icono,
+  children,
+  alerta,
+}: {
+  icono: React.ReactNode;
+  children: React.ReactNode;
+  /** Lo que FALTA se pinta distinto: no es un dato más, es una tarea. */
+  alerta?: boolean;
+}) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 ${alerta ? "text-warning" : ""}`}
+    >
+      {icono}
+      <span className="truncate">{children}</span>
+    </span>
+  );
+}
+
+/**
  * 007 — Qué estados quedan seleccionados al tocar un chip del filtro.
  *
  * Es una función pura y exportada A PROPÓSITO: la primera versión de este
@@ -92,7 +132,7 @@ export function nextStatusFilter(
 /**
  * 007 (feedback en vivo: "deberíamos poder filtrar por todos, cursos
  * planificados, en curso y finalizados... que se pueda elegir cuáles
- * mostrar") — filtro por estado, de selección MÚLTIPLE: con 41 camadas
+ * mostrar") — filtro por estado, de selección MÚLTIPLE: con 41 cohortes
  * cargadas, la lista completa es casi toda archivo, y lo que se quiere ver
  * día a día es planificadas + en curso.
  *
@@ -162,7 +202,7 @@ export function AcademicClient() {
   const [tab, setTab] = useState<Tab>("courses");
   /**
    * 007 (feedback en vivo: "deberíamos poder filtrar por todos, cursos
-   * planificados, en curso y finalizados") — filtro por estado de la camada.
+   * planificados, en curso y finalizados") — filtro por estado de la cohorte.
    * Es un conjunto y no un valor único porque el caso más pedido es ver dos
    * a la vez (planificadas + en curso) y esconder el archivo de finalizadas.
    * Arranca con los tres marcados: el comportamiento de antes.
@@ -186,6 +226,80 @@ export function AcademicClient() {
   const [softwareForm, setSoftwareForm] = useState<
     { mode: "create" } | { mode: "edit"; software: SoftwareDto } | null
   >(null);
+  /** 014 — Invitación al portal y baja del profesor. */
+  const [invitando, setInvitando] = useState<string | null>(null);
+  const [avisoProfesor, setAvisoProfesor] = useState<string | null>(null);
+
+  /**
+   * 014 (T011) — Da acceso al portal a UN profesor.
+   *
+   * La contraseña temporal se muestra una sola vez, igual que con los alumnos:
+   * sirve para dictarla si el correo demora, y no se puede volver a consultar.
+   */
+  async function invitarProfesor(teacherId: string) {
+    setInvitando(teacherId);
+    setAvisoProfesor(null);
+    const res = await fetch(`/api/teachers/${teacherId}/access`, {
+      method: "POST",
+    }).catch(() => null);
+    setInvitando(null);
+
+    const data = (await res?.json().catch(() => null)) as
+      | {
+          error?: { message?: string };
+          temporaryPassword?: string | null;
+          emailError?: string | null;
+        }
+      | null;
+
+    if (!res?.ok) {
+      setAvisoProfesor(data?.error?.message ?? "No se pudo dar el acceso");
+      return;
+    }
+
+    if (!data?.temporaryPassword) {
+      setAvisoProfesor(
+        "Esa persona ya tenía cuenta; se le habilitó el portal y entra con su contraseña de siempre."
+      );
+      return;
+    }
+
+    /**
+     * 014 — El correo puede no haber salido, y decir que salió sería mentir
+     * sobre lo único que la persona necesita para entrar. El acceso se creó
+     * igual: la contraseña está acá y hay que dictarla.
+     */
+    setAvisoProfesor(
+      data.emailError
+        ? `Acceso creado, pero el correo NO salió (${data.emailError}) — dictale vos la contraseña: ${data.temporaryPassword}. No se puede volver a ver.`
+        : `Acceso creado. Contraseña temporal: ${data.temporaryPassword} — ya se la mandamos por correo, no se puede volver a ver.`
+    );
+  }
+
+  /**
+   * 014 (T008, DV-008) — Baja del profesor.
+   *
+   * El servidor decide: con cohortes asignadas responde 409 diciendo cuántas.
+   * El navegador solo muestra ese mensaje — la barrera no vive acá.
+   */
+  async function bajaProfesor(teacherId: string, nombre: string) {
+    setAvisoProfesor(null);
+    const res = await fetch(`/api/teachers/${teacherId}`, {
+      method: "DELETE",
+    }).catch(() => null);
+
+    const data = (await res?.json().catch(() => null)) as
+      | { error?: { message?: string }; cohorts?: number }
+      | null;
+
+    if (!res?.ok) {
+      setAvisoProfesor(data?.error?.message ?? "No se pudo dar de baja");
+      return;
+    }
+    setAvisoProfesor(`${nombre} fue dado de baja.`);
+    void refetch();
+  }
+
   const [teacherForm, setTeacherForm] = useState<
     { mode: "create" } | { mode: "edit"; teacher: TeacherDto } | null
   >(null);
@@ -274,19 +388,27 @@ export function AcademicClient() {
         </div>
       </header>
 
-      <div className="flex gap-1.5 border-b px-6 py-2">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            className={`rounded-full px-3 py-1 text-xs font-medium ${
-              tab === t.key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent"
-            }`}
-            onClick={() => setTab(t.key)}
-          >
-            {t.label}
-          </button>
-        ))}
+      {/* 021 — Un control segmentado en vez de cuatro píldoras sueltas: se ve
+          que son opciones de LO MISMO, y la elegida se lee de lejos porque
+          está levantada, no porque tenga otro color de relleno. */}
+      <div className="border-b px-6 py-2.5">
+        <div className="inline-flex gap-1 rounded-lg bg-secondary p-1">
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              aria-pressed={tab === t.key}
+              className={`rounded-md px-3.5 py-1.5 text-xs font-medium transition-colors ${
+                tab === t.key
+                  ? "bg-card text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+              onClick={() => setTab(t.key)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-6">
@@ -299,7 +421,7 @@ export function AcademicClient() {
         )}
 
         {!loading && loadError && (
-          <div className="mb-4 flex items-center justify-between gap-4 rounded-lg border border-destructive/50 px-4 py-3">
+          <div className="mb-4 flex items-center justify-between gap-4 rounded-lg border border-danger-border px-4 py-3">
             <p className="text-sm text-destructive">
               No se pudieron cargar todos los datos. Lo que ves abajo puede estar
               incompleto.
@@ -327,68 +449,139 @@ export function AcademicClient() {
             </div>
           ) : visibleCohorts.length === 0 ? (
             <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-              Ninguna camada coincide con el filtro.
+              Ninguna cohorte coincide con el filtro.
             </p>
           ) : (
-            <ul className="space-y-2">
-              {visibleCohorts.map((cohort) => (
+            /**
+             * 021 — La tarjeta de cohorte, rediseñada.
+             *
+             * Tenía CUATRO párrafos apilados, todos en `text-xs
+             * text-muted-foreground`: la fecha, el profesor, el costo, el aula
+             * y el horario pesaban exactamente lo mismo, así que la lista se
+             * leía como un bloque de texto gris y había que leerla entera para
+             * encontrar cualquier cosa. Con 41 cohortes eso es inservible.
+             *
+             * Ahora: el CURSO manda (es por lo que se busca), la edición va
+             * abajo, y los datos se separan en piezas con ícono — se escanean
+             * en vez de leerse.
+             *
+             * Se probó una franja de color a la izquierda para el estado y se
+             * descartó: un borde de color de más de 1px en una tarjeta es
+             * decoración, y el estado YA lo dice el badge.
+             */
+            /**
+             * 021 — Agrupada por estado.
+             *
+             * Con 41 cohortes, una lista plana obliga a leerla entera para
+             * saber cuáles están cursando HOY — que es la única pregunta que
+             * se hace todos los días. El filtro de arriba sigue estando para
+             * esconder grupos; esto ORDENA lo que quedó.
+             *
+             * Es estructura, no color: lo que ayuda a recorrer 41 elementos no
+             * es pintarlos, es agruparlos.
+             */
+            <div className="space-y-6">
+              {(["en_curso", "planificada", "finalizada"] as const).map((estado) => {
+                const grupo = visibleCohorts.filter((c) => c.status === estado);
+                if (grupo.length === 0) return null;
+                return (
+                  <section key={estado} className="space-y-2.5">
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      {STATUS_BADGE[estado].label} ({grupo.length})
+                    </h3>
+                    <ul className="space-y-2.5">
+              {grupo.map((cohort) => (
                 <li
                   key={cohort.id}
-                  className="flex items-start justify-between gap-4 rounded-lg border bg-card px-4 py-3"
+                  className="rounded-lg border bg-card transition-colors hover:border-brand-soft"
                 >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-medium">{cohort.name ?? cohort.courseName}</span>
-                      <Badge variant={STATUS_BADGE[cohort.status].variant}>
-                        {STATUS_BADGE[cohort.status].label}
-                      </Badge>
-                    </div>
-                    {cohort.name && (
-                      <p className="text-xs text-muted-foreground">{cohort.courseName}</p>
-                    )}
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {formatDate(cohort.startDate)} → {formatDate(cohort.endDate)}
-                      {" · "}
-                      {cohort.teacher?.name ?? "sin profesor"}
-                      {" · "}
-                      {formatCost(cohort.cost)}
-                      {cohort.classroom ? ` · Aula ${cohort.classroom}` : ""}
-                    </p>
-                    {(cohort.frequency || cohort.startTime || cohort.daysOfWeek) && (
-                      <p className="text-xs text-muted-foreground">
-                        {formatDaysOfWeek(cohort.daysOfWeek) ?? cohort.frequency}
-                        {cohort.startTime
-                          ? ` ${formatDaysOfWeek(cohort.daysOfWeek) ?? cohort.frequency ? "· " : ""}${cohort.startTime}${cohort.endTime ? `–${cohort.endTime}` : ""}`
-                          : ""}
-                      </p>
-                    )}
-                    {cohort.software.length > 0 && (
-                      <div className="mt-1.5 flex flex-wrap gap-1">
-                        {cohort.software.map((s) => (
-                          <Badge key={s.id} variant="outline">
-                            {s.name}
-                          </Badge>
-                        ))}
+                  <div className="flex items-start justify-between gap-4 px-4 py-3.5">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Link
+                          href={`/cohorts/${cohort.id}`}
+                          className="text-[15px] font-semibold leading-tight hover:underline"
+                        >
+                          {cohort.courseName}
+                        </Link>
+                        <Badge variant={STATUS_BADGE[cohort.status].variant}>
+                          {STATUS_BADGE[cohort.status].label}
+                        </Badge>
                       </div>
-                    )}
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1.5">
-                    <Link href={`/cohorts/${cohort.id}`}>
-                      <Button variant="ghost" size="sm">
-                        Ver cohorte
+                      {cohort.name && (
+                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                          {cohort.name}
+                        </p>
+                      )}
+
+                      {/* Piezas, no una oración con puntos medios. */}
+                      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
+                        <Dato icono={<CalendarDays className="h-3.5 w-3.5" />}>
+                          {formatDate(cohort.startDate)} → {formatDate(cohort.endDate)}
+                        </Dato>
+                        {(cohort.daysOfWeek || cohort.frequency || cohort.startTime) && (
+                          <Dato icono={<Clock className="h-3.5 w-3.5" />}>
+                            {formatDaysOfWeek(cohort.daysOfWeek) ?? cohort.frequency}
+                            {cohort.startTime && (
+                              <>
+                                {" "}
+                                {cohort.startTime}
+                                {cohort.endTime && `–${cohort.endTime}`}
+                              </>
+                            )}
+                          </Dato>
+                        )}
+                        <Dato
+                          icono={<UserRound className="h-3.5 w-3.5" />}
+                          /* Sin profesor no es un dato más: es algo que
+                             falta, y hoy le pasa a 8 de las 41. */
+                          alerta={!cohort.teacher}
+                        >
+                          {cohort.teacher?.name ?? "sin profesor"}
+                        </Dato>
+                        {cohort.classroom && (
+                          <Dato icono={<MapPin className="h-3.5 w-3.5" />}>
+                            {cohort.classroom}
+                          </Dato>
+                        )}
+                        <Dato icono={<Wallet className="h-3.5 w-3.5" />}>
+                          {formatCost(cohort.cost)}
+                        </Dato>
+                      </div>
+
+                      {cohort.software.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {cohort.software.map((s) => (
+                            <Badge key={s.id} variant="outline">
+                              {s.name}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <Link href={`/cohorts/${cohort.id}`}>
+                        <Button variant="outline" size="sm">
+                          Ver cohorte
+                        </Button>
+                      </Link>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setCohortForm({ mode: "edit", cohort })}
+                      >
+                        Editar
                       </Button>
-                    </Link>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setCohortForm({ mode: "edit", cohort })}
-                    >
-                      Editar
-                    </Button>
+                    </div>
                   </div>
                 </li>
               ))}
-            </ul>
+                    </ul>
+                  </section>
+                );
+              })}
+            </div>
           ))}
 
         {!loading && tab === "courses" &&
@@ -468,6 +661,11 @@ export function AcademicClient() {
             </ul>
           ))}
 
+        {tab === "teachers" && avisoProfesor && (
+          <p className="mb-3 rounded-md border border-warning-border bg-warning-soft px-3 py-2 text-sm">
+            {avisoProfesor}
+          </p>
+        )}
         {!loading && tab === "teachers" &&
           (teachers.length === 0 ? (
             <p className="text-sm text-muted-foreground">Sin profesores todavía.</p>
@@ -504,17 +702,54 @@ export function AcademicClient() {
                       )}
                     </div>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setTeacherForm({ mode: "edit", teacher: t })}
-                  >
-                    Editar
-                  </Button>
+                  <div className="flex shrink-0 items-center gap-1">
+                    {/* 014 (T011, DV-006) — Acceso al portal, de a uno.
+                        Sin correo se dice el MOTIVO en vez de ofrecer un botón
+                        que devuelve 422: hoy los 7 profesores están así. */}
+                    {t.email ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={invitando === t.id}
+                        onClick={() => void invitarProfesor(t.id)}
+                      >
+                        <KeyRound className="h-4 w-4" />
+                        {invitando === t.id ? "Dando acceso…" : "Dar acceso"}
+                      </Button>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">
+                        Cargá su correo para poder invitarlo
+                      </span>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setTeacherForm({ mode: "edit", teacher: t })}
+                    >
+                      Editar
+                    </Button>
+                    {/* 014 (T008, DV-008) — La baja exige reasignar primero;
+                        el servidor responde 409 con cuántas cohortes hay. */}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label={`Dar de baja a ${t.name}`}
+                      onClick={() => void bajaProfesor(t.id, t.name)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </li>
               ))}
             </ul>
           ))}
+
+        {/*
+          023 — Las aulas traen su propio estado y su propia carga: no dependen
+          de `refetch()` ni del `loading` de arriba, así que no se les aplica el
+          esqueleto general.
+        */}
+        {tab === "rooms" && <RoomsPanel />}
       </div>
 
       {showCourseForm && (

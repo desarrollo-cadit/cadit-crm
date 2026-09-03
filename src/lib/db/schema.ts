@@ -1,5 +1,6 @@
 import {
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -10,6 +11,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+import type { Capability } from "@/lib/capabilities";
 
 /**
  * 007 — Monedas admitidas en los importes. Hasta 006 los montos eran un
@@ -84,6 +86,23 @@ export const organization = pgTable("organization", {
   logo: text("logo"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   metadata: text("metadata"),
+  /**
+   * 013 (DV-005) — Zona horaria de la academia, en formato IANA.
+   *
+   * Hasta acá los horarios de clase eran texto (`"18:30"`) sin zona, y mientras
+   * los miraba coordinación desde Montevideo daba igual. Con **42 alumnos en
+   * Paraguay y 45 en otros países**, una clase "18:30" tiene que poder
+   * mostrarse bien a quien la mira desde Asunción o Madrid.
+   *
+   * Vive en la organización y no en la cohorte porque CAD IT dicta desde un
+   * solo lugar: ponerla en la cohorte sería modelar una flexibilidad que nadie
+   * pidió y que habría que llenar 41 veces.
+   */
+  timezone: text("timezone").notNull().default("America/Montevideo"),
+  /** 013 (DV-001/FR-003) — minutos antes del inicio en que aparece el enlace. */
+  meetingOpenBeforeMin: integer("meeting_open_before_min").notNull().default(15),
+  /** 013 (DV-001/FR-003) — minutos después del fin en que deja de aparecer. */
+  meetingOpenAfterMin: integer("meeting_open_after_min").notNull().default(30),
 });
 
 export const member = pgTable("member", {
@@ -212,6 +231,18 @@ export const teacher = pgTable(
      * `photoMimeType` NULL = sin foto.
      */
     photoMimeType: text("photo_mime_type"),
+    /**
+     * 023 — Título profesional, como texto libre: "Arquitecto", "Ingeniero
+     * Civil", "Técnico en Construcción".
+     *
+     * Libre y no una lista cerrada a propósito: los títulos varían por país
+     * y por carrera, y una lista siempre le queda corta a alguien — que
+     * entonces queda sin título, que es peor que uno escrito a mano.
+     *
+     * Va al catálogo PÚBLICO junto con la foto: el alumno que mira una
+     * cohorte en la web quiere saber quién se la dicta.
+     */
+    title: text("title"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -325,6 +356,26 @@ export const course = pgTable(
      * para que los cursos ya cargados sigan publicándose igual que antes.
      */
     published: boolean("published").notNull().default(true),
+    /**
+     * 009 (DV-001) — mínimo de asistencia por defecto para las cohortes de este
+     * curso, 0-100. La cohorte puede pisarlo con `cohort.min_attendance_pct`.
+     */
+    minAttendancePct: integer("min_attendance_pct"),
+    /**
+     * 011 (US3) — Precio de LISTA del curso, del que heredan sus cohortes.
+     *
+     * Existe porque medir mostró que el precio no vivía en ningún lado: 0 de
+     * las 41 cohortes tenía `cost`, y por eso cada inscripción se cargaba a
+     * mano — con el resultado de **191 inscripciones sin monto**, la mitad,
+     * imposibles de facturar.
+     *
+     * Va en el CURSO y no solo en la cohorte porque el precio se decide una
+     * vez por producto y cambia poco; la cohorte lo pisa cuando hay una
+     * promoción puntual, igual que ya hace con `min_attendance_pct`.
+     */
+    listPrice: integer("list_price"),
+    /** La moneda del precio de lista. Hay UYU y PYG conviviendo (007). */
+    listCurrency: text("list_currency", { enum: CURRENCIES }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -401,7 +452,7 @@ export const teacherCourse = pgTable(
 );
 
 /**
- * 004 — Camada: una edición concreta de un `course`, con fechas y profesor
+ * 004 — Cohorte: una edición concreta de un `course`, con fechas y profesor
  * propios. Varias cohortes pueden compartir curso.
  */
 export const cohort = pgTable(
@@ -426,6 +477,13 @@ export const cohort = pgTable(
     cost: integer("cost"),
     /** 007 — de qué moneda es `cost`. Ver CURRENCIES. */
     currency: text("currency", { enum: CURRENCIES }).notNull().default("UYU"),
+    /**
+     * 009 (DV-001) — porcentaje mínimo de asistencia para aprobar, 0-100.
+     * NULL = hereda `course.min_attendance_pct`. Vive en la cohorte porque la
+     * edición in-company puede pactar un criterio propio, pero el caso normal
+     * se carga una vez en el curso y no 41 veces.
+     */
+    minAttendancePct: integer("min_attendance_pct"),
     /** 005 — horario en texto libre, ej. "lunes y miércoles 18:30-20:30". */
     frequency: text("frequency"),
     /** 005 iteración 2 — horario de inicio/fin en texto "HH:MM", para el calendario. */
@@ -445,6 +503,26 @@ export const cohort = pgTable(
     // la edición. La cohorte lo sigue exponiendo en su DTO, heredado del curso.
     capacity: integer("capacity"),
     whatsappGroupLink: text("whatsapp_group_link"),
+    /**
+     * 013 (FR-001) — Enlace de reunión por defecto de la cohorte.
+     *
+     * Las clases lo HEREDAN; no se les copia al generar el cronograma. Copiarlo
+     * dejaría 41 cohortes con enlaces muertos el día que se cambie el de Zoom.
+     */
+    meetingUrl: text("meeting_url"),
+    /**
+     * 023 (FR-002) — El aula virtual de la camada. Sus clases la HEREDAN.
+     *
+     * No se les copia al generar el cronograma, por el mismo motivo que
+     * `meeting_url`: copiarla dejaría 41 camadas con aulas congeladas el día
+     * que se reasigne una.
+     *
+     * `set null` y no `restrict`: dar de baja un aula no puede trabar la
+     * camada. Sin aula, el enlace cae al `meeting_url` de siempre (FR-004).
+     */
+    virtualRoomId: text("virtual_room_id").references(() => virtualRoom.id, {
+      onDelete: "set null",
+    }),
     status: text("status", {
       enum: ["planificada", "en_curso", "finalizada"],
     })
@@ -922,4 +1000,593 @@ export const intakeForm = pgTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [index("intake_form_org_idx").on(t.organizationId)]
+);
+
+/* ============================================================
+ * 008 — Cobranza: la cuota que se DEBE y el pago que ENTRÓ
+ * ============================================================
+ * Dos tablas y no una porque responden preguntas distintas que la
+ * administración hace todos los meses: "¿cuánto se venció?" mira
+ * `installment.due_date`; "¿cuánto entró?" mira `payment.paid_at`. Y sin la
+ * separación no se puede representar el caso que importa —la cuota que vence
+ * y nadie paga—: sin fila de pago esa deuda no existiría en la base, que es
+ * exactamente el problema que esta feature viene a resolver.
+ */
+
+/** 008 — La obligación: lo que el alumno debe y cuándo. */
+export const installment = pgTable(
+  "installment",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    enrollmentId: text("enrollment_id")
+      .notNull()
+      .references(() => enrollment.id, { onDelete: "cascade" }),
+    /** Orden dentro del plan, 1..N. */
+    number: integer("number").notNull(),
+    dueDate: timestamp("due_date").notNull(),
+    /** Entero sin centavos, mismo criterio que `enrollment.amount` (DV-008 de 005). */
+    amount: integer("amount").notNull(),
+    /** Hereda de `enrollment.currency` al generar el plan. */
+    currency: text("currency", { enum: CURRENCIES }).notNull().default("UYU"),
+    /**
+     * Cuota anulada al rearmar el plan. NO se borra: si se borrara, un plan
+     * refinanciado perdería la evidencia de lo que se había pactado antes.
+     */
+    canceledAt: timestamp("canceled_at"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("installment_enrollment_number_uq").on(
+      t.organizationId,
+      t.enrollmentId,
+      t.number
+    ),
+    // Vista de morosidad: "qué venció y sigue sin pagarse".
+    index("installment_org_due_idx").on(t.organizationId, t.dueDate),
+  ]
+);
+
+/**
+ * 008 — El hecho: plata que entró.
+ *
+ * Ni el pago ni la cuota llevan columna de estado: `pagada`, `parcial`,
+ * `vencida` y `pendiente` se DERIVAN de los pagos y la fecha (DV-003).
+ * Persistir el estado obliga a un job nocturno que se desincroniza, y una
+ * cuota marcada "al día" que en realidad venció es peor que no tener el dato.
+ */
+export const payment = pgTable(
+  "payment",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** Denormalizado desde la cuota: permite la caja del mes sin join. */
+    enrollmentId: text("enrollment_id")
+      .notNull()
+      .references(() => enrollment.id, { onDelete: "cascade" }),
+    /** NULL = pago a cuenta, todavía sin cuota asignada. */
+    installmentId: text("installment_id").references(() => installment.id, {
+      onDelete: "set null",
+    }),
+    amount: integer("amount").notNull(),
+    /** DEBE coincidir con la moneda de su cuota (FR-004). */
+    currency: text("currency", { enum: CURRENCIES }).notNull().default("UYU"),
+    /** Fecha REAL del pago, no la de carga: la caja del mes depende de esto. */
+    paidAt: timestamp("paid_at").notNull(),
+    method: text("method", {
+      enum: ["efectivo", "transferencia", "tarjeta", "otro"],
+    }).notNull(),
+    /** 008 (DV-006) — el recibo es del PAGO; la factura sigue en `enrollment`. */
+    receiptNumber: text("receipt_number"),
+    notes: text("notes"),
+    recordedBy: text("recorded_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    /** Anulación: el registro NO se borra (FR-006), deja de contar para saldos. */
+    voidedAt: timestamp("voided_at"),
+    voidedBy: text("voided_by").references(() => user.id, { onDelete: "set null" }),
+    voidReason: text("void_reason"),
+    /**
+     * FR-011 / constitución IV — el formulario manda una clave por intento y
+     * un segundo POST con la misma devuelve el pago ya creado en vez de
+     * duplicarlo. Sin clave, el comportamiento es el de siempre.
+     */
+    idempotencyKey: text("idempotency_key"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("payment_org_paid_idx").on(t.organizationId, t.paidAt),
+    index("payment_org_enrollment_idx").on(t.organizationId, t.enrollmentId),
+    uniqueIndex("payment_org_idempotency_uq")
+      .on(t.organizationId, t.idempotencyKey)
+      .where(sql`${t.idempotencyKey} IS NOT NULL`),
+  ]
+);
+
+/* ============================================================
+ * 009 — Clases dictadas y asistencia
+ * ============================================================ */
+
+/**
+ * 009 — Una clase concreta de una cohorte. El cronograma se genera con una
+ * acción EXPLÍCITA (DV-003) y no al crear la cohorte: dar de alta 40 clases
+ * que nadie pidió es difícil de deshacer.
+ */
+export const classSession = pgTable(
+  "class_session",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    cohortId: text("cohort_id")
+      .notNull()
+      .references(() => cohort.id, { onDelete: "cascade" }),
+    /** Orden dentro del cronograma, 1..N. */
+    number: integer("number").notNull(),
+    date: timestamp("date").notNull(),
+    startTime: text("start_time"),
+    endTime: text("end_time"),
+    /** Horas dictadas: lo que multiplica `teacher.hourly_rate`. */
+    hours: integer("hours"),
+    /**
+     * Profesor que la dictó, que puede NO ser el titular de la cohorte (una
+     * suplencia). Por eso vive en la clase y no se lee de `cohort.teacher_id`.
+     */
+    teacherId: text("teacher_id").references(() => teacher.id, {
+      onDelete: "set null",
+    }),
+    topic: text("topic"),
+    /** Clase caída (feriado, paro, suplencia sin cubrir). No cuenta para asistencia. */
+    canceledAt: timestamp("canceled_at"),
+    cancelReason: text("cancel_reason"),
+    /**
+     * 013 (FR-002) — Enlace propio de ESTA clase; pisa el de la cohorte.
+     * NULL = usa el de la cohorte.
+     */
+    meetingUrl: text("meeting_url"),
+    /**
+     * 023 (FR-003) — Aula propia de ESTA clase; pisa la de la camada.
+     * NULL = usa la de la camada. Existe porque los choques se resuelven de a
+     * una: mover una clase a otra sala no debería tocar las otras treinta y
+     * nueve.
+     */
+    virtualRoomId: text("virtual_room_id").references(() => virtualRoom.id, {
+      onDelete: "set null",
+    }),
+    /**
+     * 013 (FR-005b/FR-005f) — La grabación es un ENLACE: el sistema no
+     * almacena video (decisión marco de archivos). Una clase cancelada NO
+     * ofrece grabación (FR-005e), aunque la columna tenga valor.
+     */
+    recordingUrl: text("recording_url"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("class_session_cohort_number_uq").on(
+      t.organizationId,
+      t.cohortId,
+      t.number
+    ),
+    index("class_session_org_date_idx").on(t.organizationId, t.date),
+  ]
+);
+
+/**
+ * 009 — Asistencia de UNA inscripción a UNA clase.
+ *
+ * Se ata a `enrollment` y no a `contact` porque la misma persona puede cursar
+ * dos cohortes a la vez: colgada del contacto, su asistencia a Revit
+ * contaminaría el porcentaje de Civil 3D.
+ *
+ * `tarde` cuenta como PRESENTE para el porcentaje (DV-002): se registra para
+ * que quede el dato, pero no penaliza.
+ */
+export const attendance = pgTable(
+  "attendance",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    classSessionId: text("class_session_id")
+      .notNull()
+      .references(() => classSession.id, { onDelete: "cascade" }),
+    enrollmentId: text("enrollment_id")
+      .notNull()
+      .references(() => enrollment.id, { onDelete: "cascade" }),
+    status: text("status", {
+      enum: ["presente", "tarde", "ausente", "justificado"],
+    }).notNull(),
+    notes: text("notes"),
+    /**
+     * 014 (DV-001) — Quién puso esta marca. Con el portal, la asistencia deja
+     * de tocarla solo la coordinación: el profesor puede corregir una clase
+     * pasada, y una corrección sin autor es una corrección que nadie puede
+     * revisar. El "cuándo" ya lo da `updated_at`.
+     *
+     * Nullable porque las marcas anteriores al portal no tienen autor, y
+     * inventarles uno sería peor que admitir que no se sabe.
+     */
+    recordedBy: text("recorded_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    // Una marca por alumno y clase: volver a marcar CORRIGE, no duplica.
+    uniqueIndex("attendance_session_enrollment_uq").on(
+      t.classSessionId,
+      t.enrollmentId
+    ),
+    index("attendance_org_enrollment_idx").on(t.organizationId, t.enrollmentId),
+  ]
+);
+
+/* ============================================================
+ * 010 — Evaluación y certificados
+ * ============================================================
+ * DV-001: la escala es APROBADO / NO APROBADO, sin nota numérica. Por eso
+ * `assessment` NO lleva `weight` ni `max_score`: sin número que ponderar, un
+ * peso no pondera nada. El alumno aprueba si aprobó TODAS las evaluaciones y
+ * cumple el mínimo de asistencia de 009.
+ *
+ * Los FR-002 y FR-003 del spec (pesos que suman 100, nota final ponderada)
+ * quedaron NO APLICABLES por esa decisión; está registrado en el spec.
+ */
+
+/** 010 — Una instancia evaluable de la cohorte ("Trabajo final", "Parcial 1"). */
+export const assessment = pgTable(
+  "assessment",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    cohortId: text("cohort_id")
+      .notNull()
+      .references(() => cohort.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    position: integer("position").notNull().default(0),
+    /**
+     * Una evaluación opcional no bloquea la aprobación. Sirve para prácticas
+     * que se registran pero no definen si el alumno se recibe.
+     */
+    required: boolean("required").notNull().default(true),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [index("assessment_org_cohort_idx").on(t.organizationId, t.cohortId, t.position)]
+);
+
+/**
+ * 010 — El resultado de UN alumno en UNA evaluación.
+ *
+ * `passed` es NULLABLE y ese null significa PENDIENTE, no reprobado (FR-005).
+ * La diferencia importa: un alumno al que todavía no le corrigieron el
+ * trabajo no puede figurar como desaprobado en ninguna pantalla.
+ */
+export const assessmentResult = pgTable(
+  "assessment_result",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    assessmentId: text("assessment_id")
+      .notNull()
+      .references(() => assessment.id, { onDelete: "cascade" }),
+    enrollmentId: text("enrollment_id")
+      .notNull()
+      .references(() => enrollment.id, { onDelete: "cascade" }),
+    /** NULL = pendiente de corrección (FR-005). true/false = aprobó o no. */
+    passed: boolean("passed"),
+    notes: text("notes"),
+    recordedBy: text("recorded_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    // Un resultado por alumno y evaluación: recargar CORRIGE, no duplica.
+    uniqueIndex("assessment_result_uq").on(t.assessmentId, t.enrollmentId),
+    index("assessment_result_org_enrollment_idx").on(t.organizationId, t.enrollmentId),
+  ]
+);
+
+/**
+ * 010 — El certificado emitido.
+ *
+ * `enrollment_id` es ÚNICO: emitir dos veces devuelve el mismo certificado
+ * (FR-007, constitución IV). Y el `code` no es secuencial (FR-010): un código
+ * adivinable convierte el endpoint público de verificación en un listado de
+ * todos los egresados de la academia.
+ *
+ * `attendance_pct` se CONGELA al emitir: si después se carga una clase o se
+ * cancela otra, el porcentaje del momento de la emisión no debe moverse — el
+ * certificado ya está en manos del alumno.
+ */
+export const certificate = pgTable(
+  "certificate",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    enrollmentId: text("enrollment_id")
+      .notNull()
+      .unique()
+      .references(() => enrollment.id, { onDelete: "cascade" }),
+    /** Código público de verificación, aleatorio y no secuencial (FR-010). */
+    code: text("code").notNull().unique(),
+    issuedAt: timestamp("issued_at").notNull().defaultNow(),
+    issuedBy: text("issued_by").references(() => user.id, { onDelete: "set null" }),
+    /** Asistencia al momento de emitir; no se recalcula después. */
+    attendancePct: integer("attendance_pct"),
+    /**
+     * 010 (DV-004) — emisión histórica: se saltea el requisito de notas y
+     * asistencia porque la cohorte es anterior al sistema. Queda marcado para
+     * que nadie lo confunda con una aprobación verificada.
+     */
+    historical: boolean("historical").notNull().default(false),
+    revokedAt: timestamp("revoked_at"),
+    revokedBy: text("revoked_by").references(() => user.id, { onDelete: "set null" }),
+    revokeReason: text("revoke_reason"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("certificate_org_idx").on(t.organizationId)]
+);
+
+/* ============================================================
+ * 012 — Identidad de portal y roles de staff
+ * ============================================================ */
+
+/** 012 — Qué es esta cuenta dentro de la academia. */
+export const ACCOUNT_LINK_KINDS = ["alumno", "profesor"] as const;
+export type AccountLinkKind = (typeof ACCOUNT_LINK_KINDS)[number];
+
+/**
+ * 012 (T012, DV-001) — Vincula una cuenta de Better Auth con la persona que
+ * ya existe en el dominio: un `contact` inscripto, o un `teacher`.
+ *
+ * **Por qué no se usa `member`**: `member` es la membresía del plugin de
+ * organización y es lo que alimenta la pantalla de equipo y los permisos de
+ * staff. Meter ahí a los 340 alumnos los convertiría en personal de la
+ * academia, con acceso a todo lo que hoy protege una capacidad de staff. Son
+ * dos audiencias distintas y por eso son dos tablas distintas.
+ *
+ * **Una persona puede ser las dos cosas**: un egresado que después da clases
+ * tiene dos filas, una por `kind`. Lo que el índice único impide es la misma
+ * dos veces.
+ *
+ * **Suspender no es borrar (DV-007)**: cancelar una inscripción llena
+ * `suspended_at`, no elimina la fila. La persona puede volver a inscribirse y
+ * lo que cursó antes sigue siendo cierto.
+ *
+ * **Lo que el CHECK NO puede cubrir (FR-005b)**: que un vínculo `alumno` exija
+ * un contacto CON inscripción. Un CHECK no consulta otra tabla, así que esa
+ * regla vive en el servidor (`src/server/access.ts`) y tiene su propio test.
+ */
+export const accountLink = pgTable(
+  "account_link",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: ACCOUNT_LINK_KINDS }).notNull(),
+    /** Obligatorio si `kind = alumno`, prohibido si no (ver el CHECK). */
+    contactId: text("contact_id").references(() => contact.id, { onDelete: "cascade" }),
+    /** Obligatorio si `kind = profesor`, prohibido si no (ver el CHECK). */
+    teacherId: text("teacher_id").references(() => teacher.id, { onDelete: "cascade" }),
+    /** DV-007 — acceso suspendido. La fila NO se borra. */
+    suspendedAt: timestamp("suspended_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    // Una persona puede ser alumno Y profesor; no dos veces lo mismo.
+    uniqueIndex("account_link_org_user_kind_uq").on(t.organizationId, t.userId, t.kind),
+    // Los dos caminos por los que se resuelve una sesión de portal.
+    index("account_link_org_contact_idx").on(t.organizationId, t.contactId),
+    index("account_link_org_teacher_idx").on(t.organizationId, t.teacherId),
+    check(
+      "account_link_kind_coherente",
+      sql`(${t.kind} = 'alumno' and ${t.contactId} is not null and ${t.teacherId} is null)
+       or (${t.kind} = 'profesor' and ${t.teacherId} is not null and ${t.contactId} is null)`
+    ),
+  ]
+);
+
+/**
+ * 012 (T012, DV-003) — Los roles de staff, configurables desde la pantalla.
+ *
+ * El reparto es deliberado: las CAPACIDADES son una lista cerrada en código
+ * (`src/lib/capabilities.ts`, verificada por el compilador) y los ROLES viven
+ * en la base porque son lo que el dueño quiere poder cambiar sin un deploy.
+ * Lo que se prueba vive en código; lo que se edita vive en la base.
+ *
+ * **Por qué `jsonb` y no una tabla puente**: una puente agregaría un join a
+ * CADA verificación de permiso sin agregar ninguna garantía — la garantía la
+ * da el tipo en TypeScript, no la forma de la tabla.
+ *
+ * La tabla se crea acá pero todavía no manda: el mapeo sigue siendo el de
+ * `capabilities.ts` hasta la fase 4 (T018-T021), que la siembra y recién ahí
+ * la pone a decidir.
+ */
+export const role = pgTable(
+  "role",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** `direccion`, `coordinacion`, `soporte`… — la llave estable. */
+    key: text("key").notNull(),
+    /** Rótulo visible; este sí se puede renombrar sin romper nada. */
+    name: text("name").notNull(),
+    capabilities: jsonb("capabilities")
+      .$type<Capability[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    /** Los de sistema no se borran desde la pantalla. */
+    system: boolean("system").notNull().default(false),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("role_org_key_uq").on(t.organizationId, t.key)]
+);
+
+/* ============================================================
+ * 013 — Material de cursada y anuncios
+ * ============================================================ */
+
+/** 013 (FR-007) — Qué clase de recurso es. Todos son ENLACES. */
+export const RESOURCE_KINDS = ["guia", "ejemplo", "enlace", "video"] as const;
+export type ResourceKind = (typeof RESOURCE_KINDS)[number];
+
+/**
+ * 013 (T018, FR-006/FR-007) — El material de cursada.
+ *
+ * **Son ENLACES, no archivos.** El sistema no almacena la guía ni el video:
+ * guarda dónde están. Es la decisión marco de archivos, y sostiene el
+ * principio II de la constitución — almacenar archivos habría empujado a S3/R2.
+ *
+ * **Cuelga de un curso O de una clase, nunca de los dos.** Un recurso sin
+ * contenedor no se puede mostrar en ninguna pantalla; uno con los dos
+ * aparecería duplicado. Lo impone el CHECK y se valida antes en el servidor,
+ * porque un constraint violado llega como 500 sin explicación (mismo criterio
+ * que `account_link` en 012).
+ *
+ * `course_module_id` es una referencia OPCIONAL al temario, no el contenedor:
+ * `course_module` tiene **0 filas**, así que atar el material al temario lo
+ * dejaría inutilizable desde el día uno (DV-002).
+ */
+export const resource = pgTable(
+  "resource",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** Material del CURSO: aplica a todas sus cohortes. */
+    courseId: text("course_id").references(() => course.id, { onDelete: "cascade" }),
+    /** Material de una CLASE puntual. */
+    classSessionId: text("class_session_id").references(() => classSession.id, {
+      onDelete: "cascade",
+    }),
+    /** Referencia opcional al temario; no es el contenedor. */
+    courseModuleId: text("course_module_id").references(() => courseModule.id, {
+      onDelete: "set null",
+    }),
+    title: text("title").notNull(),
+    /** El enlace. El sistema NO almacena el archivo (FR-007). */
+    url: text("url").notNull(),
+    kind: text("kind", { enum: RESOURCE_KINDS }).notNull().default("enlace"),
+    position: integer("position").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("resource_org_course_idx").on(t.organizationId, t.courseId),
+    index("resource_org_class_idx").on(t.organizationId, t.classSessionId),
+    check(
+      "resource_contenedor_unico",
+      sql`(${t.courseId} is not null and ${t.classSessionId} is null)
+       or (${t.classSessionId} is not null and ${t.courseId} is null)`
+    ),
+  ]
+);
+
+/**
+ * 013 (T018, FR-008) — Los avisos por cohorte.
+ *
+ * **No notifica** (DV-003): se registra y se ve. El aviso llega con 017. Lo
+ * que resuelve hoy es lo que pedía la spec —que "no me enteré" deje de ser una
+ * discusión—, y eso lo dan `author_user_id` y `created_at`, no la notificación.
+ *
+ * El autor es `set null` y no `cascade`: si mañana esa persona deja la
+ * academia, el aviso que publicó sigue siendo parte de la historia de la
+ * cohorte. Borrarlo reescribiría el pasado.
+ */
+export const announcement = pgTable(
+  "announcement",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    cohortId: text("cohort_id")
+      .notNull()
+      .references(() => cohort.id, { onDelete: "cascade" }),
+    authorUserId: text("author_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    // La consulta real es "los últimos avisos de esta cohorte".
+    index("announcement_org_cohort_idx").on(t.organizationId, t.cohortId, t.createdAt),
+  ]
+);
+
+/**
+ * 023 — El AULA VIRTUAL: una sala de reunión de la academia.
+ *
+ * En la práctica es una cuenta de Zoom con su PMI (la sala permanente, de URL
+ * fija). La academia tiene cinco, y hasta acá el sistema no sabía que
+ * existían: `cohort.meeting_url` era texto libre y **0 de las 41 camadas lo
+ * tenían cargado**.
+ *
+ * Modelarla como fila —y no seguir pegando URLs— es lo que permite responder
+ * "¿qué aula usa esta clase?", "¿quién está en cada aula?" y sobre todo
+ * "¿se pisan?". Con cinco aulas y 41 camadas, la pregunta no es si se van a
+ * pisar: es cuándo.
+ *
+ * **No es una integración con Zoom.** El choque se calcula comparando rangos
+ * horarios con `classInstant()`, que ya existe. Si algún día se conecta la API
+ * (018), el aula deja de ser un PMI fijo y pasa a ser el proveedor que emite
+ * la reunión — sin cambiar quién la usa ni cómo se detecta el choque.
+ */
+export const virtualRoom = pgTable(
+  "virtual_room",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** Lo que ve coordinación: "Zoom 1", "Sala Revit". */
+    name: text("name").notNull(),
+    /** Lo que abre el alumno. Es el PMI de la cuenta. */
+    url: text("url").notNull(),
+    /**
+     * La cuenta a la que pertenece, para saber cuál renovar o a quién pedirle
+     * la grabación. Es un rótulo administrativo: **no viaja a los portales**.
+     */
+    accountEmail: text("account_email"),
+    notes: text("notes"),
+    /**
+     * 023 (FR-009) — Baja lógica. No se borra: una clase pasada que se dictó
+     * acá conserva la evidencia de dónde fue. Borrar el aula reescribiría esa
+     * historia, igual que borrar un aviso (013).
+     */
+    archivedAt: timestamp("archived_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("virtual_room_org_idx").on(t.organizationId),
+    // Dos aulas con el mismo nombre son imposibles de asignar sin equivocarse.
+    uniqueIndex("virtual_room_org_name_uq").on(t.organizationId, t.name),
+  ]
 );

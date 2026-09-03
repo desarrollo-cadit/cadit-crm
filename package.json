@@ -22,7 +22,14 @@
     "db:migrate": "drizzle-kit migrate",
     "seed:demo": "esbuild scripts/seed/demo.ts --bundle --platform=node --format=esm --outfile=.tmp-seed-demo.mjs --alias:@=./src --packages=external && node .tmp-seed-demo.mjs",
     "seed:academic": "esbuild scripts/seed/academic.ts --bundle --platform=node --format=esm --outfile=.tmp-seed-academic.mjs --alias:@=./src --packages=external && node .tmp-seed-academic.mjs",
-    "import:cadit": "esbuild scripts/import/cadit-2026.ts --bundle --platform=node --format=esm --outfile=.tmp-import-cadit.mjs --alias:@=./src --packages=external && node --env-file=.env .tmp-import-cadit.mjs"
+    "reset-password": "esbuild scripts/reset-password.ts --bundle --platform=node --format=esm --outfile=.tmp-reset-password.mjs --alias:@=./src --packages=external && node --env-file=.env .tmp-reset-password.mjs",
+    "dar-acceso": "esbuild scripts/dar-acceso-portal.ts --bundle --platform=node --format=esm --outfile=.tmp-dar-acceso.mjs --alias:@=./src --packages=external && node --env-file=.env .tmp-dar-acceso.mjs",
+    "verify-grading": "esbuild scripts/verify-grading.ts --bundle --platform=node --format=esm --outfile=.tmp-verify-grading.mjs --alias:@=./src --packages=external && node --env-file=.env .tmp-verify-grading.mjs",
+    "verify-billing": "esbuild scripts/verify-billing.ts --bundle --platform=node --format=esm --outfile=.tmp-verify-billing.mjs --alias:@=./src --packages=external && node --env-file=.env .tmp-verify-billing.mjs",
+    "import:cadit": "esbuild scripts/import/cadit-2026.ts --bundle --platform=node --format=esm --outfile=.tmp-import-cadit.mjs --alias:@=./src --packages=external && node --env-file=.env .tmp-import-cadit.mjs",
+    "verify-rls": "node scripts/verify-rls.mjs",
+    "verificar-aulas": "esbuild scripts/verificar-aulas.ts --bundle --platform=node --format=esm --outfile=.tmp-verificar-aulas.mjs --alias:@=./src --packages=external && node --env-file=.env .tmp-verificar-aulas.mjs",
+    "demo-camada": "esbuild scripts/demo-camada.ts --bundle --platform=node --format=esm --outfile=.tmp-demo-camada.mjs --alias:@=./src --packages=external && node --env-file=.env .tmp-demo-camada.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
