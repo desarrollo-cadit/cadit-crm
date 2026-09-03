@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { apiError, parseBody, requireCapability } from "@/lib/api";
-import { cohortInputSchema, getCohort, updateCohort } from "@/server/courses";
+import {
+  cohortInputSchema,
+  deleteCohort,
+  getCohort,
+  updateCohort,
+} from "@/server/courses";
 
 export const dynamic = "force-dynamic";
 
@@ -40,3 +45,24 @@ export const PATCH = requireCapability(
     scheduleWarnings: result.scheduleWarnings,
   });
 });
+
+/**
+ * 023 — Borra una camada creada por error.
+ *
+ * No existía DELETE, y por eso una camada mal creada quedaba para siempre
+ * ensuciando el calendario y los selectores. No es un olvido menor: con 41
+ * camadas reales, dos de prueba se confunden con las de verdad.
+ *
+ * **La decisión de si se puede vive en `deleteCohort`**, no acá. Con
+ * inscripciones, clases, asistencia, evaluaciones o pagos responde 409 y dice
+ * QUÉ la ata — no un "no se puede" a secas. La ruta solo elige el código.
+ */
+export const DELETE = requireCapability(
+  "academico.editar",
+  async (session, _req: Request, ctx: Params) => {
+    const { id } = await ctx.params;
+    const result = await deleteCohort(session.organizationId, id);
+    if (!result.ok) return apiError(result.status, result.code, result.message);
+    return Response.json({ ok: true, motivo: result.motivo });
+  }
+);

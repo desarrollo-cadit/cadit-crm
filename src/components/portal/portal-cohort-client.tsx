@@ -93,7 +93,7 @@ export function PortalCohortClient({ cohortId }: { cohortId: string }) {
     return (
       <div className="space-y-3">
         <Link href="/portal/dictado" className="inline-flex h-11 items-center gap-1 text-sm text-muted-foreground">
-          <ArrowLeft className="h-4 w-4" /> Mis camadas
+          <ArrowLeft className="h-4 w-4" /> Mis cohortes
         </Link>
         <div className="rounded-lg border border-dashed p-6 text-center">
           <p className="text-sm font-medium">Esa cohorte no está entre las tuyas</p>
@@ -123,7 +123,7 @@ export function PortalCohortClient({ cohortId }: { cohortId: string }) {
     <div className="space-y-4">
       <div>
         <Link href="/portal/dictado" className="inline-flex h-11 items-center gap-1 text-sm text-muted-foreground">
-          <ArrowLeft className="h-4 w-4" /> Mis camadas
+          <ArrowLeft className="h-4 w-4" /> Mis cohortes
         </Link>
         <h1 className="text-xl font-semibold tracking-tight">
           {datos.cohort.courseName}
@@ -416,14 +416,14 @@ function Material({ cohortId }: { cohortId: string }) {
           <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Material del curso
           </h2>
-          <ul className="divide-y rounded-lg border">
+          <ul className="divide-y rounded-lg border hover:bg-accent">
             {datos.resources.map((r) => (
               <li key={r.id}>
                 <a
                   href={r.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex h-12 items-center justify-between gap-2 px-3 text-sm hover:bg-accent"
+                  className="flex h-12 items-center justify-between gap-2 px-3 text-sm"
                 >
                   <span className="truncate">{r.title}</span>
                   <ExternalLink className="h-4 w-4 shrink-0 text-muted-foreground" />

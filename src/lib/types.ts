@@ -162,7 +162,7 @@ export type CohortDto = {
   syllabusUrl: string | null;
   capacity: number | null;
   whatsappGroupLink: string | null;
-  /** 023 (FR-002) — Aula virtual de la camada; sus clases la heredan. */
+  /** 023 (FR-002) — Aula virtual de la cohorte; sus clases la heredan. */
   virtualRoomId: string | null;
   status: "planificada" | "en_curso" | "finalizada";
   software: { id: string; name: string }[];

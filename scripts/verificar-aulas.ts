@@ -26,7 +26,7 @@ await withOrganizationScope(org.id, "cli:verificar-aulas", async () => {
   console.log(`\n  organización: ${org.name}`);
   console.log(`  aulas cargadas: ${rooms.length}`);
   for (const r of rooms) {
-    console.log(`    · ${r.name} — ${r.cohortCount} camada(s)${r.archivedAt ? " [de baja]" : ""}`);
+    console.log(`    · ${r.name} — ${r.cohortCount} cohorte(s)${r.archivedAt ? " [de baja]" : ""}`);
   }
 
   const clashes = await detectClashes(org.id);

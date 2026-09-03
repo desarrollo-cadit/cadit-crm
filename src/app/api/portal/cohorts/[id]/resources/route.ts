@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { apiError, parseBody } from "@/lib/api";
 import { requireTeacherPortal } from "@/lib/portal-api";
-import { teacherAddClassResource } from "@/server/teacher-portal";
+import { teacherAddCohortResource } from "@/server/teacher-portal";
 
 export const dynamic = "force-dynamic";
 
@@ -15,15 +15,11 @@ const bodySchema = z.object({
 });
 
 /**
- * 023 — El profesor publica material de SU clase.
+ * 023 — El profesor publica material para toda SU camada.
  *
- * Cuelga de la CLASE y no del curso a propósito: el material del curso es el
- * programa oficial que mantiene coordinación, y dejar que un profesor lo
- * reescriba afectaría a las otras seis cohortes que dictan otros. Lo que trae
- * el profesor es el ejercicio del día.
- *
- * No hay DELETE: borrar material que los alumnos ya vieron es una decisión de
- * coordinación, no del profesor que lo subió.
+ * No hay DELETE: sacar material que los alumnos ya vieron es una decisión de
+ * coordinación, no del profesor que lo subió. Mismo criterio que el material
+ * de clase.
  */
 export const POST = requireTeacherPortal(
   async (ctx, req: Request, routeCtx: Params) => {
@@ -31,11 +27,9 @@ export const POST = requireTeacherPortal(
     const body = await parseBody(req, bodySchema);
     if (!body.ok) return body.response;
 
-    const r = await teacherAddClassResource(ctx.organizationId, ctx.teacherId, id, {
+    const r = await teacherAddCohortResource(ctx.organizationId, ctx.teacherId, id, {
       title: body.data.title,
       url: body.data.url,
-      // El `.default()` de Zod deja el tipo opcional en la INFERENCIA aunque
-      // en runtime siempre venga: se fija acá en vez de aflojar la firma.
       kind: body.data.kind ?? "enlace",
     });
     if (!r.ok) return apiError(r.status, r.code, r.message);

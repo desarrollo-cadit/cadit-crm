@@ -29,7 +29,7 @@
     "import:cadit": "esbuild scripts/import/cadit-2026.ts --bundle --platform=node --format=esm --outfile=.tmp-import-cadit.mjs --alias:@=./src --packages=external && node --env-file=.env .tmp-import-cadit.mjs",
     "verify-rls": "node scripts/verify-rls.mjs",
     "verificar-aulas": "esbuild scripts/verificar-aulas.ts --bundle --platform=node --format=esm --outfile=.tmp-verificar-aulas.mjs --alias:@=./src --packages=external && node --env-file=.env .tmp-verificar-aulas.mjs",
-    "demo-camada": "esbuild scripts/demo-camada.ts --bundle --platform=node --format=esm --outfile=.tmp-demo-camada.mjs --alias:@=./src --packages=external && node --env-file=.env .tmp-demo-camada.mjs"
+    "demo-cohorte": "esbuild scripts/demo-cohorte.ts --bundle --platform=node --format=esm --outfile=.tmp-demo-cohorte.mjs --alias:@=./src --packages=external && node --env-file=.env .tmp-demo-cohorte.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

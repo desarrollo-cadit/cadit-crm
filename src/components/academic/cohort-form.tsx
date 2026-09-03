@@ -445,7 +445,7 @@ export function CohortForm({
               <p className="text-xs text-muted-foreground">
                 {rooms.length === 0
                   ? "Cargá tus salas de reunión en la pestaña Aulas."
-                  : "Todas las clases de la camada la heredan."}
+                  : "Todas las clases de la cohorte la heredan."}
               </p>
             </div>
           </div>

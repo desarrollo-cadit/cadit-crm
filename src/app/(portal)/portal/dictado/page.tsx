@@ -3,7 +3,7 @@ import { PortalCohortsClient } from "@/components/portal/portal-cohorts-client";
 export const dynamic = "force-dynamic";
 
 /**
- * 014 (T024) / 021 — Las camadas del profesor.
+ * 014 (T024) / 021 — Las cohortes del profesor.
  *
  * Vivía en `/portal` hasta que el portal pasó a tener dos audiencias. El
  * contenido no cambió: cambió que ahora tiene una dirección propia, y que se
@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export default function PortalDictadoPage() {
   return (
     <div className="space-y-5">
-      <h1 className="text-2xl font-semibold tracking-tight">Mis camadas</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Mis cohortes</h1>
       <PortalCohortsClient />
     </div>
   );

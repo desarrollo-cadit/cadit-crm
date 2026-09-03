@@ -63,7 +63,7 @@ export function findClashes(
   const clashes: RoomClash[] = [];
 
   // Agrupar por aula primero: dos clases en aulas distintas no pueden chocar,
-  // y comparar todo contra todo sobre 41 camadas es trabajo tirado.
+  // y comparar todo contra todo sobre 41 cohortes es trabajo tirado.
   const porAula = new Map<string, OccupiedSlot[]>();
   for (const s of slots) {
     const lista = porAula.get(s.virtualRoomId) ?? [];
@@ -117,10 +117,10 @@ export function findClashes(
  *
  * El orden no es arbitrario: va de lo más específico a lo más general, y el
  * último escalón existe para **no romper lo que ya funciona**. Una academia
- * que hoy tiene el enlace pegado a mano en la camada sigue andando igual
+ * que hoy tiene el enlace pegado a mano en la cohorte sigue andando igual
  * después de esta fase; el aula es una mejora, no un requisito.
  *
- *   enlace de la clase → aula de la clase → aula de la camada → enlace de la camada
+ *   enlace de la clase → aula de la clase → aula de la cohorte → enlace de la cohorte
  */
 export function resolveMeetingUrl(input: {
   classMeetingUrl: string | null;
@@ -145,11 +145,11 @@ export function resolveMeetingUrl(input: {
  *  - Una clase **cancelada** no ocupa nada (SC-004). Bloquear un aula por una
  *    clase que no va a existir es cómo se llena la agenda de fantasmas.
  *  - Una clase **sin horario** no puede chocar: no hay rango que comparar.
- *    6 de las 41 camadas reales no tienen horario cargado, y suponerles uno
+ *    6 de las 41 cohortes reales no tienen horario cargado, y suponerles uno
  *    sería inventar un choque o esconderlo.
  *
  * El rango se compone con `classInstant()` —nunca a mano—: el texto `"18:30"`
- * no lleva zona, y hay 87 alumnos fuera de Uruguay. Dos camadas en zonas
+ * no lleva zona, y hay 87 alumnos fuera de Uruguay. Dos cohortes en zonas
  * distintas que caen en el mismo INSTANTE real sí chocan, y eso solo se ve
  * comparando instantes (SC-006).
  */
@@ -201,7 +201,7 @@ export type VirtualRoomDto = {
   accountEmail: string | null;
   notes: string | null;
   archivedAt: string | null;
-  /** Cuántas camadas la tienen asignada hoy. */
+  /** Cuántas cohortes la tienen asignada hoy. */
   cohortCount: number;
 };
 
@@ -231,7 +231,7 @@ export async function listVirtualRooms(
 
   if (rooms.length === 0) return [];
 
-  // Cuántas camadas usa cada una: es el dato que decide si se puede dar de
+  // Cuántas cohortes usa cada una: es el dato que decide si se puede dar de
   // baja sin dejar clases sin enlace.
   const usos = await db
     .select({ virtualRoomId: schema.cohort.virtualRoomId })
@@ -398,9 +398,9 @@ export type ClashRow = {
 /**
  * 023 (FR-005/FR-006, US3) — Los choques de toda la organización.
  *
- * `onlyCohortId` acota el resultado a los choques que INVOLUCRAN a esa camada,
+ * `onlyCohortId` acota el resultado a los choques que INVOLUCRAN a esa cohorte,
  * pero el conjunto que se compara sigue siendo TODO: un choque necesita a los
- * dos lados, y mirar solo las clases de una camada no encontraría ninguno.
+ * dos lados, y mirar solo las clases de una cohorte no encontraría ninguno.
  *
  * Devuelve una lista, nunca lanza ni bloquea (FR-006): coordinación sabe cosas
  * que el sistema no —que esa clase se movió, que ese día es feriado—, así que
@@ -450,8 +450,8 @@ export async function detectClashes(
     .where(scoped(schema.virtualRoom.organizationId, organizationId));
 
   const nombreAula = new Map(rooms.map((r) => [r.id, r.name]));
-  const nombreCamada = new Map(
-    filas.map((f) => [f.cohortId, f.courseName ?? f.cohortName ?? "Camada"])
+  const nombreCohorte = new Map(
+    filas.map((f) => [f.cohortId, f.courseName ?? f.cohortName ?? "Cohorte"])
   );
 
   const salida = clashes.map((c) => ({
@@ -462,9 +462,9 @@ export async function detectClashes(
     otherStartsAt: c.b.startsAt,
     otherEndsAt: c.b.endsAt,
     cohortId: c.a.cohortId,
-    cohortName: nombreCamada.get(c.a.cohortId) ?? "Camada",
+    cohortName: nombreCohorte.get(c.a.cohortId) ?? "Cohorte",
     otherCohortId: c.b.cohortId,
-    otherCohortName: nombreCamada.get(c.b.cohortId) ?? "Camada",
+    otherCohortName: nombreCohorte.get(c.b.cohortId) ?? "Cohorte",
     classSessionId: c.a.classSessionId,
     otherClassSessionId: c.b.classSessionId,
   }));
@@ -557,7 +557,7 @@ export async function roomAgenda(
       roomName: nombreAula.get(roomId) ?? "Aula",
       classSessionId: f.id,
       cohortId: f.cohortId,
-      cohortName: f.cohortName ?? f.courseName ?? "Camada",
+      cohortName: f.cohortName ?? f.courseName ?? "Cohorte",
       courseName: f.courseName ?? "—",
       teacherName: f.teacherName,
       startsAt: startsAt.toISOString(),

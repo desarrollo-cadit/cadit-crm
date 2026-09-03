@@ -111,7 +111,7 @@ describe("023 — qué clases ocupan un aula", () => {
     cohortVirtualRoomId: "zoom1" as string | null,
   };
 
-  it("hereda el aula de la camada cuando la clase no declara la suya", () => {
+  it("hereda el aula de la cohorte cuando la clase no declara la suya", () => {
     const slots = toOccupiedSlots(
       [{ id: "c1", cohortId: "coh1", ...base }],
       "America/Montevideo"
@@ -121,7 +121,7 @@ describe("023 — qué clases ocupan un aula", () => {
   });
 
   /** FR-003 — La excepción por clase existe porque los choques se resuelven de a una. */
-  it("el aula de la CLASE gana sobre la de la camada", () => {
+  it("el aula de la CLASE gana sobre la de la cohorte", () => {
     const slots = toOccupiedSlots(
       [{ id: "c1", cohortId: "coh1", ...base, virtualRoomId: "zoom2" }],
       "America/Montevideo"
@@ -139,7 +139,7 @@ describe("023 — qué clases ocupan un aula", () => {
   });
 
   /**
-   * FR-008 — 6 de las 41 camadas reales no tienen horario cargado. Suponerles
+   * FR-008 — 6 de las 41 cohortes reales no tienen horario cargado. Suponerles
    * uno sería inventar un choque o esconderlo.
    */
   it("una clase SIN horario no puede chocar", () => {
@@ -150,7 +150,7 @@ describe("023 — qué clases ocupan un aula", () => {
     expect(slots).toEqual([]);
   });
 
-  it("una clase sin aula, ni propia ni de la camada, no ocupa nada", () => {
+  it("una clase sin aula, ni propia ni de la cohorte, no ocupa nada", () => {
     const slots = toOccupiedSlots(
       [{ id: "c1", cohortId: "coh1", ...base, cohortVirtualRoomId: null }],
       "America/Montevideo"
@@ -164,7 +164,7 @@ describe("023 — qué clases ocupan un aula", () => {
    *
    * Una clase a las 18:30 de Montevideo y otra a las 23:30 de Madrid son **el
    * mismo instante real** en julio (UTC-3 contra UTC+2). Comparando los textos
-   * no chocarían nunca, y las dos camadas terminarían en el mismo Zoom.
+   * no chocarían nunca, y las dos cohortes terminarían en el mismo Zoom.
    *
    * Se eligió Madrid y no Asunción a propósito: Paraguay abolió el horario de
    * verano en 2024 y hoy comparte UTC-3 con Uruguay, así que ese par no prueba
@@ -216,15 +216,15 @@ describe("023 — de dónde sale el enlace del alumno", () => {
   /**
    * FR-004 — El orden va de lo más específico a lo más general, y el último
    * escalón existe para NO romper lo que ya funciona: una academia con el
-   * enlace pegado a mano en la camada sigue andando después de esta fase.
+   * enlace pegado a mano en la cohorte sigue andando después de esta fase.
    */
   it("el enlace propio de la clase gana sobre todo", () => {
     expect(
       resolveMeetingUrl({
         classMeetingUrl: "https://zoom.us/clase",
         classRoomUrl: "https://zoom.us/aula-clase",
-        cohortRoomUrl: "https://zoom.us/aula-camada",
-        cohortMeetingUrl: "https://zoom.us/camada",
+        cohortRoomUrl: "https://zoom.us/aula-cohorte",
+        cohortMeetingUrl: "https://zoom.us/cohorte",
       })
     ).toBe("https://zoom.us/clase");
   });
@@ -234,32 +234,32 @@ describe("023 — de dónde sale el enlace del alumno", () => {
       resolveMeetingUrl({
         classMeetingUrl: null,
         classRoomUrl: "https://zoom.us/aula-clase",
-        cohortRoomUrl: "https://zoom.us/aula-camada",
-        cohortMeetingUrl: "https://zoom.us/camada",
+        cohortRoomUrl: "https://zoom.us/aula-cohorte",
+        cohortMeetingUrl: "https://zoom.us/cohorte",
       })
     ).toBe("https://zoom.us/aula-clase");
   });
 
-  it("después, el aula de la camada", () => {
+  it("después, el aula de la cohorte", () => {
     expect(
       resolveMeetingUrl({
         classMeetingUrl: null,
         classRoomUrl: null,
-        cohortRoomUrl: "https://zoom.us/aula-camada",
-        cohortMeetingUrl: "https://zoom.us/camada",
+        cohortRoomUrl: "https://zoom.us/aula-cohorte",
+        cohortMeetingUrl: "https://zoom.us/cohorte",
       })
-    ).toBe("https://zoom.us/aula-camada");
+    ).toBe("https://zoom.us/aula-cohorte");
   });
 
-  it("y al final el enlace viejo de la camada: lo que ya andaba sigue andando", () => {
+  it("y al final el enlace viejo de la cohorte: lo que ya andaba sigue andando", () => {
     expect(
       resolveMeetingUrl({
         classMeetingUrl: null,
         classRoomUrl: null,
         cohortRoomUrl: null,
-        cohortMeetingUrl: "https://zoom.us/camada",
+        cohortMeetingUrl: "https://zoom.us/cohorte",
       })
-    ).toBe("https://zoom.us/camada");
+    ).toBe("https://zoom.us/cohorte");
   });
 
   it("sin ninguno, null — y la pantalla dice que no hay enlace", () => {

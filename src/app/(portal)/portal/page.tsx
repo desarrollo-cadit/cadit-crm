@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
  * así que `/portal` no puede ser "la pantalla del profesor" como en 014.
  * Cuando hay vínculo de alumno, el inicio es el suyo —es la audiencia grande,
  * 340 personas— y el profesor llega a lo suyo por la barra lateral. Un
- * profesor puro entra directo a sus camadas: mandarlo a un tablero vacío para
+ * profesor puro entra directo a sus cohortes: mandarlo a un tablero vacío para
  * que después haga un clic es hacerle perder el tiempo.
  */
 export default async function PortalHomePage() {

@@ -19,6 +19,7 @@ export type ResourceDto = {
   kind: ResourceKind;
   position: number;
   courseId: string | null;
+  cohortId: string | null;
   classSessionId: string | null;
   courseModuleId: string | null;
 };
@@ -32,6 +33,8 @@ export type ResourceInput = {
   url: string;
   kind?: ResourceKind;
   courseId?: string | null;
+  /** 023 — Material de la CAMADA: lo ven sus alumnos y nadie más. */
+  cohortId?: string | null;
   classSessionId?: string | null;
   courseModuleId?: string | null;
 };
@@ -49,17 +52,24 @@ export type ResourceInput = {
  * mismo criterio que `validateAccountLink` en 012.
  */
 export function validateResource(input: ResourceInput): ResourceResult<ResourceInput> {
-  const tieneCurso = Boolean(input.courseId);
-  const tieneClase = Boolean(input.classSessionId);
+  /**
+   * 023 — Tres contenedores, y exactamente uno. Se cuenta en vez de comparar
+   * de a pares: con tres opciones, `a === b` deja de alcanzar y escribir las
+   * combinaciones a mano es como se olvida una.
+   */
+  const contenedores = [input.courseId, input.cohortId, input.classSessionId].filter(
+    Boolean
+  ).length;
 
-  if (tieneCurso === tieneClase) {
+  if (contenedores !== 1) {
     return {
       ok: false,
       status: 422,
       code: "invalid_container",
-      message: tieneCurso
-        ? "Un material va en el curso o en una clase, no en los dos"
-        : "Un material tiene que ir en un curso o en una clase",
+      message:
+        contenedores === 0
+          ? "Un material tiene que ir en un curso, en una camada o en una clase"
+          : "Un material va en UN solo lugar: curso, camada o clase",
     };
   }
 
@@ -99,6 +109,7 @@ function serialize(row: typeof schema.resource.$inferSelect): ResourceDto {
     kind: row.kind,
     position: row.position,
     courseId: row.courseId,
+    cohortId: row.cohortId,
     classSessionId: row.classSessionId,
     courseModuleId: row.courseModuleId,
   };
@@ -107,13 +118,21 @@ function serialize(row: typeof schema.resource.$inferSelect): ResourceDto {
 /** Material de un curso (aplica a todas sus cohortes) o de una clase puntual. */
 export async function listResources(
   organizationId: string,
-  filtro: { courseId?: string; classSessionId?: string }
+  filtro: { courseId?: string; cohortId?: string; classSessionId?: string }
 ): Promise<ResourceDto[]> {
+  /**
+   * 023 — Los tres filtros son EXCLUYENTES y se piden de a uno. Quien quiera
+   * "todo lo que ve esta camada" tiene que pedir el del curso y el de la
+   * camada y unirlos: son dos alcances distintos —el programa oficial y lo
+   * que agregó esta edición— y mezclarlos acá escondería cuál es cuál.
+   */
   const donde = filtro.courseId
     ? eq(schema.resource.courseId, filtro.courseId)
-    : filtro.classSessionId
-      ? eq(schema.resource.classSessionId, filtro.classSessionId)
-      : undefined;
+    : filtro.cohortId
+      ? eq(schema.resource.cohortId, filtro.cohortId)
+      : filtro.classSessionId
+        ? eq(schema.resource.classSessionId, filtro.classSessionId)
+        : undefined;
   if (!donde) return [];
 
   const rows = await getDb()
@@ -137,6 +156,7 @@ export async function createResource(
       id: newId("resource"),
       organizationId,
       courseId: input.courseId ?? null,
+      cohortId: input.cohortId ?? null,
       classSessionId: input.classSessionId ?? null,
       courseModuleId: input.courseModuleId ?? null,
       title: input.title.trim(),

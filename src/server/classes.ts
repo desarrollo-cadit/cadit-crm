@@ -127,8 +127,8 @@ export function buildClassRow(input: {
    * enlaces muertos el día que se cambie el de Zoom.
    *
    * 023 (FR-004) — La cadena vive en `resolveMeetingUrl`, un solo lugar:
-   * enlace de la clase → aula de la clase → aula de la camada → enlace de la
-   * camada. El último escalón es lo que hace que una academia con el enlace
+   * enlace de la clase → aula de la clase → aula de la cohorte → enlace de la
+   * cohorte. El último escalón es lo que hace que una academia con el enlace
    * pegado a mano siga andando igual después de la 023.
    */
   const enlace = resolveMeetingUrl({
@@ -308,7 +308,7 @@ export async function listCohortClasses(
     .orderBy(asc(schema.classSession.number));
 
   /**
-   * 023 — Las aulas que intervienen: la de la camada y las que alguna clase
+   * 023 — Las aulas que intervienen: la de la cohorte y las que alguna clase
    * declaró por su cuenta. Se traen de una vez y se cruzan en memoria; una
    * consulta por clase serían cuarenta viajes para escribir cuarenta veces la
    * misma URL.

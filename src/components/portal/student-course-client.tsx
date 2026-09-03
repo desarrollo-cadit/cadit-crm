@@ -188,6 +188,50 @@ export function StudentCourseClient({ enrollmentId }: { enrollmentId: string }) 
         )}
       </PortalCard>
 
+      {data.announcements.length > 0 && (
+        <section className="space-y-3">
+          <SectionTitle>Avisos de la cohorte</SectionTitle>
+          <div className="space-y-3">
+            {data.announcements.map((a) => (
+              <PortalCard key={a.id}>
+                <div className="flex items-start gap-3">
+                  <Megaphone className="mt-0.5 h-4 w-4 shrink-0 text-text-3" strokeWidth={1.7} />
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold">{a.title}</p>
+                    <p className="mt-1 whitespace-pre-line text-sm text-text-2">{a.body}</p>
+                    <p className="mt-2 text-xs text-text-3">
+                      {a.authorName ?? "La academia"} · {formatDate(a.createdAt)}
+                    </p>
+                  </div>
+                </div>
+              </PortalCard>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {data.resources.length > 0 && (
+        <section className="space-y-3">
+          <SectionTitle>Material del curso</SectionTitle>
+          <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border">
+            {data.resources.map((r) => (
+              <li key={r.id}>
+                <a
+                  href={r.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex min-h-[52px] items-center gap-3 px-4 py-3 text-sm transition-colors hover:bg-accent"
+                >
+                  <FileText className="h-4 w-4 shrink-0 text-text-3" strokeWidth={1.7} />
+                  <span className="min-w-0 flex-1 truncate font-medium">{r.title}</span>
+                  <span className="shrink-0 text-xs uppercase text-text-3">{r.kind}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {course.assessments.length > 0 && (
         <section className="space-y-3">
           <SectionTitle>Mis evaluaciones</SectionTitle>
@@ -247,50 +291,6 @@ export function StudentCourseClient({ enrollmentId }: { enrollmentId: string }) 
           </p>
         )}
       </section>
-
-      {data.announcements.length > 0 && (
-        <section className="space-y-3">
-          <SectionTitle>Avisos de la camada</SectionTitle>
-          <div className="space-y-3">
-            {data.announcements.map((a) => (
-              <PortalCard key={a.id}>
-                <div className="flex items-start gap-3">
-                  <Megaphone className="mt-0.5 h-4 w-4 shrink-0 text-text-3" strokeWidth={1.7} />
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold">{a.title}</p>
-                    <p className="mt-1 whitespace-pre-line text-sm text-text-2">{a.body}</p>
-                    <p className="mt-2 text-xs text-text-3">
-                      {a.authorName ?? "La academia"} · {formatDate(a.createdAt)}
-                    </p>
-                  </div>
-                </div>
-              </PortalCard>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {data.resources.length > 0 && (
-        <section className="space-y-3">
-          <SectionTitle>Material del curso</SectionTitle>
-          <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border">
-            {data.resources.map((r) => (
-              <li key={r.id}>
-                <a
-                  href={r.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex min-h-[52px] items-center gap-3 px-4 py-3 text-sm transition-colors hover:bg-accent"
-                >
-                  <FileText className="h-4 w-4 shrink-0 text-text-3" strokeWidth={1.7} />
-                  <span className="min-w-0 flex-1 truncate font-medium">{r.title}</span>
-                  <span className="shrink-0 text-xs uppercase text-text-3">{r.kind}</span>
-                </a>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
 
       {course.certificate && !course.certificate.revokedAt && (
         <section className="space-y-3">

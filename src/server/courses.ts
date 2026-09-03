@@ -344,10 +344,10 @@ export type CohortInput = {
   capacity?: number | null;
   whatsappGroupLink?: string | null;
   /**
-   * 023 (FR-002) — El aula virtual de la camada. Sus clases la heredan.
+   * 023 (FR-002) — El aula virtual de la cohorte. Sus clases la heredan.
    *
    * Se expone ESTE campo y no `meetingUrl`: esa columna de texto libre existe
-   * desde la 013 pero nunca tuvo formulario, y por eso las 41 camadas reales
+   * desde la 013 pero nunca tuvo formulario, y por eso las 41 cohortes reales
    * la tienen vacía. Sigue viva como último escalón de `resolveMeetingUrl`,
    * para no romper una instalación que la haya cargado por otra vía.
    */
@@ -822,4 +822,186 @@ export async function getCohort(organizationId: string, cohortId: string) {
     row.teacher,
     softwareByCohort.get(cohortId) ?? []
   );
+}
+
+/* ============================================================
+ * 023 — La baja de una camada
+ * ============================================================ */
+
+export type HistorialDeLaCamada = {
+  enrollments: number;
+  classes: number;
+  attendance: number;
+  assessments: number;
+  payments: number;
+};
+
+export type DecisionDeBajaCamada = {
+  accion: "borrar" | "bloquear";
+  motivo: string;
+};
+
+/**
+ * 023 — Qué se puede hacer con una camada que se quiere dar de baja.
+ *
+ * **Pura**: es la regla que decide si se borra historia, y probarla no debería
+ * necesitar una base.
+ *
+ * El criterio es el mismo que el de la baja de un contacto
+ * (`decidirBaja`, 014), con una diferencia que importa: un contacto se
+ * ARCHIVA porque sigue siendo una persona con historial propio. Una camada
+ * con historial no se archiva — se **bloquea**, y se dice qué la ata.
+ *
+ * Por qué no se archiva: una camada existe para agrupar a sus alumnos, y una
+ * "camada archivada" con inscripciones adentro sería una lista que nadie
+ * mira pero que sigue apareciendo en el legajo de cada persona. El estado
+ * `finalizada` ya cubre "esto terminó"; archivar además sería un segundo
+ * estado que dice casi lo mismo.
+ *
+ * El caso que esto viene a resolver es el otro: **crear una camada por error
+ * y no poder sacarla**. Sin inscripciones ni clases no hay historia que
+ * proteger, y hoy no se puede borrar porque la ruta no existe.
+ */
+export function decidirBajaCamada(h: HistorialDeLaCamada): DecisionDeBajaCamada {
+  const partes: string[] = [];
+  if (h.enrollments > 0) {
+    partes.push(`${h.enrollments} ${h.enrollments === 1 ? "inscripción" : "inscripciones"}`);
+  }
+  if (h.classes > 0) {
+    partes.push(`${h.classes} ${h.classes === 1 ? "clase" : "clases"}`);
+  }
+  if (h.attendance > 0) {
+    partes.push(`asistencia registrada`);
+  }
+  if (h.assessments > 0) {
+    partes.push(`${h.assessments} ${h.assessments === 1 ? "evaluación" : "evaluaciones"}`);
+  }
+  if (h.payments > 0) {
+    partes.push(`${h.payments} ${h.payments === 1 ? "pago" : "pagos"}`);
+  }
+
+  if (partes.length === 0) {
+    return {
+      accion: "borrar",
+      motivo: "No tiene inscripciones ni clases: se puede borrar.",
+    };
+  }
+
+  return {
+    accion: "bloquear",
+    motivo:
+      `Tiene ${partes.join(", ")}. No se borra: eso es historia de personas ` +
+      "reales. Si la camada ya terminó, marcala como finalizada; si te " +
+      "equivocaste al crearla, sacale primero las inscripciones.",
+  };
+}
+
+export type BajaCamadaResult =
+  | { ok: true; motivo: string }
+  | { ok: false; status: 404 | 409; code: string; message: string };
+
+/**
+ * 023 — Borra una camada, solo si no tiene nada colgando.
+ *
+ * Lo que SÍ se borra junto con ella son las cosas que no existen sin la
+ * camada y que no son historia de nadie: sus avisos y las evaluaciones que se
+ * hayan creado sin resultados. Ahí `cascade` del esquema hace el trabajo.
+ */
+export async function deleteCohort(
+  organizationId: string,
+  cohortId: string
+): Promise<BajaCamadaResult> {
+  const db = getDb();
+
+  const existe = await db
+    .select({ id: schema.cohort.id })
+    .from(schema.cohort)
+    .where(scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, cohortId)))
+    .limit(1);
+  if (!existe[0]) {
+    return { ok: false, status: 404, code: "not_found", message: "Camada no encontrada" };
+  }
+
+  const [inscripciones, clases, evaluaciones] = await Promise.all([
+    db
+      .select({ id: schema.enrollment.id })
+      .from(schema.enrollment)
+      .where(
+        scoped(
+          schema.enrollment.organizationId,
+          organizationId,
+          eq(schema.enrollment.cohortId, cohortId)
+        )
+      ),
+    db
+      .select({ id: schema.classSession.id })
+      .from(schema.classSession)
+      .where(
+        scoped(
+          schema.classSession.organizationId,
+          organizationId,
+          eq(schema.classSession.cohortId, cohortId)
+        )
+      ),
+    db
+      .select({ id: schema.assessment.id })
+      .from(schema.assessment)
+      .where(
+        scoped(
+          schema.assessment.organizationId,
+          organizationId,
+          eq(schema.assessment.cohortId, cohortId)
+        )
+      ),
+  ]);
+
+  /**
+   * Asistencia y pagos se cuentan a través de las inscripciones. Si no hay
+   * inscripciones no puede haber ninguno de los dos, así que no se consultan:
+   * un `inArray` con lista vacía es un viaje a la base para preguntar por
+   * nada.
+   */
+  const enrollmentIds = inscripciones.map((e) => e.id);
+  const [asistencia, pagos] = enrollmentIds.length
+    ? await Promise.all([
+        db
+          .select({ id: schema.attendance.id })
+          .from(schema.attendance)
+          .where(
+            scoped(
+              schema.attendance.organizationId,
+              organizationId,
+              inArray(schema.attendance.enrollmentId, enrollmentIds)
+            )
+          ),
+        db
+          .select({ id: schema.payment.id })
+          .from(schema.payment)
+          .where(
+            scoped(
+              schema.payment.organizationId,
+              organizationId,
+              inArray(schema.payment.enrollmentId, enrollmentIds)
+            )
+          ),
+      ])
+    : [[], []];
+
+  const decision = decidirBajaCamada({
+    enrollments: inscripciones.length,
+    classes: clases.length,
+    attendance: asistencia.length,
+    assessments: evaluaciones.length,
+    payments: pagos.length,
+  });
+
+  if (decision.accion === "bloquear") {
+    return { ok: false, status: 409, code: "tiene_historial", message: decision.motivo };
+  }
+
+  await db
+    .delete(schema.cohort)
+    .where(scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, cohortId)));
+
+  return { ok: true, motivo: decision.motivo };
 }

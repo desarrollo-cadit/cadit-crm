@@ -766,3 +766,39 @@ export async function teacherAddClassResource(
 
   return { ok: true, data: creado.data };
 }
+
+/**
+ * 023 — El profesor publica material de SU CAMADA.
+ *
+ * Es distinto del material de clase: esto lo ven todos sus alumnos durante
+ * toda la cursada, no solo quienes miren el día 4. Y es distinto del material
+ * del CURSO, que es el programa oficial de la academia y alcanza a las otras
+ * camadas que lo dictan — si el profesor pudiera tocar ese, cambiaría el
+ * curso de seis colegas.
+ *
+ * El alcance lo decide `teacherReachesCohort()`: la misma regla de siempre,
+ * suplencia incluida. Nada de capacidades de staff.
+ */
+export async function teacherAddCohortResource(
+  organizationId: string,
+  teacherId: string,
+  cohortId: string,
+  input: { title: string; url: string; kind: ResourceKind }
+): Promise<PortalResult<ResourceDto>> {
+  if (!(await teacherReachesCohort(organizationId, teacherId, cohortId))) {
+    // Ausencia = 404: un 403 confirmaría que la camada existe.
+    return { ok: false, status: 404, code: "not_found", message: "Camada no encontrada" };
+  }
+
+  const creado = await createResource(organizationId, {
+    cohortId,
+    title: input.title,
+    url: input.url,
+    kind: input.kind,
+  });
+  if (!creado.ok) {
+    return { ok: false, status: 422, code: creado.code, message: creado.message };
+  }
+
+  return { ok: true, data: creado.data };
+}

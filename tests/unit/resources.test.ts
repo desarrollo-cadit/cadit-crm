@@ -13,13 +13,22 @@ import { validateResource } from "@/server/resources";
 
 const base = { title: "Guía de Revit", url: "https://drive.google.com/guia" };
 
-describe("validateResource — un curso O una clase, nunca los dos", () => {
+describe("validateResource — un curso, una camada o una clase: uno solo", () => {
   it("acepta material de un curso", () => {
     expect(validateResource({ ...base, courseId: "crs_1" }).ok).toBe(true);
   });
 
   it("acepta material de una clase", () => {
     expect(validateResource({ ...base, classSessionId: "cls_1" }).ok).toBe(true);
+  });
+
+  /**
+   * 023 — El contenedor del medio, que faltaba. El del CURSO es el programa
+   * oficial y alcanza a las siete camadas que lo dictan; el de la CLASE es el
+   * ejercicio de un día. Este es la guía que ESTA camada usa y las otras no.
+   */
+  it("acepta material de una camada", () => {
+    expect(validateResource({ ...base, cohortId: "coh_1" }).ok).toBe(true);
   });
 
   /**
@@ -31,7 +40,25 @@ describe("validateResource — un curso O una clase, nunca los dos", () => {
     if (r.ok) return;
     expect(r.code).toBe("invalid_container");
     expect(r.status).toBe(422);
-    expect(r.message).toContain("no en los dos");
+    expect(r.message).toContain("UN solo lugar");
+  });
+
+  /** 023 — Y con los tres tampoco: la regla es "uno", no "no dos". */
+  it("rechaza material con los tres contenedores", () => {
+    const r = validateResource({
+      ...base,
+      courseId: "crs_1",
+      cohortId: "coh_1",
+      classSessionId: "cls_1",
+    });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.code).toBe("invalid_container");
+  });
+
+  it("rechaza curso Y camada", () => {
+    const r = validateResource({ ...base, courseId: "crs_1", cohortId: "coh_1" });
+    expect(r.ok).toBe(false);
   });
 
   /** Sin contenedor no se puede mostrar en ninguna pantalla. */
@@ -40,7 +67,7 @@ describe("validateResource — un curso O una clase, nunca los dos", () => {
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.code).toBe("invalid_container");
-    expect(r.message).toContain("tiene que ir en un curso o en una clase");
+    expect(r.message).toContain("tiene que ir en un curso, en una camada o en una clase");
   });
 
   /**

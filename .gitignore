@@ -64,7 +64,7 @@ dev-e2e.log
 .codegraph/
 .gga
 .tmp-verificar-aulas.mjs
-.tmp-demo-camada.mjs
+.tmp-demo-cohorte.mjs
 
 # Contraseña suelta de una prueba local: nunca al repositorio.
 .tmp-pass.txt

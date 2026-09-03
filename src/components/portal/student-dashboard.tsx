@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Award,
-  BadgeCheck,
   CalendarClock,
+  ChevronRight,
   CircleAlert,
   KeyRound,
   MapPin,
@@ -13,15 +13,14 @@ import {
   Video,
   Wallet,
 } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn, formatAmount } from "@/lib/utils";
 import {
   ApprovalBadge,
-  AttendanceBar,
   ClassTime,
   EmptyNote,
   PortalCard,
-  SectionTitle,
   formatDate,
   formatDay,
   relativeDay,
@@ -30,21 +29,25 @@ import {
 import type { ApprovalValue } from "@/components/portal/student-bits";
 
 /**
- * 015 — El inicio del alumno.
+ * 015/023 — El inicio del alumno.
  *
- * La pantalla está ordenada por la frecuencia REAL de las preguntas que hoy
- * llegan por WhatsApp, no por la estructura de la base:
+ * Ordenado por la frecuencia REAL de las preguntas que hoy llegan por
+ * WhatsApp, no por la estructura de la base: cuándo es la próxima clase y cuál
+ * es el link, si estoy en problemas, cómo voy, qué licencia tengo, cuánto
+ * debo, dónde está mi certificado.
  *
- *   1. ¿cuándo es la próxima clase y cuál es el link?  → arriba, siempre
- *   2. ¿estoy en problemas?                            → solo si lo está
- *   3. ¿cómo voy en cada curso?                        → asistencia y notas
- *   4. ¿qué licencia tengo?                            → con su vencimiento
- *   5. ¿cuánto debo?                                   → por moneda
- *   6. ¿dónde está mi certificado?                     → al final
+ * 023 — La primera versión listaba datos correctos en cajas iguales, y se leía
+ * como un formulario: nada decía que la cursada AVANZA. Los cambios de esta
+ * pasada son eso, no maquillaje:
  *
- * El alumno entra tres minutos, dos veces por semana, casi siempre desde el
- * celular y casi siempre con UNA pregunta. Obligarlo a navegar para
- * encontrarla es devolverle el problema que vino a resolver.
+ *  - La próxima clase deja de ser una tarjeta más y pasa a ser la pantalla:
+ *    es la pregunta que más veces por semana interrumpe a coordinación.
+ *  - Cada cursada muestra **clase N de M** con su barra. La asistencia
+ *    responde "¿voy bien?"; el avance responde "¿cuánto me falta?", y sin el
+ *    segundo el portal no transmite movimiento.
+ *  - Los números viven DENTRO de la cursada que describen, no en una fila de
+ *    métricas sueltas arriba: un porcentaje sin su curso al lado obliga a
+ *    recordar de cuál era.
  */
 
 type Assessment = { name: string; required: boolean; passed: boolean | null };
@@ -71,6 +74,8 @@ type Course = {
   attendancePct: number | null;
   attendedCount: number;
   eligibleCount: number;
+  totalClasses: number;
+  completedClasses: number;
   minAttendancePct: number | null;
   approval: ApprovalValue;
   approvalReasons: string[];
@@ -148,64 +153,58 @@ export function StudentDashboard() {
     .filter((c): c is NonNullable<Course["certificate"]> & { curso: string } => c !== null);
 
   return (
-    <div className="space-y-8">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Hola, {nombreCorto}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+    <div className="space-y-10">
+      <header className="space-y-1">
+        <h1 className="text-3xl font-semibold tracking-tight">Hola, {nombreCorto}</h1>
+        <p className="text-[15px] text-muted-foreground">
           {activos.length > 0
             ? `Estás cursando ${activos.length} ${activos.length === 1 ? "curso" : "cursos"}.`
             : "No tenés cursos en marcha ahora mismo."}
         </p>
       </header>
 
-      <NextClassPanel next={data.nextClass} academyZone={data.timezone} />
+      <NextClassHero next={data.nextClass} academyZone={data.timezone} />
 
       <Alertas courses={data.courses} balances={data.balances} />
 
       {activos.length > 0 && (
-        <section className="space-y-3">
-          <SectionTitle>Cómo voy</SectionTitle>
-          <div className="space-y-3">
+        <Section title="Mis cursos">
+          {/*
+            Una sola cursada ocupa el ancho. En dos columnas quedaba una
+            tarjeta a media página con un hueco al lado, que se lee como algo
+            que falta cargar — y la mayoría de los 340 tiene una sola.
+          */}
+          <div className={cn("grid gap-4", activos.length > 1 && "lg:grid-cols-2")}>
             {activos.map((c) => (
               <CourseCard key={c.enrollmentId} course={c} />
             ))}
           </div>
-        </section>
+        </Section>
       )}
 
-      {licencias.length > 0 && (
-        <section className="space-y-3">
-          <SectionTitle>Mi licencia</SectionTitle>
-          <div className="space-y-3">
-            {licencias.map((l) => (
-              <LicenseCard key={`${l.curso}-${l.softwareName}`} license={l} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      <BalancePanel balances={data.balances} />
+      <div className="grid gap-4 lg:grid-cols-2">
+        <BalanceCard balances={data.balances} />
+        {licencias.length > 0 && <LicenseCard license={licencias[0]!} extra={licencias.length - 1} />}
+      </div>
 
       {certificados.length > 0 && (
-        <section className="space-y-3">
-          <SectionTitle>Mis certificados</SectionTitle>
-          <div className="space-y-2">
+        <Section title="Mis certificados">
+          <div className="grid gap-3 sm:grid-cols-2">
             {certificados.map((c) => (
-              <CertificateRow key={c.code} cert={c} />
+              <CertificateCard key={c.code} cert={c} />
             ))}
           </div>
-        </section>
+        </Section>
       )}
 
       {cerrados.length > 0 && (
-        <section className="space-y-3">
-          <SectionTitle>Ya cursados ({cerrados.length})</SectionTitle>
-          <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border">
+        <Section title={`Ya cursados (${cerrados.length})`}>
+          <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
             {cerrados.map((c) => (
               <li key={c.enrollmentId}>
                 <Link
                   href={`/portal/cursadas/${c.enrollmentId}`}
-                  className="flex min-h-[52px] items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-accent"
+                  className="flex min-h-[56px] items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-accent"
                 >
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-medium">
@@ -216,12 +215,15 @@ export function StudentDashboard() {
                       {c.endDate && ` – ${formatDate(c.endDate)}`}
                     </span>
                   </span>
-                  <ApprovalBadge value={c.approval} />
+                  <span className="flex shrink-0 items-center gap-2">
+                    <ApprovalBadge value={c.approval} />
+                    <ChevronRight className="h-4 w-4 text-text-4" strokeWidth={1.7} />
+                  </span>
                 </Link>
               </li>
             ))}
           </ul>
-        </section>
+        </Section>
       )}
 
       {data.courses.length === 0 && (
@@ -234,21 +236,29 @@ export function StudentDashboard() {
   );
 }
 
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="space-y-3.5">
+      <h2 className="text-[13px] font-semibold tracking-tight text-text-2">{title}</h2>
+      {children}
+    </section>
+  );
+}
+
 /* ============================================================
- * US2 — La próxima clase, con su enlace
+ * US2 — La próxima clase: la pantalla, no una tarjeta más
  * ============================================================ */
 
 /**
- * El bloque más importante de la pantalla, y el que justifica el portal
- * entero: "¿cuál era el link del Zoom?" es la pregunta que más veces por
- * semana interrumpe a coordinación.
+ * "¿Cuál era el link del Zoom?" es la pregunta que más veces por semana
+ * interrumpe a coordinación, así que ocupa el lugar que le corresponde.
  *
  * El enlace aparece SOLO dentro de la ventana de la organización (FR-003 de
- * 013) — 15 minutos antes, 30 después. Cuando no está, la pantalla dice
- * CUÁNDO va a estar en vez de mostrar un botón muerto: un enlace visible todo
- * el día invita a entrar a una sala vacía.
+ * 013): 15 minutos antes, 30 después. Cuando no está, la pantalla dice CUÁNDO
+ * va a estar en vez de dejar un botón muerto — un enlace visible todo el día
+ * invita a entrar a una sala vacía.
  */
-function NextClassPanel({
+function NextClassHero({
   next,
   academyZone,
 }: {
@@ -259,16 +269,14 @@ function NextClassPanel({
 
   if (!next) {
     return (
-      <PortalCard>
-        <div className="flex items-start gap-3">
-          <CalendarClock className="mt-0.5 h-5 w-5 shrink-0 text-text-3" strokeWidth={1.7} />
-          <div>
-            <p className="text-sm font-medium">No tenés clases próximas</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Cuando la academia cargue el cronograma de tu camada, tu próxima
-              clase y su enlace aparecen acá.
-            </p>
-          </div>
+      <PortalCard className="flex items-start gap-3.5">
+        <CalendarClock className="mt-0.5 h-5 w-5 shrink-0 text-text-3" strokeWidth={1.7} />
+        <div>
+          <p className="font-medium">No tenés clases próximas</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Cuando la academia cargue el cronograma de tu camada, tu próxima
+            clase y su enlace aparecen acá.
+          </p>
         </div>
       </PortalCard>
     );
@@ -277,25 +285,31 @@ function NextClassPanel({
   const cuando = next.startsAt ?? next.date;
 
   return (
-    <PortalCard className="border-brand-soft bg-brand-tint">
-      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-5">
-        <div className="min-w-0 space-y-1.5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-brand-text">
+    <section
+      className={cn(
+        "relative overflow-hidden rounded-lg border shadow-md",
+        next.live ? "border-brand bg-brand-soft" : "border-brand-soft bg-brand-tint"
+      )}
+    >
+      <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-6 p-6 sm:p-7">
+        <div className="min-w-0 space-y-2.5">
+          <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-brand-text">
+            {next.live && (
+              // El único momento animado de la pantalla, y solo cuando la
+              // clase está pasando de verdad.
+              <span className="relative flex h-2 w-2" aria-hidden>
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand opacity-70" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-brand" />
+              </span>
+            )}
             {next.live ? "Tu clase está pasando" : "Tu próxima clase"}
           </p>
-          <p className="text-lg font-semibold tracking-tight">{next.courseName}</p>
 
-          {/*
-            El día CONCRETO y la hora, y recién después el "en 5 días". Al
-            revés —que fue el primer intento— el alumno lee "en 5 días" y
-            todavía no sabe qué día es: tiene que contar.
-          */}
-          {/*
-            `first-letter` va en el párrafo y no en el `span`: la
-            pseudo-clase solo aplica a elementos de bloque, y en un `span`
-            no emite nada — el día quedaba en minúscula.
-          */}
-          <p className="text-sm text-text-2 first-letter:uppercase">
+          <p className="text-2xl font-semibold leading-tight tracking-tight">
+            {next.courseName}
+          </p>
+
+          <p className="text-[15px] text-text-2 first-letter:uppercase">
             <span className="font-medium">{formatDay(cuando, viewerZone)}</span>
             {" · "}
             <ClassTime
@@ -311,18 +325,18 @@ function NextClassPanel({
             </p>
           )}
 
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 text-xs text-text-3">
-            <span className="rounded-full border border-brand-soft px-2 py-0.5 font-medium text-brand-text">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 pt-1 text-xs text-text-3">
+            <span className="rounded-full border border-brand-soft bg-background px-2.5 py-1 font-medium text-brand-text">
               {next.live ? "en curso" : relativeDay(cuando, viewerZone)}
             </span>
             {next.teacherName && (
-              <span className="inline-flex items-center gap-1">
+              <span className="inline-flex items-center gap-1.5">
                 <UserRound className="h-3.5 w-3.5" strokeWidth={1.7} />
                 {next.teacherName}
               </span>
             )}
             {next.classroom && (
-              <span className="inline-flex items-center gap-1">
+              <span className="inline-flex items-center gap-1.5">
                 <MapPin className="h-3.5 w-3.5" strokeWidth={1.7} />
                 {next.classroom}
               </span>
@@ -330,18 +344,12 @@ function NextClassPanel({
           </div>
         </div>
 
-        {/*
-          FR-003 de 013 — El enlace aparece SOLO dentro de la ventana de la
-          organización. Cuando no está, se dice cuándo va a estar en vez de
-          dejar un botón muerto: un enlace visible todo el día invita a entrar
-          a una sala vacía.
-        */}
         {next.meetingUrl ? (
           <a
             href={next.meetingUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-md bg-brand px-5 text-sm font-semibold text-on-accent shadow-sm transition-colors hover:bg-brand-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-md bg-brand px-6 text-sm font-semibold text-on-accent shadow-sm transition-colors hover:bg-brand-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
             <Video className="h-4 w-4" strokeWidth={2} />
             Entrar a la clase
@@ -353,7 +361,7 @@ function NextClassPanel({
           </p>
         )}
       </div>
-    </PortalCard>
+    </section>
   );
 }
 
@@ -362,12 +370,9 @@ function NextClassPanel({
  * ============================================================ */
 
 /**
- * Las alertas aparecen cuando son ciertas y desaparecen cuando no.
- *
- * No es un panel fijo con "todo en orden": un cartel permanente deja de
- * leerse a la tercera visita, y entonces el día que diga algo real tampoco se
- * va a leer. US3 pide justamente esto — enterarse de que está en riesgo
- * ANTES de que sea tarde.
+ * Las alertas aparecen cuando son ciertas y desaparecen cuando no. Un panel
+ * fijo que dice "todo en orden" deja de leerse a la tercera visita, y entonces
+ * el día que diga algo real tampoco se va a leer.
  */
 function Alertas({ courses, balances }: { courses: Course[]; balances: Balance[] }) {
   const avisos: { key: string; text: string; href?: string }[] = [];
@@ -410,33 +415,30 @@ function Alertas({ courses, balances }: { courses: Course[]; balances: Balance[]
   if (avisos.length === 0) return null;
 
   return (
-    <section className="space-y-2">
-      <SectionTitle>Para resolver</SectionTitle>
-      <ul className="space-y-2">
-        {avisos.map((a) => (
-          <li
-            key={a.key}
-            className="flex items-start gap-2.5 rounded-lg border border-warning-border bg-warning-soft p-3.5"
-          >
-            <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" strokeWidth={2} />
-            <p className="text-sm text-text-2">
-              {a.text}
-              {a.href && (
-                <>
-                  {" "}
-                  <Link
-                    href={a.href}
-                    className="font-medium text-brand-text underline underline-offset-2"
-                  >
-                    Ver el detalle
-                  </Link>
-                </>
-              )}
-            </p>
-          </li>
-        ))}
-      </ul>
-    </section>
+    <ul className="space-y-2">
+      {avisos.map((a) => (
+        <li
+          key={a.key}
+          className="flex items-start gap-3 rounded-lg border border-warning-border bg-warning-soft px-4 py-3.5"
+        >
+          <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" strokeWidth={2} />
+          <p className="text-sm text-text-2">
+            {a.text}
+            {a.href && (
+              <>
+                {" "}
+                <Link
+                  href={a.href}
+                  className="font-medium text-brand-text underline underline-offset-2"
+                >
+                  Ver el detalle
+                </Link>
+              </>
+            )}
+          </p>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -449,52 +451,198 @@ function CourseCard({ course }: { course: Course }) {
   const aprobadas = obligatorias.filter((a) => a.passed === true).length;
   const pendientes = obligatorias.filter((a) => a.passed === null).length;
 
+  const avance =
+    course.totalClasses > 0
+      ? Math.round((course.completedClasses / course.totalClasses) * 100)
+      : null;
+
+  const alcanzaMinimo =
+    course.attendancePct === null ||
+    course.minAttendancePct === null ||
+    course.attendancePct >= course.minAttendancePct;
+
   return (
-    <PortalCard>
+    <Link
+      href={`/portal/cursadas/${course.enrollmentId}`}
+      className="group flex flex-col rounded-lg border border-border bg-card p-[var(--portal-card-pad)] shadow-sm transition-colors hover:border-brand-soft hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <Link
-            href={`/portal/cursadas/${course.enrollmentId}`}
-            className="text-base font-semibold tracking-tight underline-offset-4 hover:underline"
-          >
-            {course.courseName}
-          </Link>
+          <p className="text-base font-semibold tracking-tight">{course.courseName}</p>
           <p className="mt-0.5 truncate text-sm text-text-3">
-            {course.cohortName}
-            {course.teacherName && ` · ${course.teacherName}`}
+            {course.teacherName ?? course.cohortName}
           </p>
         </div>
         <ApprovalBadge value={course.approval} />
       </div>
 
-      {course.frequency && (
-        <p className="mt-2 text-xs text-text-3">{course.frequency}</p>
+      {/*
+        023 — El AVANCE, que es lo que faltaba. La asistencia dice "¿voy
+        bien?"; esto dice "¿cuánto me falta?", y es lo que convierte una lista
+        de datos en una cursada que se mueve.
+      */}
+      {avance !== null && (
+        <div className="mt-5 space-y-2">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-sm font-medium">
+              Clase {course.completedClasses} de {course.totalClasses}
+            </span>
+            <span className="text-xs text-text-3">
+              {course.completedClasses >= course.totalClasses
+                ? "cursada completa"
+                : `faltan ${course.totalClasses - course.completedClasses}`}
+            </span>
+          </div>
+          <Progress value={avance} label={`Avance del curso, ${avance}%`} />
+        </div>
       )}
 
-      <div className="mt-4">
-        <AttendanceBar
-          pct={course.attendancePct}
-          min={course.minAttendancePct}
-          attended={course.attendedCount}
-          eligible={course.eligibleCount}
-        />
+      {/*
+        Flex y no grid: en una tarjeta a ancho completo, dos columnas de grilla
+        estiran los números hasta 600px cada una y el segundo queda flotando en
+        el medio de la nada. Así se agrupan y se leen como un par.
+      */}
+      <div className="mt-5 flex flex-wrap gap-x-12 gap-y-4 border-t border-border pt-4">
+        <div className="min-w-[8rem]">
+          <p className="text-xs text-text-3">Asistencia</p>
+          {course.attendancePct === null ? (
+            <p className="mt-0.5 text-sm text-text-3">Sin registrar</p>
+          ) : (
+            <>
+              <p
+                className={cn(
+                  "mt-0.5 text-xl font-semibold tabular-nums",
+                  !alcanzaMinimo && "text-danger"
+                )}
+              >
+                {course.attendancePct}%
+              </p>
+              <p className="text-xs text-text-3">
+                {course.attendedCount} de {course.eligibleCount}
+                {course.minAttendancePct !== null && ` · mín. ${course.minAttendancePct}%`}
+              </p>
+            </>
+          )}
+        </div>
+
+        <div className="min-w-[8rem]">
+          <p className="text-xs text-text-3">Evaluaciones</p>
+          {obligatorias.length === 0 ? (
+            <p className="mt-0.5 text-sm text-text-3">Sin cargar</p>
+          ) : (
+            <>
+              <p className="mt-0.5 text-xl font-semibold tabular-nums">
+                {aprobadas}
+                <span className="text-sm font-normal text-text-3">
+                  /{obligatorias.length}
+                </span>
+              </p>
+              {/* FR-005 — sin corregir es PENDIENTE, jamás desaprobada. */}
+              <p className="text-xs text-text-3">
+                {pendientes > 0 ? `${pendientes} sin corregir` : "todo corregido"}
+              </p>
+            </>
+          )}
+        </div>
       </div>
 
-      {obligatorias.length > 0 && (
-        <p className="mt-3 text-sm text-text-2">
-          <span className="font-medium tabular-nums">
-            {aprobadas} de {obligatorias.length}
-          </span>{" "}
-          {obligatorias.length === 1 ? "evaluación aprobada" : "evaluaciones aprobadas"}
-          {/* FR-005 — sin corregir es PENDIENTE, jamás desaprobada. */}
-          {pendientes > 0 &&
-            ` · ${pendientes} ${pendientes === 1 ? "sin corregir" : "sin corregir"}`}
-        </p>
+      {course.approval === "sin_datos" && (
+        <p className="mt-4 text-sm text-text-3">{course.approvalReasons[0]}</p>
       )}
 
-      {course.approval === "sin_datos" && (
-        <p className="mt-3 text-sm text-text-3">{course.approvalReasons[0]}</p>
-      )}
+      <span className="mt-4 inline-flex items-center gap-1 text-xs font-medium text-brand-text">
+        Ver la cursada
+        <ChevronRight
+          className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5"
+          strokeWidth={2}
+        />
+      </span>
+    </Link>
+  );
+}
+
+/* ============================================================
+ * US7 — Mi estado de cuenta
+ * ============================================================ */
+
+/**
+ * DV-002 — La deuda se muestra aunque esté vencida: ocultarla no la hace
+ * desaparecer, solo garantiza la llamada.
+ *
+ * **Nunca se suman monedas distintas** (corrección del ciclo 007).
+ */
+function BalanceCard({ balances }: { balances: Balance[] }) {
+  if (balances.length === 0) {
+    return (
+      <PortalCard className="flex items-start gap-3.5">
+        <Wallet className="mt-0.5 h-5 w-5 shrink-0 text-text-3" strokeWidth={1.7} />
+        <div>
+          <p className="font-medium">Sin movimientos de cuenta</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Cuando la academia genere tu plan de cuotas vas a ver acá qué
+            pagaste y qué falta.
+          </p>
+        </div>
+      </PortalCard>
+    );
+  }
+
+  return (
+    <PortalCard className="flex flex-col">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[13px] font-semibold tracking-tight text-text-2">Mi cuenta</p>
+        <Link
+          href="/portal/cuenta"
+          className="inline-flex items-center gap-1 text-xs font-medium text-brand-text underline-offset-4 hover:underline"
+        >
+          Cuotas y pagos
+          <ChevronRight className="h-3.5 w-3.5" strokeWidth={2} />
+        </Link>
+      </div>
+
+      <div className="mt-4 space-y-5">
+        {balances.map((b) => {
+          const pagadoPct = b.total > 0 ? Math.round((b.paid / b.total) * 100) : 0;
+          return (
+            <div key={b.currency} className="space-y-2">
+              <div className="flex items-baseline justify-between gap-3">
+                <p
+                  className={cn(
+                    "text-2xl font-semibold tabular-nums",
+                    b.overdueCount > 0 && "text-danger"
+                  )}
+                >
+                  {formatAmount(b.balance, b.currency)}
+                </p>
+                <p className="text-xs text-text-3">
+                  {balances.length > 1 && `${b.currency} · `}
+                  {b.balance === 0 ? "al día" : "por pagar"}
+                </p>
+              </div>
+
+              <Progress
+                value={pagadoPct}
+                tone={b.overdueCount > 0 ? "danger" : "success"}
+                label={`Pagaste el ${pagadoPct}% del total`}
+              />
+
+              <p className="text-xs text-text-3">
+                Pagaste {formatAmount(b.paid, b.currency)} de{" "}
+                {formatAmount(b.total, b.currency)}
+                {b.overdueCount > 0 ? (
+                  <span className="font-medium text-danger">
+                    {" · "}
+                    {b.overdueCount}{" "}
+                    {b.overdueCount === 1 ? "cuota vencida" : "cuotas vencidas"}
+                  </span>
+                ) : (
+                  b.nextDueDate && ` · próxima el ${formatDate(b.nextDueDate)}`
+                )}
+              </p>
+            </div>
+          );
+        })}
+      </div>
     </PortalCard>
   );
 }
@@ -510,36 +658,68 @@ function CourseCard({ course }: { course: Course }) {
  * "En trámite" se dice con esas palabras y **sin fechas** cuando todavía no
  * está asignada. Una fecha inventada acá es alguien que se organiza mal.
  */
-function LicenseCard({ license }: { license: License & { curso: string } }) {
+function LicenseCard({
+  license,
+  extra,
+}: {
+  license: License & { curso: string };
+  extra: number;
+}) {
   const vencida = license.daysLeft !== null && license.daysLeft < 0;
+  const porVencer =
+    license.daysLeft !== null && license.daysLeft >= 0 && license.daysLeft <= 30;
 
   return (
-    <PortalCard>
-      <div className="flex items-start gap-3">
-        <KeyRound className="mt-0.5 h-5 w-5 shrink-0 text-text-3" strokeWidth={1.7} />
+    <PortalCard className="flex flex-col">
+      <p className="text-[13px] font-semibold tracking-tight text-text-2">Mi licencia</p>
+
+      <div className="mt-4 flex items-start gap-3.5">
+        <span
+          className={cn(
+            "flex h-10 w-10 shrink-0 items-center justify-center rounded-md",
+            license.assigned ? "bg-brand-soft text-brand-text" : "bg-secondary text-text-3"
+          )}
+        >
+          <KeyRound className="h-5 w-5" strokeWidth={1.7} />
+        </span>
+
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold">{license.softwareName}</p>
-          <p className="text-xs text-text-3">para {license.curso}</p>
+          <p className="text-base font-semibold tracking-tight">{license.softwareName}</p>
+          <p className="truncate text-xs text-text-3">para {license.curso}</p>
 
           {license.assigned ? (
-            <p className="mt-2 text-sm text-text-2">
-              {license.assignedAt && <>Desde el {formatDate(license.assignedAt)}. </>}
+            <p
+              className={cn(
+                "mt-2 text-sm text-text-2",
+                (vencida || porVencer) && "font-medium text-warning"
+              )}
+            >
               {license.expiresAt ? (
                 <>
                   {vencida ? "Venció" : "Vence"} el {formatDate(license.expiresAt)}
-                  {!vencida &&
+                  {porVencer &&
                     license.daysLeft !== null &&
                     ` · quedan ${license.daysLeft} ${license.daysLeft === 1 ? "día" : "días"}`}
-                  .
                 </>
               ) : (
-                "Sin fecha de vencimiento cargada."
+                <>
+                  Activa
+                  {license.assignedAt && ` desde el ${formatDate(license.assignedAt)}`}. Sin
+                  fecha de vencimiento cargada.
+                </>
               )}
             </p>
           ) : (
             <p className="mt-2 text-sm text-text-2">
               En trámite. Cuando la academia te la asigne vas a ver acá desde
               cuándo y hasta cuándo la tenés.
+            </p>
+          )}
+
+          {extra > 0 && (
+            <p className="mt-2 text-xs text-text-3">
+              y {extra} {extra === 1 ? "licencia más" : "licencias más"} en tus otras
+              cursadas
             </p>
           )}
         </div>
@@ -549,85 +729,10 @@ function LicenseCard({ license }: { license: License & { curso: string } }) {
 }
 
 /* ============================================================
- * US7 — Mi estado de cuenta
- * ============================================================ */
-
-/**
- * DV-002 — La deuda se muestra aunque esté vencida. Ocultarla no la hace
- * desaparecer: solo garantiza la llamada.
- *
- * **Nunca se suman monedas distintas** (corrección del ciclo 007): un alumno
- * que pagó parte en guaraníes y parte en dólares ve dos totales, no uno
- * inventado.
- */
-function BalancePanel({ balances }: { balances: Balance[] }) {
-  if (balances.length === 0) return null;
-
-  return (
-    <section className="space-y-3">
-      <div className="flex items-baseline justify-between gap-3">
-        <SectionTitle>Mi cuenta</SectionTitle>
-        <Link
-          href="/portal/cuenta"
-          className="text-xs font-medium text-brand-text underline-offset-4 hover:underline"
-        >
-          Ver cuotas y pagos
-        </Link>
-      </div>
-
-      {/*
-        Una sola moneda ocupa el ancho: en dos columnas quedaba una tarjeta a
-        media página con un hueco al lado, que se lee como algo que falta
-        cargar. La grilla aparece recién cuando hay de qué comparar.
-      */}
-      <div className={cn("grid gap-3", balances.length > 1 && "sm:grid-cols-2")}>
-        {balances.map((b) => (
-          <PortalCard key={b.currency}>
-            <div className="flex items-start gap-3">
-              <Wallet className="mt-0.5 h-5 w-5 shrink-0 text-text-3" strokeWidth={1.7} />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm text-text-3">
-                  Saldo{balances.length > 1 && ` en ${b.currency}`}
-                </p>
-                <p
-                  className={cn(
-                    "text-xl font-semibold tabular-nums",
-                    b.overdueCount > 0 && "text-danger"
-                  )}
-                >
-                  {formatAmount(b.balance, b.currency)}
-                </p>
-                <p className="mt-1 text-xs text-text-3">
-                  Pagaste {formatAmount(b.paid, b.currency)} de{" "}
-                  {formatAmount(b.total, b.currency)}
-                </p>
-                {b.overdueCount > 0 ? (
-                  <p className="mt-1 text-xs font-medium text-danger">
-                    {b.overdueCount} {b.overdueCount === 1 ? "cuota vencida" : "cuotas vencidas"}
-                  </p>
-                ) : b.nextDueDate ? (
-                  <p className="mt-1 text-xs text-text-3">
-                    Próximo vencimiento: {formatDate(b.nextDueDate)}
-                  </p>
-                ) : b.balance === 0 ? (
-                  <p className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-success">
-                    <BadgeCheck className="h-3.5 w-3.5" strokeWidth={2} /> Al día
-                  </p>
-                ) : null}
-              </div>
-            </div>
-          </PortalCard>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-/* ============================================================
  * US6 — Mi certificado
  * ============================================================ */
 
-function CertificateRow({
+function CertificateCard({
   cert,
 }: {
   cert: { code: string; issuedAt: string; revokedAt: string | null; curso: string };
@@ -635,44 +740,50 @@ function CertificateRow({
   const anulado = cert.revokedAt !== null;
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-3.5">
-      <div className="flex min-w-0 items-center gap-3">
-        <Award
-          className={`h-5 w-5 shrink-0 ${anulado ? "text-text-4" : "text-brand"}`}
-          strokeWidth={1.7}
-        />
+    <PortalCard className="flex items-center justify-between gap-4">
+      <div className="flex min-w-0 items-center gap-3.5">
+        <span
+          className={cn(
+            "flex h-10 w-10 shrink-0 items-center justify-center rounded-md",
+            anulado ? "bg-secondary text-text-4" : "bg-brand-soft text-brand-text"
+          )}
+        >
+          <Award className="h-5 w-5" strokeWidth={1.7} />
+        </span>
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium">{cert.curso}</p>
-          <p className="text-xs text-text-3">
-            Emitido el {formatDate(cert.issuedAt)} · código{" "}
-            <span className="font-mono">{cert.code}</span>
+          <p className="truncate text-sm font-semibold">{cert.curso}</p>
+          <p className="truncate text-xs text-text-3">
+            {formatDate(cert.issuedAt)} · <span className="font-mono">{cert.code}</span>
           </p>
         </div>
       </div>
+
       {/* FR-009 — un certificado anulado se ve, pero no se ofrece. */}
       {anulado ? (
-        <span className="text-xs font-medium text-danger">Anulado</span>
+        <span className="shrink-0 text-xs font-medium text-danger">Anulado</span>
       ) : (
         <Link
           href={`/verificar/${cert.code}`}
-          className="inline-flex h-9 items-center rounded-md border border-input px-3 text-xs font-medium transition-colors hover:bg-accent"
+          className="inline-flex h-9 shrink-0 items-center rounded-md border border-input px-3 text-xs font-medium transition-colors hover:bg-accent"
         >
-          Ver y compartir
+          Compartir
         </Link>
       )}
-    </div>
+    </PortalCard>
   );
 }
 
 function DashboardSkeleton() {
   return (
-    <div className="space-y-8">
-      <Skeleton className="h-9 w-56" />
-      <Skeleton className="h-36 w-full" />
-      <div className="space-y-3">
-        <Skeleton className="h-4 w-24" />
-        <Skeleton className="h-32 w-full" />
-        <Skeleton className="h-32 w-full" />
+    <div className="space-y-10">
+      <div className="space-y-2">
+        <Skeleton className="h-9 w-56" />
+        <Skeleton className="h-5 w-40" />
+      </div>
+      <Skeleton className="h-44 w-full rounded-lg" />
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Skeleton className="h-56 w-full rounded-lg" />
+        <Skeleton className="h-56 w-full rounded-lg" />
       </div>
     </div>
   );

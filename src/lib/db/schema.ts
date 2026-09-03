@@ -511,14 +511,14 @@ export const cohort = pgTable(
      */
     meetingUrl: text("meeting_url"),
     /**
-     * 023 (FR-002) — El aula virtual de la camada. Sus clases la HEREDAN.
+     * 023 (FR-002) — El aula virtual de la cohorte. Sus clases la HEREDAN.
      *
      * No se les copia al generar el cronograma, por el mismo motivo que
-     * `meeting_url`: copiarla dejaría 41 camadas con aulas congeladas el día
+     * `meeting_url`: copiarla dejaría 41 cohortes con aulas congeladas el día
      * que se reasigne una.
      *
      * `set null` y no `restrict`: dar de baja un aula no puede trabar la
-     * camada. Sin aula, el enlace cae al `meeting_url` de siempre (FR-004).
+     * cohorte. Sin aula, el enlace cae al `meeting_url` de siempre (FR-004).
      */
     virtualRoomId: text("virtual_room_id").references(() => virtualRoom.id, {
       onDelete: "set null",
@@ -1152,8 +1152,8 @@ export const classSession = pgTable(
      */
     meetingUrl: text("meeting_url"),
     /**
-     * 023 (FR-003) — Aula propia de ESTA clase; pisa la de la camada.
-     * NULL = usa la de la camada. Existe porque los choques se resuelven de a
+     * 023 (FR-003) — Aula propia de ESTA clase; pisa la de la cohorte.
+     * NULL = usa la de la cohorte. Existe porque los choques se resuelven de a
      * una: mover una clase a otra sala no debería tocar las otras treinta y
      * nueve.
      */
@@ -1483,6 +1483,20 @@ export const resource = pgTable(
     classSessionId: text("class_session_id").references(() => classSession.id, {
       onDelete: "cascade",
     }),
+    /**
+     * 023 — Material de una CAMADA: lo ven sus alumnos y nadie más.
+     *
+     * Es el tercer contenedor, y hacía falta. El del CURSO es el programa
+     * oficial que mantiene coordinación y alcanza a las siete camadas que lo
+     * dictan; el de la CLASE es el ejercicio de un día puntual. Faltaba el del
+     * medio: la guía que esta camada usa y las otras no —porque cambió el
+     * software, porque es in-company, porque el profesor arma lo suyo—.
+     *
+     * Sin esto, un profesor que quería compartir algo para toda su camada solo
+     * podía colgarlo de una clase (y quedaba escondido ahí adentro) o pedirle
+     * a coordinación que lo pusiera en el curso, afectando a las demás.
+     */
+    cohortId: text("cohort_id").references(() => cohort.id, { onDelete: "cascade" }),
     /** Referencia opcional al temario; no es el contenedor. */
     courseModuleId: text("course_module_id").references(() => courseModule.id, {
       onDelete: "set null",
@@ -1498,10 +1512,20 @@ export const resource = pgTable(
   (t) => [
     index("resource_org_course_idx").on(t.organizationId, t.courseId),
     index("resource_org_class_idx").on(t.organizationId, t.classSessionId),
+    index("resource_org_cohort_idx").on(t.organizationId, t.cohortId),
+    /**
+     * 023 — Exactamente UN contenedor: curso, camada o clase.
+     *
+     * Con dos, el material aparecería duplicado en dos pantallas; con
+     * ninguno, no aparecería en ninguna. La suma de banderas dice "uno y solo
+     * uno" sin escribir las tres combinaciones a mano — que es como se
+     * olvida una al agregar el cuarto contenedor.
+     */
     check(
       "resource_contenedor_unico",
-      sql`(${t.courseId} is not null and ${t.classSessionId} is null)
-       or (${t.classSessionId} is not null and ${t.courseId} is null)`
+      sql`(case when ${t.courseId} is not null then 1 else 0 end)
+        + (case when ${t.cohortId} is not null then 1 else 0 end)
+        + (case when ${t.classSessionId} is not null then 1 else 0 end) = 1`
     ),
   ]
 );
@@ -1545,12 +1569,12 @@ export const announcement = pgTable(
  *
  * En la práctica es una cuenta de Zoom con su PMI (la sala permanente, de URL
  * fija). La academia tiene cinco, y hasta acá el sistema no sabía que
- * existían: `cohort.meeting_url` era texto libre y **0 de las 41 camadas lo
+ * existían: `cohort.meeting_url` era texto libre y **0 de las 41 cohortes lo
  * tenían cargado**.
  *
  * Modelarla como fila —y no seguir pegando URLs— es lo que permite responder
  * "¿qué aula usa esta clase?", "¿quién está en cada aula?" y sobre todo
- * "¿se pisan?". Con cinco aulas y 41 camadas, la pregunta no es si se van a
+ * "¿se pisan?". Con cinco aulas y 41 cohortes, la pregunta no es si se van a
  * pisar: es cuándo.
  *
  * **No es una integración con Zoom.** El choque se calcula comparando rangos

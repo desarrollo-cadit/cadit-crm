@@ -1,10 +1,10 @@
 /**
- * Camada de demostración: crea UNA camada completa para recorrer el producto
+ * Cohorte de demostración: crea UNA cohorte completa para recorrer el producto
  * entero —alumno, profesor y gestión— y después la borra sin dejar rastro.
  *
- *   pnpm demo-camada -- crear
- *   pnpm demo-camada -- estado
- *   pnpm demo-camada -- borrar
+ *   pnpm demo-cohorte -- crear
+ *   pnpm demo-cohorte -- estado
+ *   pnpm demo-cohorte -- borrar
  *
  * ============================================================
  * POR QUÉ EXISTE, Y POR QUÉ LA BAJA NO ES UN EXTRA
@@ -15,12 +15,12 @@
  * alumnos de verdad, imposibles de distinguir seis meses después.
  *
  * Por eso todo lo que este script crea lleva el prefijo `[DEMO]` en el nombre
- * y **cuelga de UNA camada**. `borrar` recorre esa camada y elimina lo suyo en
+ * y **cuelga de UNA cohorte**. `borrar` recorre esa cohorte y elimina lo suyo en
  * orden de dependencias, y después VERIFICA que no quedó nada. Si algo queda,
  * lo dice y sale distinto de cero: una baja que informa éxito sin haber
  * borrado es peor que no tener baja.
  *
- * Lo que NO toca, nunca: contactos, camadas, cursos, profesores y pagos que no
+ * Lo que NO toca, nunca: contactos, cohortes, cursos, profesores y pagos que no
  * lleven el prefijo. La selección es por marca explícita, no por fecha ni por
  * "los últimos": borrar por heurística es cómo se pierde un dato real.
  */
@@ -50,7 +50,7 @@ const TEL_ALUMNO = "59899000001";
 
 const accion = process.argv.slice(2).filter((a) => a !== "--")[0] ?? "estado";
 if (!["crear", "borrar", "estado"].includes(accion)) {
-  console.error("Uso: pnpm demo-camada -- <crear|borrar|estado>");
+  console.error("Uso: pnpm demo-cohorte -- <crear|borrar|estado>");
   process.exit(1);
 }
 
@@ -82,7 +82,7 @@ async function estado() {
     .where(scoped(schema.cohort.organizationId, org!.id, like(schema.cohort.name, `${MARCA}%`)));
 
   if (cohorts.length === 0) {
-    console.log("\n  No hay camada de demostración cargada.\n");
+    console.log("\n  No hay cohorte de demostración cargada.\n");
     return { cohorts: [] as { id: string; name: string | null }[] };
   }
 
@@ -143,8 +143,8 @@ async function crear() {
     .where(scoped(schema.cohort.organizationId, org!.id, like(schema.cohort.name, `${MARCA}%`)))
     .limit(1);
   if (yaHay.length > 0) {
-    console.error("[demo] Ya existe una camada de demostración. Borrala primero:");
-    console.error("       pnpm demo-camada -- borrar");
+    console.error("[demo] Ya existe una cohorte de demostración. Borrala primero:");
+    console.error("       pnpm demo-cohorte -- borrar");
     return false;
   }
 
@@ -163,7 +163,7 @@ async function crear() {
     name: `${MARCA} Sala de prueba`,
     url: "https://zoom.us/j/00000000000",
     accountEmail: "demo@ejemplo.test",
-    notes: "Creada por pnpm demo-camada. Se borra con `borrar`.",
+    notes: "Creada por pnpm demo-cohorte. Se borra con `borrar`.",
   });
   paso("aula virtual", aula.ok);
   if (!aula.ok) return false;
@@ -176,13 +176,13 @@ async function crear() {
   });
   paso("profesor", true, teacherId);
 
-  /* -- Curso y camada -------------------------------------- */
+  /* -- Curso y cohorte -------------------------------------- */
   const curso = await createCourse(org!.id, { name: `${MARCA} Curso de prueba` });
   paso("curso", curso.ok);
   if (!curso.ok) return false;
 
   /**
-   * La camada arranca HACE tres semanas y termina en tres: así hay clases
+   * La cohorte arranca HACE tres semanas y termina en tres: así hay clases
    * pasadas (con asistencia y grabación) y futuras (con "entrar a la clase").
    * Un demo que solo tiene futuro no muestra la mitad del producto.
    */
@@ -190,7 +190,7 @@ async function crear() {
   const fin = soloFecha(dias(21));
   const cohorte = await createCohort(org!.id, {
     courseId: curso.id,
-    name: `${MARCA} Camada de prueba`,
+    name: `${MARCA} Cohorte de prueba`,
     startDate: inicio,
     endDate: fin,
     teacherId,
@@ -206,7 +206,7 @@ async function crear() {
     currency: "UYU",
     virtualRoomId: aula.data.id,
   });
-  paso("camada", cohorte.ok);
+  paso("cohorte", cohorte.ok);
   if (!cohorte.ok) return false;
   const cohortId = cohorte.id;
 
@@ -229,7 +229,7 @@ async function crear() {
 
   /**
    * `createEnrollment` pone `enrolled_at` = HOY, y está bien para el alta
-   * real. Acá no: la camada arrancó hace tres semanas, así que con la fecha de
+   * real. Acá no: la cohorte arrancó hace tres semanas, así que con la fecha de
    * hoy las siete clases pasadas quedan fuera del cálculo de asistencia —"el
    * que entra en la cuarta semana no arranca con tres semanas de faltas"
    * (009)— y el demo mostraría 0%.
@@ -344,7 +344,7 @@ async function crear() {
       title: `${MARCA} Traigan el plano acotado`,
       body: "El lunes arrancamos con el render, así que necesitamos el plano ya acotado.",
     });
-    paso("aviso de la camada", av.ok);
+    paso("aviso de la cohorte", av.ok);
   }
 
   /* -- Accesos al portal ----------------------------------- */
@@ -363,7 +363,7 @@ async function crear() {
     console.log(`            ${accesoProfesor.data.temporaryPassword ?? "(la cuenta ya existía)"}`);
   }
   console.log(`\n  clases: ${clases.length} (${pasadas.length} pasadas, ${futuras.length} por venir)`);
-  console.log("  Para borrarlo todo:  pnpm demo-camada -- borrar\n");
+  console.log("  Para borrarlo todo:  pnpm demo-cohorte -- borrar\n");
   return true;
 }
 
@@ -373,7 +373,7 @@ async function crear() {
 
 /**
  * El orden importa: las claves foráneas van de las hojas al tronco, y
- * `enrollment.cohort_id` es `restrict` —la camada no se borra mientras haya
+ * `enrollment.cohort_id` es `restrict` —la cohorte no se borra mientras haya
  * una inscripción colgando—.
  *
  * Se borra explícitamente incluso lo que el `cascade` se llevaría solo. No es
@@ -552,7 +552,7 @@ async function borrar() {
     .delete(schema.cohort)
     .where(scoped(schema.cohort.organizationId, org!.id, inArray(schema.cohort.id, cohortIds)))
     .returning({ id: schema.cohort.id });
-  contar("camadas", coh.length);
+  contar("cohortes", coh.length);
 
   const cur = await db
     .delete(schema.course)
@@ -605,7 +605,7 @@ async function verificarLimpio(): Promise<string[]> {
   };
 
   await mirar(
-    "camadas",
+    "cohortes",
     await db
       .select({ id: schema.cohort.id })
       .from(schema.cohort)
@@ -668,7 +668,7 @@ async function verificarLimpio(): Promise<string[]> {
 
 console.log(`\n  organización: ${org.name}`);
 
-const ok = await withOrganizationScope(org.id, `cli:demo-camada:${accion}`, async () => {
+const ok = await withOrganizationScope(org.id, `cli:demo-cohorte:${accion}`, async () => {
   if (accion === "crear") return crear();
   if (accion === "borrar") return borrar();
   await estado();

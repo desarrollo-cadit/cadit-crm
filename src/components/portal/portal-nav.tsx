@@ -70,7 +70,7 @@ const ITEMS_ALUMNO: NavItem[] = [
 ];
 
 const ITEMS_PROFESOR: NavItem[] = [
-  { href: "/portal/dictado", label: "Mis camadas", icon: Users },
+  { href: "/portal/dictado", label: "Mis cohortes", icon: Users },
   { href: "/portal/horas", label: "Mis horas", icon: CalendarClock },
 ];
 

@@ -5,7 +5,7 @@
 ## Por qué esta fase existe
 
 La academia dicta en vivo con **5 cuentas de Zoom**. Hoy el sistema no sabe
-que existen: `cohort.meeting_url` es un texto libre, y **0 de las 41 camadas
+que existen: `cohort.meeting_url` es un texto libre, y **0 de las 41 cohortes
 lo tienen cargado**. Eso deja cuatro preguntas sin respuesta dentro del
 sistema, que hoy se contestan de memoria o en una planilla aparte:
 
@@ -14,7 +14,7 @@ sistema, que hoy se contestan de memoria o en una planilla aparte:
 - ¿Se pisan dos clases en la misma aula?
 - ¿Cuántas aulas quedan libres el martes a las 18:30?
 
-La cuarta es la que duele: con 5 aulas y 41 camadas, **la pregunta no es si se
+La cuarta es la que duele: con 5 aulas y 41 cohortes, **la pregunta no es si se
 van a pisar, es cuándo**. Y cuando pasa, se entera el alumno.
 
 ## La decisión que define la fase
@@ -47,7 +47,7 @@ Si eso no alcanza, la respuesta es la 018, no un parche acá.
 ### US1 — Declarar las aulas (Priority: P1)
 
 Como coordinación quiero cargar mis 5 aulas virtuales con su nombre y su
-enlace, para dejar de pegar URLs sueltas en cada camada.
+enlace, para dejar de pegar URLs sueltas en cada cohorte.
 
 **Escenarios**:
 - Aula con nombre y enlace → queda disponible para asignar.
@@ -55,13 +55,13 @@ enlace, para dejar de pegar URLs sueltas en cada camada.
   pasadas que la usaron **conservan el registro**: es evidencia de dónde se
   dictó, no un dato descartable.
 
-### US2 — Asignar un aula a una camada (Priority: P1)
+### US2 — Asignar un aula a una cohorte (Priority: P1)
 
-Como coordinación quiero asignarle un aula a la camada, y que todas sus clases
+Como coordinación quiero asignarle un aula a la cohorte, y que todas sus clases
 la hereden, para no elegirla cuarenta veces.
 
-**Regla**: la clase HEREDA el aula de la camada, no se la copia. Copiarla al
-generar el cronograma dejaría 41 camadas con aulas congeladas el día que se
+**Regla**: la clase HEREDA el aula de la cohorte, no se la copia. Copiarla al
+generar el cronograma dejaría 41 cohortes con aulas congeladas el día que se
 reasigne una — el mismo error que 013 evitó con `meeting_url`.
 
 ### US3 — Ver los choques ANTES de que pasen (Priority: P1)
@@ -70,11 +70,11 @@ Como coordinación quiero que el sistema me avise cuando dos clases comparten
 aula y horario, en el momento en que lo estoy armando.
 
 **Escenarios**:
-- Al generar el cronograma de una camada → si alguna clase choca, se dice
+- Al generar el cronograma de una cohorte → si alguna clase choca, se dice
   cuáles y contra qué, y **el cronograma se genera igual**: el choque es un
   aviso, no un bloqueo. Coordinación sabe cosas que el sistema no (que esa
   clase se movió, que ese día es feriado).
-- Al asignar o cambiar el aula de una camada → mismo aviso, en el momento.
+- Al asignar o cambiar el aula de una cohorte → mismo aviso, en el momento.
 - Una clase **cancelada** no choca con nada.
 
 ### US4 — La agenda de las aulas (Priority: P1)
@@ -85,7 +85,7 @@ por quién y con qué clase, para poder reubicar sin adivinar.
 ### US5 — Cambiar el aula de UNA clase (Priority: P2)
 
 Como coordinación quiero mover una sola clase a otra aula sin tocar el resto
-de la camada, porque los choques se resuelven de a una.
+de la cohorte, porque los choques se resuelven de a una.
 
 ### US6 — El alumno entra a su clase (Priority: P1)
 
@@ -93,7 +93,7 @@ Como alumno quiero entrar a la clase desde mi portal sin buscar el link en un
 chat viejo.
 
 **Ya está construido** ([015](../015-portal-alumno/spec.md) US2 y `buildClassRow`):
-esta fase solo hace que el enlace exista, porque hoy las 41 camadas lo tienen
+esta fase solo hace que el enlace exista, porque hoy las 41 cohortes lo tienen
 vacío.
 
 ### US7 — El profesor sabe dónde dicta (Priority: P2)
@@ -104,21 +104,21 @@ Como profesor quiero ver en qué aula me toca y entrar desde ahí.
 
 - **FR-001**: Un aula virtual DEBE tener nombre, enlace y estado (activa o de
   baja). El nombre es lo que ve coordinación; el enlace, lo que abre el alumno.
-- **FR-002**: Una camada PUEDE declarar un aula. Sus clases la HEREDAN; no se
+- **FR-002**: Una cohorte PUEDE declarar un aula. Sus clases la HEREDAN; no se
   les copia.
 - **FR-003**: Una clase PUEDE declarar su propia aula, y esa gana sobre la de
-  la camada. Mismo criterio que `meeting_url` en 013.
+  la cohorte. Mismo criterio que `meeting_url` en 013.
 - **FR-004**: El enlace que ve el alumno DEBE resolverse en este orden:
-  enlace propio de la clase → aula de la clase → aula de la camada → enlace
-  propio de la camada. El último existe para no romper lo que ya funciona.
+  enlace propio de la clase → aula de la clase → aula de la cohorte → enlace
+  propio de la cohorte. El último existe para no romper lo que ya funciona.
 - **FR-005**: El sistema DEBE detectar choques: dos clases NO canceladas, con
   la MISMA aula, cuyos rangos horarios se solapan.
 - **FR-006**: El choque DEBE avisarse, nunca bloquear. Coordinación decide.
 - **FR-007**: Los rangos se comparan como INSTANTES, con `classInstant()`.
   Comparar los textos `"18:30"` sin zona da falsos negativos en el cambio de
-  hora y falsos positivos entre camadas de zonas distintas.
+  hora y falsos positivos entre cohortes de zonas distintas.
 - **FR-008**: Una clase sin horario cargado NO puede chocar: no hay rango que
-  comparar. **6 de las 41 camadas no tienen horario**, y suponerles uno sería
+  comparar. **6 de las 41 cohortes no tienen horario**, y suponerles uno sería
   inventar un choque o esconderlo.
 - **FR-009**: Un aula dada de baja NO DEBE poder asignarse a nada nuevo, y las
   clases que ya la tenían la conservan.
@@ -126,15 +126,15 @@ Como profesor quiero ver en qué aula me toca y entrar desde ahí.
   mostrar la cuenta ni las credenciales del aula: el profesor entra por el
   enlace, no administra la cuenta.
 - **FR-011**: La agenda de aulas DEBE poder consultarse por día y por semana,
-  diciendo aula, horario, camada y profesor.
+  diciendo aula, horario, cohorte y profesor.
 - **FR-012**: Toda la superficie es de STAFF salvo el enlace, que llega a los
   portales por los DTO que ya existen.
 
 ## Decisiones a verificar
 
-- **DV-001**: ¿El aula se asigna por camada o por día de la semana? Una camada
+- **DV-001**: ¿El aula se asigna por cohorte o por día de la semana? Una cohorte
   que dicta lunes y miércoles podría querer aulas distintas.
-  *(propuesta: por camada, con excepción por clase (FR-003). Por día de la
+  *(propuesta: por cohorte, con excepción por clase (FR-003). Por día de la
   semana es una tercera dimensión que nadie pidió y que hay que llenar 41
   veces.)*
 - **DV-002**: ¿El choque se calcula al vuelo o se persiste?
@@ -157,14 +157,14 @@ Como profesor quiero ver en qué aula me toca y entrar desde ahí.
 
 - **SC-001**: Coordinación carga las 5 aulas y las asigna sin escribir una URL
   más de una vez.
-- **SC-002**: Generar el cronograma de una camada cuyo horario pisa a otra en
+- **SC-002**: Generar el cronograma de una cohorte cuyo horario pisa a otra en
   la misma aula devuelve el cronograma **y** la lista de choques.
 - **SC-003**: Dos clases pegadas (una termina cuando la otra empieza) NO se
   reportan como choque.
 - **SC-004**: Una clase cancelada no aparece en ningún choque.
 - **SC-005**: Un alumno abre su portal y el botón de entrar lleva al aula
   correcta, dentro de la ventana horaria.
-- **SC-006**: Dos camadas en zonas horarias distintas que caen en el mismo
+- **SC-006**: Dos cohortes en zonas horarias distintas que caen en el mismo
   instante real SÍ se reportan como choque, verificado por test.
 
 ## Out of Scope

@@ -75,7 +75,7 @@ type ScopedEnrollment = {
   course: typeof schema.course.$inferSelect | null;
   teacherName: string | null;
   /**
-   * 023 (FR-004) — La URL del aula de la camada, ya resuelta.
+   * 023 (FR-004) — La URL del aula de la cohorte, ya resuelta.
    *
    * Viaja la URL y NO el aula entera: el alumno tiene que poder entrar, no
    * saber a qué cuenta de Zoom pertenece la sala ni quién la administra.
@@ -193,6 +193,19 @@ export type StudentCourseDto = {
   attendancePct: number | null;
   attendedCount: number;
   eligibleCount: number;
+  /**
+   * 023 — El AVANCE de la cursada: clase N de M.
+   *
+   * Es distinto de la asistencia y hacía falta. La asistencia responde "¿voy
+   * bien?"; esto responde "¿cuánto me falta?", que es lo que una persona
+   * quiere saber a mitad de un curso de doce clases. Sin este par, el portal
+   * lista datos y no transmite que algo avanza.
+   *
+   * `totalClasses` cuenta las NO canceladas: una clase que se cayó no alarga
+   * la cursada.
+   */
+  totalClasses: number;
+  completedClasses: number;
   minAttendancePct: number | null;
   approval: ApprovalState | "sin_datos";
   approvalReasons: string[];
@@ -444,7 +457,7 @@ function buildCourse(
    * dice "cómo voy", y en la segunda semana de un curso de doce el alumno leía
    * **8% de asistencia** y un cartel de "estás en riesgo" habiendo ido a todas.
    *
-   * Se encontró recorriendo la camada de demostración: el panel decía "0 de 5
+   * Se encontró recorriendo la cohorte de demostración: el panel decía "0 de 5
    * clases" mientras la lista de abajo mostraba "Viniste, Viniste, Faltaste".
    * Dos números del mismo dato que no coincidían.
    *
@@ -511,7 +524,7 @@ function buildCourse(
   return {
     enrollmentId: enrollment.id,
     cohortId: cohort?.id ?? null,
-    cohortName: cohort?.name ?? course?.name ?? "Inscripción sin camada",
+    cohortName: cohort?.name ?? course?.name ?? "Inscripción sin cohorte",
     courseName: course?.name ?? "—",
     status: cohort?.status ?? "sin_cohorte",
     startDate: cohort?.startDate?.toISOString() ?? null,
@@ -524,6 +537,16 @@ function buildCourse(
     // Las que ya pasaron: es el denominador que el alumno puede reconocer
     // mirando su propia lista de clases.
     eligibleCount: dictadas.length,
+    /**
+     * El avance mira TODA la camada, no solo desde que se inscribió: alguien
+     * que entró en la cuarta semana igual quiere saber en qué clase va el
+     * curso. Es la diferencia con el denominador de la asistencia, que sí
+     * arranca en su inscripción.
+     */
+    totalClasses: clases.filter((c) => !c.canceledAt).length,
+    completedClasses: clases.filter(
+      (c) => !c.canceledAt && c.date.getTime() <= now.getTime()
+    ).length,
     minAttendancePct,
     approval: sinDatos ? "sin_datos" : state,
     approvalReasons: sinDatos
@@ -936,7 +959,7 @@ export async function studentAccount(
 
       return {
         enrollmentId: e.enrollment.id,
-        cohortName: e.cohort?.name ?? e.course?.name ?? "Inscripción sin camada",
+        cohortName: e.cohort?.name ?? e.course?.name ?? "Inscripción sin cohorte",
         courseName: e.course?.name ?? "—",
         currency: e.enrollment.currency,
         billedToCompany: Boolean(e.enrollment.companyId),
@@ -1135,7 +1158,7 @@ export async function studentNavCourses(
         organizationId,
         and(
           eq(schema.enrollment.contactId, contactId),
-          // Una inscripción sin camada es un lead del pipeline, no una
+          // Una inscripción sin cohorte es un lead del pipeline, no una
           // cursada: en el menú del alumno sería una fila sin destino.
           gte(schema.cohort.startDate, new Date(0))
         )
