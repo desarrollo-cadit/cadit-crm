@@ -234,8 +234,8 @@ function HistoryList({
         <button
           key={run.id}
           onClick={() => onSelect(run.id)}
-          className={`w-full rounded-lg border p-3 text-left transition-colors hover:bg-accent/50 ${
-            selectedRunId === run.id ? "border-primary/50 bg-accent/60" : "bg-card"
+          className={`w-full rounded-lg border p-3 text-left transition-colors hover:bg-accent ${
+            selectedRunId === run.id ? "border-brand-soft bg-accent" : "bg-card"
           }`}
         >
           <div className="flex items-center justify-between">
@@ -314,7 +314,7 @@ function Report({
               ))}
             </div>
             {cases.some((c) => c.status === "judge_failed") && (
-              <p className="mt-3 text-xs text-[#8a6d3b]">
+              <p className="mt-3 text-xs text-warning">
                 {cases.filter((c) => c.status === "judge_failed").length} caso(s) sin
                 veredicto (el juez no respondió válido); excluidos del score.
               </p>
@@ -337,7 +337,7 @@ function CaseCard({ testCase, onApplied }: { testCase: Case; onApplied: () => vo
     c.veredicto === "verde" ? (
       <CheckCircle2 className="h-4 w-4 text-success" />
     ) : c.veredicto === "amarillo" ? (
-      <AlertTriangle className="h-4 w-4 text-[#8a6d3b]" />
+      <AlertTriangle className="h-4 w-4 text-warning" />
     ) : c.veredicto === "rojo" ? (
       <XCircle className="h-4 w-4 text-destructive" />
     ) : (
@@ -369,7 +369,7 @@ function CaseCard({ testCase, onApplied }: { testCase: Case; onApplied: () => vo
           {c.hallazgos.map((h, i) => (
             <HallazgoCard key={i} hallazgo={h} caseId={c.id} index={i} onApplied={onApplied} />
           ))}
-          <div className="rounded-md border bg-background/40 p-3">
+          <div className="rounded-md border bg-background p-3">
             <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Transcript
             </p>
@@ -378,7 +378,7 @@ function CaseCard({ testCase, onApplied }: { testCase: Case; onApplied: () => vo
                 <p key={i}>
                   <span
                     className={
-                      t.role === "cliente" ? "text-[#5b7291]" : "text-primary"
+                      t.role === "cliente" ? "text-voice-client" : "text-primary"
                     }
                   >
                     {t.role === "cliente" ? "Cliente" : "Agente"}:
@@ -427,7 +427,7 @@ function HallazgoCard({
   }
 
   return (
-    <div className="rounded-md border border-[#ece2cf] bg-[#faf7f0] p-3">
+    <div className="rounded-md border border-warning-border bg-warning-soft p-3">
       <div className="flex items-center justify-between">
         <Badge variant="warning">{TIPO_LABELS[hallazgo.tipo]}</Badge>
         {hallazgo.sugerencia && !applied && !editing && (

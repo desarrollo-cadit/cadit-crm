@@ -4,7 +4,7 @@
 
 **Nunca corras el self-test E2E contra la base de desarrollo.** El contenedor
 `vocero-dev-postgres-1` (puerto 5433, base `vocero`) tiene el catálogo y el
-alumnado REAL de CAD IT importados. El harness crea cursos, camadas y alumnos
+alumnado REAL de CAD IT importados. El harness crea cursos, cohortes y alumnos
 de prueba; sobre datos reales eso es basura difícil de limpiar, y como
 `course.published` viene en `true` por defecto, un curso de prueba llega al
 catálogo público de cadit.com.uy.
@@ -81,7 +81,7 @@ mezcla tenants.
 
 ## Guion manual de la feature
 
-1. Crear una camada y inscribir un alumno por 120.000 UYU.
+1. Crear una cohorte y inscribir un alumno por 120.000 UYU.
 2. Generar un plan de 6 cuotas desde el 10 de marzo, mensual.
    → deben quedar 6 cuotas de 20.000 sumando 120.000 exactos.
 3. Registrar un pago de 20.000 sobre la cuota 1.

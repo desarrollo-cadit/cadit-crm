@@ -24,7 +24,7 @@ function StatusTicks({ status }: { status: MessageDto["status"] }) {
   if (status === "delivered")
     return <CheckCheck className={cn(cls, "text-text-4")} strokeWidth={1.7} />;
   if (status === "read")
-    return <CheckCheck className={cn(cls, "text-[#53bdeb]")} strokeWidth={1.7} />;
+    return <CheckCheck className={cn(cls, "text-tick-read")} strokeWidth={1.7} />;
   return <AlertTriangle className={cn(cls, "text-destructive")} strokeWidth={1.7} />;
 }
 
@@ -144,7 +144,7 @@ function MediaBlock({ media }: { media: MessageMediaDto }) {
   // document
   return (
     <a
-      className="flex items-center gap-2 rounded-md border bg-background/60 px-2.5 py-2 hover:bg-background"
+      className="flex items-center gap-2 rounded-md border bg-background px-2.5 py-2 hover:bg-background"
       href={src}
       download={media.fileName ?? undefined}
       target="_blank"
@@ -267,7 +267,12 @@ export function MessageThread({ messages }: { messages: MessageDto[] }) {
                       <Smartphone className="h-3 w-3" strokeWidth={1.7} /> Celular
                     </span>
                   )}
-                  <span className="text-[10.5px] text-text-4">
+                  {/*
+                    020 — Era `text-text-4`, que pasó a ser token de ícono y
+                    decoración (3:1). La hora de un mensaje es TEXTO y encima
+                    va en 10.5px, así que le corresponde el 4.5:1 de --text-3.
+                  */}
+                  <span className="text-[10.5px] text-text-3">
                     {bubbleTime(m.createdAt)}
                   </span>
                   {out && <StatusTicks status={m.status} />}

@@ -30,7 +30,7 @@ describe("normalizePhoneInput", () => {
   });
 
   /**
-   * Vocero no es solo de esta academia: el colapso 521->52 de México venía
+   * CadIT no es solo de esta academia: el colapso 521->52 de México venía
    * de antes (003) y tiene que seguir funcionando.
    */
   it("mantiene el colapso 521->52 de México", () => {

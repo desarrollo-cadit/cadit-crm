@@ -18,6 +18,8 @@ import {
 import { applyStatusUpdate } from "@/server/inbox/status";
 import { onLeadActivity } from "@/server/inbox/lead-activity";
 import { maybeRunAgentTurn } from "@/server/ai/trigger";
+import { withOrganizationScope } from "@/lib/db/with-tenant";
+import { onAfterCommit } from "@/lib/db/tenant-context";
 
 /** Tipos de contenido soportados; el resto se ignora sin error. */
 const SUPPORTED_TYPES = new Set([
@@ -131,8 +133,25 @@ async function attachMediaAsset(
       .set({ mediaAssetId: asset.id })
       .where(eq(schema.message.id, messageId));
     if (asset.fetchStatus === "pending") {
-      // Descarga in-process, sin bloquear la ingesta; on-demand reintenta.
-      void ensureAssetAvailable(organizationId, asset.id).catch(() => {});
+      /**
+       * Descarga in-process, sin bloquear la ingesta; on-demand reintenta.
+       *
+       * 012 (T028) — Se agenda para DESPUÉS del commit, con su propio alcance.
+       * Las dos cosas hacen falta y por motivos distintos:
+       *
+       *  - **Después del commit**, porque la descarga abre otra transacción y
+       *    en read-committed no vería este `media_asset` hasta que el webhook
+       *    confirme. Encontraba nada y salía sin ruido: el adjunto quedaba en
+       *    `pending` para siempre, con el error tragado por el `.catch`.
+       *  - **Con alcance propio**, porque `AsyncLocalStorage` propaga el
+       *    contexto a la tarea suelta y sin esto tomaría una transacción ya
+       *    cerrada.
+       */
+      onAfterCommit(() => {
+        void withOrganizationScope(organizationId, "system:media", () =>
+          ensureAssetAvailable(organizationId, asset.id)
+        ).catch(() => {});
+      });
     }
     return asset;
   } catch (err) {
@@ -209,6 +228,24 @@ export async function processMessagesValue(value: WebhookValue): Promise<void> {
 
   const organizationId = credentials.organizationId;
 
+  /**
+   * 012 (T028) — Recién ACÁ se sabe de qué organización es el mensaje, así que
+   * recién acá se puede declarar el alcance para RLS.
+   *
+   * Todo lo que sigue —estados, contactos, conversaciones, mensajes, adjuntos—
+   * escribe en tablas con política `tenant_isolation`. Sin esta declaración
+   * los INSERT se rechazan y el webhook pierde mensajes sin que nadie se
+   * entere: Meta recibe su 200 igual.
+   */
+  return withOrganizationScope(organizationId, "system:webhook", () =>
+    ingestValue(organizationId, value)
+  );
+}
+
+async function ingestValue(
+  organizationId: string,
+  value: WebhookValue
+): Promise<void> {
   for (const status of value.statuses ?? []) {
     await applyStatusUpdate(organizationId, status);
   }
@@ -254,6 +291,19 @@ export async function processEchoesValue(value: WebhookValue): Promise<void> {
     return;
   }
 
+  // 012 (T028) — Mismo motivo que en `processMessagesValue`: el alcance se
+  // puede declarar recién cuando las credenciales dicen de qué organización es.
+  return withOrganizationScope(
+    credentials.organizationId,
+    "system:webhook",
+    () => ingestEchoes(credentials.organizationId, value)
+  );
+}
+
+async function ingestEchoes(
+  organizationId: string,
+  value: WebhookValue
+): Promise<void> {
   // Meta documenta `message_echoes`; parser tolerante a `messages` (R1).
   const echoes = value.message_echoes ?? value.messages ?? [];
   for (const echo of echoes) {
@@ -263,7 +313,7 @@ export async function processEchoesValue(value: WebhookValue): Promise<void> {
       continue;
     }
     try {
-      await ingestManualEcho(credentials.organizationId, echo);
+      await ingestManualEcho(organizationId, echo);
     } catch (err) {
       // Un echo malformado jamás tumba el webhook (edge case del spec).
       console.error(`[webhook] error procesando echo ${echo.id}:`, err);
@@ -425,7 +475,9 @@ export async function ingestInboundMessage(input: {
     data: { conversation: { id: conversation.id } },
   });
 
-  await maybeRunAgentTurn(conversation.id);
+  onAfterCommit(() => {
+      void maybeRunAgentTurn(conversation.id, organizationId);
+    });
 }
 
 function toDate(timestamp: string): Date {

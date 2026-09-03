@@ -8,17 +8,17 @@
 | `organization_id` | text NOT NULL FK→organization | |
 | `cohort_id` | text NOT NULL FK→cohort ON DELETE cascade | |
 | `name` | text NOT NULL | "Trabajo final", "Parcial 1" |
-| `weight` | integer NOT NULL | porcentaje; la suma por camada debe dar 100 |
+| `weight` | integer NOT NULL | porcentaje; la suma por cohorte debe dar 100 |
 | `max_score` | integer NOT NULL | ver DV-001 |
 | `position` | integer NOT NULL | orden de aparición |
 | `created_at` / `updated_at` | timestamp NOT NULL | |
 
 **Índice**: `(organization_id, cohort_id, position)`.
 
-Vive en la camada y no en el curso porque dos ediciones del mismo curso pueden
+Vive en la cohorte y no en el curso porque dos ediciones del mismo curso pueden
 evaluarse distinto —la in-company suele no tener parcial—. Si en la práctica
 siempre coinciden, el atajo es copiar las evaluaciones del curso al crear la
-camada, no mover la tabla.
+cohorte, no mover la tabla.
 
 ## `assessment_result` — la nota
 
@@ -110,5 +110,5 @@ del sistema y ya está en manos del alumno.
 ## Migración
 
 Aditiva: tres tablas nuevas y una columna nullable en `cohort`. Sin backfill
-(DV-004 define si se emiten certificados retroactivos a las camadas
+(DV-004 define si se emiten certificados retroactivos a las cohortes
 importadas, y eso sería una acción explícita, nunca una migración).

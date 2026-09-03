@@ -239,7 +239,7 @@ function FormCard({ form }: { form: IntakeFormDto }) {
             {copied ? "Copiado ✓" : "Copiar"}
           </Button>
         </div>
-        <details className="rounded-md border bg-secondary/40 p-3 text-xs">
+        <details className="rounded-md border bg-subtle p-3 text-xs">
           <summary className="cursor-pointer select-none font-medium">
             Ver snippet de ejemplo (fetch / curl)
           </summary>

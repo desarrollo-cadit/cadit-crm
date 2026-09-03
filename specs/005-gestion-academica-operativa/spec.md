@@ -222,7 +222,7 @@ temario y las cohortes con fecha de inicio futura.
 - **FR-004**: El sistema MUST impedir reducir el total de licencias de un software
   por debajo de la cantidad actualmente asignada.
 
-**Camadas**
+**Cohortes**
 
 - **FR-005**: El sistema MUST permitir registrar en una cohorte: costo, horario
   (texto libre), aula, URL del temario, y qué software(s) del catálogo utiliza,
@@ -295,7 +295,7 @@ temario y las cohortes con fecha de inicio futura.
   lleva un total de licencias disponibles por organización.
 - **Profesor**: docente que dicta cohortes; tiene nombre y las cohortes que tiene
   asignadas (para detectar choques de horario).
-- **Camada** *(existente, ampliada)*: agrega costo, horario, aula, URL de temario,
+- **Cohorte** *(existente, ampliada)*: agrega costo, horario, aula, URL de temario,
   y qué software(s) utiliza; referencia a profesor en vez de texto libre.
 - **Inscripción** *(existente, ampliada)*: agrega monto, cantidad de cuotas,
   observaciones de pago, cédula, factura, recibo, vendedor, empresa opcional, y su

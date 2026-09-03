@@ -192,7 +192,7 @@ export function Composer({
   if (!conversation.windowOpen) {
     return (
       <div className="border-t bg-background px-[18px] py-3.5">
-        <div className="mb-3 flex items-start gap-2 rounded-md border border-[#ece2cf] bg-[#faf7f0] p-3 text-sm text-[#8a6d3b]">
+        <div className="mb-3 flex items-start gap-2 rounded-md border border-warning-border bg-warning-soft p-3 text-sm text-warning">
           <Clock3 className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={1.7} />
           <div>
             <p className="font-medium">La ventana de 24 horas está cerrada.</p>
@@ -233,7 +233,7 @@ export function Composer({
       )}
 
       {file && (
-        <div className="mb-2.5 flex items-center gap-2.5 rounded-md border bg-secondary/50 p-2.5">
+        <div className="mb-2.5 flex items-center gap-2.5 rounded-md border bg-subtle p-2.5">
           {filePreview ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -261,7 +261,7 @@ export function Composer({
       )}
 
       {panel === "location" && (
-        <div className="mb-2.5 flex flex-wrap items-end gap-2 rounded-md border bg-secondary/50 p-2.5">
+        <div className="mb-2.5 flex flex-wrap items-end gap-2 rounded-md border bg-subtle p-2.5">
           <label className="min-w-0 flex-1 text-xs text-text-2">
             Coordenadas o enlace de Google Maps
             <input
@@ -283,7 +283,7 @@ export function Composer({
           <button
             onClick={() => void submitLocation()}
             disabled={sending}
-            className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-40"
+            className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-accent hover:bg-brand-hover disabled:opacity-40"
           >
             Enviar ubicación
           </button>
@@ -298,7 +298,7 @@ export function Composer({
       )}
 
       {panel === "contact" && (
-        <div className="mb-2.5 flex flex-wrap items-end gap-2 rounded-md border bg-secondary/50 p-2.5">
+        <div className="mb-2.5 flex flex-wrap items-end gap-2 rounded-md border bg-subtle p-2.5">
           <label className="min-w-0 flex-1 text-xs text-text-2">
             Nombre
             <input
@@ -320,7 +320,7 @@ export function Composer({
           <button
             onClick={() => void submitContact()}
             disabled={sending}
-            className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-40"
+            className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-on-accent hover:bg-brand-hover disabled:opacity-40"
           >
             Enviar contacto
           </button>
@@ -395,7 +395,7 @@ export function Composer({
           disabled={sending || !canSubmit}
           aria-label="Enviar"
           className={cn(
-            "flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[9px] bg-brand text-white transition-opacity hover:bg-brand-hover",
+            "flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[9px] bg-brand text-on-accent transition-opacity hover:bg-brand-hover",
             (sending || !canSubmit) && "opacity-40"
           )}
         >

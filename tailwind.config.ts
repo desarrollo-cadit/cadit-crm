@@ -59,8 +59,34 @@ const config: Config = {
         chat: "var(--chat-bg)",
         "bubble-out": "var(--bubble-out)",
         "bubble-out-text": "var(--bubble-out-text)",
-        success: "var(--success)",
-        warning: "var(--warning)",
+        "tick-read": "var(--tick-read)",
+        overlay: "var(--overlay)",
+        "now-line": "var(--now-line)",
+        // Paleta CATEGÓRICA de cohortes: distinguir, no comunicar estado.
+        ...Object.fromEntries(
+          [1, 2, 3, 4, 5, 6, 7, 8].flatMap((n) => [
+            [`cohort-${n}`, `var(--cohort-${n}-bg)`],
+            [`cohort-${n}-fg`, `var(--cohort-${n}-fg)`],
+          ])
+        ),
+        "voice-client": "var(--voice-client)",
+        "on-accent": "var(--on-accent)",
+        "on-state": "var(--on-state)",
+        success: {
+          DEFAULT: "var(--success)",
+          soft: "var(--success-soft)",
+          border: "var(--success-border)",
+        },
+        warning: {
+          DEFAULT: "var(--warning)",
+          soft: "var(--warning-soft)",
+          border: "var(--warning-border)",
+        },
+        danger: {
+          DEFAULT: "var(--danger)",
+          soft: "var(--danger-soft)",
+          border: "var(--danger-border)",
+        },
       },
       borderRadius: {
         sm: "var(--radius-sm)",
@@ -74,6 +100,21 @@ const config: Config = {
       },
       fontFamily: {
         sans: ["var(--font-geist)", "Hanken Grotesk", "-apple-system", "sans-serif"],
+      },
+      /**
+       * 020 (T005) — Solo los pasos de TITULAR se remapean a la escala nueva.
+       *
+       * Se hace acá y no en las pantallas por el mismo motivo que los colores:
+       * las 24 pantallas ya escriben `text-lg`, así que cambiar el token las
+       * alcanza a todas sin tocar un solo archivo.
+       *
+       * `xs`, `sm` y `base` quedan en el default de Tailwind a propósito:
+       * agrandar el cuerpo bajaría la densidad del panel (FR-006).
+       */
+      fontSize: {
+        lg: ["var(--text-step-1)", { lineHeight: "1.75rem" }],
+        xl: ["var(--text-step-2)", { lineHeight: "2rem" }],
+        "2xl": ["var(--text-step-3)", { lineHeight: "2.25rem" }],
       },
     },
   },

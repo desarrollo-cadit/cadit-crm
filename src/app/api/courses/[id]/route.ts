@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { apiError, parseBody, withAuth } from "@/lib/api";
+import { apiError, parseBody, requireCapability } from "@/lib/api";
 import {
   courseContentSchema,
   getCourse,
@@ -23,7 +23,9 @@ const patchSchema = z.object({
 });
 
 /** Editar un curso: datos básicos + ficha comercial + temario (006). */
-export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
+export const PATCH = requireCapability(
+  "academico.editar",
+  async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const body = await parseBody(req, patchSchema);
   if (!body.ok) return body.response;
@@ -45,7 +47,9 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
 });
 
 /** 006 — el editor precarga el curso junto con su temario. */
-export const GET = withAuth(async (session, _req: Request, ctx: Params) => {
+export const GET = requireCapability(
+  "academico.ver",
+  async (session, _req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const course = await getCourse(session.organizationId, id);
   if (!course) return apiError(404, "not_found", "Curso no encontrado");

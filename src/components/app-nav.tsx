@@ -13,32 +13,54 @@ import {
   LogOut,
   Settings,
   Users,
+  Building2,
 } from "lucide-react";
 import type { Branding } from "@/lib/branding";
 import { cn, initials } from "@/lib/utils";
 import { signOut } from "@/lib/auth/client";
+import { ThemeToggle } from "@/components/theme-toggle";
+import type { ThemePreference } from "@/lib/theme";
 import { useEvents } from "@/components/use-events";
 
+/**
+ * 012 (T029) — Cada destino declara la capacidad que exige.
+ *
+ * El menú se arma con lo que la sesión PUEDE, no con lo que existe. Un ítem
+ * que lleva a un 403 no es información: es una puerta cerrada con cartel de
+ * bienvenida, y enseña a la gente a desconfiar de lo que ve.
+ *
+ * `capability: null` = visible para cualquier miembro del staff (el Dashboard
+ * decide por dentro qué paneles mostrar según capacidades).
+ */
 const NAV_GROUPS = [
   {
     label: "Inicio",
     items: [
-      { href: "/", label: "Dashboard", icon: Kanban },
+      { href: "/", label: "Dashboard", icon: Kanban, capability: null },
     ],
   },
   {
     label: "CRM",
     items: [
-      { href: "/inbox", label: "Bandeja", icon: Inbox, badge: "unread" },
-      { href: "/pipeline", label: "Pipeline", icon: Kanban },
-      { href: "/contacts", label: "Alumnos", icon: Users, badge: "formArrivals" },
+      { href: "/inbox", label: "Bandeja", icon: Inbox, badge: "unread", capability: "inbox.ver" },
+      { href: "/pipeline", label: "Pipeline", icon: Kanban, capability: "inscripciones.ver" },
+      {
+        href: "/contacts",
+        label: "Alumnos",
+        icon: Users,
+        badge: "formArrivals",
+        capability: "contactos.ver",
+      },
+      // 013 (T033) — Sustituye al portal corporativo descartado: el staff mira
+      // y exporta el avance de los empleados de cada empresa.
+      { href: "/empresas", label: "Empresas", icon: Building2, capability: "contactos.ver" },
     ],
   },
   {
     label: "Gestión",
     items: [
-      { href: "/academico", label: "Académico", icon: GraduationCap },
-      { href: "/calendar", label: "Calendario", icon: CalendarDays },
+      { href: "/academico", label: "Académico", icon: GraduationCap, capability: "academico.ver" },
+      { href: "/calendar", label: "Calendario", icon: CalendarDays, capability: "academico.ver" },
     ],
   },
   // {
@@ -53,11 +75,24 @@ const NAV_GROUPS = [
 export function AppNav({
   branding,
   userName,
-  role,
+  roleLabel,
+  capabilities,
+  theme,
 }: {
   branding: Branding;
   userName: string;
-  role: string;
+  /** 020 (T014) — Preferencia de tema, resuelta en el servidor. */
+  theme: ThemePreference;
+  /** Rótulo visible del rol ("Dirección"), no su llave técnica. */
+  roleLabel: string;
+  /**
+   * 012 (T029) — Lo que esta sesión puede, resuelto en el servidor.
+   *
+   * Llega como lista y no como nombre de rol a propósito: el menú tiene que
+   * seguir funcionando cuando la dueña le saque una capacidad a un rol desde
+   * `/settings/roles`, sin que haya que tocar este componente.
+   */
+  capabilities: readonly string[];
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -102,7 +137,7 @@ export function AppNav({
     <aside className="flex w-56 shrink-0 flex-col border-r bg-subtle px-3 pb-3.5 pt-4">
       <Link href="/" className="mb-4 flex items-center gap-2.5 px-2">
         <span
-          className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-sm bg-brand text-[15px] font-bold text-white"
+          className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-sm bg-brand text-[15px] font-bold text-on-accent"
           aria-hidden
         >
           {branding.name.charAt(0).toUpperCase()}
@@ -116,12 +151,19 @@ export function AppNav({
       </Link>
 
       <nav className="flex flex-col gap-3.5">
-        {NAV_GROUPS.map((group) => (
+        {NAV_GROUPS.map((group) => {
+          // Un grupo sin ítems permitidos no se dibuja: un encabezado
+          // ("Gestión") con nada debajo parece un error de carga.
+          const items = group.items.filter(
+            (i) => i.capability === null || capabilities.includes(i.capability)
+          );
+          if (items.length === 0) return null;
+          return (
           <div key={group.label} className="flex flex-col gap-0.5">
             <span className="px-2.5 pb-1 text-[10.5px] font-semibold uppercase tracking-wide text-text-3">
               {group.label}
             </span>
-            {group.items.map((item) => {
+            {items.map((item) => {
               const active =
                 pathname === item.href || pathname.startsWith(`${item.href}/`);
               const badgeCount =
@@ -149,7 +191,7 @@ export function AppNav({
                     <span
                       className={cn(
                         "flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1.5 text-[10.5px] font-semibold",
-                        active ? "bg-brand text-white" : "bg-border-strong text-text-2"
+                        active ? "bg-brand text-on-accent" : "bg-border-strong text-text-2"
                       )}
                     >
                       {badgeCount}
@@ -159,11 +201,17 @@ export function AppNav({
               );
             })}
           </div>
-        ))}
+          );
+        })}
       </nav>
 
       <div className="flex-1" />
 
+      {/* 012 (T029) — Configuración solo para quien puede configurar o
+          gestionar accesos. Ambas pestañas de adentro (Roles, Equipo) tienen
+          su propio gate en el servidor; esto evita ofrecer la puerta. */}
+      {(capabilities.includes("configuracion.editar") ||
+        capabilities.includes("accesos.gestionar")) && (
       <Link
         href="/settings"
         className={cn(
@@ -182,6 +230,7 @@ export function AppNav({
         />
         Ajustes
       </Link>
+      )}
 
       <div className="mt-1 flex items-center gap-2.5 rounded-sm px-2.5 py-2 hover:bg-accent">
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-soft text-xs font-semibold text-brand-text">
@@ -190,9 +239,14 @@ export function AppNav({
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[13px] font-semibold">{userName}</span>
           <span className="block text-[11px] text-text-3">
-            {role === "owner" ? "Propietario" : "Equipo"} · En línea
+            {/* 012 (T029) — El rótulo del rol viene de la base, así que dice
+                "Dirección" o "Coordinación" en vez de un genérico "Equipo". */}
+            {roleLabel} · En línea
           </span>
         </span>
+        {/* 020 (T014) — El tema es una preferencia de la persona, no un
+            permiso: no lleva capacidad y lo ve todo el mundo. */}
+        <ThemeToggle initial={theme} size="compact" />
         <button
           aria-label="Cerrar sesión"
           title="Cerrar sesión"

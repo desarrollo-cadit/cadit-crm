@@ -1,3 +1,4 @@
+import { escapeHtml } from "@/lib/utils";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
@@ -12,7 +13,7 @@ import path from "node:path";
 
 const TEMPLATE_DIR = path.join(process.cwd(), "docs", "email-templates");
 
-export type TemplateName = "licencia-atc" | "bienvenida-cohorte";
+export type TemplateName = "licencia-atc" | "bienvenida-cohorte" | "acceso-portal";
 
 /** Cache en proceso: en producción los archivos no cambian entre pedidos. */
 const cache = new Map<TemplateName, string>();
@@ -31,14 +32,8 @@ function loadTemplate(name: TemplateName): string {
  * —o peor, permite inyectar marcado en un mensaje que sale con la firma de
  * la empresa—.
  */
-export function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
+// 023 — `escapeHtml` se mudó a `@/lib/utils`: había tres copias y dos
+// se habían quedado sin escapar el apóstrofo.
 
 /**
  * Reemplaza `{{clave}}` por su valor. Un marcador sin valor queda vacío y NO

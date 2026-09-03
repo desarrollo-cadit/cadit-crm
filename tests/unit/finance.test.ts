@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 /**
  * 005 (T038, US6, FR-019, FR-016): `monthlyRevenue` calcula el total del mes
  * actual vs. el anterior; `GET /api/dashboard/finance` responde 403 para
- * `role: "soporte"` (integración con `requireFullAccess`, T004/T005) y 200
+ * `role: "soporte"` (integración con `cobranza.ver`, T004/T005) y 200
  * con el total para acceso completo.
  *
  * 007 (corrección) — los totales van SEPARADOS POR MONEDA. Antes se sumaba
@@ -26,6 +26,14 @@ function thenableChain(rows: unknown[]) {
 }
 
 vi.mock("@/lib/db", () => ({
+  // 012 (T024) — `withAuth` abre la transacción del pedido con
+  // `getRootDb().transaction()` para declarar `app.current_org`. Sin este
+  // doble, cualquier prueba que atraviese el borde de autenticación falla
+  // antes de llegar al handler.
+  getRootDb: () => ({
+    transaction: async (fn: (tx: unknown) => unknown) =>
+      fn({ execute: async () => [] }),
+  }),
   getDb: () => ({
     select: () => thenableChain(selectQueue.shift() ?? []),
   }),
@@ -188,7 +196,7 @@ describe("activeCurrencies (007 — qué monedas mostrar)", () => {
   });
 });
 
-describe("GET /api/dashboard/finance (T037, FR-016, integración con requireFullAccess)", () => {
+describe("GET /api/dashboard/finance (T037, FR-016, integración con cobranza.ver)", () => {
   it("responde 403 forbidden para role: 'soporte' sin calcular nada", async () => {
     vi.resetModules();
     vi.doMock("@/lib/auth/session", () => {
@@ -248,5 +256,58 @@ describe("GET /api/dashboard/finance (T037, FR-016, integración con requireFull
     });
     // El panel necesita saber qué monedas tienen movimiento sin recalcularlo.
     expect(body.currencies).toEqual(["UYU"]);
+  });
+
+  /**
+   * 008 (T023) — `collected` se AGREGA sin cambiar la forma anterior. Este
+   * caso existe para que un cambio futuro no rompa a los consumidores que ya
+   * leen `currentMonth`/`previousMonth`/`trend`/`currencies`.
+   */
+  it("agrega `collected` conservando la forma existente", async () => {
+    vi.resetModules();
+    vi.doMock("@/lib/auth/session", () => {
+      class UnauthorizedError extends Error {}
+      return {
+        UnauthorizedError,
+        requireSession: vi.fn().mockResolvedValue({
+          userId: "usr_1",
+          organizationId: "org_1",
+          role: "member",
+        }),
+      };
+    });
+    // Facturado y cobrado consumen la misma cola de consultas; alcanza con
+    // que haya suficientes respuestas para no quedar sin filas.
+    for (let i = 0; i < 24; i++) {
+      selectQueue.push([{ currency: "UYU", total: "1000" }]);
+    }
+
+    const { GET } = await import("@/app/api/dashboard/finance/route");
+    const res = await GET();
+    const body = (await res.json()) as {
+      currentMonth: unknown;
+      previousMonth: unknown;
+      trend: unknown[];
+      currencies: string[];
+      collected: {
+        currentMonth: { totals: { currency: string; total: number }[] };
+        previousMonth: unknown;
+        trend: unknown[];
+      };
+    };
+
+    // La forma vieja sigue intacta.
+    expect(body.currentMonth).toBeDefined();
+    expect(body.previousMonth).toBeDefined();
+    expect(Array.isArray(body.trend)).toBe(true);
+    expect(Array.isArray(body.currencies)).toBe(true);
+
+    // Y la nueva viene con la MISMA estructura, separada por moneda.
+    expect(body.collected.currentMonth.totals).toContainEqual({
+      currency: "UYU",
+      total: 1000,
+    });
+    expect(body.collected.previousMonth).toBeDefined();
+    expect(Array.isArray(body.collected.trend)).toBe(true);
   });
 });

@@ -28,6 +28,14 @@ function thenableChain(rows: unknown[]) {
 }
 
 vi.mock("@/lib/db", () => ({
+  // 012 (T024) — `withAuth` abre la transacción del pedido con
+  // `getRootDb().transaction()` para declarar `app.current_org`. Sin este
+  // doble, cualquier prueba que atraviese el borde de autenticación falla
+  // antes de llegar al handler.
+  getRootDb: () => ({
+    transaction: async (fn: (tx: unknown) => unknown) =>
+      fn({ execute: async () => [] }),
+  }),
   getDb: () => ({
     select: () => thenableChain(selectQueue.shift() ?? []),
   }),
@@ -125,11 +133,28 @@ describe("listPublicCourses (T041/006, FR-020/FR-021/FR-022)", () => {
         modality: "en_vivo",
         durationWeeks: 12,
         hoursPerWeek: 4,
-        nextCohorts: [{ id: "coh_1", startDate: "2026-09-15T00:00:00.000Z" }],
+        nextCohorts: [
+          { id: "coh_1", startDate: "2026-09-15T00:00:00.000Z", teacher: null },
+        ],
       },
     ]);
-    // La cohorte pública sigue exponiendo SOLO id y fecha: ni costo ni cupo ni profesor.
-    expect(Object.keys(courses[0]!.nextCohorts[0]!)).toEqual(["id", "startDate"]);
+    /**
+     * 023 — La cohorte pública ahora SÍ expone al profesor, por pedido del
+     * dueño: quien mira una cohorte en la web quiere saber quién se la dicta.
+     *
+     * Lo que sigue sin salir es lo que importa: **ni costo, ni cupo, ni el
+     * correo del profesor, ni su tarifa por hora**. Es catálogo comercial, no
+     * la ficha interna.
+     */
+    expect(Object.keys(courses[0]!.nextCohorts[0]!)).toEqual([
+      "id",
+      "startDate",
+      "teacher",
+    ]);
+    const crudo = JSON.stringify(courses);
+    for (const prohibido of ["cost", "capacity", "email", "hourlyRate"]) {
+      expect(crudo, `el catálogo público filtró ${prohibido}`).not.toContain(prohibido);
+    }
   });
 
   it("un curso sin categoría asignada devuelve category: null, no un objeto a medias", async () => {

@@ -26,7 +26,17 @@ export function TeamClient() {
   const [tempPassword, setTempPassword] = useState("");
   // 005 (DV-001) — rol funcional de la cuenta nueva: acceso completo
   // (ventas/coordinación) o restringido (soporte, sin datos financieros).
-  const [role, setRole] = useState<"member" | "soporte">("member");
+  /**
+   * 012 (T029) — La llave del rol y la lista REAL de la organización.
+   *
+   * Antes era un enum fijo (`member` / `soporte`) escrito acá adentro. Con los
+   * roles editables desde `/settings/roles`, una lista quemada en el
+   * componente queda vieja en cuanto alguien crea o renombra uno — y ofrecer
+   * un rol que no existe da de alta cuentas sin permisos mapeados, que por el
+   * respaldo en código terminan pudiendo TODO.
+   */
+  const [roleKey, setRoleKey] = useState("");
+  const [roles, setRoles] = useState<{ key: string; name: string }[]>([]);
   const [created, setCreated] = useState<{ email: string; password: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -44,6 +54,14 @@ export function TeamClient() {
 
   useEffect(() => {
     void refetch();
+    // Los roles que EXISTEN, para no ofrecer ninguno que no esté mapeado.
+    void (async () => {
+      const res = await fetch("/api/settings/roles").catch(() => null);
+      if (!res?.ok) return;
+      const data = (await res.json()) as { roles: { key: string; name: string }[] };
+      setRoles(data.roles);
+      setRoleKey((actual) => actual || data.roles[0]?.key || "");
+    })();
   }, [refetch]);
 
   function generatePassword() {
@@ -63,7 +81,7 @@ export function TeamClient() {
     const res = await fetch("/api/settings/team", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name, email, password: tempPassword, role }),
+      body: JSON.stringify({ name, email, password: tempPassword, roleKey }),
     }).catch(() => null);
     setSaving(false);
     if (!res?.ok) {
@@ -77,7 +95,7 @@ export function TeamClient() {
     setName("");
     setEmail("");
     setTempPassword("");
-    setRole("member");
+    setRoleKey(roles[0]?.key ?? "");
     void refetch();
   }
 
@@ -116,14 +134,22 @@ export function TeamClient() {
             <select
               id="team-role"
               className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-              value={role}
-              onChange={(e) => setRole(e.target.value as "member" | "soporte")}
+              value={roleKey}
+              onChange={(e) => setRoleKey(e.target.value)}
             >
-              <option value="member">Ventas / Coordinación (acceso completo)</option>
-              <option value="soporte">
-                Soporte (sin dashboard financiero ni montos)
-              </option>
+              {roles.map((r) => (
+                <option key={r.key} value={r.key}>
+                  {r.name}
+                </option>
+              ))}
             </select>
+            <p className="text-xs text-muted-foreground">
+              Qué puede hacer cada rol se configura en{" "}
+              <a href="/settings/roles" className="underline">
+                Roles
+              </a>
+              .
+            </p>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="team-password">Contraseña temporal</Label>
@@ -141,9 +167,9 @@ export function TeamClient() {
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
           {created && (
-            <div className="rounded-md border border-[#d8e8dd] bg-[#eff7f1] p-3 text-sm">
-              <p className="font-medium text-[#3f6b52]">Cuenta creada ✓</p>
-              <p className="mt-1 text-[#3f6b52]/90">
+            <div className="rounded-md border border-success-border bg-success-soft p-3 text-sm">
+              <p className="font-medium text-success">Cuenta creada ✓</p>
+              <p className="mt-1 text-success">
                 Comparte estos datos ahora (no se volverán a mostrar):
                 <br />
                 <code>{created.email}</code> · contraseña{" "}
@@ -183,12 +209,12 @@ export function TeamClient() {
               <p className="truncate text-sm font-medium">{m.name}</p>
               <p className="text-xs text-muted-foreground">{m.email}</p>
             </div>
-            <Badge variant={m.role === "owner" ? "default" : "secondary"}>
-              {m.role === "owner"
-                ? "Propietario"
-                : m.role === "soporte"
-                  ? "Soporte"
-                  : "Miembro"}
+            {/* 012 (T029) — El rótulo sale de la tabla `role`, no de un
+                `if` con nombres quemados: si la dueña renombra un rol desde
+                Roles, acá se ve el nombre nuevo. Si el rol no está sembrado,
+                se muestra la llave cruda antes que inventar un rótulo. */}
+            <Badge variant="secondary">
+              {roles.find((r) => r.key === m.role)?.name ?? m.role}
             </Badge>
           </div>
         ))}

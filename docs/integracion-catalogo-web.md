@@ -331,7 +331,7 @@ export async function obtenerCurso(slug: string) {
 - **No uses el `id` en URLs públicas.** Para eso está el `slug`.
 - **No renderices `level`/`modality` crudos.** `en_vivo` no es texto para el
   usuario final.
-- **No trates `nextCohorts: []` como error.** Es el estado normal entre camadas.
+- **No trates `nextCohorts: []` como error.** Es el estado normal entre cohortes.
 - **No consumas otras rutas del CRM.** Todo lo que no sea `/api/public/*` exige
   sesión y puede exponer datos de alumnos; no está pensado para el sitio.
 - **No caches indefinidamente.** El CRM ya sugiere 60 s; respetalo para que una

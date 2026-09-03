@@ -1,11 +1,13 @@
 import { z } from "zod";
-import { parseBody, withAuth } from "@/lib/api";
+import { parseBody, requireCapability } from "@/lib/api";
 import { createIntakeForm, listIntakeForms } from "@/server/intake-forms";
 
 export const dynamic = "force-dynamic";
 
 /** 005 iteración 3 — CRUD de formularios de captación (settings/forms). */
-export const GET = withAuth(async (session) => {
+export const GET = requireCapability(
+  "contactos.ver",
+  async (session) => {
   const forms = await listIntakeForms(session.organizationId);
   return Response.json({ forms });
 });
@@ -15,7 +17,9 @@ const createSchema = z.object({
   courseId: z.string().min(1).optional(),
 });
 
-export const POST = withAuth(async (session, req: Request) => {
+export const POST = requireCapability(
+  "contactos.editar",
+  async (session, req: Request) => {
   const body = await parseBody(req, createSchema);
   if (!body.ok) return body.response;
 

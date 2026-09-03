@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
+import { archiveOrDeleteContact } from "@/server/contacts-admin";
 import { z } from "zod";
-import { apiError, parseBody, withAuth } from "@/lib/api";
+import { apiError, parseBody, requireCapability } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import {
@@ -13,7 +14,9 @@ export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ id: string }> };
 
-export const GET = withAuth(async (session, _req: Request, ctx: Params) => {
+export const GET = requireCapability(
+  "contactos.ver",
+  async (session, _req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const contact = await getContactById(session.organizationId, id);
   if (!contact) return apiError(404, "not_found", "Contacto no encontrado");
@@ -51,7 +54,9 @@ const patchSchema = z.object({
   archived: z.boolean().optional(),
 });
 
-export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
+export const PATCH = requireCapability(
+  "contactos.editar",
+  async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const body = await parseBody(req, patchSchema);
   if (!body.ok) return body.response;
@@ -83,3 +88,24 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
   if (!updated[0]) return apiError(404, "not_found", "Contacto no encontrado");
   return Response.json({ contact: serializeContact(updated[0]) });
 });
+
+/**
+ * 014 (T005, DV-008) — Baja de un alumno.
+ *
+ * **Borra o archiva según lo que tenga que perder**, y esa decisión la toma el
+ * servidor (`archiveOrDeleteContact`), no el navegador. Un contacto con
+ * inscripciones NUNCA se borra: se archiva, porque el borrado cae en cascada
+ * sobre sus notas, sus pagos y sus certificados emitidos.
+ *
+ * La respuesta dice cuál de las dos cosas pasó, para que la pantalla no tenga
+ * que adivinar ni el usuario quedarse con la duda.
+ */
+export const DELETE = requireCapability(
+  "contactos.editar",
+  async (session, _req: Request, ctx: Params) => {
+    const { id } = await ctx.params;
+    const result = await archiveOrDeleteContact(session.organizationId, id);
+    if (!result.ok) return apiError(result.status, result.code, result.message);
+    return Response.json({ accion: result.accion, motivo: result.motivo });
+  }
+);

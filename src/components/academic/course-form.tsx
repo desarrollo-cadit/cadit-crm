@@ -8,6 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Skeleton } from "@/components/ui/skeleton";
 
 /**
  * `key` sintética y estable: los módulos se borran del medio de la lista, y con
@@ -109,6 +110,10 @@ export function CourseForm({
   // 007 — un curso nuevo se publica por defecto; los talleres a medida y las
   // capacitaciones in-company se destildan para que no salgan en la web.
   const [published, setPublished] = useState(initial?.published ?? true);
+  /** 009/010 — default de asistencia mínima para las cohortes de este curso. */
+  const [minAttendancePct, setMinAttendancePct] = useState(
+    initial?.minAttendancePct?.toString() ?? ""
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -170,6 +175,7 @@ export function CourseForm({
       learningObjectives: textToTopics(objectives),
       targetAudience: targetAudience.trim() || null,
       published,
+      minAttendancePct: minAttendancePct.trim() ? Number(minAttendancePct) : null,
       // Omitir `modules` deja el temario como está; mandarlo lo reemplaza.
       ...(modulesLoaded
         ? {
@@ -203,7 +209,7 @@ export function CourseForm({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
       onClick={onClose}
     >
       <div
@@ -359,6 +365,19 @@ export function CourseForm({
                 onChange={(e) => setHoursPerWeek(e.target.value)}
               />
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="course-minasist">Asistencia mínima (%)</Label>
+              <Input
+                id="course-minasist"
+                inputMode="numeric"
+                placeholder="ej. 75"
+                value={minAttendancePct}
+                onChange={(e) => setMinAttendancePct(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Cada cohorte puede pisarlo. Vacío = sin requisito de presencia.
+              </p>
+            </div>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
@@ -427,7 +446,7 @@ export function CourseForm({
                 a abrir esta ventana.
               </p>
             ) : !modulesLoaded ? (
-              <p className="text-xs text-muted-foreground">Cargando temario…</p>
+              <Skeleton className="h-16 w-full" />
             ) : (
               modules.length === 0 && (
                 <p className="text-xs text-muted-foreground">

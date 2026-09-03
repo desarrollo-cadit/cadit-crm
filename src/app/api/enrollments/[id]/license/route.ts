@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { apiError, parseBody, withAuth } from "@/lib/api";
+import { apiError, parseBody, requireCapability } from "@/lib/api";
 import { assignLicense, unassignLicense } from "@/server/licenses";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +11,9 @@ const putSchema = z.object({
 });
 
 /** 005 (T030, US4, FR-002/FR-003) — asigna una licencia a la inscripción. */
-export const PUT = withAuth(async (session, req: Request, ctx: Params) => {
+export const PUT = requireCapability(
+  "academico.editar",
+  async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const body = await parseBody(req, putSchema);
   if (!body.ok) return body.response;
@@ -23,7 +25,9 @@ export const PUT = withAuth(async (session, req: Request, ctx: Params) => {
 });
 
 /** 005 (T030, US4, FR-002 escenario 3) — libera la licencia (vuelve al pool). */
-export const DELETE = withAuth(async (session, _req: Request, ctx: Params) => {
+export const DELETE = requireCapability(
+  "academico.editar",
+  async (session, _req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const license = await unassignLicense(session.organizationId, id);
   return Response.json({ license });

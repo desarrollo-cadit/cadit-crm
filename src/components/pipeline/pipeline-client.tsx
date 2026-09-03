@@ -19,7 +19,6 @@ import { cn } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatTime } from "@/components/inbox/helpers";
 import { StageManager } from "./stage-manager";
 
 export type BoardEnrollment = {
@@ -181,8 +180,8 @@ function StageColumn({ stage, leads }: { stage: StageDto; leads: BoardEnrollment
     <div
       ref={setNodeRef}
       className={cn(
-        "flex h-full w-64 shrink-0 flex-col rounded-lg border bg-card/50",
-        isOver && "ring-2 ring-primary/60"
+        "flex h-full w-64 shrink-0 flex-col rounded-lg border bg-card",
+        isOver && "ring-2 ring-ring"
       )}
     >
       <div className="flex items-center justify-between px-3 py-2.5">
@@ -222,7 +221,38 @@ function DraggableLead({ lead }: { lead: BoardEnrollment }) {
   );
 }
 
+/**
+ * 021 — Hace cuántos días que nadie toca este lead.
+ *
+ * Pura y exportada para poder probarla: es la regla que decide qué se pinta
+ * como pendiente, y equivocarla es marcar de urgente a todo el tablero —
+ * que es lo mismo que no marcar nada.
+ *
+ * `null` = nunca hubo actividad. Un lead recién creado no está "frío": está
+ * sin empezar, y son dos cosas distintas.
+ */
+export function diasSinActividad(
+  lastActivityAt: string | null,
+  now: Date = new Date()
+): number | null {
+  if (!lastActivityAt) return null;
+  const ms = now.getTime() - new Date(lastActivityAt).getTime();
+  return Math.floor(ms / 86_400_000);
+}
+
+/**
+ * A partir de acá el lead se pinta como pendiente.
+ *
+ * Catorce días y no siete: en una academia el ciclo de decisión es largo
+ * —la gente consulta, lo piensa, pregunta en la casa— y marcar en rojo a
+ * cualquiera que no contestó en una semana llenaría el tablero de alertas
+ * que nadie mira.
+ */
+const DIAS_PARA_ENFRIARSE = 14;
+
 function LeadCard({ lead, overlay = false }: { lead: BoardEnrollment; overlay?: boolean }) {
+  const dias = diasSinActividad(lead.lastActivityAt);
+  const frio = dias !== null && dias >= DIAS_PARA_ENFRIARSE;
   return (
     <div
       className={cn(
@@ -242,10 +272,25 @@ function LeadCard({ lead, overlay = false }: { lead: BoardEnrollment; overlay?: 
               {lead.interestCourseName}
             </p>
           )}
-          <p className="text-[11px] text-muted-foreground">
-            {lead.lastActivityAt
-              ? `Actividad: ${formatTime(lead.lastActivityAt)}`
-              : "Sin actividad"}
+          {/*
+            021 — Un lead que nadie toca hace dos semanas es plata que se
+            está yendo, y antes se leía igual que uno de ayer. Ahora se dice
+            en DÍAS —"hace 23 días" informa; una fecha hay que restarla
+            mentalmente— y el que se enfrió se pinta como pendiente.
+          */}
+          <p
+            className={cn(
+              "text-[11px]",
+              frio ? "font-medium text-warning" : "text-muted-foreground"
+            )}
+          >
+            {dias === null
+              ? "Sin actividad todavía"
+              : dias === 0
+                ? "Hoy"
+                : dias === 1
+                  ? "Ayer"
+                  : `Hace ${dias} días`}
           </p>
         </div>
         {lead.conversationId && (

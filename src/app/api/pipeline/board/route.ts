@@ -1,6 +1,6 @@
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
-import { parseQuery, withAuth } from "@/lib/api";
+import { parseQuery, requireCapability } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { fullName } from "@/lib/utils";
@@ -16,7 +16,9 @@ const querySchema = z.object({
  * 004 — sin `cohortId`: tablero GENERAL de ventas (enrollment.cohort_id
  * NULL). Con `cohortId`: tablero de esa cohorte puntual.
  */
-export const GET = withAuth(async (session, req: Request) => {
+export const GET = requireCapability(
+  "inscripciones.ver",
+  async (session, req: Request) => {
   const query = parseQuery(new URL(req.url), querySchema);
   if (!query.ok) return query.response;
   const cohortId = query.data.cohortId ?? null;

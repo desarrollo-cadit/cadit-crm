@@ -2,10 +2,23 @@ import { cn } from "@/lib/utils";
 
 export function Table({
   className,
+  containerClassName,
   ...props
-}: React.HTMLAttributes<HTMLTableElement>) {
+}: React.HTMLAttributes<HTMLTableElement> & {
+  /**
+   * 021 — Clases del CONTENEDOR de scroll, no de la tabla.
+   *
+   * Existe por un detalle que rompe en silencio: `overflow-x-auto` convierte a
+   * este div en contenedor de scroll de los DOS ejes, así que un
+   * `sticky top-0` en el encabezado se ancla acá —a un div que no scrollea
+   * verticalmente— y no hace nada. Para que el encabezado quede fijo, el
+   * scroll vertical tiene que vivir en este mismo contenedor: por eso se pasa
+   * un alto máximo desde afuera.
+   */
+  containerClassName?: string;
+}) {
   return (
-    <div className="relative w-full overflow-x-auto">
+    <div className={cn("relative w-full overflow-auto", containerClassName)}>
       <table className={cn("w-full caption-bottom text-sm", className)} {...props} />
     </div>
   );
@@ -36,7 +49,7 @@ export function TableFooter({
 }: React.HTMLAttributes<HTMLTableSectionElement>) {
   return (
     <tfoot
-      className={cn("border-t bg-secondary/50 font-medium", className)}
+      className={cn("border-t bg-subtle font-medium", className)}
       {...props}
     />
   );
@@ -49,7 +62,7 @@ export function TableRow({
   return (
     <tr
       className={cn(
-        "border-b transition-colors hover:bg-accent/50 data-[state=selected]:bg-accent",
+        "border-b transition-colors hover:bg-accent data-[state=selected]:bg-accent",
         className
       )}
       {...props}

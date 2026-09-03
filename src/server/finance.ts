@@ -2,6 +2,7 @@ import { sql, sum } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { CURRENCIES, type Currency } from "@/lib/db/schema";
 import { scoped } from "@/lib/db/tenant";
+import { collectedByCurrency } from "@/server/billing";
 
 /** Total facturado en UNA moneda. Nunca se suma con el de otra. */
 export type CurrencyTotal = { currency: Currency; total: number };
@@ -95,6 +96,55 @@ export async function monthlyRevenue(
     currentMonth: { month: monthKey(currentStart), totals: currentTotals },
     previousMonth: { month: monthKey(previousStart), totals: previousTotals },
   };
+}
+
+/**
+ * 008 (T024/T025) — Lo COBRADO, con la misma forma que lo facturado.
+ *
+ * Comparte `monthKey` y el tipo `MonthTotals` a propósito: el panel del home
+ * pone los dos números uno al lado del otro, y si divergen en formato o en
+ * orden de monedas la comparación deja de leerse de un vistazo.
+ *
+ * La diferencia está en QUÉ se suma: facturado mira `enrollment.amount` por
+ * fecha de inscripción; cobrado mira `payment.paid_at`. Un mes puede tener
+ * mucho facturado y poco cobrado, y ese hueco es justamente el dato que esta
+ * feature vino a hacer visible.
+ */
+export async function collectedRevenue(
+  organizationId: string,
+  reference: Date = new Date()
+): Promise<FinanceDashboard> {
+  const currentStart = new Date(reference.getFullYear(), reference.getMonth(), 1);
+  const currentEnd = new Date(reference.getFullYear(), reference.getMonth() + 1, 1);
+  const previousStart = new Date(reference.getFullYear(), reference.getMonth() - 1, 1);
+
+  const [current, previous] = await Promise.all([
+    collectedByCurrency(organizationId, currentStart, currentEnd),
+    collectedByCurrency(organizationId, previousStart, currentStart),
+  ]);
+
+  return {
+    currentMonth: { month: monthKey(currentStart), totals: current },
+    previousMonth: { month: monthKey(previousStart), totals: previous },
+  };
+}
+
+/** 008 — Serie de cobrado de los últimos `months` meses, para el gráfico. */
+export async function collectedTrend(
+  organizationId: string,
+  months = 6,
+  reference: Date = new Date()
+): Promise<MonthTotals[]> {
+  const points: MonthTotals[] = [];
+  for (let i = months - 1; i >= 0; i--) {
+    const start = new Date(reference.getFullYear(), reference.getMonth() - i, 1);
+    const end = new Date(reference.getFullYear(), reference.getMonth() - i + 1, 1);
+    points.push({
+      month: monthKey(start),
+      totals: await collectedByCurrency(organizationId, start, end),
+    });
+  }
+  return points;
 }
 
 export type TrendPoint = MonthTotals;

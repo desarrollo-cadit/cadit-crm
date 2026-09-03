@@ -1,6 +1,8 @@
-import { and, desc, eq, isNotNull } from "drizzle-orm";
+import { desc, eq, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, schema } from "@/lib/db";
+import { scoped } from "@/lib/db/tenant";
+import { withOrganizationScope } from "@/lib/db/with-tenant";
 import { apiError, parseBody } from "@/lib/api";
 import { requireBotKey, resolveInstanceOrg } from "@/server/bot/auth";
 import { getCredentialsByOrg } from "@/server/whatsapp/credentials";
@@ -26,66 +28,80 @@ export async function POST(req: Request) {
   if (!organizationId) {
     return apiError(409, "no_org", "La instancia aún no tiene organización");
   }
-  const body = await parseBody(req, bodySchema);
-  if (!body.ok) return body.response;
+  /**
+   * 012 (T028) — Declarar el alcance antes de tocar nada: todo lo que sigue
+   * lee o escribe tablas con política `tenant_isolation`. Sin esto, el bot
+   * externo no encuentra NINGUNA conversación y el síntoma es un 404 que
+   * culpa al id que mandó.
+   */
+  return withOrganizationScope(organizationId, "system:bot", async () => {
+    const body = await parseBody(req, bodySchema);
+    if (!body.ok) return body.response;
 
-  const db = getDb();
-  const convs = await db
-    .select()
-    .from(schema.conversation)
-    .where(
-      and(
-        eq(schema.conversation.organizationId, organizationId),
-        eq(schema.conversation.id, body.data.conversationId)
+    const db = getDb();
+    const convs = await db
+      .select()
+      .from(schema.conversation)
+      .where(
+        // Constitución III — `scoped()` y no un `and(eq(...))` a mano: filtra
+        // igual, pero es el punto ÚNICO donde mañana se agrega algo. La ruta
+        // hermana (`/api/bot/reset`) ya lo usa; dos formas de decir lo mismo
+        // en el mismo módulo es como una se queda atrás.
+        scoped(
+          schema.conversation.organizationId,
+          organizationId,
+          eq(schema.conversation.id, body.data.conversationId)
+        )
       )
-    )
-    .limit(1);
-  const conv = convs[0];
-  if (!conv) return apiError(404, "not_found", "Conversación no encontrada");
-  if (conv.isTest) {
-    // Sandbox: jamás toca la API real (guardrail del Laboratorio).
-    return Response.json({ ok: false, reason: "sandbox" });
-  }
-  if (!conv.aiEnabled || conv.handoffAt) {
-    // Handoff/IA pausada: un humano atiende — "escribiendo…" aquí sería
-    // mentirle al cliente. Se omite sin tocar Meta.
-    return Response.json({ ok: false, reason: "ai_paused" });
-  }
+      .limit(1);
+    const conv = convs[0];
+    if (!conv) return apiError(404, "not_found", "Conversación no encontrada");
+    if (conv.isTest) {
+      // Sandbox: jamás toca la API real (guardrail del Laboratorio).
+      return Response.json({ ok: false, reason: "sandbox" });
+    }
+    if (!conv.aiEnabled || conv.handoffAt) {
+      // Handoff/IA pausada: un humano atiende — "escribiendo…" aquí sería
+      // mentirle al cliente. Se omite sin tocar Meta.
+      return Response.json({ ok: false, reason: "ai_paused" });
+    }
 
-  const msgs = await db
-    .select({ waMessageId: schema.message.waMessageId })
-    .from(schema.message)
-    .where(
-      and(
-        eq(schema.message.organizationId, organizationId),
-        eq(schema.message.conversationId, conv.id),
-        eq(schema.message.direction, "in"),
-        isNotNull(schema.message.waMessageId)
+    const msgs = await db
+      .select({ waMessageId: schema.message.waMessageId })
+      .from(schema.message)
+      .where(
+        scoped(
+          schema.message.organizationId,
+          organizationId,
+          eq(schema.message.conversationId, conv.id),
+          eq(schema.message.direction, "in"),
+          isNotNull(schema.message.waMessageId)
+        )
       )
-    )
-    .orderBy(desc(schema.message.createdAt))
-    .limit(1);
-  const wamid = msgs[0]?.waMessageId;
-  if (!wamid) return Response.json({ ok: false, reason: "no_inbound" });
+      .orderBy(desc(schema.message.createdAt))
+      .limit(1);
+    const wamid = msgs[0]?.waMessageId;
+    if (!wamid) return Response.json({ ok: false, reason: "no_inbound" });
 
-  const creds = await getCredentialsByOrg(organizationId);
-  if (!creds) {
-    return apiError(409, "no_connection", "WhatsApp no está conectado");
-  }
+    const creds = await getCredentialsByOrg(organizationId);
+    if (!creds) {
+      return apiError(409, "no_connection", "WhatsApp no está conectado");
+    }
 
-  try {
-    await graphRequest(`${creds.phoneNumberId}/messages`, {
-      method: "POST",
-      token: creds.token,
-      body: {
-        messaging_product: "whatsapp",
-        status: "read",
-        message_id: wamid,
-        typing_indicator: { type: "text" },
-      },
-    });
-    return Response.json({ ok: true });
-  } catch {
-    return Response.json({ ok: false, reason: "meta_error" });
-  }
+    try {
+      await graphRequest(`${creds.phoneNumberId}/messages`, {
+        method: "POST",
+        token: creds.token,
+        body: {
+          messaging_product: "whatsapp",
+          status: "read",
+          message_id: wamid,
+          typing_indicator: { type: "text" },
+        },
+      });
+      return Response.json({ ok: true });
+    } catch {
+      return Response.json({ ok: false, reason: "meta_error" });
+    }
+  });
 }

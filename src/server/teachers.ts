@@ -7,7 +7,7 @@ import { MEDIA_LIMITS, readMediaFile, saveMediaFile } from "@/server/whatsapp/me
 /** 005 (DV-005, FR-007) — Alta de un profesor (entidad propia). */
 export async function createTeacher(
   organizationId: string,
-  input: { name: string; email?: string | null }
+  input: { name: string; email?: string | null; title?: string | null }
 ) {
   const db = getDb();
   const id = newId("teacher");
@@ -16,6 +16,7 @@ export async function createTeacher(
     organizationId,
     name: input.name,
     email: input.email ?? null,
+    title: input.title?.trim() || null,
   });
   return id;
 }
@@ -55,6 +56,8 @@ export function serializeTeacher(
     name: t.name,
     hourlyRate: t.hourlyRate,
     email: t.email,
+    /** 023 — Título profesional; va al catálogo público con la foto. */
+    title: t.title,
     courseIds,
     hasPhoto: t.photoMimeType !== null,
   };
@@ -142,6 +145,7 @@ export type UpdateTeacherInput = {
   name?: string;
   hourlyRate?: number | null;
   email?: string | null;
+  title?: string | null;
   /** Reemplaza por completo el conjunto de cursos que dicta (teacher_course). */
   courseIds?: string[];
 };
@@ -182,6 +186,7 @@ export async function updateTeacher(
       ...(input.name !== undefined ? { name: input.name } : {}),
       ...(input.hourlyRate !== undefined ? { hourlyRate: input.hourlyRate } : {}),
       ...(input.email !== undefined ? { email: input.email } : {}),
+      ...(input.title !== undefined ? { title: input.title?.trim() || null } : {}),
       updatedAt: new Date(),
     })
     .where(

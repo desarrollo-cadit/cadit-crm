@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { escapeHtml, renderTemplate } from "@/server/email/templates";
+import { renderTemplate } from "@/server/email/templates";
+// 023 — `escapeHtml` se unificó en `@/lib/utils`: había tres copias divergentes.
+import { escapeHtml } from "@/lib/utils";
 
 /**
  * 007 — Las plantillas se leen de `docs/email-templates/*.html` y el servidor

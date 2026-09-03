@@ -22,6 +22,14 @@ function thenableChain(rows: unknown[]) {
 }
 
 vi.mock("@/lib/db", () => ({
+  // 012 (T024) — `withAuth` abre la transacción del pedido con
+  // `getRootDb().transaction()` para declarar `app.current_org`. Sin este
+  // doble, cualquier prueba que atraviese el borde de autenticación falla
+  // antes de llegar al handler.
+  getRootDb: () => ({
+    transaction: async (fn: (tx: unknown) => unknown) =>
+      fn({ execute: async () => [] }),
+  }),
   getDb: () => ({
     select: () => thenableChain(selectQueue.shift() ?? []),
     insert: (table: unknown) => ({
@@ -62,12 +70,45 @@ beforeEach(() => {
   selectQueue.length = 0;
 });
 
+
+/**
+ * 023 — El conteo de ocupadas dejó de ser `select count(*) where assigned`.
+ *
+ * Ahora se traen las licencias CON su cohorte y la ocupación se DERIVA: una
+ * licencia de un curso terminado ya no descuenta del pool. Por eso las colas
+ * de estas pruebas devuelven filas, no un `{ n }`.
+ */
+const VIVA = new Date("2027-12-31T00:00:00.000Z");
+const TERMINADA = new Date("2020-01-01T00:00:00.000Z");
+
+/** Una licencia de un curso EN CURSO: ocupa. */
+function ocupada(softwareId: string) {
+  return {
+    softwareId,
+    assigned: true,
+    expiresAt: null,
+    startDate: TERMINADA,
+    endDate: VIVA,
+  };
+}
+
+/** Una licencia de un curso YA TERMINADO: no ocupa. */
+function liberada(softwareId: string) {
+  return {
+    softwareId,
+    assigned: true,
+    expiresAt: null,
+    startDate: TERMINADA,
+    endDate: TERMINADA,
+  };
+}
+
 describe("availableLicenses (T028, DV-004)", () => {
   it("total - assignedCount", async () => {
     const { availableLicenses } = await import("@/server/licenses");
     selectQueue.push(
       [{ name: "Revit", totalLicenses: 5 }],
-      [{ n: 3 }]
+      [ocupada("sw_1"), ocupada("sw_1"), ocupada("sw_1")]
     );
     const availability = await availableLicenses("org_1", "sw_1");
     expect(availability).toEqual({
@@ -93,7 +134,7 @@ describe("assignLicense (T028, FR-003)", () => {
     selectQueue.push(
       [{ id: "enr_1" }], // enrollment existe
       [{ name: "Revit", totalLicenses: 2 }], // software
-      [{ n: 2 }], // assignedCount === total → available 0
+      [ocupada("sw_1"), ocupada("sw_1")], // 2 ocupadas === total → available 0
       [] // sin license previa
     );
     const result = await assignLicense("org_1", "enr_1", "sw_1");
@@ -112,7 +153,7 @@ describe("assignLicense (T028, FR-003)", () => {
     selectQueue.push(
       [{ id: "enr_1" }],
       [{ name: "Revit", totalLicenses: 5 }],
-      [{ n: 1 }], // available = 4
+      [ocupada("sw_1")], // 1 ocupada → available = 4
       [] // sin license previa
     );
     const result = await assignLicense("org_1", "enr_1", "sw_1");
@@ -163,18 +204,33 @@ describe("unassignLicense (T028, FR-002 escenario 3)", () => {
 });
 
 describe("countAssignedLicenses (T031, FR-004)", () => {
-  it("devuelve el conteo de licencias asignadas de un software", async () => {
+  it("cuenta las OCUPADAS, no las asignadas alguna vez", async () => {
     const { countAssignedLicenses } = await import("@/server/licenses");
-    selectQueue.push([{ n: 4 }]);
+    selectQueue.push([ocupada("sw_1"), ocupada("sw_1"), ocupada("sw_1"), ocupada("sw_1")]);
     const n = await countAssignedLicenses("org_1", "sw_1");
     expect(n).toBe(4);
+  });
+
+  /**
+   * 023 — **El pedido del dueño**: "cuando termina un curso, libere esas
+   * licencias". Antes estas cuatro seguían contando para siempre.
+   */
+  it("las de cursos terminados NO cuentan", async () => {
+    const { countAssignedLicenses } = await import("@/server/licenses");
+    selectQueue.push([
+      ocupada("sw_1"),
+      liberada("sw_1"),
+      liberada("sw_1"),
+      liberada("sw_1"),
+    ]);
+    expect(await countAssignedLicenses("org_1", "sw_1")).toBe(1);
   });
 });
 
 describe("updateSoftware (T031, FR-004)", () => {
   it("rechaza bajar totalLicenses por debajo de las asignadas", async () => {
     const { updateSoftware } = await import("@/server/software");
-    selectQueue.push([{ n: 5 }]); // countAssignedLicenses
+    selectQueue.push([ocupada("sw_1"), ocupada("sw_1"), ocupada("sw_1"), ocupada("sw_1"), ocupada("sw_1")]); // 5 ocupadas
     const result = await updateSoftware("org_1", "sw_1", { totalLicenses: 3 });
     expect(result).toEqual({
       ok: false,
@@ -187,7 +243,7 @@ describe("updateSoftware (T031, FR-004)", () => {
 
   it("permite editar totalLicenses cuando el nuevo total no baja de lo asignado", async () => {
     const { updateSoftware } = await import("@/server/software");
-    selectQueue.push([{ n: 5 }]); // countAssignedLicenses
+    selectQueue.push([ocupada("sw_1"), ocupada("sw_1"), ocupada("sw_1"), ocupada("sw_1"), ocupada("sw_1")]); // 5 ocupadas
     const result = await updateSoftware("org_1", "sw_1", { totalLicenses: 5 });
     expect(result.ok).toBe(true);
     expect(updates).toHaveLength(1);
@@ -206,7 +262,7 @@ describe("listLicenseInventory (iteración 2)", () => {
         { id: "sw_1", name: "Revit", totalLicenses: 5 },
         { id: "sw_2", name: "Civil3D", totalLicenses: 2 },
       ],
-      [{ softwareId: "sw_1", n: 3 }]
+      [ocupada("sw_1"), ocupada("sw_1"), ocupada("sw_1")]
     );
     const { listLicenseInventory } = await import("@/server/licenses");
     const inventory = await listLicenseInventory("org_1");

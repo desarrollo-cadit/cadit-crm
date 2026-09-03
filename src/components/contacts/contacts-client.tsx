@@ -9,6 +9,7 @@ import {
   ChevronRight,
   MessageSquareText,
   Search,
+  Trash2,
 } from "lucide-react";
 import type { ContactDto } from "@/lib/types";
 import { formatPhone, fullName } from "@/lib/utils";
@@ -56,6 +57,8 @@ function formatDate(iso: string): string {
 
 export function ContactsClient() {
   const [contacts, setContacts] = useState<ContactDto[]>([]);
+  /** 014 — Qué pasó al dar de baja: borrado o archivado, y por qué. */
+  const [avisoBaja, setAvisoBaja] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
@@ -96,6 +99,34 @@ export function ContactsClient() {
     setPage(1);
   }, [query, showArchived]);
 
+  /**
+   * 014 (T008, DV-008) — Da de baja a un alumno.
+   *
+   * **La decisión de borrar o archivar es del servidor**, no de acá. Un
+   * contacto con inscripciones nunca se borra: el borrado cae en cascada sobre
+   * sus notas, sus pagos y sus certificados emitidos. El navegador solo cuenta
+   * qué pasó, para que nadie apriete y se quede sin saber.
+   */
+  async function darDeBaja(id: string, nombre: string) {
+    const res = await fetch(`/api/contacts/${id}`, { method: "DELETE" }).catch(
+      () => null
+    );
+    const data = (await res?.json().catch(() => null)) as
+      | { accion?: "borrar" | "archivar"; motivo?: string; error?: { message?: string } }
+      | null;
+
+    if (!res?.ok) {
+      setAvisoBaja(data?.error?.message ?? "No se pudo dar de baja");
+      return;
+    }
+    setAvisoBaja(
+      data?.accion === "borrar"
+        ? `${nombre} fue eliminado.`
+        : `${nombre} fue archivado. ${data?.motivo ?? ""}`
+    );
+    void refetch();
+  }
+
   async function patch(id: string, body: Record<string, unknown>) {
     await fetch(`/api/contacts/${id}`, {
       method: "PATCH",
@@ -125,7 +156,22 @@ export function ContactsClient() {
   return (
     <div className="flex h-full flex-col">
       <header className="flex items-center justify-between gap-4 border-b px-6 py-4">
-        <h2 className="font-semibold">Alumnos</h2>
+        {/*
+          021 — El total estaba SOLO al pie: había que recorrer las 340 filas
+          para saber cuántas eran. Arriba, junto al título, es donde se busca.
+          Y cuando hay una búsqueda activa el número dice lo que ENCONTRÓ, que
+          es la pregunta que se está haciendo en ese momento.
+        */}
+        <div className="flex items-baseline gap-2">
+          <h2 className="font-semibold">Alumnos</h2>
+          {!loading && (
+            <span className="text-sm text-muted-foreground">
+              {query.trim()
+                ? `${total} ${total === 1 ? "resultado" : "resultados"}`
+                : total}
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
             <input
@@ -149,6 +195,11 @@ export function ContactsClient() {
       </header>
 
       <div className="flex-1 overflow-y-auto p-6">
+        {avisoBaja && (
+          <p className="mb-3 rounded-md border border-warning-border bg-warning-soft px-3 py-2 text-sm">
+            {avisoBaja}
+          </p>
+        )}
         {loading ? (
           <div className="space-y-2">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -165,8 +216,13 @@ export function ContactsClient() {
           </div>
         ) : (
           <>
-            <Table>
-              <TableHeader>
+            <Table containerClassName="max-h-[calc(100vh-15rem)] rounded-lg border">
+              {/*
+                021 — Encabezado FIJO. Con 340 filas paginadas de a decenas,
+                bajar media pantalla y quedarse sin saber qué columna es cuál
+                es un defecto de uso, no un detalle estético.
+              */}
+              <TableHeader className="sticky top-0 z-10 bg-card">
                 <TableRow>
                   <TableHead className="w-8">
                     <input
@@ -261,6 +317,19 @@ export function ContactsClient() {
                             <Archive className="h-4 w-4" />
                           )}
                         </Button>
+                        {/* 014 (T008, DV-008) — Baja.
+                            El SERVIDOR decide si borra o archiva: con
+                            inscripciones nunca borra, porque el borrado cae en
+                            cascada sobre notas, pagos y certificados. Acá solo
+                            se muestra qué pasó. */}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Dar de baja a ${c.firstName}`}
+                          onClick={() => void darDeBaja(c.id, c.firstName)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -270,8 +339,7 @@ export function ContactsClient() {
 
             <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
               <p>
-                {total} contacto{total === 1 ? "" : "s"} · página {page} de{" "}
-                {totalPages}
+                Página {page} de {totalPages}
               </p>
               <div className="flex items-center gap-2">
                 <Button
@@ -345,7 +413,7 @@ function EditDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
       onClick={onClose}
     >
       <div

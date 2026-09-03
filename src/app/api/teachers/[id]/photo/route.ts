@@ -1,4 +1,4 @@
-import { apiError, withAuth } from "@/lib/api";
+import { apiError, requireCapability } from "@/lib/api";
 import { getTeacherPhoto, saveTeacherPhoto } from "@/server/teachers";
 
 export const dynamic = "force-dynamic";
@@ -6,7 +6,9 @@ export const dynamic = "force-dynamic";
 type Params = { params: Promise<{ id: string }> };
 
 /** 005 iteración 5 — sube la foto de un profesor (multipart, campo `file`). */
-export const PUT = withAuth(async (session, req: Request, ctx: Params) => {
+export const PUT = requireCapability(
+  "academico.editar",
+  async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const form = await req.formData().catch(() => null);
   if (!form) return apiError(400, "invalid", "Se esperaba multipart/form-data");
@@ -26,7 +28,9 @@ export const PUT = withAuth(async (session, req: Request, ctx: Params) => {
 });
 
 /** Sirve la foto del volumen local; 404 si no tiene una cargada. */
-export const GET = withAuth(async (session, _req: Request, ctx: Params) => {
+export const GET = requireCapability(
+  "academico.ver",
+  async (session, _req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const photo = await getTeacherPhoto(session.organizationId, id);
   if (!photo) return apiError(404, "not_found", "Este profesor no tiene foto");

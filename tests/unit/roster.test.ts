@@ -1,15 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { CAPABILITIES, capabilitiesFor } from "@/lib/capabilities";
 
 /**
  * 005 (US3, contracts/cohort-roster.md, T026): el DTO de roster oculta los
- * campos financieros cuando `role === "soporte"` (FR-016, regla dura de
- * servidor) y los incluye para cualquier otro rol; `updateChecklist`
+ * campos financieros cuando la sesión NO tiene `cobranza.ver` (FR-016, regla
+ * dura de servidor) y los incluye cuando sí; `updateChecklist`
  * persiste cada campo del checklist independientemente.
  */
 
 const updates: { table: unknown; set: unknown }[] = [];
 
 vi.mock("@/lib/db", () => ({
+  // 012 (T024) — `withAuth` abre la transacción del pedido con
+  // `getRootDb().transaction()` para declarar `app.current_org`. Sin este
+  // doble, cualquier prueba que atraviese el borde de autenticación falla
+  // antes de llegar al handler.
+  getRootDb: () => ({
+    transaction: async (fn: (tx: unknown) => unknown) =>
+      fn({ execute: async () => [] }),
+  }),
   getDb: () => ({
     update: (table: unknown) => ({
       set: (set: unknown) => {
@@ -63,11 +72,11 @@ const baseLicense = {
   softwareId: "sw_1",
 };
 
-describe("buildRosterEntry — DTO por rol (FR-016)", () => {
-  it("role 'soporte': NUNCA arma los campos financieros en el objeto", async () => {
+describe("buildRosterEntry — DTO por capacidad (FR-016)", () => {
+  it("sin `cobranza.ver`: NUNCA arma los campos financieros en el objeto", async () => {
     const { buildRosterEntry } = await import("@/server/enrollments");
     const entry = buildRosterEntry(
-      "soporte",
+      capabilitiesFor("soporte"),
       baseEnrollment as never,
       baseContact as never,
       baseLicense as never
@@ -86,12 +95,25 @@ describe("buildRosterEntry — DTO por rol (FR-016)", () => {
     expect(entry.contact.name).toBe("Diego Fernández");
   });
 
-  it.each(["member", "owner", "ventas", "coordinacion"])(
-    "role '%s' (acceso completo): incluye los campos financieros",
-    async (role) => {
+  /**
+   * 012 (T029) — Antes este caso recorría NOMBRES de rol ("ventas",
+   * "coordinacion"…). Ya no sirve: con los roles editables desde la pantalla,
+   * lo que decide es la capacidad, no cómo se llame quien la tenga.
+   *
+   * Se prueban los tres roles de sistema que hoy tienen `cobranza.ver` más el
+   * conjunto completo, para que el caso siga cubriendo varias formas de
+   * llegar al mismo permiso.
+   */
+  it.each([
+    ["dirección", capabilitiesFor("owner")],
+    ["conjunto completo", CAPABILITIES],
+    ["solo lo financiero", ["cobranza.ver"] as const],
+  ])(
+    "con `cobranza.ver` (%s): incluye los campos financieros",
+    async (_nombre, capabilities) => {
       const { buildRosterEntry } = await import("@/server/enrollments");
       const entry = buildRosterEntry(
-        role,
+        capabilities as never,
         baseEnrollment as never,
         baseContact as never,
         baseLicense as never
@@ -109,7 +131,7 @@ describe("buildRosterEntry — DTO por rol (FR-016)", () => {
   it("licenseAssigned se lee de license.assigned, no de un campo propio en enrollment (DV-004)", async () => {
     const { buildRosterEntry } = await import("@/server/enrollments");
     const withoutLicense = buildRosterEntry(
-      "member",
+      CAPABILITIES,
       baseEnrollment as never,
       baseContact as never,
       null
@@ -117,7 +139,7 @@ describe("buildRosterEntry — DTO por rol (FR-016)", () => {
     expect(withoutLicense.checklist.licenseAssigned).toBe(false);
 
     const withLicense = buildRosterEntry(
-      "member",
+      CAPABILITIES,
       baseEnrollment as never,
       baseContact as never,
       baseLicense as never
@@ -128,7 +150,7 @@ describe("buildRosterEntry — DTO por rol (FR-016)", () => {
   it("licenseSoftwareId viaja solo cuando la licencia está asignada", async () => {
     const { buildRosterEntry } = await import("@/server/enrollments");
     const withLicense = buildRosterEntry(
-      "member",
+      CAPABILITIES,
       baseEnrollment as never,
       baseContact as never,
       baseLicense as never
@@ -136,7 +158,7 @@ describe("buildRosterEntry — DTO por rol (FR-016)", () => {
     expect(withLicense.checklist.licenseSoftwareId).toBe("sw_1");
 
     const unassigned = buildRosterEntry(
-      "member",
+      CAPABILITIES,
       baseEnrollment as never,
       baseContact as never,
       { assigned: false, assignedAt: null, softwareId: "sw_1" } as never

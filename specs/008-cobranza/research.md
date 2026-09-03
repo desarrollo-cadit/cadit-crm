@@ -18,7 +18,7 @@ por fila.
 cubre los dos casos; el generador ofrece "dividir en partes iguales" como
 atajo. Un anticipo distinto es demasiado común como para no soportarlo.
 
-**Resolución**: _pendiente_
+**Resolución**: ADOPTADA la propuesta: tabla con monto por fila. Permite el plan desigual (una entrega grande y el resto en cuotas) sin costo extra. (2026-08-21, decisión del dueño)
 
 ---
 
@@ -34,7 +34,7 @@ el pago parcial o se rechaza hasta que traiga el total?
 modelo N:1 también cubre el caso simple. Rechazar el parcial empuja al equipo
 de vuelta al Excel justo en el caso incómodo, que es donde más importa.
 
-**Resolución**: _pendiente_
+**Resolución**: ADOPTADA la propuesta: se admite el pago parcial. `payment` es N:1 con `installment` y el saldo se deriva por cuota. (2026-08-21, decisión del dueño)
 
 ---
 
@@ -52,7 +52,7 @@ Es correcto siempre, no necesita infraestructura y no puede quedar desfasado.
 Persistir un estado que nadie actualiza es peor que no tenerlo: miente con
 cara de verdad.
 
-**Resolución**: _pendiente_ — recomendación fuerte a favor de derivar.
+**Resolución**: ADOPTADA la propuesta: el estado se DERIVA, no se persiste. Evita un job nocturno que se desincroniza y deja "vencida" mintiendo. (2026-08-21, decisión del dueño)
 
 ---
 
@@ -67,7 +67,7 @@ que el fix `17e4844` decidió NO meter en el CRM.
 la moneda efectiva o como dos cuotas distintas. La alternativa es que el
 sistema invente una cotización y todos los números pierdan sentido.
 
-**Resolución**: _pendiente_
+**Resolución**: ADOPTADA la propuesta: se rechaza el pago en otra moneda que su cuota. Un cambio de moneda se modela como plan nuevo. (2026-08-21, decisión del dueño)
 
 ---
 
@@ -83,7 +83,7 @@ no, toca el modelo de permisos.
 la cobranza) y ver si la separación hace falta en la práctica. Agregar un rol
 es barato; sacarlo una vez que la gente lo usa, no.
 
-**Resolución**: _pendiente_
+**Resolución**: ADOPTADA la propuesta: `requireFullAccess` para registrar y anular pagos, igual que el resto de la sección financiera (FR-016). (2026-08-21, decisión del dueño)
 
 ---
 
@@ -99,7 +99,7 @@ como legado y el número se mueve a `payment`.
 la factura queda en la inscripción (es el comprobante de la venta). Las
 columnas actuales se conservan sin tocar para no romper lo ya cargado.
 
-**Resolución**: _pendiente_ — es la decisión de mayor impacto de esta feature.
+**Resolución**: ADOPTADA la propuesta: el RECIBO va al pago (comprobante de que entró plata) y la FACTURA queda en la inscripción (comprobante de la venta). Las columnas actuales no se tocan. (2026-08-21, decisión del dueño)
 
 ---
 
@@ -118,7 +118,7 @@ Se ofrece una acción explícita "generar plan de cuotas" por inscripción, para
 que alguien que sabe decida las fechas. `payment_notes` se conserva intacto
 como registro histórico de lo que se cobró antes del sistema.
 
-**Resolución**: _pendiente_
+**Resolución**: ADOPTADA la propuesta: sin backfill. La migración solo crea las tablas; los 340 alumnos importados conservan su historia en `payment_notes`. (2026-08-21, decisión del dueño)
 
 ---
 
@@ -134,7 +134,7 @@ con un campo de nota libre al lado. Texto libre puro hace imposible el reporte
 por medio y termina con "Transferencia", "transferencia" y "transf" como tres
 categorías.
 
-**Resolución**: _pendiente_
+**Resolución**: ADOPTADA la propuesta: enum cerrado (`efectivo`, `transferencia`, `tarjeta`, `otro`). (2026-08-21, decisión del dueño)
 
 ---
 

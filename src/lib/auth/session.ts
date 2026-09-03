@@ -1,11 +1,22 @@
 import { headers } from "next/headers";
 import { getAuth } from "@/lib/auth";
+import { sanitizeCapabilities, type Capability } from "@/lib/capabilities";
 import { resolveMembership } from "@/server/auth/on-signup";
 
 export type SessionContext = {
   userId: string;
   organizationId: string;
   role: string;
+  /**
+   * 012 (T019) — Capacidades del rol SEGÚN LA BASE.
+   *
+   * Opcional a propósito: `undefined` significa "esta organización no tiene
+   * ese rol sembrado", y entonces manda el mapeo de código
+   * (`capabilitiesFor`). Ese respaldo es lo que hace que la fase 4 se pueda
+   * desplegar sin migrar las cuentas: `owner` y `member` todavía no existen
+   * como fila en `role` y siguen funcionando igual que siempre.
+   */
+  capabilities?: readonly Capability[];
 };
 
 export class UnauthorizedError extends Error {
@@ -33,6 +44,13 @@ export async function requireSession(): Promise<SessionContext> {
     userId: session.user.id,
     organizationId: membership.organizationId,
     role: membership.role,
+    // `sanitizeCapabilities` no es paranoia: `capabilities` es jsonb, texto
+    // sin tipo. Si alguien borra una capacidad del código, la que quedó
+    // huérfana en la fila no puede volver a otorgarse (DV-003).
+    capabilities:
+      membership.capabilities == null
+        ? undefined
+        : sanitizeCapabilities(membership.capabilities),
   };
 }
 

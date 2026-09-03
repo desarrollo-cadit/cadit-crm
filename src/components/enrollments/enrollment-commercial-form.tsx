@@ -14,7 +14,7 @@ type MemberOption = { userId: string; name: string };
  * 005 iteración 2 — edita los datos comerciales de una inscripción YA
  * creada (feedback en vivo: solo se podían fijar al inscribir). El contacto
  * no cambia acá — solo monto/cuotas/cédula/factura/recibo/vendedor/empresa,
- * vía `PATCH /api/enrollments/:id` (`requireFullAccess`). Solo se renderiza
+ * vía `PATCH /api/enrollments/:id` (`inscripciones.editar`). Solo se renderiza
  * cuando `isFullAccess(entry)` es true (ver roster-client.tsx).
  */
 export function EnrollmentCommercialForm({
@@ -73,7 +73,7 @@ export function EnrollmentCommercialForm({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
       onClick={onClose}
     >
       <div

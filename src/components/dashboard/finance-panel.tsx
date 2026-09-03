@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { TrendingDown, TrendingUp } from "lucide-react";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { cn, formatAmount } from "@/lib/utils";
+import { useCssVar } from "@/components/use-css-var";
 
 type CurrencyTotal = { currency: string; total: number };
 type MonthTotals = { month: string; totals: CurrencyTotal[] };
@@ -11,6 +12,12 @@ type MonthTotals = { month: string; totals: CurrencyTotal[] };
 type FinanceDashboard = {
   currentMonth: MonthTotals;
   previousMonth: MonthTotals;
+  /**
+   * 008 — lo COBRADO, con la misma forma que lo facturado. Va al lado y no
+   * en otra pantalla: el hueco entre los dos números ES el dato. Facturar
+   * mucho y cobrar poco se tiene que ver de un vistazo.
+   */
+  collected?: { currentMonth: MonthTotals; previousMonth: MonthTotals };
   /** 005 iteración 2 — últimos 6 meses, para el gráfico (revenueTrend). */
   trend: MonthTotals[];
   /** 007 — monedas con movimiento en la ventana; al menos una. */
@@ -54,6 +61,7 @@ export function FinancePanel() {
   const [data, setData] = useState<FinanceDashboard | null>(null);
   const [forbidden, setForbidden] = useState(false);
   const [currency, setCurrency] = useState<string | null>(null);
+  const acento = useCssVar("--accent", "#3f5972");
 
   useEffect(() => {
     void (async () => {
@@ -73,6 +81,7 @@ export function FinancePanel() {
 
   const current = totalOf(data.currentMonth, currency);
   const previous = totalOf(data.previousMonth, currency);
+  const collected = data.collected ? totalOf(data.collected.currentMonth, currency) : null;
   const diff = current - previous;
   const up = diff >= 0;
   const chartData = data.trend.map((point) => ({
@@ -98,7 +107,7 @@ export function FinancePanel() {
                 className={cn(
                   "rounded-md px-2 py-0.5 text-xs font-medium transition-colors",
                   code === currency
-                    ? "bg-primary/10 text-primary"
+                    ? "bg-brand-tint text-primary"
                     : "text-muted-foreground hover:bg-muted"
                 )}
               >
@@ -112,16 +121,27 @@ export function FinancePanel() {
         <div>
           <p className="text-2xl font-semibold">{formatAmount(current, currency)}</p>
           <p className="text-xs text-muted-foreground capitalize">
-            {formatMonth(data.currentMonth.month)}
+            facturado · {formatMonth(data.currentMonth.month)}
           </p>
         </div>
+        {collected !== null && (
+          <div>
+            <p className="text-2xl font-semibold text-primary">
+              {formatAmount(collected, currency)}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              cobrado{" "}
+              {current > 0 ? `(${Math.round((collected / current) * 100)}% de lo facturado)` : ""}
+            </p>
+          </div>
+        )}
         <div className="flex items-center gap-1.5 text-sm">
           {up ? (
-            <TrendingUp className="h-4 w-4 text-emerald-500" />
+            <TrendingUp className="h-4 w-4 text-success" />
           ) : (
             <TrendingDown className="h-4 w-4 text-destructive" />
           )}
-          <span className={up ? "text-emerald-500" : "text-destructive"}>
+          <span className={up ? "text-success" : "text-destructive"}>
             {up ? "+" : ""}
             {formatAmount(diff, currency)}
           </span>
@@ -149,7 +169,11 @@ export function FinancePanel() {
                 labelFormatter={(label) => formatMonth(String(label ?? ""))}
                 contentStyle={{ fontSize: 12 }}
               />
-              <Bar dataKey="total" fill="#25D366" radius={[4, 4, 0, 0]} />
+              {/* 021 — Era `#25D366`, el verde de WhatsApp, escrito a mano.
+                  En el elemento más visible del inicio, y sin relación con la
+                  marca de la academia ni con el tema. Recharts recibe un
+                  color, no una clase, así que se lee la variable en runtime. */}
+              <Bar dataKey="total" fill={acento} radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>

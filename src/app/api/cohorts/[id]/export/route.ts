@@ -1,4 +1,4 @@
-import { apiError, withAuth } from "@/lib/api";
+import { apiError, requireCapability } from "@/lib/api";
 import { exportCohortRosterCsv } from "@/server/enrollments";
 
 export const dynamic = "force-dynamic";
@@ -11,10 +11,12 @@ type Params = { params: Promise<{ id: string }> };
  * autenticado, igual que el roster; el CSV en sí ya excluye todo dato
  * financiero (exportCohortRosterCsv no lo selecciona).
  */
-export const GET = withAuth(async (session, _req: Request, ctx: Params) => {
+export const GET = requireCapability(
+  "inscripciones.ver",
+  async (session, _req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const csv = await exportCohortRosterCsv(session.organizationId, id);
-  if (csv === null) return apiError(404, "not_found", "Camada no encontrada");
+  if (csv === null) return apiError(404, "not_found", "Cohorte no encontrada");
   return new Response(csv, {
     headers: {
       "content-type": "text/csv; charset=utf-8",

@@ -30,6 +30,14 @@ function thenableChain(rows: unknown[]) {
 }
 
 vi.mock("@/lib/db", () => ({
+  // 012 (T024) — `withAuth` abre la transacción del pedido con
+  // `getRootDb().transaction()` para declarar `app.current_org`. Sin este
+  // doble, cualquier prueba que atraviese el borde de autenticación falla
+  // antes de llegar al handler.
+  getRootDb: () => ({
+    transaction: async (fn: (tx: unknown) => unknown) =>
+      fn({ execute: async () => [] }),
+  }),
   getDb: () => ({
     select: () => thenableChain(selectQueue.shift() ?? []),
     insert: (table: unknown) => ({
@@ -328,7 +336,18 @@ describe("courses: createCourse / createCohort (004)", () => {
     pushSoftwareExists("sw_1");
     selectQueue.push(
       [{ name: "Revit", totalLicenses: 5 }], // availableLicenses: software
-      [{ n: 5 }] // availableLicenses: assignedCount === total → available 0
+      /*
+        023 — El conteo de ocupadas dejó de ser un : ahora se traen las
+        licencias con su cohorte y la ocupación se deriva. Estas cinco son de
+        cursos vivos, así que ocupan y dejan  en 0, igual que antes.
+      */
+      Array.from({ length: 5 }, () => ({
+        softwareId: "sw_1",
+        assigned: true,
+        expiresAt: null,
+        startDate: new Date("2020-01-01"),
+        endDate: new Date("2030-01-01"),
+      }))
     );
     const { createCohort } = await import("@/server/courses");
     const result = await createCohort("org_1", {

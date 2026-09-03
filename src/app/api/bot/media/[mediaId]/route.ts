@@ -1,4 +1,5 @@
 import { apiError } from "@/lib/api";
+import { withOrganizationScope } from "@/lib/db/with-tenant";
 import { requireBotKey, resolveInstanceOrg } from "@/server/bot/auth";
 import { getCredentialsByOrg } from "@/server/whatsapp/credentials";
 import { downloadGraphMedia, MediaFetchError } from "@/server/whatsapp/media";
@@ -26,7 +27,16 @@ export async function GET(
   if (!organizationId) {
     return apiError(409, "no_org", "La instancia aún no tiene organización");
   }
-  const creds = await getCredentialsByOrg(organizationId);
+  /**
+   * 012 (T028) — Solo la lectura de credenciales necesita alcance declarado;
+   * el resto de esta ruta habla con Graph, no con la base. Se envuelve
+   * únicamente esa consulta en vez de todo el handler: la descarga puede
+   * tardar segundos, y sostener una transacción abierta mientras se espera a
+   * un tercero es la forma más simple de quedarse sin conexiones del pool.
+   */
+  const creds = await withOrganizationScope(organizationId, "system:bot", () =>
+    getCredentialsByOrg(organizationId)
+  );
   if (!creds) {
     return apiError(409, "no_connection", "WhatsApp no está conectado");
   }

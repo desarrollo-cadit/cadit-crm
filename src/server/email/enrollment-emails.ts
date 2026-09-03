@@ -33,7 +33,7 @@ const SUBJECTS: Record<EmailKind, (courseName: string) => string> = {
   welcome: (c) => `Bienvenido/a a ${c}`,
 };
 
-/** Datos de la inscripción, su alumno y su camada, en una sola consulta. */
+/** Datos de la inscripción, su alumno y su cohorte, en una sola consulta. */
 async function loadContext(organizationId: string, enrollmentId: string) {
   const db = getDb();
   const rows = await db
@@ -107,7 +107,7 @@ export async function sendEnrollmentEmail(
       status: 422,
       code: "missing_group_link",
       message:
-        "La camada no tiene enlace del grupo de WhatsApp. Cargalo en la edición de la camada.",
+        "La cohorte no tiene enlace del grupo de WhatsApp. Cargalo en la edición de la cohorte.",
     };
   }
 

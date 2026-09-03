@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { CURRENCIES } from "@/lib/db/schema";
-import { apiError, parseBody, requireFullAccess } from "@/lib/api";
+import { apiError, parseBody, requireCapability } from "@/lib/api";
 import { updateEnrollmentCommercial } from "@/server/enrollments";
 
 export const dynamic = "force-dynamic";
@@ -25,10 +25,12 @@ const patchSchema = z.object({
  * creada (feedback en vivo: solo se podían fijar al inscribir). Distinto de
  * `/api/enrollments/[id]/checklist` (onboarding, cualquier rol) y
  * `/api/enrollments/[id]/license` (asignación de licencia): esta ruta es
- * SOLO datos comerciales, por eso `requireFullAccess` (FR-016) — soporte no
+ * SOLO datos comerciales, por eso `inscripciones.editar` (FR-016) — soporte no
  * edita datos financieros.
  */
-export const PATCH = requireFullAccess(async (session, req: Request, ctx: Params) => {
+export const PATCH = requireCapability(
+  "inscripciones.editar",
+  async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const body = await parseBody(req, patchSchema);
   if (!body.ok) return body.response;

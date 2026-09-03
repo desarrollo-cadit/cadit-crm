@@ -27,6 +27,8 @@ export function TeacherForm({
 }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [email, setEmail] = useState(initial?.email ?? "");
+  /** 023 — Título profesional: sale al catálogo público con la foto. */
+  const [title, setTitle] = useState(initial?.title ?? "");
   const [hourlyRate, setHourlyRate] = useState(initial?.hourlyRate?.toString() ?? "");
   const [courseIds, setCourseIds] = useState<string[]>(initial?.courseIds ?? []);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
@@ -53,6 +55,7 @@ export function TeacherForm({
       name: name.trim(),
       hourlyRate: hourlyRate.trim() ? Number(hourlyRate) : null,
       email: email.trim() || null,
+      title: title.trim() || null,
       courseIds,
     };
 
@@ -68,7 +71,11 @@ export function TeacherForm({
       const createRes = await fetch("/api/teachers", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), email: email.trim() || null }),
+        body: JSON.stringify({
+          name: name.trim(),
+          email: email.trim() || null,
+          title: title.trim() || null,
+        }),
       }).catch(() => null);
       if (!createRes?.ok) {
         res = createRes;
@@ -101,7 +108,7 @@ export function TeacherForm({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
       onClick={onClose}
     >
       <div
@@ -125,6 +132,20 @@ export function TeacherForm({
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="teacher-title">Título</Label>
+            <Input
+              id="teacher-title"
+              placeholder="Arquitecto, Ingeniero Civil…"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+            {/* Se dice para qué sirve: sin esto parece un dato interno más y
+                nadie lo carga. */}
+            <p className="text-xs text-muted-foreground">
+              Se muestra en la web, junto a la foto, en las cohortes que dicta.
+            </p>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="teacher-rate">Costo por hora</Label>

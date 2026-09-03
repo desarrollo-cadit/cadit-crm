@@ -1,7 +1,8 @@
-import { asc, count, eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
+import { computeCohortStatus } from "@/server/courses";
 
 /**
  * 005 (T028, DV-004, US4) — pool de licencias por software: disponibles =
@@ -32,18 +33,9 @@ export async function availableLicenses(
   const sw = softwareRows[0];
   if (!sw) return null;
 
-  const assignedRows = await db
-    .select({ n: count() })
-    .from(schema.license)
-    .where(
-      scoped(
-        schema.license.organizationId,
-        organizationId,
-        eq(schema.license.softwareId, softwareId),
-        eq(schema.license.assigned, true)
-      )
-    );
-  const assignedCount = assignedRows[0]?.n ?? 0;
+  // 023 — Misma regla que el inventario: una licencia de un curso terminado
+  // ya no bloquea la asignación de una nueva.
+  const assignedCount = (await contarOcupadas(organizationId, softwareId)).get(softwareId) ?? 0;
   return {
     softwareId,
     softwareName: sw.name,
@@ -191,6 +183,84 @@ export async function unassignLicense(
  * propia (no reusa `listSoftware` de `@/server/software`, que a su vez
  * importa `countAssignedLicenses` de este módulo — evita el ciclo).
  */
+/**
+ * 023 — ¿Esta licencia está ocupando un lugar del inventario?
+ *
+ * **Se DERIVA, no se marca.** El booleano `assigned` decía "alguien se la
+ * asignó alguna vez"; nunca decía "sigue en uso". Como nadie lo apagaba, una
+ * licencia de un curso terminado hace un año seguía descontando del pool para
+ * siempre.
+ *
+ * Ahora ocupa mientras su cohorte esté **planificada o en curso**, y se libera
+ * sola cuando termina. Eso vale por sí mismo, pero además tiene una
+ * consecuencia que importa: **no hace falta un scheduler**. El estado de la
+ * cohorte ya se calcula de sus fechas en cada consulta, así que el día que el
+ * curso termina la licencia aparece libre sin que corra ningún proceso.
+ *
+ * `expiresAt` gana sobre todo lo demás: una licencia vencida no vuelve a
+ * estar disponible por quererlo — Autodesk ya la dio de baja.
+ *
+ * Pura a propósito: es la regla que decide cuántas licencias se pueden vender.
+ */
+export function licenciaOcupada(
+  licencia: { assigned: boolean; expiresAt: Date | null },
+  cohorte: { startDate: Date; endDate: Date | null } | null,
+  now: Date = new Date()
+): boolean {
+  if (!licencia.assigned) return false;
+  // Vencida: libre, sin importar en qué anda la cohorte.
+  if (licencia.expiresAt && licencia.expiresAt <= now) return false;
+  // Sin cohorte es un lead del pipeline, no alguien cursando.
+  if (!cohorte) return false;
+  return computeCohortStatus(cohorte.startDate, cohorte.endDate, now) !== "finalizada";
+}
+
+/**
+ * 023 — Cuántas licencias están OCUPADAS, por software.
+ *
+ * Un solo lugar que aplica `licenciaOcupada`. Antes había tres consultas
+ * distintas contando `assigned = true` —el inventario, el chequeo de
+ * disponibilidad y el conteo por software— y con la regla vieja las tres
+ * daban lo mismo. Con la regla nueva, tres copias serían tres formas de
+ * empezar a diferir.
+ */
+export async function contarOcupadas(
+  organizationId: string,
+  softwareId?: string
+): Promise<Map<string, number>> {
+  const db = getDb();
+  const licencias = await db
+    .select({
+      softwareId: schema.license.softwareId,
+      assigned: schema.license.assigned,
+      expiresAt: schema.license.expiresAt,
+      startDate: schema.cohort.startDate,
+      endDate: schema.cohort.endDate,
+    })
+    .from(schema.license)
+    .innerJoin(schema.enrollment, eq(schema.license.enrollmentId, schema.enrollment.id))
+    .leftJoin(schema.cohort, eq(schema.enrollment.cohortId, schema.cohort.id))
+    .where(
+      scoped(
+        schema.license.organizationId,
+        organizationId,
+        softwareId ? eq(schema.license.softwareId, softwareId) : undefined
+      )
+    );
+
+  const ahora = new Date();
+  const salida = new Map<string, number>();
+  for (const l of licencias) {
+    const ocupada = licenciaOcupada(
+      { assigned: l.assigned, expiresAt: l.expiresAt },
+      l.startDate ? { startDate: l.startDate, endDate: l.endDate } : null,
+      ahora
+    );
+    if (ocupada) salida.set(l.softwareId, (salida.get(l.softwareId) ?? 0) + 1);
+  }
+  return salida;
+}
+
 export async function listLicenseInventory(
   organizationId: string
 ): Promise<LicenseAvailability[]> {
@@ -206,18 +276,7 @@ export async function listLicenseInventory(
     .orderBy(asc(schema.software.name));
   if (softwareRows.length === 0) return [];
 
-  const assignedRows = await db
-    .select({ softwareId: schema.license.softwareId, n: count() })
-    .from(schema.license)
-    .where(
-      scoped(
-        schema.license.organizationId,
-        organizationId,
-        eq(schema.license.assigned, true)
-      )
-    )
-    .groupBy(schema.license.softwareId);
-  const assignedMap = new Map(assignedRows.map((r) => [r.softwareId, r.n]));
+  const assignedMap = await contarOcupadas(organizationId);
 
   return softwareRows.map((s) => {
     const assignedCount = assignedMap.get(s.id) ?? 0;
@@ -236,17 +295,5 @@ export async function countAssignedLicenses(
   organizationId: string,
   softwareId: string
 ): Promise<number> {
-  const db = getDb();
-  const rows = await db
-    .select({ n: count() })
-    .from(schema.license)
-    .where(
-      scoped(
-        schema.license.organizationId,
-        organizationId,
-        eq(schema.license.softwareId, softwareId),
-        eq(schema.license.assigned, true)
-      )
-    );
-  return rows[0]?.n ?? 0;
+  return (await contarOcupadas(organizationId, softwareId)).get(softwareId) ?? 0;
 }

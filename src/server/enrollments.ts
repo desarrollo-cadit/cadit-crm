@@ -5,6 +5,8 @@ import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { normalizePhoneOrRaw } from "@/lib/phone";
 import { fullName } from "@/lib/utils";
+import { PORTAL_NO_EMAIL_REASON } from "@/lib/portal-access";
+import type { Capability } from "@/lib/capabilities";
 
 /** 005 (US2, contracts/enrollments.md) — alta comercial de una inscripción. */
 export type CreateEnrollmentInput = {
@@ -66,7 +68,7 @@ export async function createEnrollment(
     )
     .limit(1);
   if (!cohortRows[0]) {
-    return { ok: false, status: 422, code: "invalid_body", message: "Camada inexistente" };
+    return { ok: false, status: 422, code: "invalid_body", message: "Cohorte inexistente" };
   }
 
   if (input.sellerId) {
@@ -231,7 +233,8 @@ export type CohortRosterDto = {
 
 export type RosterEntryDto = {
   id: string;
-  contact: { name: string; phone: string | null; email: string | null };
+  /** 013 — `id` para enlazar al legajo desde el roster. */
+  contact: { id: string; name: string; phone: string | null; email: string | null };
   checklist: {
     /** 005 (DV-004) — leído de license.assigned, NO se duplica en enrollment. */
     licenseAssigned: boolean;
@@ -244,7 +247,19 @@ export type RosterEntryDto = {
   };
   /** 007 — cuándo se envió la bienvenida + invitación al grupo; null = nunca. */
   welcomeEmailSentAt: string | null;
-  // Campos financieros — SOLO presentes cuando role !== "soporte" (FR-016).
+  /**
+   * 012 (T017/T017d) — Acceso al portal del alumno.
+   *
+   * `blockedReason` viaja en el DTO para que la pantalla pueda decir POR QUÉ
+   * no se puede invitar, en vez de ofrecer un botón que devuelve 422. De los
+   * 340 alumnos importados, 6 no tienen correo.
+   */
+  portalAccess: {
+    granted: boolean;
+    suspended: boolean;
+    blockedReason: string | null;
+  };
+  // Campos financieros — SOLO presentes con `cobranza.ver` (FR-016).
   amount?: number | null;
   currency?: Currency;
   installments?: number | null;
@@ -257,20 +272,39 @@ export type RosterEntryDto = {
 };
 
 /**
- * 005 (T022, FR-014/FR-016/FR-017) — DTO por rol: si `role === "soporte"`
- * los campos financieros NUNCA se arman en el objeto de respuesta (regla
- * dura de servidor, no un filtro de UI) — separada de `getCohortRoster` para
- * poder testear la regla sin tocar la DB.
+ * 005 (T022, FR-014/FR-016/FR-017) — DTO por CAPACIDAD: sin `cobranza.ver`
+ * los campos financieros NUNCA se arman en el objeto de respuesta (regla dura
+ * de servidor, no un filtro de UI) — separada de `getCohortRoster` para poder
+ * testear la regla sin tocar la DB.
+ *
+ * 012 (T029) — Antes decía `role === "soporte"`. Con los roles renombrados y
+ * editables desde la pantalla, ese nombre dejó de ser la verdad: la pregunta
+ * correcta es si la sesión puede ver cobranza. Un test estructural
+ * (`migracion-cuentas.test.ts`) impide que vuelva a colarse una comparación
+ * por nombre — y fue justamente ese test el que encontró esta.
  */
 export function buildRosterEntry(
-  role: string,
+  capabilities: readonly Capability[],
   enrollment: typeof schema.enrollment.$inferSelect,
   contact: typeof schema.contact.$inferSelect,
-  license: typeof schema.license.$inferSelect | null
+  license: typeof schema.license.$inferSelect | null,
+  /** 012 — vínculo de portal del alumno; `null` = todavía no tiene acceso. */
+  accountLink: typeof schema.accountLink.$inferSelect | null = null
 ): RosterEntryDto {
   const base: RosterEntryDto = {
     id: enrollment.id,
-    contact: { name: fullName(contact), phone: contact.phone, email: contact.email },
+    contact: {
+      id: contact.id,
+      name: fullName(contact),
+      phone: contact.phone,
+      email: contact.email,
+    },
+    portalAccess: {
+      granted: Boolean(accountLink),
+      suspended: Boolean(accountLink?.suspendedAt),
+      // Ya tiene acceso → no hay nada que desbloquear. Sin correo → el motivo.
+      blockedReason: accountLink || contact.email ? null : PORTAL_NO_EMAIL_REASON,
+    },
     checklist: {
       licenseAssigned: license?.assigned ?? false,
       licenseSoftwareId: license?.assigned ? license.softwareId : null,
@@ -281,7 +315,7 @@ export function buildRosterEntry(
     },
     welcomeEmailSentAt: enrollment.welcomeEmailSentAt?.toISOString() ?? null,
   };
-  if (role === "soporte") return base;
+  if (!capabilities.includes("cobranza.ver")) return base;
   return {
     ...base,
     amount: enrollment.amount,
@@ -296,11 +330,11 @@ export function buildRosterEntry(
   };
 }
 
-/** 005 (T022) — roster completo de una cohorte, DTO variando según `role`. */
+/** 005 (T022) — roster completo de una cohorte; el DTO varía según CAPACIDADES. */
 export async function getCohortRoster(
   organizationId: string,
   cohortId: string,
-  role: string
+  capabilities: readonly Capability[]
 ): Promise<CohortRosterDto | null> {
   const db = getDb();
 
@@ -336,10 +370,26 @@ export async function getCohortRoster(
     );
 
   const rows = await db
-    .select({ enrollment: schema.enrollment, contact: schema.contact, license: schema.license })
+    .select({
+      enrollment: schema.enrollment,
+      contact: schema.contact,
+      license: schema.license,
+      accountLink: schema.accountLink,
+    })
     .from(schema.enrollment)
     .innerJoin(schema.contact, eq(schema.enrollment.contactId, schema.contact.id))
     .leftJoin(schema.license, eq(schema.license.enrollmentId, schema.enrollment.id))
+    // 012 — el acceso al portal es del CONTACTO, no de la inscripción: la
+    // misma persona puede cursar tres veces y entra con una sola cuenta. Va
+    // como join y no como consulta por fila para no volver la lista un N+1.
+    .leftJoin(
+      schema.accountLink,
+      and(
+        eq(schema.accountLink.contactId, schema.contact.id),
+        eq(schema.accountLink.kind, "alumno"),
+        eq(schema.accountLink.organizationId, organizationId)
+      )
+    )
     .where(
       scoped(
         schema.enrollment.organizationId,
@@ -360,11 +410,13 @@ export async function getCohortRoster(
       software: softwareRows,
       whatsappGroupLink: cohort.whatsappGroupLink,
     },
-    enrollments: rows.map((r) => buildRosterEntry(role, r.enrollment, r.contact, r.license)),
+    enrollments: rows.map((r) =>
+      buildRosterEntry(capabilities, r.enrollment, r.contact, r.license, r.accountLink)
+    ),
   };
 }
 
-function csvField(value: string | null): string {
+export function csvField(value: string | null): string {
   let v = value ?? "";
   // Anti inyección de fórmulas: Excel/Sheets ejecutan una celda que arranca con
   // = + - @ (o tab/CR, que algunos parsers descartan antes de mirar el resto).
@@ -505,8 +557,9 @@ export type UpdateEnrollmentCommercialResult =
  * creada (cédula, factura, recibo, empresa, monto, cuotas, vendedor); antes
  * solo se podían fijar al inscribir (feedback en vivo del dueño). Solo toca
  * los campos presentes en `input`, mismo patrón que `updateChecklist`. El
- * gate de acceso completo (FR-016) vive en la ruta (`requireFullAccess`),
- * igual que el resto de la sección financiera del roster.
+ * gate de acceso completo (FR-016) vive en la ruta
+ * (`requireCapability("inscripciones.editar")`), igual que el resto de la
+ * sección financiera del roster.
  */
 export async function updateEnrollmentCommercial(
   organizationId: string,

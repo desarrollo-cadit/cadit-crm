@@ -103,7 +103,7 @@ verificar que aparecen solo los dos últimos, ordenados por antigüedad de deuda
 **Acceptance Scenarios**:
 
 1. **Given** cuotas vencidas impagas, **When** se abre la vista de morosidad,
-   **Then** se listan alumno, camada, cuotas vencidas, monto adeudado y días
+   **Then** se listan alumno, cohorte, cuotas vencidas, monto adeudado y días
    de atraso.
 2. **Given** un alumno con cuotas vencidas, **When** se registra el pago,
    **Then** desaparece de la vista sin necesidad de recargar ni de correr
@@ -170,7 +170,7 @@ que se ve el detalle completo con el saldo.
 - **FR-006**: El sistema DEBE permitir anular un pago con motivo y autor,
   conservando el registro original (nunca borrado físico).
 - **FR-007**: El sistema DEBE exponer una vista de morosidad con las cuotas
-  vencidas impagas, ordenables por antigüedad y filtrables por camada.
+  vencidas impagas, ordenables por antigüedad y filtrables por cohorte.
 - **FR-008**: El estado "vencida" DEBE derivarse de la fecha de vencimiento y
   el saldo al momento de consultar, NO persistirse. *(ver DV-003)*
 - **FR-009**: Toda la superficie de cobranza DEBE responder 403 al rol
@@ -179,7 +179,7 @@ que se ve el detalle completo con el saldo.
   separadas, cada una desagregada por moneda.
 - **FR-011**: El registro de un pago DEBE ser idempotente ante un doble envío
   del mismo formulario (constitución IV).
-- **FR-012**: El roster de la camada DEBE mostrar el saldo de cada alumno para
+- **FR-012**: El roster de la cohorte DEBE mostrar el saldo de cada alumno para
   quien tenga acceso financiero.
 
 ### Key Entities

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { apiError, parseBody, withAuth } from "@/lib/api";
+import { apiError, parseBody, requireCapability } from "@/lib/api";
 import {
   courseContentSchema,
   createCourseWithModules,
@@ -11,7 +11,9 @@ export const dynamic = "force-dynamic";
 
 // 004/005 (T011) — la función server ya existía de la Fase 1; faltaba la ruta.
 // 006 — devuelve también la ficha comercial, que el editor de cursos precarga.
-export const GET = withAuth(async (session) => {
+export const GET = requireCapability(
+  "academico.ver",
+  async (session) => {
   const rows = await listCourses(session.organizationId);
   return Response.json({
     courses: rows.map((c) => ({
@@ -41,7 +43,9 @@ const createSchema = z.object({
   modules: courseModulesSchema.optional(),
 });
 
-export const POST = withAuth(async (session, req: Request) => {
+export const POST = requireCapability(
+  "academico.editar",
+  async (session, req: Request) => {
   const body = await parseBody(req, createSchema);
   if (!body.ok) return body.response;
 

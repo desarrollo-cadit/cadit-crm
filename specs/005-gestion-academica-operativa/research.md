@@ -166,7 +166,7 @@ descripción, temario, próximos comienzos con fecha de inicio) que nunca
 consulta `contact` ni `enrollment`.
 
 **Rationale**: "Una instancia = un negocio" es una regla de producto ya
-establecida (CLAUDE.md, constitución) — Vocero nunca sirve a más de una
+establecida (CLAUDE.md, constitución) — CadIT nunca sirve a más de una
 organización real por instalación, así que no hace falta (ni sería seguro)
 aceptar un identificador de organización desde un caller no autenticado.
 

@@ -1,6 +1,6 @@
 import { desc, ilike, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
-import { apiError, parseBody, parseQuery, withAuth } from "@/lib/api";
+import { apiError, parseBody, parseQuery, requireCapability } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
@@ -27,7 +27,9 @@ const listQuerySchema = z.object({
  * traer 200 filas de una. El filtro de archivados pasa a SQL (antes se
  * cortaba en JS después de traer 200 filas, lo que rompía la paginación).
  */
-export const GET = withAuth(async (session, req: Request) => {
+export const GET = requireCapability(
+  "contactos.ver",
+  async (session, req: Request) => {
   const query = parseQuery(new URL(req.url), listQuerySchema);
   if (!query.ok) return query.response;
   const { page, pageSize } = query.data;
@@ -83,7 +85,9 @@ const createSchema = z.object({
   nationalId: z.string().trim().max(60).optional(),
 });
 
-export const POST = withAuth(async (session, req: Request) => {
+export const POST = requireCapability(
+  "contactos.editar",
+  async (session, req: Request) => {
   const body = await parseBody(req, createSchema);
   if (!body.ok) return body.response;
 

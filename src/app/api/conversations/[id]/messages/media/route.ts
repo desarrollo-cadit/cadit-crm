@@ -1,4 +1,4 @@
-import { apiError, withAuth } from "@/lib/api";
+import { apiError, requireCapability } from "@/lib/api";
 import { getConversation } from "@/server/inbox/queries";
 import { SendError, sendMediaMessage } from "@/server/inbox/send";
 import { MediaValidationError } from "@/server/whatsapp/media";
@@ -22,7 +22,9 @@ const SEND_ERROR_STATUS: Record<SendError["code"], number> = {
  * `file` (binario, requerido) + `caption` (opcional). La validación de tipo y
  * tamaño ocurre ANTES de tocar Graph (413/415 con el límite en el mensaje).
  */
-export const POST = withAuth(async (session, req: Request, ctx: Params) => {
+export const POST = requireCapability(
+  "inbox.responder",
+  async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const conv = await getConversation(session.organizationId, id);
   if (!conv) return apiError(404, "not_found", "Conversación no encontrada");

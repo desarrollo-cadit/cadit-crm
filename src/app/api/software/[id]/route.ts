@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { apiError, parseBody, withAuth } from "@/lib/api";
+import { apiError, parseBody, requireCapability } from "@/lib/api";
 import { updateSoftware } from "@/server/software";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +19,9 @@ const patchSchema = z.object({
  * repo (`/api/cohorts/[id]`, `/api/enrollments/[id]/checklist`) — ver
  * reporte final de la fase para el detalle de esta decisión.
  */
-export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
+export const PATCH = requireCapability(
+  "academico.editar",
+  async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const body = await parseBody(req, patchSchema);
   if (!body.ok) return body.response;

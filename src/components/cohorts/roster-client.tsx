@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useState } from "react";
-import { ChevronRight, Download, Mail, UserPlus } from "lucide-react";
+import { ChevronRight, Download, KeyRound, Mail, UserPlus } from "lucide-react";
 import type { CohortRosterDto, RosterEntryDto } from "@/server/enrollments";
 import type { CompanyDto } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
@@ -17,8 +17,11 @@ import {
 } from "@/components/ui/table";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn, formatAmount } from "@/lib/utils";
+import { BillingBulkPanel } from "@/components/cohorts/billing-bulk-panel";
+import { BillingPanel } from "@/components/cohorts/billing-panel";
 import { EnrollForm } from "@/components/enrollments/enroll-form";
 import { EnrollmentCommercialForm } from "@/components/enrollments/enrollment-commercial-form";
+import { Skeleton } from "@/components/ui/skeleton";
 
 type MemberOption = { userId: string; name: string };
 
@@ -58,7 +61,7 @@ function checklistProgress(e: RosterEntryDto): { done: number; total: number } {
 
 /**
  * 007 (feedback en vivo: "que sea una tabla con paginación, es espantoso el
- * formato de hoy en día") — con camadas de 40 alumnos, una tarjeta por
+ * formato de hoy en día") — con cohortes de 40 alumnos, una tarjeta por
  * inscripción con TODO desplegado es una pared imposible de recorrer.
  */
 const PAGE_SIZE = 20;
@@ -83,7 +86,7 @@ export function RosterClient({
 }: {
   cohortId: string;
   /** 005 iteración 6 (hallazgo del reviewer) — POST /api/enrollments acepta
-   * datos financieros y ahora exige `requireFullAccess`; soporte no debe ver
+   * datos financieros y exige `inscripciones.editar`; soporte no debe ver
    * un botón que le va a devolver 403. */
   canEnroll?: boolean;
 }) {
@@ -95,6 +98,15 @@ export function RosterClient({
   const [page, setPage] = useState(0);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [sendingEmail, setSendingEmail] = useState<string | null>(null);
+  const [invitingPortal, setInvitingPortal] = useState<string | null>(null);
+  /**
+   * 012 (T017) — La contraseña temporal se muestra UNA vez, para la única
+   * situación en que hace falta: el correo demora y el alumno está al teléfono.
+   * No se guarda ni se puede volver a consultar; reinvitar genera otra.
+   */
+  const [temporaryPassword, setTemporaryPassword] = useState<
+    { enrollmentId: string; password: string; emailError: string | null } | null
+  >(null);
   const [editingCommercial, setEditingCommercial] = useState<RosterEntryDto | null>(null);
   const [confirmChecklist, setConfirmChecklist] = useState<{
     enrollmentId: string;
@@ -196,6 +208,46 @@ export function RosterClient({
     }
     void refetch();
   }
+  /**
+   * 012 (T017, T017b) — Invita a UN alumno al portal.
+   *
+   * De a uno y a pedido: no hay "invitar a toda la cohorte" ni lo va a haber.
+   * Son 340 alumnos reales y un correo no se puede desenviar.
+   */
+  async function invitePortal(enrollmentId: string) {
+    setInvitingPortal(enrollmentId);
+    setTemporaryPassword(null);
+    const res = await fetch(`/api/enrollments/${enrollmentId}/access`, {
+      method: "POST",
+    }).catch(() => null);
+    setInvitingPortal(null);
+
+    if (!res?.ok) {
+      setActionError(await errorMessage(res, "No se pudo dar el acceso al portal"));
+    } else {
+      const data = (await res.json()) as {
+        existingAccount: boolean;
+        temporaryPassword: string | null;
+        emailError: string | null;
+      };
+      if (data.temporaryPassword) {
+        setTemporaryPassword({
+          enrollmentId,
+          password: data.temporaryPassword,
+          emailError: data.emailError,
+        });
+        setActionError(null);
+      } else {
+        // Ya tenía cuenta en el sistema (por ejemplo, alguien del equipo que
+        // además cursa): se le habilitó el portal sin tocarle la contraseña.
+        setActionError(
+          "Esa persona ya tenía cuenta; se le habilitó el portal y entra con su contraseña de siempre."
+        );
+      }
+    }
+    void refetch();
+  }
+
   async function assignLicense(enrollmentId: string, softwareId: string) {
     const res = await fetch(`/api/enrollments/${enrollmentId}/license`, {
       method: "PUT",
@@ -225,7 +277,7 @@ export function RosterClient({
   if (notFound) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Camada no encontrada
+        Cohorte no encontrada
       </div>
     );
   }
@@ -244,7 +296,7 @@ export function RosterClient({
     <div className="flex h-full flex-col">
       <header className="flex items-center justify-between gap-4 border-b px-6 py-4">
         <div>
-          <h2 className="font-semibold">{roster?.cohort.name ?? roster?.cohort.courseName ?? "Camada"}</h2>
+          <h2 className="font-semibold">{roster?.cohort.name ?? roster?.cohort.courseName ?? "Cohorte"}</h2>
           {roster?.cohort.name && (
             <p className="text-xs text-muted-foreground">{roster.cohort.courseName}</p>
           )}
@@ -267,7 +319,7 @@ export function RosterClient({
 
       <div className="flex-1 overflow-y-auto p-6">
         {actionError && (
-          <div className="mb-4 flex items-center justify-between gap-4 rounded-lg border border-destructive/50 px-4 py-3">
+          <div className="mb-4 flex items-center justify-between gap-4 rounded-lg border border-danger-border px-4 py-3">
             <p className="text-sm text-destructive">{actionError}</p>
             <Button variant="ghost" size="sm" onClick={() => setActionError(null)}>
               Cerrar
@@ -275,16 +327,29 @@ export function RosterClient({
           </div>
         )}
         {!roster ? (
-          <p className="text-sm text-muted-foreground">Cargando…</p>
+          <div className="space-y-2">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-11 w-full" />
+            ))}
+          </div>
         ) : roster.enrollments.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             Sin inscripciones todavía.
           </p>
         ) : (
           <div className="space-y-3">
+            {/*
+              022 — Cargar la cobranza de la cohorte entera.
+              Va acá, arriba del roster, porque es donde están las
+              inscripciones sobre las que actúa. El panel se esconde solo
+              cuando no queda ninguna sin cargar (FR-007).
+            */}
+            {showFinance && (
+              <BillingBulkPanel cohortId={cohortId} onDone={() => void refetch()} />
+            )}
             <div className="rounded-lg border">
               <Table>
-                <TableHeader className="bg-secondary/50">
+                <TableHeader className="bg-subtle">
                   <TableRow>
                     <TableHead className="w-8" />
                     <TableHead>Alumno</TableHead>
@@ -314,7 +379,17 @@ export function RosterClient({
                               />
                             </button>
                           </TableCell>
-                          <TableCell className="font-medium">{e.contact.name}</TableCell>
+                          <TableCell className="font-medium">
+                            {/* 013 (T029) — Al legajo desde donde se mira al
+                                alumno: el roster es la pantalla en la que
+                                surge la pregunta "¿cómo viene esta persona?". */}
+                            <a
+                              href={`/contacts/${e.contact.id}/legajo`}
+                              className="underline decoration-dotted underline-offset-2 hover:decoration-solid"
+                            >
+                              {e.contact.name}
+                            </a>
+                          </TableCell>
                           <TableCell className="text-xs text-muted-foreground">
                             {e.contact.phone ?? "sin teléfono"}
                             {e.contact.email && (
@@ -349,7 +424,7 @@ export function RosterClient({
                               className={cn(
                                 "rounded-full px-2 py-0.5",
                                 progress.done === progress.total
-                                  ? "bg-primary/15 text-primary"
+                                  ? "bg-brand-tint text-primary"
                                   : "bg-secondary text-muted-foreground"
                               )}
                             >
@@ -358,7 +433,7 @@ export function RosterClient({
                           </TableCell>
                         </TableRow>
                         {open && (
-                          <TableRow className="bg-secondary/20 hover:bg-secondary/20">
+                          <TableRow className="bg-subtle hover:bg-subtle">
                             <TableCell colSpan={showFinance ? 6 : 5} className="px-4 py-3">
                               {/* Checklist de onboarding — visible para cualquier rol (FR-014/FR-017). */}
                               <div className="flex flex-wrap items-center gap-3 text-xs">
@@ -459,9 +534,55 @@ export function RosterClient({
                                   </span>
                                 ) : !roster.cohort.whatsappGroupLink ? (
                                   <span className="text-muted-foreground">
-                                    Cargá el enlace del grupo en la camada para poder enviarla.
+                                    Cargá el enlace del grupo en la cohorte para poder enviarla.
                                   </span>
                                 ) : null}
+                              </div>
+
+                              {/* 012 (T017) — Acceso al portal del alumno.
+                                  De a uno y explícito: inscribir NO habilita
+                                  nada, y no existe la versión masiva. */}
+                              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                                {e.portalAccess.granted ? (
+                                  <span className="text-muted-foreground">
+                                    {e.portalAccess.suspended
+                                      ? "Acceso al portal suspendido."
+                                      : "Tiene acceso al portal."}
+                                  </span>
+                                ) : e.portalAccess.blockedReason ? (
+                                  /* T017d — el motivo, en vez de un botón que
+                                     va a fallar: son 6 de los 340 alumnos. */
+                                  <span className="text-muted-foreground">
+                                    {e.portalAccess.blockedReason}
+                                  </span>
+                                ) : (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={invitingPortal === e.id}
+                                    onClick={() => void invitePortal(e.id)}
+                                  >
+                                    <KeyRound className="h-4 w-4" />
+                                    {invitingPortal === e.id
+                                      ? "Dando acceso…"
+                                      : "Dar acceso al portal"}
+                                  </Button>
+                                )}
+
+                                {temporaryPassword?.enrollmentId === e.id && (
+                                  <span className="rounded border border-warning-border bg-warning-soft px-2 py-1">
+                                    Contraseña temporal:{" "}
+                                    <code className="font-mono font-semibold">
+                                      {temporaryPassword.password}
+                                    </code>{" "}
+                                    {/* 014 — Decir que salió el correo cuando no
+                                        salió es mentir sobre lo único que la
+                                        persona necesita para entrar. */}
+                                    {temporaryPassword.emailError
+                                      ? `— el correo NO salió (${temporaryPassword.emailError}). Dictásela vos; no se puede volver a ver.`
+                                      : "— ya se la mandamos por correo. No se puede volver a ver."}
+                                  </span>
+                                )}
                               </div>
 
                               {/* Sección financiera — SOLO si el DTO la trae (rol con acceso completo). */}
@@ -486,6 +607,13 @@ export function RosterClient({
                                   >
                                     Editar datos comerciales
                                   </Button>
+
+                                  {/* 008 — Cuotas y pagos. Va dentro del bloque
+                                      financiero: es la misma sección y el mismo
+                                      gate de rol (FR-016). */}
+                                  <div className="mt-3 border-t pt-3">
+                                    <BillingPanel enrollmentId={e.id} />
+                                  </div>
                                 </div>
                               )}
                             </TableCell>
@@ -561,7 +689,7 @@ export function RosterClient({
 
       {confirmChecklist && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
           onClick={() => setConfirmChecklist(null)}
         >
           <div
@@ -574,7 +702,7 @@ export function RosterClient({
               {confirmChecklist.contactName}?
             </p>
             {confirmChecklist.key === "termsEmailSentAt" && confirmChecklist.next && (
-              <p className="mt-2 rounded-md border border-primary/40 bg-primary/5 p-2 text-xs text-foreground">
+              <p className="mt-2 rounded-md border border-brand-soft bg-brand-tint p-2 text-xs text-foreground">
                 Se le va a ENVIAR el correo con los términos de la licencia ATC.
                 Un correo no se puede deshacer.
               </p>

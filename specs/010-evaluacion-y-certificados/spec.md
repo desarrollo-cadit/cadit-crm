@@ -18,16 +18,16 @@ Hoy se emite a mano, fuera del sistema, sin registro de quién lo recibió.
 
 ### User Story 1 - Definir cómo se aprueba (Priority: P1) 🎯 MVP
 
-Como coordinación, necesito definir las evaluaciones de una camada y con qué
+Como coordinación, necesito definir las evaluaciones de una cohorte y con qué
 criterio se aprueba, porque no todos los cursos se evalúan igual.
 
-**Independent Test**: Definir en una camada un trabajo final que pesa 100% con
+**Independent Test**: Definir en una cohorte un trabajo final que pesa 100% con
 nota mínima 7 y asistencia mínima 75%, y verificar que queda guardado.
 
 **Acceptance Scenarios**:
 
-1. **Given** una camada, **When** coordinación define sus evaluaciones con
-   nombre, peso y nota máxima, **Then** quedan asociadas a esa camada.
+1. **Given** una cohorte, **When** coordinación define sus evaluaciones con
+   nombre, peso y nota máxima, **Then** quedan asociadas a esa cohorte.
 2. **Given** evaluaciones con pesos, **When** la suma de pesos no da 100%,
    **Then** el sistema lo rechaza explicando cuánto falta o sobra.
 3. **Given** un curso que no se evalúa (solo asistencia), **When** se define
@@ -94,7 +94,7 @@ emitido y ver los datos; entrar con un código inventado y ver que no valida.
 **Acceptance Scenarios**:
 
 1. **Given** un código válido, **When** alguien lo consulta públicamente,
-   **Then** ve alumno, curso, camada y fecha de emisión. **Nada más**: ni
+   **Then** ve alumno, curso, cohorte y fecha de emisión. **Nada más**: ni
    notas, ni datos de contacto, ni información financiera.
 2. **Given** un código inexistente o anulado, **When** se consulta, **Then**
    responde que no es válido, sin filtrar si alguna vez existió.
@@ -121,7 +121,7 @@ salir del sistema.
 
 ## Requirements *(mandatory)*
 
-- **FR-001**: El sistema DEBE permitir definir evaluaciones por camada con
+- **FR-001**: El sistema DEBE permitir definir evaluaciones por cohorte con
   nombre, peso y nota máxima.
 - **FR-002**: La suma de los pesos DEBE ser 100%. El sistema DEBE rechazar una
   definición que no cierre.
@@ -137,12 +137,40 @@ salir del sistema.
 - **FR-008**: El sistema DEBE permitir anular un certificado con motivo,
   conservando el registro.
 - **FR-009**: El endpoint público de verificación DEBE exponer SOLO alumno,
-  curso, camada y fecha. Nunca notas ni datos de contacto.
+  curso, cohorte y fecha. Nunca notas ni datos de contacto.
 - **FR-010**: El código del certificado NO DEBE ser adivinable ni secuencial.
 - **FR-011**: Las notas DEBEN ser visibles para acceso completo; definir en
   DV-003 qué ve `soporte`.
 
-## Decisiones a verificar
+## Decisiones RESUELTAS (2026-08-26, decisión del dueño)
+
+- **DV-001**: escala **APROBADO / NO APROBADO**. Sin nota numérica.
+- **DV-002**: el certificado se genera como **HTML para imprimir** (A4 apaisado,
+  el navegador lo pasa a PDF con Ctrl+P). Sin dependencias nuevas —misma
+  técnica que el estado de cuenta de 008— y editable como los HTML de correo.
+- **DV-003**: `soporte` VE el estado de aprobación. Al no haber notas
+  numéricas la sensibilidad baja, y soporte necesita responder "¿aprobé?"
+  igual que responde por el checklist de onboarding (mismo criterio FR-014).
+- **DV-004**: NO se emiten certificados automáticos a las 24 cohortes
+  finalizadas que se importaron: no tienen notas ni asistencia cargadas y
+  emitir en masa sería certificar sin respaldo. Se emiten a pedido.
+- **DV-005**: el certificado lleva las horas **del curso** (planificadas), que
+  es lo que figura en la web y lo que el alumno compró.
+
+### Consecuencia sobre FR-002 y FR-003
+
+Los dos presuponen nota numérica y quedan **NO APLICABLES** con DV-001:
+
+- **FR-002** ("la suma de los pesos DEBE ser 100%") — sin nota numérica el
+  peso no pondera nada. Las evaluaciones no llevan peso.
+- **FR-003** ("calcular la nota final ponderada") — se reemplaza por: el
+  alumno aprueba si aprobó TODAS las evaluaciones de la cohorte Y cumple el
+  mínimo de asistencia (FR-004).
+
+Si más adelante se quiere ponderar, hay que volver a una escala numérica y
+esta decisión se revisa entera.
+
+## Decisiones a verificar (originales, ya resueltas arriba)
 
 - **DV-001**: ¿Escala de notas? (0-100, 0-12, aprobado/no aprobado). Impacta
   el tipo de la columna.
@@ -151,7 +179,7 @@ salir del sistema.
   sin dependencias externas —constitución II— acota mucho el diseño posible)*
 - **DV-003**: ¿`soporte` ve las notas? No son datos financieros, pero sí son
   sensibles.
-- **DV-004**: ¿Se emiten certificados a las camadas ya finalizadas que se
+- **DV-004**: ¿Se emiten certificados a las cohortes ya finalizadas que se
   importaron? Son alumnos reales que ya cursaron.
 - **DV-005**: ¿El certificado lleva las horas del curso? Si sí, salen de
   `course.duration_weeks × hours_per_week`, o de las horas realmente dictadas

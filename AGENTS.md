@@ -1,4 +1,4 @@
-# Reglas de revisión de código — cadit-crm (Vocero CRM)
+# Reglas de revisión de código — cadit-crm (CadIT CRM)
 
 Convenciones reales de este repo, para revisión automática de diffs. Ver
 `CLAUDE.md` para el contexto completo del producto; esto es el resumen
@@ -22,8 +22,11 @@ accionable para code review.
 
 ## Rutas API
 
-- Toda ruta autenticada usa `withAuth` (o `requireFullAccess` cuando el rol
-  `soporte` no debe acceder) de `src/lib/api.ts`, nunca sesión manual.
+- Toda ruta autenticada usa `requireCapability(<capacidad>, handler)` de
+  `src/lib/api.ts`, nunca `withAuth` pelado ni sesión manual. Las capacidades
+  son la lista cerrada de `src/lib/capabilities.ts`; `tests/unit/route-capabilities.test.ts`
+  falla si una ruta nueva no declara la suya (o no está en su lista explícita
+  de excepciones públicas).
 - Errores de negocio via `apiError(status, code, message)`, mensaje explícito
   y accionable — no genéricos tipo "algo salió mal" cuando se puede decir qué
   falló (ej. qué campo está duplicado).

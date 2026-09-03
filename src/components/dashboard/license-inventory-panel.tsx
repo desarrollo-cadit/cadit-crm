@@ -14,8 +14,8 @@ type InventoryItem = {
  * 005 iteración 2 — widget de inventario de licencias del home (total vs.
  * disponibles por software). A propósito NO detrás del gate financiero: es
  * información operativa (pedido explícito del dueño), visible para
- * cualquier rol autenticado — `GET /api/dashboard/licenses` usa `withAuth`,
- * no `requireFullAccess`.
+ * cualquier rol autenticado — `GET /api/dashboard/licenses` exige
+ * `academico.ver`, no una capacidad financiera.
  */
 export function LicenseInventoryPanel() {
   const [items, setItems] = useState<InventoryItem[] | null>(null);

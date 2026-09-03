@@ -260,7 +260,7 @@ confirmar que persisten y se pueden leer.
 
 ## Assumptions
 
-- Vocero es "una instancia = un negocio" (ya establecido en el proyecto): el pipeline
+- CadIT es "una instancia = un negocio" (ya establecido en el proyecto): el pipeline
   general de ventas y la gestión académica por cohorte conviven en el mismo tablero
   (mismo componente, misma tabla `enrollment`, distinguidos por `cohort_id`
   presente/ausente) — no son dos sistemas separados.

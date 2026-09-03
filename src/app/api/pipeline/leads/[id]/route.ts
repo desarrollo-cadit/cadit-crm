@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { apiError, parseBody, withAuth } from "@/lib/api";
+import { apiError, parseBody, requireCapability } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { publish } from "@/server/events/bus";
@@ -16,7 +16,20 @@ const patchSchema = z.object({
   cohortId: z.string().min(1).nullable().optional(),
 });
 
-export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
+/**
+ * 012 (T007) — `inscripciones.ver` y no `.editar`, aunque escriba.
+ *
+ * Mover un lead de etapa o asignarle cohorte es la operación diaria del
+ * tablero, y hoy la hace CUALQUIER rol autenticado — soporte incluido.
+ * `inscripciones.editar` es una de las tres capacidades financieras que
+ * soporte NO tiene: ponerla acá le sacaría el tablero, y esta fase no cambia
+ * comportamiento. Que "ver" habilite mover es una arruga del vocabulario, no
+ * un descuido; la fase 4 puede partir la capacidad cuando los roles se editen
+ * desde la pantalla. Mismo criterio que el checklist de inscripción.
+ */
+export const PATCH = requireCapability(
+  "inscripciones.ver",
+  async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const body = await parseBody(req, patchSchema);
   if (!body.ok) return body.response;
@@ -50,7 +63,7 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
         )
       )
       .limit(1);
-    if (!cohort[0]) return apiError(422, "invalid_cohort", "Camada inexistente");
+    if (!cohort[0]) return apiError(422, "invalid_cohort", "Cohorte inexistente");
   }
 
   const updated = await db

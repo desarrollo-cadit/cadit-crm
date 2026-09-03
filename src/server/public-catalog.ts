@@ -20,7 +20,28 @@ export async function resolveSoleOrganizationId(): Promise<string | null> {
   return rows[0]!.id;
 }
 
-export type PublicCohortDto = { id: string; startDate: string };
+/**
+ * 023 — La cohorte pública lleva a QUIÉN la dicta.
+ *
+ * Pedido del dueño: *"así puedo tomar de la cohorte que muestro en la web, esa
+ * imagen y título para que vean quién dicta esa cohorte"*.
+ *
+ * Solo nombre, título y foto. **Nunca el correo ni la tarifa**: el catálogo es
+ * público y esos dos son datos internos del profesor.
+ */
+export type PublicTeacherDto = {
+  name: string;
+  /** "Arquitecto", "Ingeniero Civil". `null` si no se cargó. */
+  title: string | null;
+  /** URL de la foto, o `null`. El sitio la usa tal cual. */
+  photoUrl: string | null;
+};
+
+export type PublicCohortDto = {
+  id: string;
+  startDate: string;
+  teacher: PublicTeacherDto | null;
+};
 
 export type PublicCategoryDto = { id: string; name: string; slug: string };
 
@@ -133,7 +154,7 @@ function toPublicCourse(row: PublicCourseRow, nextCohorts: PublicCohortDto[]): P
   };
 }
 
-/** Camadas futuras agrupadas por curso — `start_date > now()` (FR-021). */
+/** Cohortes futuras agrupadas por curso — `start_date > now()` (FR-021). */
 async function nextCohortsByCourse(
   db: ReturnType<typeof getDb>,
   organizationId: string,
@@ -147,8 +168,13 @@ async function nextCohortsByCourse(
       id: schema.cohort.id,
       courseId: schema.cohort.courseId,
       startDate: schema.cohort.startDate,
+      teacherId: schema.teacher.id,
+      teacherName: schema.teacher.name,
+      teacherTitle: schema.teacher.title,
+      teacherPhoto: schema.teacher.photoMimeType,
     })
     .from(schema.cohort)
+    .leftJoin(schema.teacher, eq(schema.cohort.teacherId, schema.teacher.id))
     .where(
       scoped(
         schema.cohort.organizationId,
@@ -161,7 +187,24 @@ async function nextCohortsByCourse(
 
   for (const c of rows) {
     const list = map.get(c.courseId) ?? [];
-    list.push({ id: c.id, startDate: c.startDate.toISOString() });
+    list.push({
+      id: c.id,
+      startDate: c.startDate.toISOString(),
+      teacher: c.teacherId
+        ? {
+            name: c.teacherName ?? "",
+            title: c.teacherTitle ?? null,
+            /**
+             * La URL se arma SOLO si hay foto. Devolver siempre el enlace
+             * dejaría al sitio comercial pidiendo una imagen que no existe
+             * y mostrando el ícono de rota.
+             */
+            photoUrl: c.teacherPhoto
+              ? `/api/teachers/${c.teacherId}/photo`
+              : null,
+          }
+        : null,
+    });
     map.set(c.courseId, list);
   }
   return map;

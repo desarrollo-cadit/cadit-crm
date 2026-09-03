@@ -1,15 +1,17 @@
 import { z } from "zod";
-import { apiError, parseBody, withAuth } from "@/lib/api";
+import { apiError, parseBody, requireCapability } from "@/lib/api";
 import { cohortInputSchema, getCohort, updateCohort } from "@/server/courses";
 
 export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ id: string }> };
 
-export const GET = withAuth(async (session, _req: Request, ctx: Params) => {
+export const GET = requireCapability(
+  "academico.ver",
+  async (session, _req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const cohort = await getCohort(session.organizationId, id);
-  if (!cohort) return apiError(404, "not_found", "Camada no encontrada");
+  if (!cohort) return apiError(404, "not_found", "Cohorte no encontrada");
   return Response.json({ cohort });
 });
 
@@ -19,7 +21,9 @@ const patchSchema = z.object({
   ...cohortInputSchema,
 });
 
-export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
+export const PATCH = requireCapability(
+  "academico.editar",
+  async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const body = await parseBody(req, patchSchema);
   if (!body.ok) return body.response;

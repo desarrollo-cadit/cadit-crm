@@ -29,7 +29,7 @@ export function normalizePhoneInput(raw: string): string | null {
   if (international) d = d.replace(/^0+/, "");
   if (!d) return null;
 
-  // México: Meta agrega un "1" a los móviles (521XXXXXXXXXX). Vocero ya
+  // México: Meta agrega un "1" a los móviles (521XXXXXXXXXX). CadIT ya
   // colapsaba ese prefijo y se mantiene, porque el CRM no es solo de esta
   // academia: perderlo duplicaría contactos en cualquier instancia mexicana.
   if (/^521\d{10}$/.test(d)) return `52${d.slice(3)}`;

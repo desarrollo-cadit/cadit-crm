@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Skeleton } from "@/components/ui/skeleton";
 
 type Profile = {
   enabled: boolean;
@@ -52,9 +53,13 @@ export function AgentClient() {
   }, [refetch]);
 
   if (!profile) {
+    // 021 — Esqueleto con la forma del panel, no un texto centrado que
+    // deja la pantalla vacía y después salta de golpe.
     return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Cargando…
+      <div className="space-y-4 p-6">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-32 w-full" />
+        <Skeleton className="h-32 w-full" />
       </div>
     );
   }
@@ -90,7 +95,7 @@ export function AgentClient() {
             }`}
           >
             <span
-              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+              className={`absolute top-0.5 h-5 w-5 rounded-full bg-on-accent transition-transform ${
                 profile.enabled ? "translate-x-5" : "translate-x-0.5"
               }`}
             />
@@ -249,7 +254,7 @@ function KbSection({
           )}
         </div>
         {kbSize?.warning && (
-          <p className="text-xs text-[#8a6d3b]">
+          <p className="text-xs text-warning">
             El conocimiento se acerca al límite del contexto del modelo (v1 lo
             inyecta completo en cada turno). Considera depurar entradas.
           </p>

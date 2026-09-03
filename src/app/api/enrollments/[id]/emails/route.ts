@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { apiError, parseBody, withAuth } from "@/lib/api";
+import { apiError, parseBody, requireCapability } from "@/lib/api";
 import { sendEnrollmentEmail } from "@/server/email/enrollment-emails";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +20,9 @@ const bodySchema = z.object({
  * términos de licencia y la bienvenida es tarea de soporte tanto como de
  * ventas. No expone datos financieros.
  */
-export const POST = withAuth(async (session, req: Request, ctx: Params) => {
+export const POST = requireCapability(
+  "inscripciones.ver",
+  async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const body = await parseBody(req, bodySchema);
   if (!body.ok) return body.response;

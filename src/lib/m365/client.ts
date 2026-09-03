@@ -14,7 +14,7 @@ import { getEnv } from "@/lib/env";
  *
  *   New-ApplicationAccessPolicy -AppId <client-id> `
  *     -PolicyScopeGroupId <grupo-con-el-buzon> -AccessRight RestrictAccess `
- *     -Description "Vocero CRM: solo el buzón de cursos"
+ *     -Description "CadIT CRM: solo el buzón de cursos"
  *
  * Sin eso, una filtración del secret permite suplantar a cualquier persona de
  * la empresa.

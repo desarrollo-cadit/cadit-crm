@@ -1,4 +1,4 @@
-import { apiError, parseBody } from "@/lib/api";
+import { apiError, parseBody, withOrganization } from "@/lib/api";
 import { corsPreflight, withCors } from "@/lib/cors";
 import {
   checkRateLimit,
@@ -7,6 +7,7 @@ import {
   tooManyRequests,
 } from "@/lib/rate-limit";
 import { publicLeadSchema, submitIntakeForm } from "@/server/intake-forms";
+import { resolveSoleOrganizationId } from "@/server/public-catalog";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,22 @@ export function OPTIONS(req: Request) {
  * es `/api/public/courses/<slug>/submit`, que no necesita provisionar nada.
  * Las dos comparten `publicLeadSchema`: un solo contrato de body.
  */
-export async function POST(req: Request, ctx: Params) {
+/**
+ * 012 (T028, CORREGIDO 2026-09-01) — Sin sesión, pero CON alcance.
+ *
+ * Un formulario público que corre sin `app.current_org` no solo LEE cero
+ * filas: tampoco puede ESCRIBIR ninguna. Un lead que llega de la web se
+ * perdería en silencio, con un 201 de vuelta al navegador.
+ */
+export const POST = withOrganization(
+  "public:lead-formulario",
+  async (_req: Request, _ctx: Params) => resolveSoleOrganizationId(),
+  () =>
+    Response.json(
+      { error: { code: "no_organization", message: "Formulario no disponible" } },
+      { status: 503 }
+    ),
+  async (_organizationId: string, req: Request, ctx: Params) => {
   const { formId } = await ctx.params;
 
   // 007 — mismo balde por IP que la puerta por curso: el límite es del
@@ -53,4 +69,5 @@ export async function POST(req: Request, ctx: Params) {
   }
 
   return withCors(req, Response.json({ ok: true }, { status: 201 }));
-}
+  }
+);

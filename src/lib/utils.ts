@@ -98,3 +98,25 @@ export function formatAmount(
  * se dibuja el día equivocado.
  */
 export const WEEKDAY_LABELS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"] as const;
+
+/**
+ * Escapa texto para interpolarlo en HTML.
+ *
+ * Vive acá, en UN solo lugar, por el mismo motivo que `contrastRatio()`: había
+ * TRES copias —dos rutas de impresión y el módulo de correo— y ya se habían
+ * separado. Las de impresión no escapaban el apóstrofo; la del correo sí. Dos
+ * implementaciones de lo mismo se separan siempre, y cuando se separan la que
+ * quedó atrás no avisa.
+ *
+ * Lo que entra acá es el nombre de un contacto, y **un contacto puede haber
+ * llegado por un formulario público sin autenticar**. `csvField()` ya trata
+ * ese vector con respeto en la exportación; el HTML merece lo mismo.
+ */
+export function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}

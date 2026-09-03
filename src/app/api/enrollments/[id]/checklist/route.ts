@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { apiError, parseBody, withAuth } from "@/lib/api";
+import { apiError, parseBody, requireCapability } from "@/lib/api";
 import { updateChecklist } from "@/server/enrollments";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +17,9 @@ const patchSchema = z.object({
 
 // 005 (T025, US3, contracts/cohort-roster.md) — accesible por CUALQUIER rol
 // (soporte y ventas/coordinación comparten esta acción, FR-014).
-export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
+export const PATCH = requireCapability(
+  "inscripciones.ver",
+  async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const body = await parseBody(req, patchSchema);
   if (!body.ok) return body.response;
