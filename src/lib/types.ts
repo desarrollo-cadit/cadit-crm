@@ -162,6 +162,12 @@ export type CohortDto = {
   syllabusUrl: string | null;
   capacity: number | null;
   whatsappGroupLink: string | null;
+  /**
+   * 025 — El enlace de la reunión RECURRENTE de la cohorte, que es el que ve
+   * el alumno. El aula NO lo aporta: es la cuenta de Zoom y su sala es
+   * compartida entre las cohortes que la usan.
+   */
+  meetingUrl: string | null;
   /** 023 (FR-002) — Aula virtual de la cohorte; sus clases la heredan. */
   virtualRoomId: string | null;
   status: "planificada" | "en_curso" | "finalizada";

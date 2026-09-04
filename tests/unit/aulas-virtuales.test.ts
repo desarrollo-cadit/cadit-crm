@@ -212,64 +212,48 @@ describe("023 — qué clases ocupan un aula", () => {
   });
 });
 
-describe("023 — de dónde sale el enlace del alumno", () => {
+describe("025 — de dónde sale el enlace de una clase", () => {
   /**
-   * FR-004 — El orden va de lo más específico a lo más general, y el último
-   * escalón existe para NO romper lo que ya funciona: una academia con el
-   * enlace pegado a mano en la cohorte sigue andando después de esta fase.
+   * La corrección de la 025, y el motivo por el que el aula NO está en la
+   * cadena.
+   *
+   * La academia crea una reunión RECURRENTE por cohorte: cada cohorte tiene
+   * su propia URL aunque comparta cuenta de Zoom con otra. El aula es la
+   * CUENTA, y su PMI es una sala genérica compartida.
+   *
+   * Con el aula como respaldo, dos cohortes en la misma cuenta y sin su
+   * recurrente cargada caían al MISMO enlace: el alumno de una entraba a la
+   * clase de la otra. La ventana horaria no lo tapaba — limita cuándo se
+   * MUESTRA el enlace, no a dónde lleva.
    */
-  it("el enlace propio de la clase gana sobre todo", () => {
+  it("el enlace propio de la clase gana sobre el de la cohorte", () => {
     expect(
       resolveMeetingUrl({
-        classMeetingUrl: "https://zoom.us/clase",
-        classRoomUrl: "https://zoom.us/aula-clase",
-        cohortRoomUrl: "https://zoom.us/aula-cohorte",
-        cohortMeetingUrl: "https://zoom.us/cohorte",
+        classMeetingUrl: "https://zoom.us/j/clase",
+        cohortMeetingUrl: "https://zoom.us/j/cohorte",
       })
-    ).toBe("https://zoom.us/clase");
+    ).toBe("https://zoom.us/j/clase");
   });
 
-  it("sin enlace propio, manda el aula de la clase", () => {
+  it("sin enlace propio, manda el de la cohorte: la reunión recurrente", () => {
     expect(
       resolveMeetingUrl({
         classMeetingUrl: null,
-        classRoomUrl: "https://zoom.us/aula-clase",
-        cohortRoomUrl: "https://zoom.us/aula-cohorte",
-        cohortMeetingUrl: "https://zoom.us/cohorte",
+        cohortMeetingUrl: "https://zoom.us/j/cohorte",
       })
-    ).toBe("https://zoom.us/aula-clase");
+    ).toBe("https://zoom.us/j/cohorte");
   });
 
-  it("después, el aula de la cohorte", () => {
+  /**
+   * **Mejor no mostrar enlace que mostrar el equivocado.**
+   *
+   * Es la regla que define la fase: sin enlace cargado el portal dice que no
+   * lo hay, en vez de mandar al alumno a una sala que puede estar ocupada por
+   * otra cohorte.
+   */
+  it("sin ninguno de los dos, null — y NO cae a la sala de la cuenta", () => {
     expect(
-      resolveMeetingUrl({
-        classMeetingUrl: null,
-        classRoomUrl: null,
-        cohortRoomUrl: "https://zoom.us/aula-cohorte",
-        cohortMeetingUrl: "https://zoom.us/cohorte",
-      })
-    ).toBe("https://zoom.us/aula-cohorte");
-  });
-
-  it("y al final el enlace viejo de la cohorte: lo que ya andaba sigue andando", () => {
-    expect(
-      resolveMeetingUrl({
-        classMeetingUrl: null,
-        classRoomUrl: null,
-        cohortRoomUrl: null,
-        cohortMeetingUrl: "https://zoom.us/cohorte",
-      })
-    ).toBe("https://zoom.us/cohorte");
-  });
-
-  it("sin ninguno, null — y la pantalla dice que no hay enlace", () => {
-    expect(
-      resolveMeetingUrl({
-        classMeetingUrl: null,
-        classRoomUrl: null,
-        cohortRoomUrl: null,
-        cohortMeetingUrl: null,
-      })
+      resolveMeetingUrl({ classMeetingUrl: null, cohortMeetingUrl: null })
     ).toBeNull();
   });
 });

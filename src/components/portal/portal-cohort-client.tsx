@@ -19,7 +19,7 @@ type Cohort = {
   role: "titular" | "suplente";
   students: number;
   /** 023 (FR-010) — El aula virtual: nombre y enlace, sin la cuenta. */
-  virtualRoom: { name: string; url: string } | null;
+  virtualRoom: { name: string } | null;
 };
 
 type ClassRow = {
@@ -163,21 +163,20 @@ export function PortalCohortClient({ cohortId }: { cohortId: string }) {
         </p>
 
         {/*
-          023 (FR-010) — Dónde le toca dictar. Sale del aula asignada a la
-          cohorte y NO muestra la cuenta de Zoom: el profesor entra por el
-          enlace, no administra la sala.
+          023 (FR-010) / 025 — En qué CUENTA le toca dictar, como etiqueta y
+          NO como enlace.
+
+          La primera versión la ponía como botón "entrar", y estaba mal: la
+          sala del aula es el PMI de la cuenta, compartido por todas las
+          cohortes que la usan. El profesor que entraba por ahí podía caer en
+          la clase de otra cohorte. Para entrar está el enlace de CADA clase,
+          que sale de la reunión recurrente de esta cohorte.
         */}
         {datos.cohort.virtualRoom && (
-          <a
-            href={datos.cohort.virtualRoom.url}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-2 inline-flex h-11 items-center gap-2 rounded-md border border-brand-soft bg-brand-tint px-3 text-sm font-medium text-brand-text"
-          >
-            <Video className="h-4 w-4" strokeWidth={1.8} />
+          <p className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary px-2.5 py-1 text-xs text-text-2">
+            <Video className="h-3.5 w-3.5" strokeWidth={1.8} />
             {datos.cohort.virtualRoom.name}
-            <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.8} />
-          </a>
+          </p>
         )}
       </div>
 

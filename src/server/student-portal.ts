@@ -74,42 +74,7 @@ type ScopedEnrollment = {
   cohort: typeof schema.cohort.$inferSelect | null;
   course: typeof schema.course.$inferSelect | null;
   teacherName: string | null;
-  /**
-   * 023 (FR-004) — La URL del aula de la cohorte, ya resuelta.
-   *
-   * Viaja la URL y NO el aula entera: el alumno tiene que poder entrar, no
-   * saber a qué cuenta de Zoom pertenece la sala ni quién la administra.
-   * Mismo criterio que el resto del módulo — un dato que no se debe ver no
-   * viaja (FR-010).
-   */
-  cohortRoomUrl: string | null;
 };
-
-/**
- * 023 — Las URLs de un puñado de aulas, en un solo viaje.
- *
- * Existe porque las clases pueden declarar aula propia (FR-003) y consultarla
- * de a una serían cuarenta viajes para escribir cuarenta veces la misma URL.
- */
-async function roomUrls(
-  organizationId: string,
-  ids: (string | null)[]
-): Promise<Map<string, string>> {
-  const unicos = [...new Set(ids.filter((id): id is string => Boolean(id)))];
-  if (unicos.length === 0) return new Map();
-
-  const filas = await getDb()
-    .select({ id: schema.virtualRoom.id, url: schema.virtualRoom.url })
-    .from(schema.virtualRoom)
-    .where(
-      scoped(
-        schema.virtualRoom.organizationId,
-        organizationId,
-        inArray(schema.virtualRoom.id, unicos)
-      )
-    );
-  return new Map(filas.map((f) => [f.id, f.url]));
-}
 
 /**
  * Las inscripciones de ESTE contacto. Es la única puerta de entrada del
@@ -128,13 +93,11 @@ async function scopedEnrollments(
       cohort: schema.cohort,
       course: schema.course,
       teacherName: schema.teacher.name,
-      cohortRoomUrl: schema.virtualRoom.url,
     })
     .from(schema.enrollment)
     .leftJoin(schema.cohort, eq(schema.enrollment.cohortId, schema.cohort.id))
     .leftJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
     .leftJoin(schema.teacher, eq(schema.cohort.teacherId, schema.teacher.id))
-    .leftJoin(schema.virtualRoom, eq(schema.cohort.virtualRoomId, schema.virtualRoom.id))
     .where(
       scoped(
         schema.enrollment.organizationId,
@@ -149,7 +112,6 @@ async function scopedEnrollments(
     cohort: r.cohort,
     course: r.course,
     teacherName: r.teacherName,
-    cohortRoomUrl: r.cohortRoomUrl,
   }));
 }
 
@@ -401,11 +363,6 @@ export async function studentOverview(
     buildCourse(e, { sesiones, asistencias, evaluaciones, resultados, certificados, licencias })
   );
 
-  // 023 — Las aulas que alguna clase declaró por su cuenta (FR-003).
-  const aulas = await roomUrls(
-    organizationId,
-    sesiones.map((s) => s.virtualRoomId)
-  );
 
   return {
     student: {
@@ -413,7 +370,7 @@ export async function studentOverview(
       email: contact.email,
     },
     timezone: clock.timezone,
-    nextClass: pickNextClass(enrollments, sesiones, clock, now, aulas),
+    nextClass: pickNextClass(enrollments, sesiones, clock, now),
     courses,
     balances: await studentBalances(organizationId, enrollmentIds, now),
   };
@@ -593,9 +550,7 @@ function pickNextClass(
   enrollments: ScopedEnrollment[],
   sesiones: (typeof schema.classSession.$inferSelect)[],
   clock: OrgClock,
-  now: Date,
-  /** 023 — URL por id de aula, para las clases que declararon la suya. */
-  aulas: Map<string, string> = new Map()
+  now: Date
 ): StudentNextClassDto | null {
   const porCohorte = new Map<string, ScopedEnrollment>();
   for (const e of enrollments) {
@@ -620,8 +575,7 @@ function pickNextClass(
         canceledAt: s.canceledAt,
         cancelReason: s.cancelReason,
         meetingUrl: s.meetingUrl,
-        classRoomUrl: s.virtualRoomId ? (aulas.get(s.virtualRoomId) ?? null) : null,
-        cohortRoomUrl: e.cohortRoomUrl,
+
         cohortMeetingUrl: e.cohort?.meetingUrl ?? null,
         recordingUrl: s.recordingUrl,
         timezone: clock.timezone,
@@ -798,11 +752,6 @@ export async function studentCourseDetail(
     now
   );
 
-  // 023 — Las aulas propias de estas clases (FR-003).
-  const aulasDeClase = await roomUrls(
-    organizationId,
-    sesiones.map((s) => s.virtualRoomId)
-  );
 
   const classes: StudentClassDto[] = sesiones.map((s) => ({
     ...buildClassRow({
@@ -816,8 +765,7 @@ export async function studentCourseDetail(
       canceledAt: s.canceledAt,
       cancelReason: s.cancelReason,
       meetingUrl: s.meetingUrl,
-      classRoomUrl: s.virtualRoomId ? (aulasDeClase.get(s.virtualRoomId) ?? null) : null,
-      cohortRoomUrl: mia.cohortRoomUrl,
+
       cohortMeetingUrl: mia.cohort?.meetingUrl ?? null,
       recordingUrl: s.recordingUrl,
       timezone: clock.timezone,

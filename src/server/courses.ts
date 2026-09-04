@@ -351,6 +351,15 @@ export type CohortInput = {
    * la tienen vacía. Sigue viva como último escalón de `resolveMeetingUrl`,
    * para no romper una instalación que la haya cargado por otra vía.
    */
+  /**
+   * 025 — El enlace de la reunión RECURRENTE de la cohorte.
+   *
+   * La columna existe desde la 013 y **nunca tuvo formulario**: por eso
+   * las 41 cohortes reales la tienen vacía. Es el enlace que ve el alumno
+   * (`resolveMeetingUrl`), y es propio de la cohorte aunque comparta
+   * cuenta de Zoom con otra.
+   */
+  meetingUrl?: string | null;
   virtualRoomId?: string | null;
   /** 005 (DV-004) — software(s) que declara usar la cohorte. */
   softwareIds?: string[];
@@ -392,6 +401,7 @@ export const cohortInputSchema = {
   classroom: z.string().max(120).nullable().optional(),
   capacity: z.number().int().min(0).nullable().optional(),
   whatsappGroupLink: z.string().max(2000).nullable().optional(),
+  meetingUrl: z.string().trim().url().nullable().optional(),
   virtualRoomId: z.string().min(1).nullable().optional(),
   softwareIds: z.array(z.string().min(1)).optional(),
 };
@@ -515,6 +525,7 @@ export async function createCohort(
     classroom: input.classroom ?? null,
     capacity: input.capacity ?? null,
     whatsappGroupLink: input.whatsappGroupLink ?? null,
+    meetingUrl: input.meetingUrl ?? null,
     virtualRoomId: input.virtualRoomId ?? null,
   });
   if (input.softwareIds && input.softwareIds.length > 0) {
@@ -584,6 +595,7 @@ export async function updateCohort(
       ...(input.whatsappGroupLink !== undefined
         ? { whatsappGroupLink: input.whatsappGroupLink }
         : {}),
+      ...(input.meetingUrl !== undefined ? { meetingUrl: input.meetingUrl } : {}),
       ...(input.virtualRoomId !== undefined ? { virtualRoomId: input.virtualRoomId } : {}),
       updatedAt: new Date(),
     })
@@ -730,6 +742,7 @@ function serializeCohort(
      * marcarla en el selector, no abrirla. La URL la resuelve
      * `resolveMeetingUrl` cuando hay que mostrarle el enlace a alguien.
      */
+    meetingUrl: cohort.meetingUrl,
     virtualRoomId: cohort.virtualRoomId,
     status: computeCohortStatus(cohort.startDate, cohort.endDate),
     software,

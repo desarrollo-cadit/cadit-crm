@@ -21,6 +21,12 @@ type ClassRow = {
   canceled: boolean;
   cancelReason: string | null;
   meetingUrl: string | null;
+  /**
+   * 025 — Enlace propio de ESTA clase, crudo y sin recortar por la ventana.
+   * `null` = está heredando el de la cohorte. Es lo que se edita; `meetingUrl`
+   * es lo que se usa para entrar.
+   */
+  ownMeetingUrl: string | null;
   recordingUrl: string | null;
 };
 
@@ -58,7 +64,10 @@ export function ClassesClient({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
-  const [editing, setEditing] = useState<string | null>(null);
+  /** Qué se está editando: la clase y CUÁL de sus dos enlaces. */
+  const [editing, setEditing] = useState<
+    { classId: string; campo: "meetingUrl" | "recordingUrl" } | null
+  >(null);
   const [draft, setDraft] = useState("");
 
   const refetch = useCallback(async () => {
@@ -92,12 +101,22 @@ export function ClassesClient({
     void refetch();
   }
 
-  async function guardarGrabacion(classId: string) {
+  /**
+   * 013 (DV-001c) / 025 — Un solo guardado para los dos enlaces.
+   *
+   * Vaciar el campo manda `null`, y eso NO es lo mismo que dejarlo igual: en
+   * el enlace de la clase, `null` la devuelve a heredar el de la cohorte, que
+   * es justo lo que quiere quien deshace una excepción.
+   */
+  async function guardarEnlace(
+    classId: string,
+    campo: "meetingUrl" | "recordingUrl"
+  ) {
     const url = draft.trim();
     const res = await fetch(`/api/class-sessions/${classId}/links`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ recordingUrl: url === "" ? null : url }),
+      body: JSON.stringify({ [campo]: url === "" ? null : url }),
     }).catch(() => null);
     if (!res?.ok) {
       const body = (await res?.json().catch(() => null)) as
@@ -233,18 +252,25 @@ export function ClassesClient({
               <span className="text-muted-foreground">Grabación pendiente</span>
             ) : null}
 
-            {/* DV-001c — cargar la grabación: profesor o coordinación. */}
+            {/* DV-001c / 025 — cargar enlaces: profesor o coordinación. */}
             {canEditLinks && !c.projected && !c.canceled && c.id && (
-              editing === c.id ? (
+              editing?.classId === c.id ? (
                 <span className="flex items-center gap-1">
                   <Input
                     autoFocus
                     value={draft}
-                    placeholder="https://…"
-                    className="h-8 w-56"
+                    placeholder={
+                      editing.campo === "meetingUrl"
+                        ? "https://zoom.us/j/… (vacío = usar el de la cohorte)"
+                        : "https://…"
+                    }
+                    className="h-8 w-72"
                     onChange={(e) => setDraft(e.target.value)}
                   />
-                  <Button size="sm" onClick={() => void guardarGrabacion(c.id!)}>
+                  <Button
+                    size="sm"
+                    onClick={() => void guardarEnlace(c.id!, editing.campo)}
+                  >
                     Guardar
                   </Button>
                   <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>
@@ -252,17 +278,37 @@ export function ClassesClient({
                   </Button>
                 </span>
               ) : (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    setEditing(c.id);
-                    setDraft(c.recordingUrl ?? "");
-                  }}
-                >
-                  <Link2 className="h-4 w-4" />
-                  {c.recordingUrl ? "Cambiar grabación" : "Cargar grabación"}
-                </Button>
+                <span className="flex items-center gap-1">
+                  {/*
+                    025 — Se dice si la clase HEREDA o tiene enlace propio, y no
+                    solo "cargar/cambiar". Quien mira la lista necesita saber en
+                    cuál de las dos está parado: borrar un enlace propio la
+                    devuelve a la reunión de la cohorte, y eso es una decisión,
+                    no un descuido.
+                  */}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setEditing({ classId: c.id!, campo: "meetingUrl" });
+                      setDraft(c.ownMeetingUrl ?? "");
+                    }}
+                  >
+                    <Video className="h-4 w-4" />
+                    {c.ownMeetingUrl ? "Enlace propio" : "Hereda el enlace"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setEditing({ classId: c.id!, campo: "recordingUrl" });
+                      setDraft(c.recordingUrl ?? "");
+                    }}
+                  >
+                    <Link2 className="h-4 w-4" />
+                    {c.recordingUrl ? "Cambiar grabación" : "Cargar grabación"}
+                  </Button>
+                </span>
               )
             )}
           </li>

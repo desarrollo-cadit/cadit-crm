@@ -293,23 +293,26 @@ describe("T021 — ni plata ni datos de contacto salen del portal", () => {
        * 023 (FR-010) — El aula VIRTUAL, agregada a propósito y con su motivo
        * escrito: el profesor tiene que saber dónde le toca dictar.
        *
-       * Viajan `name` y `url` y NADA más. La cuenta de Zoom a la que
-       * pertenece la sala (`accountEmail`) es un dato administrativo de la
-       * academia y NO sale: el profesor entra por el enlace, no administra
-       * la cuenta. El test de abajo lo fija.
+       * Viaja SOLO el nombre. Ni la cuenta (`accountEmail`) ni la `url`, que
+       * hasta la 025 salía y era peligrosa. El test de abajo lo fija.
        */
       "virtualRoom",
     ]);
   });
 
   /**
-   * 023 (FR-010) — Y del aula sale el enlace, no la cuenta.
+   * 023 (FR-010) corregido por la 025 — Del aula sale el NOMBRE y nada más.
    *
-   * Es una lista blanca sobre el objeto anidado por el mismo motivo que la de
-   * arriba: el día que alguien agregue `accountEmail` al DTO para una
-   * pantalla de staff, este test lo frena antes de que llegue al portal.
+   * La primera versión dejaba salir también la `url`, y era el mismo error
+   * que la fase vino a corregir: esa URL es la sala de la CUENTA de Zoom,
+   * compartida por todas las cohortes que la usan. Un profesor que entraba
+   * por ahí podía caer en la clase de otro.
+   *
+   * Es una lista blanca sobre el objeto anidado: el día que alguien vuelva a
+   * agregar `url` —o `accountEmail`— para una pantalla de staff, este test
+   * lo frena antes de que llegue al portal.
    */
-  it("el aula del profesor trae nombre y enlace, nunca la cuenta", async () => {
+  it("el aula del profesor trae solo el nombre: ni la cuenta ni su enlace", async () => {
     responder("cohort", [{ id: "coh_1" }]);
     responder("classSession", []);
     responder("cohort", [
@@ -320,7 +323,7 @@ describe("T021 — ni plata ni datos de contacto salen del portal", () => {
     const { listTeacherCohorts } = await import("@/server/teacher-portal");
     const [cohorte] = await listTeacherCohorts(ORG, PROFE_A);
 
-    expect(Object.keys(cohorte?.virtualRoom ?? {}).sort()).toEqual(["name", "url"]);
+    expect(Object.keys(cohorte?.virtualRoom ?? {}).sort()).toEqual(["name"]);
   });
 
   /** El alumno es un nombre. Ni correo, ni teléfono, ni identidad de WhatsApp. */
@@ -399,5 +402,56 @@ describe("T021 — ni plata ni datos de contacto salen del portal", () => {
     ]) {
       expect(codigo, `aparece ${prohibido}`).not.toMatch(new RegExp(prohibido, "i"));
     }
+  });
+});
+
+/**
+ * 025 — El enlace CRUDO de una clase es de coordinación, no del profesor.
+ *
+ * `listCohortClasses` agrega `ownMeetingUrl` para que la pantalla del staff
+ * pueda editarlo: es el enlace guardado, sin pasar por la ventana horaria y
+ * sin resolver la herencia. Eso es exactamente lo que la ventana existe para
+ * NO mostrar, así que el portal lo descarta antes de responder.
+ *
+ * Se prueba sobre el objeto que sale de la función, no sobre la pantalla: una
+ * pantalla que no lo pinta sigue mandándolo por la red, y ahí ya salió.
+ */
+describe("025 — el enlace crudo de la clase no sale del portal", () => {
+  it("las filas del profesor no llevan `ownMeetingUrl`", async () => {
+    // teacherCohortDetail: alcance, suplencias, cohorte, alumnos.
+    responder("cohort", [{ id: "coh_1" }]);
+    responder("cohort", [{ id: "coh_1" }]);
+    responder("classSession", []);
+    responder("cohort", [filaCohorte()]);
+    responder("enrollment", []);
+    responder("enrollment", []);
+    // listCohortClasses: organización, cohorte y sus clases.
+    responder("organization", [{ timezone: "America/Montevideo", before: 15, after: 30 }]);
+    responder("cohort", [
+      { ...filaCohorte(), meetingUrl: "https://zoom.us/j/cohorte", daysOfWeek: "0,2" },
+    ]);
+    responder("classSession", [
+      {
+        id: "cls_1",
+        number: 1,
+        date: HOY,
+        startTime: "18:30",
+        endTime: "21:30",
+        topic: null,
+        canceledAt: null,
+        cancelReason: null,
+        meetingUrl: "https://zoom.us/j/SOLO-DE-ESTA-CLASE",
+        recordingUrl: null,
+      },
+    ]);
+
+    const { teacherCohortClasses } = await import("@/server/teacher-portal");
+    const datos = await teacherCohortClasses(ORG, PROFE_A, "coh_1", HOY);
+    const fila = datos?.classes.classes[0];
+
+    expect(fila).toBeDefined();
+    expect(fila).not.toHaveProperty("ownMeetingUrl");
+    // Y el enlace crudo no se coló con otro nombre en ningún campo.
+    expect(JSON.stringify(fila)).not.toContain("SOLO-DE-ESTA-CLASE");
   });
 });

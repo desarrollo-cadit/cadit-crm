@@ -59,6 +59,11 @@ export function CohortForm({
    * gestión entera para una lista de cinco que casi nunca cambia.
    */
   const [virtualRoomId, setVirtualRoomId] = useState(initial?.virtualRoomId ?? "");
+  /**
+   * 025 — El enlace de la reunión RECURRENTE. La columna existe desde la 013 y
+   * nunca tuvo formulario: por eso las 41 cohortes reales la tienen vacía.
+   */
+  const [meetingUrl, setMeetingUrl] = useState(initial?.meetingUrl ?? "");
   const [rooms, setRooms] = useState<RoomOption[]>([]);
 
   useEffect(() => {
@@ -158,6 +163,7 @@ export function CohortForm({
       classroom: classroom.trim() || null,
       // Cadena vacía = "sin aula", y eso se manda como null: el schema del
       // servidor acepta null y rechaza el string vacío.
+      meetingUrl: meetingUrl.trim() || null,
       virtualRoomId: virtualRoomId || null,
       capacity: capacity.trim() ? Number(capacity) : null,
       whatsappGroupLink: whatsappGroupLink.trim() || null,
@@ -444,10 +450,36 @@ export function CohortForm({
               </Select>
               <p className="text-xs text-muted-foreground">
                 {rooms.length === 0
-                  ? "Cargá tus salas de reunión en la pestaña Aulas."
-                  : "Todas las clases de la cohorte la heredan."}
+                  ? "Cargá tus cuentas de Zoom en la pestaña Aulas."
+                  : "La CUENTA que ocupa. Sirve para avisarte si dos cohortes se pisan."}
               </p>
             </div>
+          </div>
+
+          {/*
+            025 — El enlace que ve el alumno, y va en la COHORTE.
+
+            La academia crea una reunión recurrente por cohorte, así que cada
+            una tiene su propia URL aunque comparta cuenta de Zoom con otra.
+            Ponerlo en el aula hacía que dos cohortes de la misma cuenta
+            compartieran sala, y un alumno podía entrar a la clase de la otra.
+
+            La columna existe desde la 013 y nunca tuvo formulario: por eso
+            las 41 cohortes reales la tienen vacía.
+          */}
+          <div className="space-y-1.5">
+            <Label htmlFor="cohort-meeting">Enlace de la reunión</Label>
+            <Input
+              id="cohort-meeting"
+              type="url"
+              placeholder="https://zoom.us/j/..."
+              value={meetingUrl}
+              onChange={(e) => setMeetingUrl(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              El de la reunión recurrente de ESTA cohorte. Es lo que ve el
+              alumno, y solo dentro del horario de su clase.
+            </p>
           </div>
           {/* 006 — el temario dejó de editarse acá: es del curso, no de la
               edición. La cohorte lo hereda de su curso. */}

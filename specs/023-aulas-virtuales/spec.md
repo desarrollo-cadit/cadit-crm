@@ -1,6 +1,20 @@
 # 023 — Aulas virtuales y choques de horario
 
-**Estado**: propuesta · **Depende de**: 009, 013 · **Habilita**: 018 (opcional)
+**Estado**: implementada, **corregida por la 025** · **Depende de**: 009, 013 ·
+**Habilita**: 018 (opcional)
+
+> **Corrección (025)**: esta spec puso la URL de la reunión en el AULA, y
+> estaba mal. La academia crea una reunión **recurrente por cohorte**: cada
+> cohorte tiene su propia URL aunque comparta cuenta de Zoom con otra.
+>
+> Con la URL en el aula, dos cohortes asignadas a la misma cuenta compartían
+> enlace y un alumno podía entrar a la clase de la otra. La "consecuencia
+> asumida" que se escribió más abajo subestimaba eso: la ventana horaria
+> limita cuándo se MUESTRA el enlace, no a dónde lleva.
+>
+> Lo que queda en pie: el aula como **cuenta** y el detector de choques. Lo
+> que cambia: el enlace sale de `cohort.meeting_url` (o del de la clase), y
+> el aula NO participa de esa cadena. Ver FR-004 corregido.
 
 ## Por qué esta fase existe
 
@@ -35,12 +49,14 @@ cuarta dependencia de runtime**. Esta fase no la necesita ni la bloquea: si
 algún día se conecta, el aula deja de ser un PMI y pasa a ser el proveedor que
 emite la reunión, sin cambiar quién la usa ni cómo se detecta el choque.
 
-Consecuencia asumida: con PMI fijo, **el enlace de una clase es el mismo que
-el de la clase siguiente en esa aula**. Quien tenga el enlace puede entrar en
-cualquier momento. Se acepta porque es exactamente lo que pasa hoy —el enlace
-se comparte por WhatsApp— y porque la ventana horaria de
-[013](../013-legajo-y-cursada/spec.md) (FR-003) ya limita cuándo se MUESTRA.
-Si eso no alcanza, la respuesta es la 018, no un parche acá.
+**Corregido por la 025**: el aula NO aporta el enlace. Su PMI es una sala
+genérica de la cuenta, compartida por todas las cohortes que la usan, así que
+usarlo como respaldo mandaba al alumno a la clase equivocada. El enlace sale
+de la reunión recurrente de la cohorte, y si no está cargada el portal dice
+que no hay enlace: **mejor no mostrar ninguno que mostrar el equivocado**.
+
+El aula conserva su `url` como dato administrativo de coordinación —a qué
+sala pertenece la cuenta— y no viaja como "entrar" a ningún portal.
 
 ## User Scenarios
 
@@ -108,9 +124,10 @@ Como profesor quiero ver en qué aula me toca y entrar desde ahí.
   les copia.
 - **FR-003**: Una clase PUEDE declarar su propia aula, y esa gana sobre la de
   la cohorte. Mismo criterio que `meeting_url` en 013.
-- **FR-004**: El enlace que ve el alumno DEBE resolverse en este orden:
-  enlace propio de la clase → aula de la clase → aula de la cohorte → enlace
-  propio de la cohorte. El último existe para no romper lo que ya funciona.
+- **FR-004** *(corregido por la 025)*: El enlace que ve el alumno DEBE
+  resolverse en DOS escalones: **enlace propio de la clase → enlace de la
+  cohorte**. El aula no participa. Sin ninguno de los dos, no se muestra
+  enlace — nunca se cae a la sala de la cuenta, que es compartida.
 - **FR-005**: El sistema DEBE detectar choques: dos clases NO canceladas, con
   la MISMA aula, cuyos rangos horarios se solapan.
 - **FR-006**: El choque DEBE avisarse, nunca bloquear. Coordinación decide.
@@ -122,9 +139,10 @@ Como profesor quiero ver en qué aula me toca y entrar desde ahí.
   inventar un choque o esconderlo.
 - **FR-009**: Un aula dada de baja NO DEBE poder asignarse a nada nuevo, y las
   clases que ya la tenían la conservan.
-- **FR-010**: El portal del profesor DEBE mostrar el aula de su clase. NO debe
-  mostrar la cuenta ni las credenciales del aula: el profesor entra por el
-  enlace, no administra la cuenta.
+- **FR-010** *(corregido por la 025)*: El portal del profesor DEBE mostrar en
+  qué aula le toca, como ETIQUETA y no como enlace de entrada: la sala del
+  aula es compartida. Para entrar está el enlace de cada clase. Nunca se
+  muestran la cuenta ni las credenciales.
 - **FR-011**: La agenda de aulas DEBE poder consultarse por día y por semana,
   diciendo aula, horario, cohorte y profesor.
 - **FR-012**: Toda la superficie es de STAFF salvo el enlace, que llega a los

@@ -113,28 +113,32 @@ export function findClashes(
 }
 
 /**
- * 023 (FR-004) — De dónde sale el enlace que ve el alumno, en un solo lugar.
+ * 023/025 (FR-004) — De dónde sale el enlace de una clase, en un solo lugar.
  *
- * El orden no es arbitrario: va de lo más específico a lo más general, y el
- * último escalón existe para **no romper lo que ya funciona**. Una academia
- * que hoy tiene el enlace pegado a mano en la cohorte sigue andando igual
- * después de esta fase; el aula es una mejora, no un requisito.
+ * **El aula NO aporta enlace, y eso es la corrección de la 025.**
  *
- *   enlace de la clase → aula de la clase → aula de la cohorte → enlace de la cohorte
+ * La 023 puso la URL en el aula y estaba mal. La academia crea una reunión
+ * RECURRENTE por cohorte: cada cohorte tiene su propia URL aunque comparta
+ * cuenta de Zoom con otra. El aula es la CUENTA —sirve para saber quién la
+ * ocupa y para detectar choques— y su PMI es una sala genérica.
+ *
+ * Con el aula en la cadena, dos cohortes asignadas a la misma cuenta y sin su
+ * recurrente cargada caían las dos al MISMO PMI: el alumno de una entraba a
+ * la clase de la otra. Ese era el bug, y no lo tapaba la ventana horaria —
+ * esa limita cuándo se MUESTRA el enlace, no a dónde lleva.
+ *
+ * Queda entonces una cadena de dos escalones, de lo específico a lo general:
+ *
+ *   enlace propio de la CLASE  →  enlace de la COHORTE
+ *
+ * Y sin tercer escalón a propósito: **mejor no mostrar enlace que mostrar el
+ * equivocado**. Una cohorte sin enlace cargado dice que no lo tiene.
  */
 export function resolveMeetingUrl(input: {
   classMeetingUrl: string | null;
-  classRoomUrl: string | null;
-  cohortRoomUrl: string | null;
   cohortMeetingUrl: string | null;
 }): string | null {
-  return (
-    input.classMeetingUrl ??
-    input.classRoomUrl ??
-    input.cohortRoomUrl ??
-    input.cohortMeetingUrl ??
-    null
-  );
+  return input.classMeetingUrl ?? input.cohortMeetingUrl ?? null;
 }
 
 /**

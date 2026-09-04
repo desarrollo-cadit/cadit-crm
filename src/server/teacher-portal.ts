@@ -2,7 +2,7 @@ import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { markAttendance, type AttendanceStatus } from "@/server/attendance";
-import { listCohortClasses, type CohortClassesDto } from "@/server/classes";
+import { listCohortClasses, type ClassRowDto, type CohortClassesDto } from "@/server/classes";
 import { computeCohortStatus } from "@/server/courses";
 import { cohortGrading, recordResults, type AssessmentDto } from "@/server/grading";
 import {
@@ -151,7 +151,18 @@ export type TeacherCohortDto = {
    * pertenece la sala es un dato administrativo de la academia. El profesor
    * entra por el enlace; no administra la cuenta.
    */
-  virtualRoom: { name: string; url: string } | null;
+  /**
+   * 023 (FR-010) / 025 — En qué AULA le toca dictar: solo el nombre.
+   *
+   * La `url` viajaba acá y ya no. El aula es la CUENTA de Zoom, y su sala es
+   * la misma para todas las cohortes que la usan: mandar al profesor por ahí
+   * lo podía dejar en la clase de otro. Para entrar está el enlace de cada
+   * clase, que sale de la reunión recurrente de ESTA cohorte.
+   *
+   * Se saca del DTO y no solo de la pantalla porque un dato que no se debe
+   * usar no se esconde: no viaja.
+   */
+  virtualRoom: { name: string } | null;
   status: "planificada" | "en_curso" | "finalizada";
   role: "titular" | "suplente";
   students: number;
@@ -179,7 +190,6 @@ export async function listTeacherCohorts(
       classroom: schema.cohort.classroom,
       courseName: schema.course.name,
       roomName: schema.virtualRoom.name,
-      roomUrl: schema.virtualRoom.url,
     })
     .from(schema.cohort)
     .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
@@ -221,8 +231,7 @@ export async function listTeacherCohorts(
       startTime: c.startTime,
       endTime: c.endTime,
       classroom: c.classroom,
-      virtualRoom:
-        c.roomName && c.roomUrl ? { name: c.roomName, url: c.roomUrl } : null,
+      virtualRoom: c.roomName ? { name: c.roomName } : null,
       status: computeCohortStatus(c.startDate, c.endDate),
       role: c.teacherId === teacherId ? ("titular" as const) : ("suplente" as const),
       students: cuantos.get(c.id) ?? 0,
@@ -306,7 +315,13 @@ export async function teacherCohortDetail(
 export type TeacherClassesDto = {
   cohort: TeacherCohortDto;
   editable: boolean;
-  classes: CohortClassesDto;
+  /**
+   * 025 — Sin `ownMeetingUrl`: al profesor le viajan las filas de ENTRAR, no
+   * las de editar. El enlace crudo es la carga de coordinación, y hacerlo
+   * viajar acá lo pondría fuera de la ventana horaria sin que ninguna
+   * pantalla lo pida.
+   */
+  classes: Omit<CohortClassesDto, "classes"> & { classes: ClassRowDto[] };
 };
 
 /** Las clases de una cohorte del profesor, o `null` si no la alcanza. */
@@ -322,7 +337,14 @@ export async function teacherCohortClasses(
   const classes = await listCohortClasses(organizationId, cohortId, now);
   if (!classes) return null;
 
-  return { cohort: detalle.cohort, editable: detalle.editable, classes };
+  // No viaja, no se filtra: se descarta acá, no en la pantalla (FR-008).
+  const sinCrudos = classes.classes.map(({ ownMeetingUrl: _crudo, ...fila }) => fila);
+
+  return {
+    cohort: detalle.cohort,
+    editable: detalle.editable,
+    classes: { ...classes, classes: sinCrudos },
+  };
 }
 
 export type TeacherAttendanceSheetDto = {

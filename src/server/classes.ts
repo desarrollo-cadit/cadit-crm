@@ -1,4 +1,4 @@
-import { asc, eq, inArray } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import {
@@ -51,6 +51,24 @@ export type ClassRowDto = {
   recordingUrl: string | null;
 };
 
+/**
+ * 025 — La fila como la ve QUIEN ADMINISTRA la clase, con el enlace CRUDO.
+ *
+ * `meetingUrl` de `ClassRowDto` ya viene resuelto y recortado por la ventana
+ * horaria: sirve para entrar, no para editar. Quien carga el enlace necesita
+ * ver el que hay guardado aunque falten seis días para la clase, y necesita
+ * distinguir "esta clase tiene enlace propio" de "está heredando el de la
+ * cohorte" — porque borrar uno u otro no es lo mismo.
+ *
+ * Va aparte y no dentro de `buildClassRow` a propósito: esa función también
+ * arma las filas del ALUMNO, y ahí el enlace crudo sería exactamente el dato
+ * que la ventana existe para no mostrar.
+ */
+export type StaffClassRowDto = ClassRowDto & {
+  /** Enlace propio de ESTA clase. `null` = hereda el de la cohorte. */
+  ownMeetingUrl: string | null;
+};
+
 export type CohortClassesDto = {
   cohortId: string;
   /** `true` si NINGUNA fila es real: la cohorte no tiene cronograma. */
@@ -62,7 +80,7 @@ export type CohortClassesDto = {
    */
   cannotGenerateReason: string | null;
   timezone: string;
-  classes: ClassRowDto[];
+  classes: StaffClassRowDto[];
 };
 
 /**
@@ -106,13 +124,6 @@ export function buildClassRow(input: {
   /** Enlace propio de la clase; si falta, se HEREDA el de la cohorte. */
   meetingUrl: string | null;
   cohortMeetingUrl: string | null;
-  /**
-   * 023 (FR-004) — El aula virtual, que se intercala entre los dos anteriores.
-   * Opcionales para no obligar a tocar cada llamador: quien no las pase se
-   * comporta exactamente como antes de la 023.
-   */
-  classRoomUrl?: string | null;
-  cohortRoomUrl?: string | null;
   recordingUrl: string | null;
   timezone: string;
   window: MeetingWindow;
@@ -126,15 +137,12 @@ export function buildClassRow(input: {
    * Herencia, no copia: copiar el enlace al generar el cronograma dejaría
    * enlaces muertos el día que se cambie el de Zoom.
    *
-   * 023 (FR-004) — La cadena vive en `resolveMeetingUrl`, un solo lugar:
-   * enlace de la clase → aula de la clase → aula de la cohorte → enlace de la
-   * cohorte. El último escalón es lo que hace que una academia con el enlace
-   * pegado a mano siga andando igual después de la 023.
+   * 025 (FR-004) — La cadena vive en `resolveMeetingUrl`, un solo lugar:
+   * enlace de la CLASE → enlace de la COHORTE. El aula NO participa: es la
+   * cuenta de Zoom, y su PMI lo comparten todas las cohortes que la usan.
    */
   const enlace = resolveMeetingUrl({
     classMeetingUrl: input.meetingUrl,
-    classRoomUrl: input.classRoomUrl ?? null,
-    cohortRoomUrl: input.cohortRoomUrl ?? null,
     cohortMeetingUrl: input.cohortMeetingUrl,
   });
 
@@ -307,39 +315,11 @@ export async function listCohortClasses(
     )
     .orderBy(asc(schema.classSession.number));
 
-  /**
-   * 023 — Las aulas que intervienen: la de la cohorte y las que alguna clase
-   * declaró por su cuenta. Se traen de una vez y se cruzan en memoria; una
-   * consulta por clase serían cuarenta viajes para escribir cuarenta veces la
-   * misma URL.
-   */
-  const aulaIds = [
-    ...new Set(
-      [cohort.virtualRoomId, ...sessions.map((s) => s.virtualRoomId)].filter(
-        (id): id is string => Boolean(id)
-      )
-    ),
-  ];
-  const aulas = aulaIds.length
-    ? await db
-        .select({ id: schema.virtualRoom.id, url: schema.virtualRoom.url })
-        .from(schema.virtualRoom)
-        .where(
-          scoped(
-            schema.virtualRoom.organizationId,
-            organizationId,
-            inArray(schema.virtualRoom.id, aulaIds)
-          )
-        )
-    : [];
-  const urlDeAula = new Map(aulas.map((a) => [a.id, a.url]));
 
   const window: MeetingWindow = { beforeMin: org.before, afterMin: org.after };
   const comun = {
     cohortMeetingUrl: cohort.meetingUrl,
-    cohortRoomUrl: cohort.virtualRoomId
-      ? (urlDeAula.get(cohort.virtualRoomId) ?? null)
-      : null,
+
     timezone: org.timezone,
     window,
     now,
@@ -351,8 +331,8 @@ export async function listCohortClasses(
       projected: false,
       cannotGenerateReason: null,
       timezone: org.timezone,
-      classes: sessions.map((s) =>
-        buildClassRow({
+      classes: sessions.map((s) => ({
+        ...buildClassRow({
           id: s.id,
           number: s.number,
           projected: false,
@@ -363,13 +343,12 @@ export async function listCohortClasses(
           canceledAt: s.canceledAt,
           cancelReason: s.cancelReason,
           meetingUrl: s.meetingUrl,
-          classRoomUrl: s.virtualRoomId
-            ? (urlDeAula.get(s.virtualRoomId) ?? null)
-            : null,
+
           recordingUrl: s.recordingUrl,
           ...comun,
-        })
-      ),
+        }),
+        ownMeetingUrl: s.meetingUrl,
+      })),
     };
   }
 
@@ -391,8 +370,8 @@ export async function listCohortClasses(
     projected: true,
     cannotGenerateReason: motivo,
     timezone: org.timezone,
-    classes: plan.map((p) =>
-      buildClassRow({
+    classes: plan.map((p) => ({
+      ...buildClassRow({
         id: null,
         number: p.number,
         projected: true,
@@ -405,7 +384,9 @@ export async function listCohortClasses(
         meetingUrl: null,
         recordingUrl: null,
         ...comun,
-      })
-    ),
+      }),
+      // Una proyección no es una clase: no hay fila a la cual cargarle enlace.
+      ownMeetingUrl: null,
+    })),
   };
 }
