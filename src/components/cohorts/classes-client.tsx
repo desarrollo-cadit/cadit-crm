@@ -78,6 +78,10 @@ export function ClassesClient({
       return;
     }
     setData((await res.json()) as Payload);
+    // Una recarga que funcionó desmiente el error de la anterior. Sin esto,
+    // un fallo de red dejaba el cartel rojo puesto sobre una lista que ya
+    // estaba bien, y la pantalla contradecía a sus propios datos.
+    setError(null);
     setLoading(false);
   }, [cohortId]);
 

@@ -11,6 +11,11 @@ const config = [
       // separada solo para que dos procesos de Next no peleen por el mismo
       // directorio (ver scripts/e2e-selftest.mjs).
       ".next-e2e/**",
+      // El mismo caso: CLAUDE.md manda construir en `.next-build` cuando el
+      // dev server está levantado, así que este directorio aparece en cualquier
+      // máquina que siga la guía. Sin esto, `pnpm lint` levanta 17 mil
+      // problemas de código GENERADO y tapa los propios.
+      ".next-build/**",
       "dist/**",
       "drizzle/**",
       "scripts/**",

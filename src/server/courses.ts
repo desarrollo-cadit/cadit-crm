@@ -1,5 +1,6 @@
 import { asc, desc, eq, inArray, like, ne } from "drizzle-orm";
 import { z } from "zod";
+import { httpUrl } from "@/lib/url-schema";
 import { getDb, schema, type DbOrTx } from "@/lib/db";
 import { CURRENCIES, type Currency } from "@/lib/db/schema";
 import { newId } from "@/lib/db/ids";
@@ -93,18 +94,6 @@ async function validateCategory(
     .limit(1);
   return rows[0] ? null : "Categoría inexistente";
 }
-
-/**
- * URL que el sitio comercial va a renderizar como `<img src>` o `<a href>`.
- * Se exige http(s) explícitamente porque `z.string().url()` acepta cualquier
- * esquema —`javascript:` incluido— y estos campos salen tal cual por el
- * endpoint público.
- */
-const httpUrl = z
-  .string()
-  .trim()
-  .max(2000)
-  .refine((v) => /^https?:\/\//i.test(v), "Debe ser una URL que empiece con http:// o https://");
 
 /**
  * Validación de los campos de contenido, compartida por el POST y el PATCH de
@@ -344,22 +333,23 @@ export type CohortInput = {
   capacity?: number | null;
   whatsappGroupLink?: string | null;
   /**
-   * 023 (FR-002) — El aula virtual de la cohorte. Sus clases la heredan.
-   *
-   * Se expone ESTE campo y no `meetingUrl`: esa columna de texto libre existe
-   * desde la 013 pero nunca tuvo formulario, y por eso las 41 cohortes reales
-   * la tienen vacía. Sigue viva como último escalón de `resolveMeetingUrl`,
-   * para no romper una instalación que la haya cargado por otra vía.
-   */
-  /**
    * 025 — El enlace de la reunión RECURRENTE de la cohorte.
    *
-   * La columna existe desde la 013 y **nunca tuvo formulario**: por eso
-   * las 41 cohortes reales la tienen vacía. Es el enlace que ve el alumno
-   * (`resolveMeetingUrl`), y es propio de la cohorte aunque comparta
-   * cuenta de Zoom con otra.
+   * La columna existe desde la 013 y **nunca tuvo formulario**: por eso las
+   * 41 cohortes reales la tienen vacía. Es el enlace que ve el alumno
+   * (`resolveMeetingUrl`), y es propio de ESTA cohorte aunque comparta cuenta
+   * de Zoom con otra.
    */
   meetingUrl?: string | null;
+  /**
+   * 023 (FR-002) / 025 — El AULA de la cohorte, que es la CUENTA de Zoom que
+   * ocupa. Sus clases la heredan, y sirve para detectar que dos cohortes se
+   * pisan en la misma cuenta.
+   *
+   * No aporta el enlace: la sala del aula es compartida, y usarla de respaldo
+   * mandaba al alumno a la clase de otra cohorte. El enlace es `meetingUrl`,
+   * acá arriba.
+   */
   virtualRoomId?: string | null;
   /** 005 (DV-004) — software(s) que declara usar la cohorte. */
   softwareIds?: string[];
@@ -401,7 +391,7 @@ export const cohortInputSchema = {
   classroom: z.string().max(120).nullable().optional(),
   capacity: z.number().int().min(0).nullable().optional(),
   whatsappGroupLink: z.string().max(2000).nullable().optional(),
-  meetingUrl: z.string().trim().url().nullable().optional(),
+  meetingUrl: httpUrl.nullable().optional(),
   virtualRoomId: z.string().min(1).nullable().optional(),
   softwareIds: z.array(z.string().min(1)).optional(),
 };
@@ -736,13 +726,12 @@ function serializeCohort(
     syllabusUrl: course.syllabusUrl,
     capacity: cohort.capacity,
     whatsappGroupLink: cohort.whatsappGroupLink,
-    /**
-     * 023 — Viaja el ID y no la URL: esta es la superficie del STAFF, y la
-     * pantalla que la consume necesita saber CUÁL aula está elegida para
-     * marcarla en el selector, no abrirla. La URL la resuelve
-     * `resolveMeetingUrl` cuando hay que mostrarle el enlace a alguien.
-     */
     meetingUrl: cohort.meetingUrl,
+    /**
+     * 023 — Del AULA viaja el ID y no la URL: esta es la superficie del
+     * STAFF, y la pantalla que la consume necesita saber CUÁL aula está
+     * elegida para marcarla en el selector, no abrirla.
+     */
     virtualRoomId: cohort.virtualRoomId,
     status: computeCohortStatus(cohort.startDate, cohort.endDate),
     software,

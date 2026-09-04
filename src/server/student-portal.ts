@@ -360,7 +360,14 @@ export async function studentOverview(
     ]);
 
   const courses = enrollments.map((e) =>
-    buildCourse(e, { sesiones, asistencias, evaluaciones, resultados, certificados, licencias })
+    buildCourse(
+      e,
+      { sesiones, asistencias, evaluaciones, resultados, certificados, licencias },
+      // El `now` inyectado tiene que llegar hasta acá: sin él, `nextClass`
+      // usaba el reloj de la prueba y la asistencia el reloj real, y la misma
+      // pantalla contestaba con dos presentes distintos.
+      now
+    )
   );
 
 
@@ -575,7 +582,6 @@ function pickNextClass(
         canceledAt: s.canceledAt,
         cancelReason: s.cancelReason,
         meetingUrl: s.meetingUrl,
-
         cohortMeetingUrl: e.cohort?.meetingUrl ?? null,
         recordingUrl: s.recordingUrl,
         timezone: clock.timezone,
@@ -765,7 +771,6 @@ export async function studentCourseDetail(
       canceledAt: s.canceledAt,
       cancelReason: s.cancelReason,
       meetingUrl: s.meetingUrl,
-
       cohortMeetingUrl: mia.cohort?.meetingUrl ?? null,
       recordingUrl: s.recordingUrl,
       timezone: clock.timezone,

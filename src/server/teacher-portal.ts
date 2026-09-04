@@ -145,13 +145,6 @@ export type TeacherCohortDto = {
   endTime: string | null;
   classroom: string | null;
   /**
-   * 023 (FR-010) — El aula VIRTUAL donde le toca dictar.
-   *
-   * Viajan el nombre y el enlace, y NADA más: la cuenta de Zoom a la que
-   * pertenece la sala es un dato administrativo de la academia. El profesor
-   * entra por el enlace; no administra la cuenta.
-   */
-  /**
    * 023 (FR-010) / 025 — En qué AULA le toca dictar: solo el nombre.
    *
    * La `url` viajaba acá y ya no. El aula es la CUENTA de Zoom, y su sala es

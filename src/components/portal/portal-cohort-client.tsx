@@ -18,17 +18,22 @@ type Cohort = {
   status: "planificada" | "en_curso" | "finalizada";
   role: "titular" | "suplente";
   students: number;
-  /** 023 (FR-010) — El aula virtual: nombre y enlace, sin la cuenta. */
+  /**
+   * 023 (FR-010) / 025 — El aula: SOLO el nombre. Ni la cuenta ni su enlace.
+   * Es una etiqueta de "dónde te toca", no un botón de entrar.
+   */
   virtualRoom: { name: string } | null;
 };
 
-type ClassRow = {
+export type ClassRow = {
   id: string | null;
   number: number;
   projected: boolean;
   date: string;
   startTime: string | null;
   endTime: string | null;
+  /** Instante de fin ya resuelto en la zona de la academia; null sin horario. */
+  endsAt: string | null;
   topic: string | null;
   canceled: boolean;
   cancelReason: string | null;
@@ -67,12 +72,28 @@ type Tab = "clases" | "evaluacion" | "material";
  *
  * Una proyección no tiene `id` —todavía no existe la fila— y una clase
  * cancelada no ofrece grabación aunque la tenga cargada (FR-005e de 013).
+ *
+ * 025 — Se mira `endsAt`, no `date`.
+ *
+ * `date` es la medianoche UTC del día de la clase, así que compararla contra
+ * el reloj del navegador hacía aparecer el botón **el día anterior a las
+ * 21:00** en Montevideo. El comentario decía "el día entero cuenta" y lo que
+ * pasaba era otra cosa.
+ *
+ * `endsAt` ya viene resuelto por `classInstant()` en el servidor, que es el
+ * único lugar del repo autorizado a componer una fecha de clase. El navegador
+ * no tiene por qué saber en qué zona está la academia, y acá estaba
+ * adivinándolo.
+ *
+ * Sin horario cargado no hay instante que comparar —6 de las 41 cohortes
+ * están así— y ahí se deja pasar: no saber cuándo terminó no es lo mismo que
+ * saber que no terminó, y bloquear al profesor por un dato que falta en la
+ * cohorte lo manda de vuelta a pedir la carga por WhatsApp.
  */
-function puedeCargarGrabacion(c: ClassRow): boolean {
+export function puedeCargarGrabacion(c: ClassRow, ahora: number = Date.now()): boolean {
   if (!c.id || c.canceled) return false;
-  // El día entero cuenta: una clase de hoy a las 18:30 se puede cargar a las
-  // 21:00 sin que el navegador tenga que resolver la zona de la academia.
-  return new Date(c.date).getTime() <= Date.now();
+  if (!c.endsAt) return true;
+  return new Date(c.endsAt).getTime() <= ahora;
 }
 
 function fecha(iso: string): string {

@@ -358,21 +358,32 @@ export async function updateVirtualRoom(
     }
   }
 
-  const cambios: Record<string, unknown> = { updatedAt: new Date() };
-  if (input.name !== undefined) cambios.name = input.name.trim();
-  if (input.url !== undefined) cambios.url = input.url.trim();
-  if (input.accountEmail !== undefined) cambios.accountEmail = input.accountEmail?.trim() || null;
-  if (input.notes !== undefined) cambios.notes = input.notes?.trim() || null;
   /**
+   * Spread condicional y no un `Record<string, unknown>`: ese tipo es `any`
+   * con saco y corbata. Drizzle deja de verificar los nombres de columna, así
+   * que un `cambios.acountEmail` con una `c` de menos compila, se ejecuta y
+   * no escribe nada — sin error, sin aviso, sin forma de notarlo hasta que
+   * alguien pregunta por qué no se guardó. Es el mismo patrón que usan
+   * `updateCohort` y `updateCourse`.
+   *
    * FR-009 — La baja es LÓGICA. No se borra la fila: una clase pasada que se
    * dictó acá conserva la evidencia de dónde fue. Borrarla reescribiría esa
    * historia, igual que borrar un aviso (013).
    */
-  if (input.archived !== undefined) cambios.archivedAt = input.archived ? new Date() : null;
-
   await db
     .update(schema.virtualRoom)
-    .set(cambios)
+    .set({
+      updatedAt: new Date(),
+      ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+      ...(input.url !== undefined ? { url: input.url.trim() } : {}),
+      ...(input.accountEmail !== undefined
+        ? { accountEmail: input.accountEmail?.trim() || null }
+        : {}),
+      ...(input.notes !== undefined ? { notes: input.notes?.trim() || null } : {}),
+      ...(input.archived !== undefined
+        ? { archivedAt: input.archived ? new Date() : null }
+        : {}),
+    })
     .where(
       scoped(schema.virtualRoom.organizationId, organizationId, eq(schema.virtualRoom.id, roomId))
     );

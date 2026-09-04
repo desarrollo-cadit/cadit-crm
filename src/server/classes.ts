@@ -319,7 +319,6 @@ export async function listCohortClasses(
   const window: MeetingWindow = { beforeMin: org.before, afterMin: org.after };
   const comun = {
     cohortMeetingUrl: cohort.meetingUrl,
-
     timezone: org.timezone,
     window,
     now,
@@ -343,7 +342,6 @@ export async function listCohortClasses(
           canceledAt: s.canceledAt,
           cancelReason: s.cancelReason,
           meetingUrl: s.meetingUrl,
-
           recordingUrl: s.recordingUrl,
           ...comun,
         }),

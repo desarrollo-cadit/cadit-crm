@@ -76,18 +76,18 @@ export function CohortForm({
   }, []);
   const [capacity, setCapacity] = useState(initial?.capacity?.toString() ?? "");
   /**
-   * 007 — El enlace del grupo ya se guardaba (columna
-   * `whatsapp_group_link`, 005) pero no había dónde cargarlo: quedaba solo
-   * para el seed y ninguna pantalla lo pedía. Es por
-   * cohorte y no por curso porque cada edición tiene su propio grupo.
-   */
-  /**
    * 009/010 — mínimo de asistencia para aprobar. Vacío = hereda el del curso.
    * Sin esto cargado, la regla de aprobación solo mira las evaluaciones.
    */
   const [minAttendancePct, setMinAttendancePct] = useState(
     initial?.minAttendancePct?.toString() ?? ""
   );
+  /**
+   * 007 — El enlace del grupo ya se guardaba (columna `whatsapp_group_link`,
+   * 005) pero no había dónde cargarlo: quedaba solo para el seed y ninguna
+   * pantalla lo pedía. Es por cohorte y no por curso porque cada edición
+   * tiene su propio grupo.
+   */
   const [whatsappGroupLink, setWhatsappGroupLink] = useState(
     initial?.whatsappGroupLink ?? ""
   );
@@ -161,9 +161,9 @@ export function CohortForm({
       endTime: endTime || null,
       daysOfWeek: daysOfWeek.length > 0 ? daysOfWeek.join(",") : null,
       classroom: classroom.trim() || null,
+      meetingUrl: meetingUrl.trim() || null,
       // Cadena vacía = "sin aula", y eso se manda como null: el schema del
       // servidor acepta null y rechaza el string vacío.
-      meetingUrl: meetingUrl.trim() || null,
       virtualRoomId: virtualRoomId || null,
       capacity: capacity.trim() ? Number(capacity) : null,
       whatsappGroupLink: whatsappGroupLink.trim() || null,

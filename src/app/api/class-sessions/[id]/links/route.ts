@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { httpUrl } from "@/lib/url-schema";
 import { apiError, parseBody, requireCapability } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
@@ -10,8 +11,9 @@ type Params = { params: Promise<{ id: string }> };
 
 /** `null` borra el enlace; ausente lo deja como está. */
 const patchSchema = z.object({
-  meetingUrl: z.string().trim().url().nullable().optional(),
-  recordingUrl: z.string().trim().url().nullable().optional(),
+  // 025 — `httpUrl` y no `z.string().url()`: los dos terminan en un `<a href>`.
+  meetingUrl: httpUrl.nullable().optional(),
+  recordingUrl: httpUrl.nullable().optional(),
 });
 
 /**
