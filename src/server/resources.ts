@@ -1,3 +1,4 @@
+import { httpUrl } from "@/lib/url-schema";
 import { asc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
@@ -81,11 +82,14 @@ export function validateResource(input: ResourceInput): ResourceResult<ResourceI
    * Se exige una URL absoluta y no cualquier texto: un "enlace" que no abre
    * nada es peor que un material ausente, porque el alumno lo aprieta y cree
    * que el problema es suyo.
+   *
+   * 025 — La regla es `httpUrl` y no un `new URL()` a mano. Esta copia era
+   * correcta, pero era una copia: el módulo compartido se creó justo porque
+   * la misma regla escrita en varios lados se vuelve a escribir mal en el
+   * siguiente lugar. Dos validaciones que HOY coinciden son dos que mañana
+   * divergen sin que nadie lo note.
    */
-  try {
-    const u = new URL(input.url.trim());
-    if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error();
-  } catch {
+  if (!httpUrl.safeParse(input.url).success) {
     return {
       ok: false,
       status: 422,

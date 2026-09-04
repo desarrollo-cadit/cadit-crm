@@ -542,7 +542,6 @@ export async function roomAgenda(
       cohortName: schema.cohort.name,
       courseName: schema.course.name,
       teacherName: schema.teacher.name,
-      classTeacherName: schema.teacher.name,
     })
     .from(schema.classSession)
     .innerJoin(schema.cohort, eq(schema.classSession.cohortId, schema.cohort.id))

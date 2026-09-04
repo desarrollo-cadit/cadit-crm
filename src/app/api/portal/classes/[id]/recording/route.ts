@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { httpUrl } from "@/lib/url-schema";
 import { apiError, parseBody } from "@/lib/api";
 import { requireTeacherPortal } from "@/lib/portal-api";
 import { teacherSetRecording } from "@/server/teacher-portal";
@@ -9,7 +10,7 @@ type Params = { params: Promise<{ id: string }> };
 
 /** `null` borra el enlace; el campo es obligatorio para no borrar por olvido. */
 const bodySchema = z.object({
-  recordingUrl: z.string().trim().url().nullable(),
+  recordingUrl: httpUrl.nullable(),
 });
 
 /**

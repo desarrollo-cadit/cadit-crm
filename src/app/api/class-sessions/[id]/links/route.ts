@@ -35,15 +35,20 @@ export const PATCH = requireCapability(
     const body = await parseBody(req, patchSchema);
     if (!body.ok) return body.response;
 
-    const cambios: Record<string, unknown> = { updatedAt: new Date() };
-    if (body.data.meetingUrl !== undefined) cambios.meetingUrl = body.data.meetingUrl;
-    if (body.data.recordingUrl !== undefined) {
-      cambios.recordingUrl = body.data.recordingUrl;
-    }
-
     const updated = await getDb()
       .update(schema.classSession)
-      .set(cambios)
+      // Spread condicional y no un `Record<string, unknown>`: ese tipo le
+      // saca a Drizzle la verificación de nombres de columna, y una letra de
+      // menos compila, corre y no escribe nada.
+      .set({
+        updatedAt: new Date(),
+        ...(body.data.meetingUrl !== undefined
+          ? { meetingUrl: body.data.meetingUrl }
+          : {}),
+        ...(body.data.recordingUrl !== undefined
+          ? { recordingUrl: body.data.recordingUrl }
+          : {}),
+      })
       .where(
         scoped(
           schema.classSession.organizationId,

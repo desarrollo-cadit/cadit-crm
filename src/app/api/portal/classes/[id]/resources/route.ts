@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { httpUrl } from "@/lib/url-schema";
 import { apiError, parseBody } from "@/lib/api";
 import { requireTeacherPortal } from "@/lib/portal-api";
 import { teacherAddClassResource } from "@/server/teacher-portal";
@@ -10,7 +11,7 @@ type Params = { params: Promise<{ id: string }> };
 const bodySchema = z.object({
   title: z.string().trim().min(1).max(200),
   /** Es un ENLACE: el sistema no almacena archivos (decisión marco). */
-  url: z.string().trim().url(),
+  url: httpUrl,
   kind: z.enum(["guia", "ejemplo", "enlace", "video"]).default("enlace"),
 });
 

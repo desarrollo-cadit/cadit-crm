@@ -78,9 +78,18 @@ export function ClassesClient({
       return;
     }
     setData((await res.json()) as Payload);
-    // Una recarga que funcionó desmiente el error de la anterior. Sin esto,
-    // un fallo de red dejaba el cartel rojo puesto sobre una lista que ya
-    // estaba bien, y la pantalla contradecía a sus propios datos.
+    /*
+      Una recarga que funcionó desmiente el error de la recarga anterior, así
+      que se limpia acá.
+
+      Y por eso mismo NO se recarga después de una escritura fallida: el
+      `refetch` llegaba unos milisegundos más tarde, encontraba la lista bien
+      y borraba el mensaje del guardado que acababa de fallar. La persona
+      pegaba "zoom.us/j/123" sin esquema, el servidor lo rechazaba con un 422
+      que explicaba exactamente eso, y en pantalla no quedaba nada: ni el
+      enlace guardado ni el motivo. Una escritura que falló no cambió nada
+      del servidor, así que tampoco hay nada que recargar.
+    */
     setError(null);
     setLoading(false);
   }, [cohortId]);
@@ -101,6 +110,7 @@ export function ClassesClient({
         | { error?: { message?: string } }
         | null;
       setError(body?.error?.message ?? "No se pudo generar el cronograma");
+      return;
     }
     void refetch();
   }
@@ -127,11 +137,12 @@ export function ClassesClient({
         | { error?: { message?: string } }
         | null;
       setError(body?.error?.message ?? "No se pudo guardar el enlace");
-    } else {
-      setError(null);
-      setEditing(null);
-      setDraft("");
+      // Se deja el editor ABIERTO y con lo tipeado: el mensaje dice qué
+      // corregir, y cerrarlo obligaría a escribir todo de nuevo.
+      return;
     }
+    setEditing(null);
+    setDraft("");
     void refetch();
   }
 

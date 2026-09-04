@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { httpUrl } from "@/lib/url-schema";
 import { apiError, parseBody, requireCapability } from "@/lib/api";
 import { createVirtualRoom, listVirtualRooms } from "@/server/virtual-rooms";
 
@@ -18,7 +19,7 @@ export const GET = requireCapability("academico.ver", async (session) => {
 
 const createSchema = z.object({
   name: z.string().trim().min(1).max(80),
-  url: z.string().trim().url(),
+  url: httpUrl,
   accountEmail: z.string().trim().email().nullable().optional(),
   notes: z.string().trim().max(500).nullable().optional(),
 });

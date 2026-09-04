@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { httpUrl } from "@/lib/url-schema";
 import { apiError, parseBody, requireCapability } from "@/lib/api";
 import { updateVirtualRoom } from "@/server/virtual-rooms";
 
@@ -8,7 +9,7 @@ type Params = { params: Promise<{ id: string }> };
 
 const patchSchema = z.object({
   name: z.string().trim().min(1).max(80).optional(),
-  url: z.string().trim().url().optional(),
+  url: httpUrl.optional(),
   accountEmail: z.string().trim().email().nullable().optional(),
   notes: z.string().trim().max(500).nullable().optional(),
   /** 023 (FR-009) — baja LÓGICA: la fila se conserva como evidencia. */

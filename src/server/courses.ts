@@ -390,7 +390,7 @@ export const cohortInputSchema = {
     .optional(),
   classroom: z.string().max(120).nullable().optional(),
   capacity: z.number().int().min(0).nullable().optional(),
-  whatsappGroupLink: z.string().max(2000).nullable().optional(),
+  whatsappGroupLink: httpUrl.nullable().optional(),
   meetingUrl: httpUrl.nullable().optional(),
   virtualRoomId: z.string().min(1).nullable().optional(),
   softwareIds: z.array(z.string().min(1)).optional(),
