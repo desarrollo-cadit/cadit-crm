@@ -289,7 +289,38 @@ describe("T021 — ni plata ni datos de contacto salen del portal", () => {
       "startTime",
       "status",
       "students",
+      /**
+       * 023 (FR-010) — El aula VIRTUAL, agregada a propósito y con su motivo
+       * escrito: el profesor tiene que saber dónde le toca dictar.
+       *
+       * Viajan `name` y `url` y NADA más. La cuenta de Zoom a la que
+       * pertenece la sala (`accountEmail`) es un dato administrativo de la
+       * academia y NO sale: el profesor entra por el enlace, no administra
+       * la cuenta. El test de abajo lo fija.
+       */
+      "virtualRoom",
     ]);
+  });
+
+  /**
+   * 023 (FR-010) — Y del aula sale el enlace, no la cuenta.
+   *
+   * Es una lista blanca sobre el objeto anidado por el mismo motivo que la de
+   * arriba: el día que alguien agregue `accountEmail` al DTO para una
+   * pantalla de staff, este test lo frena antes de que llegue al portal.
+   */
+  it("el aula del profesor trae nombre y enlace, nunca la cuenta", async () => {
+    responder("cohort", [{ id: "coh_1" }]);
+    responder("classSession", []);
+    responder("cohort", [
+      { ...filaCohorte(), roomName: "Zoom 1", roomUrl: "https://zoom.us/j/1" },
+    ]);
+    responder("enrollment", []);
+
+    const { listTeacherCohorts } = await import("@/server/teacher-portal");
+    const [cohorte] = await listTeacherCohorts(ORG, PROFE_A);
+
+    expect(Object.keys(cohorte?.virtualRoom ?? {}).sort()).toEqual(["name", "url"]);
   });
 
   /** El alumno es un nombre. Ni correo, ni teléfono, ni identidad de WhatsApp. */

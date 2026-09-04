@@ -2,8 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, ExternalLink, Video } from "lucide-react";
+import { ArrowLeft, ExternalLink, Plus, Video } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PortalAttendanceSheet } from "@/components/portal/portal-attendance-sheet";
@@ -15,6 +18,8 @@ type Cohort = {
   status: "planificada" | "en_curso" | "finalizada";
   role: "titular" | "suplente";
   students: number;
+  /** 023 (FR-010) — El aula virtual: nombre y enlace, sin la cuenta. */
+  virtualRoom: { name: string; url: string } | null;
 };
 
 type ClassRow = {
@@ -52,6 +57,24 @@ type ContentPayload = {
 
 type Tab = "clases" | "evaluacion" | "material";
 
+/**
+ * 023 — Si esta clase puede recibir una grabación.
+ *
+ * Tres condiciones, y la tercera es la que faltaba: **la clase tiene que
+ * haber OCURRIDO**. Ofrecer "cargar grabación" en la clase del 21 de
+ * septiembre un 4 de septiembre es ofrecer algo imposible, y este repo llama
+ * a eso "una puerta cerrada con cartel de bienvenida".
+ *
+ * Una proyección no tiene `id` —todavía no existe la fila— y una clase
+ * cancelada no ofrece grabación aunque la tenga cargada (FR-005e de 013).
+ */
+function puedeCargarGrabacion(c: ClassRow): boolean {
+  if (!c.id || c.canceled) return false;
+  // El día entero cuenta: una clase de hoy a las 18:30 se puede cargar a las
+  // 21:00 sin que el navegador tenga que resolver la zona de la academia.
+  return new Date(c.date).getTime() <= Date.now();
+}
+
 function fecha(iso: string): string {
   return new Date(iso).toLocaleDateString("es-UY", {
     weekday: "short",
@@ -71,6 +94,11 @@ function fecha(iso: string): string {
 export function PortalCohortClient({ cohortId }: { cohortId: string }) {
   const [tab, setTab] = useState<Tab>("clases");
   const [claseAbierta, setClaseAbierta] = useState<string | null>(null);
+  /** 023 — Qué clase se está por cargar/cambiar la grabación. */
+  const [grabacion, setGrabacion] = useState<{
+    classSessionId: string;
+    actual: string | null;
+  } | null>(null);
   const [datos, setDatos] = useState<ClassesPayload | null>(null);
   const [noEncontrada, setNoEncontrada] = useState(false);
 
@@ -133,6 +161,24 @@ export function PortalCohortClient({ cohortId }: { cohortId: string }) {
           {datos.cohort.students === 1 ? "alumno" : "alumnos"}
           {datos.cohort.role === "suplente" && " · suplencia"}
         </p>
+
+        {/*
+          023 (FR-010) — Dónde le toca dictar. Sale del aula asignada a la
+          cohorte y NO muestra la cuenta de Zoom: el profesor entra por el
+          enlace, no administra la sala.
+        */}
+        {datos.cohort.virtualRoom && (
+          <a
+            href={datos.cohort.virtualRoom.url}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-2 inline-flex h-11 items-center gap-2 rounded-md border border-brand-soft bg-brand-tint px-3 text-sm font-medium text-brand-text"
+          >
+            <Video className="h-4 w-4" strokeWidth={1.8} />
+            {datos.cohort.virtualRoom.name}
+            <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.8} />
+          </a>
+        )}
       </div>
 
       <div className="flex gap-1 border-b">
@@ -160,11 +206,27 @@ export function PortalCohortClient({ cohortId }: { cohortId: string }) {
       </div>
 
       {tab === "clases" ? (
-        <Clases datos={datos} onAbrir={setClaseAbierta} />
+        <Clases
+          datos={datos}
+          onAbrir={setClaseAbierta}
+          onGrabacion={(id, actual) => setGrabacion({ classSessionId: id, actual })}
+        />
       ) : tab === "evaluacion" ? (
         <Evaluacion cohortId={cohortId} />
       ) : (
         <Material cohortId={cohortId} />
+      )}
+
+      {grabacion && (
+        <DialogoGrabacion
+          classSessionId={grabacion.classSessionId}
+          actual={grabacion.actual}
+          onClose={() => setGrabacion(null)}
+          onSaved={() => {
+            setGrabacion(null);
+            void refetch();
+          }}
+        />
       )}
     </div>
   );
@@ -173,9 +235,11 @@ export function PortalCohortClient({ cohortId }: { cohortId: string }) {
 function Clases({
   datos,
   onAbrir,
+  onGrabacion,
 }: {
   datos: ClassesPayload;
   onAbrir: (id: string) => void;
+  onGrabacion: (classSessionId: string, actual: string | null) => void;
 }) {
   const filas = datos.classes.classes;
 
@@ -237,8 +301,8 @@ function Clases({
                 </div>
               </button>
 
-              {(c.meetingUrl || c.recordingUrl) && (
-                <div className="flex gap-3 px-3 pb-3 text-xs">
+              {(c.meetingUrl || c.recordingUrl || puedeCargarGrabacion(c)) && (
+                <div className="flex flex-wrap items-center gap-3 px-3 pb-3 text-xs">
                   {c.meetingUrl && (
                     <a
                       href={c.meetingUrl}
@@ -258,6 +322,23 @@ function Clases({
                     >
                       <Video className="h-3.5 w-3.5" /> Grabación
                     </a>
+                  )}
+                  {/*
+                    023 — Resuelve DV-001c de la 013: el que tiene el enlace de
+                    la grabación en el portapapeles es el que ACABA de dar la
+                    clase. Antes solo podía pegarlo coordinación, y eso
+                    convertía cada grabación en un pedido por WhatsApp.
+                    Una clase cancelada no ofrece grabación (FR-005e).
+                  */}
+                  {puedeCargarGrabacion(c) && (
+                    <button
+                      type="button"
+                      onClick={() => onGrabacion(c.id!, c.recordingUrl)}
+                      className="inline-flex items-center gap-1 text-muted-foreground underline hover:text-foreground"
+                    >
+                      <Video className="h-3.5 w-3.5" />
+                      {c.recordingUrl ? "Cambiar grabación" : "Cargar grabación"}
+                    </button>
                   )}
                 </div>
               )}
@@ -368,27 +449,48 @@ function Evaluacion({ cohortId }: { cohortId: string }) {
 /** 014 (T029, FR-007) — Material y avisos, de solo lectura. */
 function Material({ cohortId }: { cohortId: string }) {
   const [datos, setDatos] = useState<ContentPayload | null>(null);
+  const [publicando, setPublicando] = useState(false);
+
+  const cargar = useCallback(async () => {
+    const res = await fetch(`/api/portal/cohorts/${cohortId}/content`).catch(() => null);
+    if (res?.ok) setDatos((await res.json()) as ContentPayload);
+  }, [cohortId]);
 
   useEffect(() => {
-    void (async () => {
-      const res = await fetch(`/api/portal/cohorts/${cohortId}/content`).catch(() => null);
-      if (res?.ok) setDatos((await res.json()) as ContentPayload);
-    })();
-  }, [cohortId]);
+    void cargar();
+  }, [cargar]);
 
   if (!datos) return <Skeleton className="h-40 w-full" />;
 
   const vacio = datos.announcements.length === 0 && datos.resources.length === 0;
-  if (vacio) {
-    return (
-      <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-        Todavía no hay material ni avisos publicados para esta cohorte.
-      </p>
-    );
-  }
 
   return (
     <div className="space-y-5">
+      {/*
+        023 — El botón va ARRIBA y también en el vacío: si el profesor no
+        puede publicar nada, la pestaña es un cartel de "todavía no hay", y
+        eso es lo que era antes de esta fase.
+      */}
+      <Button className="h-11 w-full" onClick={() => setPublicando(true)}>
+        <Plus className="h-4 w-4" /> Publicar material
+      </Button>
+
+      {vacio && (
+        <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+          Todavía no hay material ni avisos publicados para esta cohorte.
+        </p>
+      )}
+
+      {publicando && (
+        <DialogoMaterial
+          cohortId={cohortId}
+          onClose={() => setPublicando(false)}
+          onSaved={() => {
+            setPublicando(false);
+            void cargar();
+          }}
+        />
+      )}
       {datos.announcements.length > 0 && (
         <section className="space-y-2">
           <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -433,6 +535,215 @@ function Material({ cohortId }: { cohortId: string }) {
           </ul>
         </section>
       )}
+    </div>
+  );
+}
+
+/* ============================================================
+ * 023 — Lo que el profesor CARGA
+ * ============================================================ */
+
+/**
+ * Diálogo de la grabación de una clase.
+ *
+ * Vacío = borrar el enlace, y se dice con esas palabras: un campo que se
+ * limpia sin avisar qué hace es cómo alguien borra por accidente lo que
+ * acababa de pegar.
+ */
+function DialogoGrabacion({
+  classSessionId,
+  actual,
+  onClose,
+  onSaved,
+}: {
+  classSessionId: string;
+  actual: string | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [url, setUrl] = useState(actual ?? "");
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function guardar(e: React.FormEvent) {
+    e.preventDefault();
+    setGuardando(true);
+    setError(null);
+    const res = await fetch(`/api/portal/classes/${classSessionId}/recording`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ recordingUrl: url.trim() || null }),
+    }).catch(() => null);
+    setGuardando(false);
+
+    if (!res?.ok) {
+      const body = (await res?.json().catch(() => null)) as
+        | { error?: { message?: string } }
+        | null;
+      setError(body?.error?.message ?? "No se pudo guardar la grabación.");
+      return;
+    }
+    onSaved();
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-overlay p-4 sm:items-center">
+      <div className="w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-pop">
+        <h3 className="text-base font-semibold tracking-tight">Grabación de la clase</h3>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Pegá el enlace de la nube. El sistema no guarda el video: guarda el
+          enlace.
+        </p>
+
+        <form onSubmit={guardar} className="mt-4 space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="grabacion-url">Enlace</Label>
+            <Input
+              id="grabacion-url"
+              type="url"
+              autoFocus
+              className="h-11"
+              placeholder="https://…"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+            />
+            {actual && (
+              <p className="text-xs text-muted-foreground">
+                Si lo dejás vacío, se borra el enlace que hay cargado.
+              </p>
+            )}
+          </div>
+
+          {error && (
+            <p className="rounded-md border border-danger-border bg-danger-soft px-3 py-2 text-sm text-danger">
+              {error}
+            </p>
+          )}
+
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" className="h-11" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button type="submit" className="h-11" loading={guardando}>
+              Guardar
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 023 — El profesor publica material de SU cohorte.
+ *
+ * Cuelga de la COHORTE y no del curso: el material del curso es el programa
+ * oficial de la academia y alcanza a las otras cohortes que lo dictan. Si el
+ * profesor pudiera tocar ese, le cambiaría el curso a seis colegas.
+ */
+function DialogoMaterial({
+  cohortId,
+  onClose,
+  onSaved,
+}: {
+  cohortId: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [title, setTitle] = useState("");
+  const [url, setUrl] = useState("");
+  const [kind, setKind] = useState("guia");
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function guardar(e: React.FormEvent) {
+    e.preventDefault();
+    setGuardando(true);
+    setError(null);
+    const res = await fetch(`/api/portal/cohorts/${cohortId}/resources`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: title.trim(), url: url.trim(), kind }),
+    }).catch(() => null);
+    setGuardando(false);
+
+    if (!res?.ok) {
+      const body = (await res?.json().catch(() => null)) as
+        | { error?: { message?: string } }
+        | null;
+      setError(body?.error?.message ?? "No se pudo publicar el material.");
+      return;
+    }
+    onSaved();
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-overlay p-4 sm:items-center">
+      <div className="w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-pop">
+        <h3 className="text-base font-semibold tracking-tight">Publicar material</h3>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Lo van a ver los alumnos de esta cohorte. Es un ENLACE —Drive,
+          WeTransfer, Autodesk—: el sistema no guarda archivos.
+        </p>
+
+        <form onSubmit={guardar} className="mt-4 space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="material-title">Título</Label>
+            <Input
+              id="material-title"
+              required
+              autoFocus
+              className="h-11"
+              placeholder="Guía de la clase 3"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="material-url">Enlace</Label>
+            <Input
+              id="material-url"
+              type="url"
+              required
+              className="h-11"
+              placeholder="https://…"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="material-kind">Tipo</Label>
+            <Select
+              id="material-kind"
+              className="h-11"
+              value={kind}
+              onChange={(e) => setKind(e.target.value)}
+            >
+              <option value="guia">Guía</option>
+              <option value="ejemplo">Ejemplo</option>
+              <option value="video">Video</option>
+              <option value="enlace">Enlace</option>
+            </Select>
+          </div>
+
+          {error && (
+            <p className="rounded-md border border-danger-border bg-danger-soft px-3 py-2 text-sm text-danger">
+              {error}
+            </p>
+          )}
+
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" className="h-11" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button type="submit" className="h-11" loading={guardando}>
+              Publicar
+            </Button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

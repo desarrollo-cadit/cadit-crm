@@ -228,6 +228,9 @@ export function AcademicClient() {
   >(null);
   /** 014 — Invitación al portal y baja del profesor. */
   const [invitando, setInvitando] = useState<string | null>(null);
+  /** 023 — Qué cohorte se está borrando, y qué contestó el servidor. */
+  const [borrando, setBorrando] = useState<string | null>(null);
+  const [avisoCohorte, setAvisoCohorte] = useState<string | null>(null);
   const [avisoProfesor, setAvisoProfesor] = useState<string | null>(null);
 
   /**
@@ -236,6 +239,42 @@ export function AcademicClient() {
    * La contraseña temporal se muestra una sola vez, igual que con los alumnos:
    * sirve para dictarla si el correo demora, y no se puede volver a consultar.
    */
+  /**
+   * 023 — Borra una cohorte creada por error.
+   *
+   * **La regla vive en el servidor**, no acá: con inscripciones, clases,
+   * asistencia, evaluaciones o pagos responde 409 y dice qué la ata. El
+   * navegador solo muestra ese mensaje. Duplicar la regla en la pantalla es
+   * cómo las dos se desincronizan y una termina ofreciendo lo que la otra
+   * rechaza.
+   *
+   * La confirmación es del navegador a propósito: un diálogo propio para una
+   * acción que el servidor ya puede rechazar es ceremonia sobre ceremonia.
+   */
+  async function borrarCohorte(cohort: CohortDto) {
+    const nombre = cohort.name ?? cohort.courseName;
+    if (!confirm(`¿Borrar "${nombre}"? Si tiene inscripciones o clases, no se va a poder.`)) {
+      return;
+    }
+
+    setBorrando(cohort.id);
+    setAvisoCohorte(null);
+    const res = await fetch(`/api/cohorts/${cohort.id}`, { method: "DELETE" }).catch(
+      () => null
+    );
+    setBorrando(null);
+
+    if (!res?.ok) {
+      const body = (await res?.json().catch(() => null)) as
+        | { error?: { message?: string } }
+        | null;
+      setAvisoCohorte(body?.error?.message ?? "No se pudo borrar la cohorte.");
+      return;
+    }
+
+    setCohorts((prev) => prev.filter((c) => c.id !== cohort.id));
+  }
+
   async function invitarProfesor(teacherId: string) {
     setInvitando(teacherId);
     setAvisoProfesor(null);
@@ -431,6 +470,11 @@ export function AcademicClient() {
             </Button>
           </div>
         )}
+        {tab === "cohorts" && avisoCohorte && (
+          <p className="mb-3 rounded-md border border-warning-border bg-warning-soft px-3 py-2 text-sm">
+            {avisoCohorte}
+          </p>
+        )}
         {!loading && tab === "cohorts" && cohorts.length > 0 && (
           <CohortStatusFilter
             cohorts={cohorts}
@@ -572,6 +616,24 @@ export function AcademicClient() {
                         onClick={() => setCohortForm({ mode: "edit", cohort })}
                       >
                         Editar
+                      </Button>
+                      {/*
+                        023 — Borrar una cohorte creada por error. El servidor
+                        decide: con inscripciones, clases, asistencia,
+                        evaluaciones o pagos responde 409 y dice QUÉ la ata.
+                        Acá no hay ninguna regla — mostrar el botón solo
+                        cuando "parece" borrable sería una segunda regla que
+                        se desincroniza con la del servidor.
+                      */}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Borrar ${cohort.name ?? cohort.courseName}`}
+                        title="Borrar"
+                        loading={borrando === cohort.id}
+                        onClick={() => void borrarCohorte(cohort)}
+                      >
+                        <Trash2 className="h-4 w-4" strokeWidth={1.7} />
                       </Button>
                     </div>
                   </div>

@@ -144,6 +144,14 @@ export type TeacherCohortDto = {
   startTime: string | null;
   endTime: string | null;
   classroom: string | null;
+  /**
+   * 023 (FR-010) — El aula VIRTUAL donde le toca dictar.
+   *
+   * Viajan el nombre y el enlace, y NADA más: la cuenta de Zoom a la que
+   * pertenece la sala es un dato administrativo de la academia. El profesor
+   * entra por el enlace; no administra la cuenta.
+   */
+  virtualRoom: { name: string; url: string } | null;
   status: "planificada" | "en_curso" | "finalizada";
   role: "titular" | "suplente";
   students: number;
@@ -170,9 +178,12 @@ export async function listTeacherCohorts(
       endTime: schema.cohort.endTime,
       classroom: schema.cohort.classroom,
       courseName: schema.course.name,
+      roomName: schema.virtualRoom.name,
+      roomUrl: schema.virtualRoom.url,
     })
     .from(schema.cohort)
     .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
+    .leftJoin(schema.virtualRoom, eq(schema.cohort.virtualRoomId, schema.virtualRoom.id))
     .where(
       scoped(
         schema.cohort.organizationId,
@@ -210,6 +221,8 @@ export async function listTeacherCohorts(
       startTime: c.startTime,
       endTime: c.endTime,
       classroom: c.classroom,
+      virtualRoom:
+        c.roomName && c.roomUrl ? { name: c.roomName, url: c.roomUrl } : null,
       status: computeCohortStatus(c.startDate, c.endDate),
       role: c.teacherId === teacherId ? ("titular" as const) : ("suplente" as const),
       students: cuantos.get(c.id) ?? 0,
