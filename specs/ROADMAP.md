@@ -138,8 +138,8 @@ de construir la función y el permiso al mismo tiempo.
         │            │
         │    024 Recorrido del alumno ✅  ← el portal muestra un CAMINO
         │            │
-        │    026 Administración y finanzas ⚠  (código completo, falta cerrar)
-        │    027 Guía por rol ⚠               (código completo, falta cerrar)
+        │    026 Administración y finanzas ✅
+        │    027 Guía por rol ✅
         │    028 Especializaciones multi-módulo (spec escrita)
         │            │
         │    016 Entregas y corrección       (alumno entrega · profesor corrige)
@@ -159,8 +159,8 @@ de construir la función y el permiso al mismo tiempo.
 | [023](023-aulas-virtuales/spec.md) ✅ | Aulas virtuales | **IMPLEMENTADA (2026-09-03, commit `4d62605`), CORREGIDA POR LA 025.** Las 5 cuentas de Zoom como recurso, asignables por cohorte y por clase, con detector de choques de horario. **Sin integración**: el choque es un problema de calendario y se resuelve con `classInstant()`. Deja a la 018 como comodidad opcional, no como requisito. | 009, 013 |
 | [024](024-recorrido-del-alumno/spec.md) ✅ | Recorrido del alumno | **IMPLEMENTADA (2026-09-03, commit `97da733`).** El portal deja de listar datos y muestra un CAMINO: dónde estoy, qué logré, qué falta. Sin puntos ni medallas — un hito solo se marca cumplido si el sistema puede probarlo. La cursada se separa en pestañas. | 015, 023 |
 | 025 ✅ | Corrección del enlace de clase | **IMPLEMENTADA (2026-09-04, commits `b5540ac`, `947581a`, `8f232ec`).** Sin spec propia: es una corrección de la 023, registrada dentro de su spec. La URL de la reunión sale de la COHORTE, no del aula — el aula es la *cuenta* que se ocupa. Cadena de dos escalones (`clase ?? cohorte ?? null`), sin tercer fallback: mejor no mostrar enlace que mostrar el equivocado. | 023 |
-| [026](026-administracion-y-finanzas/spec.md) ⚠ | Administración y finanzas | **CÓDIGO COMPLETO (2026-09-07), NO CERRADA.** Rol `administracion` con 4 de las 17 capacidades, y la pantalla `/finanzas` con Caja y Devengado separadas, por moneda y por período. Falta: aplicar `drizzle/0036` y correr el e2e. Sin eso no está "Hecha" (Principio IX). | 012, 022 |
-| [027](027-guia-por-rol/spec.md) ⚠ | Guía por rol | **CÓDIGO COMPLETO (2026-09-07), NO CERRADA.** La guía se deriva de `CAPABILITIES` + `NAV_GROUPS`: agregar una capacidad sin describirla rompe `pnpm typecheck` — verificado a mano. Falta correr el e2e. | 012 |
+| [026](026-administracion-y-finanzas/spec.md) ✅ | Administración y finanzas | **IMPLEMENTADA (2026-09-08).** Rol `administracion` con 4 de las 17 capacidades, y la pantalla `/finanzas` con Caja y Devengado separadas, nunca sumadas, por moneda y por período. `drizzle/0036` aplicada. Arnés e2e en verde. | 012, 022 |
+| [027](027-guia-por-rol/spec.md) ✅ | Guía por rol | **IMPLEMENTADA (2026-09-08).** La guía se deriva de `CAPABILITIES` + `NAV_GROUPS`: agregar una capacidad sin describirla rompe `pnpm typecheck` — verificado a mano. Arnés e2e en verde. | 012 |
 | [028](028-especializaciones/spec.md) | Especializaciones multi-módulo | **SPEC ESCRITA (2026-09-07), sin implementar.** El 26% de las inscripciones (100 de 384) está hoy en programas multi-módulo modelados como texto dentro de `course.name`. Dos auto-referencias: `cohort.parent_cohort_id` (la estructura) y `enrollment.parent_enrollment_id` (el recorrido de la persona). Certificado por módulo, asistencia y aprobación por módulo, recursada en una camada posterior, y dispensa de asistencia nombrada. | 013, 023 |
 | [016](016-entregas/spec.md) | Entregas y corrección | El alumno entrega (por enlace) y el profesor registra la corrección. | 014, 015 |
 | [017](017-chat-y-notificaciones/spec.md) | Chat y notificaciones | Canal por cohorte + privado alumno↔profesor, sobre SSE. Avisos in-app y por correo. **Fuera de alcance por ahora** (decisión del dueño). | 014, 015 |
@@ -263,32 +263,51 @@ artefacto concreto que el User Scenario implica.
 | 023 | **Implementada** | Tabla `virtual_room`, `drizzle/0034`, `src/server/virtual-rooms.ts` (584 líneas), `tests/unit/aulas-virtuales.test.ts` |
 | 024 | **Implementada** | Máquina de hitos en `student-portal.ts:1170-1339`, `student-milestones.tsx`, `tests/unit/hitos-cursada.test.ts` |
 
-### Deuda de verificación (hallazgo del auditor)
+### Verificación en vivo (saldada el 2026-09-08)
 
-`scripts/e2e-selftest.mjs` tiene bloques etiquetados por ciclo hasta **020**.
-Medido endpoint por endpoint, la cobertura real es despareja:
+`scripts/e2e-selftest.mjs` tenía bloques etiquetados por ciclo hasta **020**.
+La 022, la 023 y la 024 se habían declarado "Hecho" sin la pasada de
+comportamiento que exige el Principio IX de la constitución.
 
-| Ciclo | Cobertura e2e | Evidencia |
-|---|---|---|
-| 008 Cobranza | **Sí** | Bloques `Cobranza (008): plan, pago parcial, anulación` y `dashboard/finance: los totales NO mezclan monedas` |
-| 021 Rediseño visual | **Parcial** | Hereda el bloque `020: identidad visual en los dos temas` |
-| 022 Cobranza en bloque | **No** | Cero referencias a `billing/bulk` en todo el script |
-| 023 Aulas virtuales | **No** | Cero referencias a `virtual-rooms` |
-| 024 Recorrido del alumno | **No** | Cero referencias a los hitos de cursada |
+Se sumaron tres bloques —**022** (cobranza en bloque), **026** y **027**— y el
+arnés completo corre en **227/227 checks, 0 fallos**, contra base efímera.
+Quedan sin bloque propio la **023** (aulas virtuales) y la **024** (recorrido
+del alumno): es la deuda que sobrevive.
 
-El Principio IX de la constitución (**Verificación de Comportamiento en Vivo,
-NO NEGOCIABLE**) y la Definición de Hecho de `CLAUDE.md` piden una pasada de
-comportamiento, no solo tests unitarios. Tres ciclos —022, 023 y 024— se
-declararon "Hecho" sin ella.
+#### Dos cosas que enseñó esa corrida, y conviene no olvidar
 
-**No invalida el código**: la verificación en vivo se hizo a mano y quedó
-registrada en las notas de cada ciclo. Lo que significa es que hoy **ninguna
-corrida automática detectaría una regresión** en cobranza en bloque, aulas
-virtuales ni recorrido del alumno.
+**1. El arnés exige base EFÍMERA, no "la de pruebas".** Corriéndolo sobre una
+`vocero_e2e` con datos de corridas anteriores dio **58 fallos** repartidos por
+bloques que nadie había tocado (012, 013, 014, 015, 008). Recreando la base
+desde cero, los mismos commits dieron **3**. Los 55 restantes eran estado
+acumulado, no regresiones. Antes de leer un fallo del arnés, recrear la base:
 
-La maquinaria de cobranza de la 008 **sí** está cubierta, incluido el bug de
-monedas mezcladas (`17e4844`). Por eso la 026, que lee esa misma maquinaria,
-tiene de dónde agarrarse — pero la parte que la 026 más va a tocar, la
-cobranza en bloque de la 022, es justamente la que no tiene red.
+```bash
+docker exec vocero-dev-postgres-1 psql -U postgres -c "drop database if exists vocero_e2e with (force);"
+docker exec vocero-dev-postgres-1 psql -U postgres -c "create database vocero_e2e;"
+DATABASE_URL=postgresql://postgres:postgres@localhost:5433/vocero_e2e pnpm db:migrate
+```
 
-Es la primera deuda a saldar cuando se toque cualquiera de esos tres ciclos.
+**2. Next.js carga `.env` ADEMÁS del `--env-file` que se le pase**, y completa
+las claves que no estén ya definidas. El arranque lo dice: `Environments: .env`.
+
+Consecuencia real y silenciosa: `.env.e2e` no declaraba las variables de M365,
+así que el arnés las heredaba del `.env` de producción y **mandaba correos por
+el tenant real**, con copia al `M365_BCC` real. Los destinatarios de prueba
+usan `@example.com` —dominio reservado, sin entrega—, así que no le llegó a
+ninguna persona; pero el mecanismo estaba abierto y con otra dirección habría
+entregado.
+
+Se cerró declarando esas claves **vacías** en `.env.e2e`. Eso además restituye
+la condición que el bloque 012 prueba: *"sin M365 la invitación NO falla,
+entrega el acceso y avisa que el correo no salió"*. Ese check fallaba
+justamente porque el correo sí salía.
+
+**Regla que se desprende**: cualquier variable que active una dependencia de
+runtime tiene que estar declarada en `.env.e2e`, aunque sea vacía. Omitirla no
+es "no configurarla": es heredar producción.
+
+**3. Un test atado a la prosa se rompe cuando la prosa cambia.** El bloque de
+la 027 buscaba un literal del texto de `cobranza.ver`; la 026 reescribió ese
+texto y el check quedó apuntando a la nada. La constante lleva ahora un
+comentario que declara el acoplamiento.

@@ -2296,7 +2296,10 @@ async function main() {
   );
 
   // El texto de una capacidad financiera, y el de una que las dos comparten.
-  const TEXTO_COBRANZA = "as cuotas de un alumno";
+  // ACOPLADO al texto de `cobranza.ver` en src/lib/guia.ts: si ahí cambia la
+  // redacción, esto hay que actualizarlo. Ya pasó — la 026 reescribió ese `que`
+  // y dejó el literal viejo apuntando a la nada.
+  const TEXTO_COBRANZA = "estado de cuenta de cada alumno";
   const TEXTO_INBOX = "eer las conversaciones de WhatsApp";
   const principal = (html) => html.split("<details")[0];
 
