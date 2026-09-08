@@ -3,74 +3,25 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-// FlaskConical y Sparkles quedan fuera mientras el grupo "Inteligencia
-// artificial" del menú esté comentado más abajo.
-import {
-  CalendarDays,
-  GraduationCap,
-  Inbox,
-  Kanban,
-  LogOut,
-  Settings,
-  Users,
-  Building2,
-} from "lucide-react";
+import { LogOut } from "lucide-react";
 import type { Branding } from "@/lib/branding";
 import { cn, initials } from "@/lib/utils";
 import { signOut } from "@/lib/auth/client";
 import { ThemeToggle } from "@/components/theme-toggle";
 import type { ThemePreference } from "@/lib/theme";
 import { useEvents } from "@/components/use-events";
+import { ITEM_AJUSTES, ITEM_GUIA, NAV_GROUPS } from "@/lib/nav";
 
 /**
- * 012 (T029) — Cada destino declara la capacidad que exige.
+ * 027 (FR-004) — La declaración del menú se mudó a `src/lib/nav.ts`.
  *
- * El menú se arma con lo que la sesión PUEDE, no con lo que existe. Un ítem
- * que lleva a un 403 no es información: es una puerta cerrada con cartel de
- * bienvenida, y enseña a la gente a desconfiar de lo que ve.
- *
- * `capability: null` = visible para cualquier miembro del staff (el Dashboard
- * decide por dentro qué paneles mostrar según capacidades).
+ * Vivía acá adentro, junto a los íconos, y mientras el único lector fuera
+ * este componente daba igual. La guía por rol se renderiza en el SERVIDOR y
+ * necesita los mismos destinos: dejarla acá habría obligado a copiar la
+ * lista, y dos listas de navegación divergen siempre. Lo que se movió es la
+ * DECLARACIÓN; el filtrado por capacidad sigue siendo asunto de este
+ * componente, que es donde se sabe qué puede la sesión.
  */
-const NAV_GROUPS = [
-  {
-    label: "Inicio",
-    items: [
-      { href: "/", label: "Dashboard", icon: Kanban, capability: null },
-    ],
-  },
-  {
-    label: "CRM",
-    items: [
-      { href: "/inbox", label: "Bandeja", icon: Inbox, badge: "unread", capability: "inbox.ver" },
-      { href: "/pipeline", label: "Pipeline", icon: Kanban, capability: "inscripciones.ver" },
-      {
-        href: "/contacts",
-        label: "Alumnos",
-        icon: Users,
-        badge: "formArrivals",
-        capability: "contactos.ver",
-      },
-      // 013 (T033) — Sustituye al portal corporativo descartado: el staff mira
-      // y exporta el avance de los empleados de cada empresa.
-      { href: "/empresas", label: "Empresas", icon: Building2, capability: "contactos.ver" },
-    ],
-  },
-  {
-    label: "Gestión",
-    items: [
-      { href: "/academico", label: "Académico", icon: GraduationCap, capability: "academico.ver" },
-      { href: "/calendar", label: "Calendario", icon: CalendarDays, capability: "academico.ver" },
-    ],
-  },
-  // {
-  //   label: "Inteligencia artificial",
-  //   items: [
-  //     { href: "/agent", label: "Agente", icon: Sparkles },
-  //     { href: "/lab", label: "Laboratorio", icon: FlaskConical },
-  //   ],
-  // },
-] as const;
 
 export function AppNav({
   branding,
@@ -207,28 +158,52 @@ export function AppNav({
 
       <div className="flex-1" />
 
+      {/* 027 (FR-008/FR-012) — La guía, en la zona inferior: es una utilidad,
+          no un módulo de trabajo. Y sin gate, a diferencia de Ajustes: quien
+          menos permisos tiene es justamente quien más necesita saber qué
+          puede hacer y qué no. Un manual que hay que tener permiso para leer
+          no es un manual. */}
+      <Link
+        href={ITEM_GUIA.href}
+        className={cn(
+          "flex items-center gap-[11px] rounded-sm px-2.5 py-2 text-sm font-medium transition-colors",
+          pathname.startsWith(ITEM_GUIA.href)
+            ? "bg-brand-tint font-semibold text-brand-text"
+            : "text-text-2 hover:bg-accent"
+        )}
+      >
+        <ITEM_GUIA.icon
+          className={cn(
+            "h-[18px] w-[18px]",
+            pathname.startsWith(ITEM_GUIA.href) ? "text-brand" : "text-text-3"
+          )}
+          strokeWidth={1.7}
+        />
+        {ITEM_GUIA.label}
+      </Link>
+
       {/* 012 (T029) — Configuración solo para quien puede configurar o
           gestionar accesos. Ambas pestañas de adentro (Roles, Equipo) tienen
           su propio gate en el servidor; esto evita ofrecer la puerta. */}
       {(capabilities.includes("configuracion.editar") ||
         capabilities.includes("accesos.gestionar")) && (
       <Link
-        href="/settings"
+        href={ITEM_AJUSTES.href}
         className={cn(
           "flex items-center gap-[11px] rounded-sm px-2.5 py-2 text-sm font-medium transition-colors",
-          pathname.startsWith("/settings")
+          pathname.startsWith(ITEM_AJUSTES.href)
             ? "bg-brand-tint font-semibold text-brand-text"
             : "text-text-2 hover:bg-accent"
         )}
       >
-        <Settings
+        <ITEM_AJUSTES.icon
           className={cn(
             "h-[18px] w-[18px]",
-            pathname.startsWith("/settings") ? "text-brand" : "text-text-3"
+            pathname.startsWith(ITEM_AJUSTES.href) ? "text-brand" : "text-text-3"
           )}
           strokeWidth={1.7}
         />
-        Ajustes
+        {ITEM_AJUSTES.label}
       </Link>
       )}
 

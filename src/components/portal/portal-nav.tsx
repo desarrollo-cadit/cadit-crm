@@ -3,23 +3,35 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import {
-  Award,
-  CalendarClock,
-  GraduationCap,
-  LayoutDashboard,
-  LogOut,
-  Menu,
-  Users,
-  Wallet,
-  X,
-} from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { GraduationCap, LogOut, Menu, X } from "lucide-react";
 import type { Branding } from "@/lib/branding";
 import { cn, initials } from "@/lib/utils";
 import { signOut } from "@/lib/auth/client";
 import { ThemeToggle } from "@/components/theme-toggle";
 import type { ThemePreference } from "@/lib/theme";
+import {
+  ITEM_GUIA_PORTAL,
+  ITEMS_ALUMNO,
+  ITEMS_PROFESOR,
+  type NavItem,
+  type PortalAudience,
+} from "@/lib/nav";
+
+/**
+ * 027 (FR-004) — `ITEMS_ALUMNO` e `ITEMS_PROFESOR` se mudaron a
+ * `src/lib/nav.ts`.
+ *
+ * Mismo motivo que en `AppNav`: la guía del portal se arma en el servidor a
+ * partir de estos mismos ítems, y una segunda copia habría divergido de la
+ * barra en el primer cambio. Acá queda lo que este componente decide de
+ * verdad —qué grupo se dibuja para quién—, que es lo que no se comparte.
+ *
+ * El tipo se re-exporta porque `PortalNav` es de donde lo importa el resto
+ * del portal desde la 014: mover la declaración no tiene por qué mover
+ * también el import de todos sus lectores.
+ */
+
+export type { PortalAudience };
 
 /**
  * 021 — La barra lateral del portal.
@@ -49,30 +61,6 @@ export type PortalNavCourse = {
   label: string;
   active: boolean;
 };
-
-type NavItem = {
-  href: string;
-  label: string;
-  icon: LucideIcon;
-  /** Coincidencia exacta: `/portal` no se enciende con `/portal/cuenta`. */
-  exact?: boolean;
-};
-
-export type PortalAudience = {
-  isStudent: boolean;
-  isTeacher: boolean;
-};
-
-const ITEMS_ALUMNO: NavItem[] = [
-  { href: "/portal", label: "Inicio", icon: LayoutDashboard, exact: true },
-  { href: "/portal/cuenta", label: "Mi cuenta", icon: Wallet },
-  { href: "/portal/certificados", label: "Certificados", icon: Award },
-];
-
-const ITEMS_PROFESOR: NavItem[] = [
-  { href: "/portal/dictado", label: "Mis cohortes", icon: Users },
-  { href: "/portal/horas", label: "Mis horas", icon: CalendarClock },
-];
 
 function isActive(pathname: string, item: NavItem): boolean {
   if (item.exact) return pathname === item.href;
@@ -168,6 +156,12 @@ export function PortalNav({
             pathname={pathname}
           />
         )}
+
+        {/* 027 (FR-012) — La guía va en la zona COMÚN, fuera de los dos
+            grupos: quien es alumno y profesor a la vez tendría el mismo
+            enlace dos veces, y quien es una sola de las dos cosas lo vería
+            colgando de un grupo al que no pertenece. */}
+        <Grupo label="Ayuda" items={[ITEM_GUIA_PORTAL]} pathname={pathname} />
       </nav>
 
       <div className="flex-1" />
@@ -263,7 +257,7 @@ function Grupo({
   pathname,
 }: {
   label: string;
-  items: NavItem[];
+  items: readonly NavItem[];
   pathname: string;
 }) {
   return (
