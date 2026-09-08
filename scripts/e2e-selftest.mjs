@@ -1732,6 +1732,653 @@ async function main() {
     /aria-label="Cambiar a tema (claro|oscuro)"/.test(claro.html)
   );
 
+  // ============================================================
+  // 022 (DoD-3) — Cobranza en bloque: la maquinaria que la 026 lee.
+  //
+  // Este bloque llegó tarde: la 022 se probó sólo a nivel unitario, y hasta
+  // acá ninguna corrida automática ejercía la carga en lote contra la app
+  // real. Se salda ahora y no como alcance extra: la 026 muestra las cuotas y
+  // los pagos que la 022 genera, así que si la generación en bloque se rompe,
+  // la 026 muestra un mes incompleto y el verde de la 026 no significaría nada.
+  //
+  // Lo que se conduce es el caso real de la academia —152 inscripciones ya
+  // cobradas, 236 con notas de pago— y sobre todo los SALTOS: la inscripción
+  // sin monto y la que ya tiene plan. Un lote que "aplica" sobre esas dos es
+  // exactamente cómo se le manda un aviso de morosidad a alguien que ya pagó.
+  // ============================================================
+  console.log("\n== 022: cobranza en bloque (plan y ya cobrada) ==");
+
+  /**
+   * El lote se carga en el MES ANTERIOR a propósito: es el período que la 026
+   * abre por defecto (DV-002), así que los dos bloques se encadenan sin que
+   * la 026 tenga que pedir un mes a mano.
+   */
+  const hoy022 = new Date();
+  const mesCierre = new Date(Date.UTC(hoy022.getUTCFullYear(), hoy022.getUTCMonth() - 1, 15));
+  const fechaLote = mesCierre.toISOString().slice(0, 10);
+  const mesEsperado = `${mesCierre.getUTCFullYear()}-${String(
+    mesCierre.getUTCMonth() + 1
+  ).padStart(2, "0")}`;
+  const sello022 = Date.now();
+
+  const curso022 = await api("/api/courses", {
+    method: "POST",
+    body: JSON.stringify({ name: `Curso Lote E2E ${sello022}`, published: false }),
+  });
+  const curso022Id = curso022.json?.course?.id;
+  ok("curso del lote creado", Boolean(curso022Id), JSON.stringify(curso022.json));
+
+  async function cohorte022(nombre) {
+    const c = await api("/api/cohorts", {
+      method: "POST",
+      body: JSON.stringify({
+        courseId: curso022Id,
+        name: nombre,
+        startDate: `${mesEsperado}-01`,
+      }),
+    });
+    return c.json?.cohort?.id;
+  }
+
+  async function inscribir022(cohortId, apellido, telefono, extra) {
+    const r = await api("/api/enrollments", {
+      method: "POST",
+      body: JSON.stringify({
+        cohortId,
+        contact: { firstName: "Lote", lastName: apellido, phone: telefono },
+        ...extra,
+      }),
+    });
+    return { id: r.json?.enrollment?.id, status: r.res.status, json: r.json };
+  }
+
+  // ── Modo "plan": tres inscripciones, una sin monto ──────────────────────
+  const cohortePlan = await cohorte022(`Lote Plan ${sello022}`);
+  ok("cohorte del modo plan creada", Boolean(cohortePlan));
+
+  const planA = await inscribir022(cohortePlan, "PlanA", `59891${sello022}`.slice(0, 15), {
+    amount: 90000,
+    currency: "UYU",
+  });
+  const planB = await inscribir022(cohortePlan, "PlanB", `59892${sello022}`.slice(0, 15), {
+    amount: 60000,
+    currency: "UYU",
+  });
+  // Sin monto: no hay qué repartir en cuotas. Tiene que SALTARSE, con motivo.
+  const planSinMonto = await inscribir022(
+    cohortePlan,
+    "SinMonto",
+    `59893${sello022}`.slice(0, 15),
+    {}
+  );
+  ok(
+    "tres inscripciones creadas (dos con monto, una sin)",
+    planA.status === 201 && planB.status === 201 && planSinMonto.status === 201,
+    `${planA.status}/${planB.status}/${planSinMonto.status}`
+  );
+
+  // La previsualización dice qué va a pasar ANTES de tocar nada: sin esto la
+  // persona lo descubre recién después de apretar, sobre plata de terceros.
+  const preview = await api(`/api/cohorts/${cohortePlan}/billing/bulk`);
+  ok(
+    "la previsualización cuenta 3 inscripciones, 2 aplicables y 1 sin monto",
+    preview.res.ok &&
+      preview.json?.total === 3 &&
+      preview.json?.aplicables === 2 &&
+      preview.json?.sinMonto === 1 &&
+      preview.json?.yaTienenPlan === 0,
+    JSON.stringify(preview.json)
+  );
+
+  const lotePlan = await api(`/api/cohorts/${cohortePlan}/billing/bulk`, {
+    method: "POST",
+    body: JSON.stringify({ kind: "plan", count: 3, firstDueDate: fechaLote }),
+  });
+  ok(
+    "el lote genera el plan de las 2 con monto",
+    lotePlan.res.ok && lotePlan.json?.aplicadas === 2,
+    JSON.stringify(lotePlan.json)
+  );
+  ok(
+    "y saltea la que no tiene monto, diciendo por qué",
+    (lotePlan.json?.saltadas ?? []).some(
+      (s) => s.enrollmentId === planSinMonto.id && s.motivo === "sin_monto"
+    ),
+    JSON.stringify(lotePlan.json?.saltadas)
+  );
+
+  const cuotasPlanA = await api(`/api/enrollments/${planA.id}/installments`);
+  const cuotasA = cuotasPlanA.json?.installments ?? [];
+  ok(
+    "la inscripción quedó con 3 cuotas que suman el total pactado",
+    cuotasA.length === 3 && cuotasA.reduce((s, c) => s + c.amount, 0) === 90000,
+    JSON.stringify(cuotasA.map((c) => c.amount))
+  );
+
+  /**
+   * Idempotencia (constitución IV) — Repetir el lote NO rearma nada. Es la
+   * garantía que importa: rearmar un plan es una refinanciación, una decisión
+   * comercial, no el efecto colateral de volver a apretar un botón.
+   */
+  const lotePlanRepetido = await api(`/api/cohorts/${cohortePlan}/billing/bulk`, {
+    method: "POST",
+    body: JSON.stringify({ kind: "plan", count: 3, firstDueDate: fechaLote }),
+  });
+  ok(
+    "repetir el lote no aplica nada: las dos ya tienen plan",
+    lotePlanRepetido.json?.aplicadas === 0 &&
+      (lotePlanRepetido.json?.saltadas ?? []).filter((s) => s.motivo === "ya_tiene_plan")
+        .length === 2,
+    JSON.stringify(lotePlanRepetido.json)
+  );
+
+  const cuotasTrasRepetir = await api(`/api/enrollments/${planA.id}/installments`);
+  ok(
+    "y el plan quedó intacto: 3 cuotas, no 6",
+    (cuotasTrasRepetir.json?.installments ?? []).length === 3,
+    JSON.stringify((cuotasTrasRepetir.json?.installments ?? []).length)
+  );
+
+  // ── Modo "ya cobrada": una cuota por el total, saldada ───────────────────
+  // Dos monedas a propósito: es lo que después le permite a la 026 demostrar
+  // que no las mezcla.
+  const cohorteCobrada = await cohorte022(`Lote Cobrada ${sello022}`);
+  const cobradaUyu = await inscribir022(
+    cohorteCobrada,
+    "CobradaUyu",
+    `59894${sello022}`.slice(0, 15),
+    { amount: 45000, currency: "UYU" }
+  );
+  const cobradaUsd = await inscribir022(
+    cohorteCobrada,
+    "CobradaUsd",
+    `1${sello022}`.slice(0, 15),
+    { amount: 800, currency: "USD" }
+  );
+  ok(
+    "dos inscripciones ya cobradas, en monedas distintas",
+    cobradaUyu.status === 201 && cobradaUsd.status === 201,
+    `${cobradaUyu.status}/${cobradaUsd.status}`
+  );
+
+  const loteCobrada = await api(`/api/cohorts/${cohorteCobrada}/billing/bulk`, {
+    method: "POST",
+    body: JSON.stringify({
+      kind: "cobrada",
+      paidAt: fechaLote,
+      method: "transferencia",
+    }),
+  });
+  ok(
+    "el lote registra las dos como ya cobradas",
+    loteCobrada.res.ok && loteCobrada.json?.aplicadas === 2,
+    JSON.stringify(loteCobrada.json)
+  );
+
+  const estadoCobradaUyu = await api(`/api/enrollments/${cobradaUyu.id}/installments`);
+  const unicaCuota = (estadoCobradaUyu.json?.installments ?? [])[0];
+  ok(
+    "queda UNA cuota por el total, saldada",
+    (estadoCobradaUyu.json?.installments ?? []).length === 1 &&
+      unicaCuota?.amount === 45000 &&
+      unicaCuota?.paid === 45000 &&
+      unicaCuota?.status === "pagada",
+    JSON.stringify(unicaCuota)
+  );
+  ok(
+    "el pago hereda la moneda de su inscripción",
+    (estadoCobradaUyu.json?.payments ?? []).some((p) => p.currency === "UYU"),
+    JSON.stringify(estadoCobradaUyu.json?.payments)
+  );
+
+  const estadoCobradaUsd = await api(`/api/enrollments/${cobradaUsd.id}/installments`);
+  ok(
+    "y la inscripción en dólares queda en dólares, no convertida",
+    (estadoCobradaUsd.json?.installments ?? [])[0]?.currency === "USD",
+    JSON.stringify(estadoCobradaUsd.json?.installments)
+  );
+
+  const loteCobradaRepetido = await api(`/api/cohorts/${cohorteCobrada}/billing/bulk`, {
+    method: "POST",
+    body: JSON.stringify({
+      kind: "cobrada",
+      paidAt: fechaLote,
+      method: "transferencia",
+    }),
+  });
+  ok(
+    "repetir el lote de cobradas no cobra dos veces",
+    loteCobradaRepetido.json?.aplicadas === 0,
+    JSON.stringify(loteCobradaRepetido.json)
+  );
+
+  const previewFinal = await api(`/api/cohorts/${cohorteCobrada}/billing/bulk`);
+  ok(
+    "la previsualización ya no ofrece aplicar nada sobre esa cohorte",
+    previewFinal.json?.aplicables === 0 && previewFinal.json?.yaTienenPlan === 2,
+    JSON.stringify(previewFinal.json)
+  );
+
+  // ============================================================
+  // 026 (DoD-1/DoD-2) — Administración y finanzas.
+  //
+  // La pantalla se TRANSCRIBE a mano a un sistema contable, así que lo que se
+  // ejerce acá no es "responde 200": es que las filas del período aparezcan,
+  // que haya un bloque por moneda, que NINGUNA celda sume dos monedas, y que
+  // la misma consulta dos veces devuelva el mismo orden. Ese último es el
+  // requisito silencioso de toda pantalla de transcripción, y el que nadie
+  // escribe hasta que falla.
+  //
+  // Y el camino infeliz, que acá es la mitad del punto: una sesión sin
+  // `cobranza.ver` recibe 403 del endpoint y no ve el ítem en el menú.
+  // ============================================================
+  console.log("\n== 026: administración y finanzas ==");
+
+  const cookieOperador026 = cookie;
+
+  // Una cuenta con el rol NUEVO. Que el alta acepte `administracion` como
+  // `roleKey` ya prueba que la migración lo sembró: `/api/settings/team`
+  // valida contra los roles que existen de verdad en la base.
+  const adminEmail = "e2e.administracion@vocero.test";
+  const adminPass = "password-admin-026";
+  const altaAdmin = await api("/api/settings/team", {
+    method: "POST",
+    body: JSON.stringify({
+      name: "Cuenta Administración E2E",
+      email: adminEmail,
+      password: adminPass,
+      roleKey: "administracion",
+    }),
+  });
+  ok(
+    "el rol `administracion` existe en la base y se le puede dar una cuenta",
+    altaAdmin.res.status === 201 || altaAdmin.res.status === 409,
+    `${altaAdmin.res.status} ${JSON.stringify(altaAdmin.json)}`
+  );
+
+  // La cuenta sin cobranza, para el camino infeliz (DoD-2). Si ya la creó la
+  // corrida anterior —o el bloque de la 027— el 409 vale igual.
+  const soporteEmail026 = "e2e.soporte@vocero.test";
+  const soportePass026 = "password-soporte-027";
+  const altaSoporte026 = await api("/api/settings/team", {
+    method: "POST",
+    body: JSON.stringify({
+      name: "Cuenta Soporte E2E",
+      email: soporteEmail026,
+      password: soportePass026,
+      roleKey: "soporte",
+    }),
+  });
+  ok(
+    "hay una cuenta sin acceso financiero para el camino infeliz",
+    altaSoporte026.res.status === 201 || altaSoporte026.res.status === 409,
+    `${altaSoporte026.res.status}`
+  );
+
+  async function pagina026(path, galleta) {
+    const res = await fetch(`${BASE}${path}`, {
+      headers: { cookie: galleta, origin: BASE },
+      redirect: "manual",
+    });
+    return { res, html: await res.text() };
+  }
+
+  cookie = "";
+  const loginAdmin = await api("/api/auth/sign-in/email", {
+    method: "POST",
+    body: JSON.stringify({ email: adminEmail, password: adminPass }),
+  });
+  ok("administración entra al panel", loginAdmin.res.ok, JSON.stringify(loginAdmin.json));
+  const cookieAdmin = cookie;
+
+  // Sin `mes`: el período por defecto es el ANTERIOR (DV-002), que es el que
+  // se cierra — y es justo donde el bloque de la 022 dejó los movimientos.
+  const cierre = await api("/api/finanzas/cierre");
+  ok(
+    "GET /api/finanzas/cierre responde 200 con el rol nuevo",
+    cierre.res.ok,
+    `${cierre.res.status} ${JSON.stringify(cierre.json)}`
+  );
+  ok(
+    "abre en el mes anterior, el que se cierra (DV-002)",
+    cierre.json?.periodo?.mes === mesEsperado,
+    `${cierre.json?.periodo?.mes} vs ${mesEsperado}`
+  );
+
+  const bloquesCaja = cierre.json?.caja ?? [];
+  const bloqueUyu = bloquesCaja.find((b) => b.currency === "UYU");
+  const bloqueUsd = bloquesCaja.find((b) => b.currency === "USD");
+  ok(
+    "las filas del período aparecen, agrupadas por moneda",
+    bloquesCaja.length >= 2 && Boolean(bloqueUyu) && Boolean(bloqueUsd),
+    JSON.stringify(bloquesCaja.map((b) => [b.currency, b.filas.length, b.total]))
+  );
+  ok(
+    "el cobro en pesos del lote está en el bloque de pesos",
+    (bloqueUyu?.filas ?? []).some((f) => f.importe === 45000 && f.currency === "UYU"),
+    JSON.stringify(bloqueUyu?.filas?.map((f) => [f.importe, f.currency]))
+  );
+  ok(
+    "y el de dólares en el suyo, sin convertirse",
+    (bloqueUsd?.filas ?? []).some((f) => f.importe === 800 && f.currency === "USD"),
+    JSON.stringify(bloqueUsd?.filas?.map((f) => [f.importe, f.currency]))
+  );
+
+  /**
+   * FR-016/FR-022 — El corazón del bloque. Se ejerce sobre las FILAS, no sólo
+   * sobre los agregados: el total de un bloque tiene que ser exactamente la
+   * suma de las filas de ESE bloque, y ninguna celda puede valer la suma
+   * cruzada. El precedente es el bug real de totales mezclados del ciclo 007.
+   */
+  const monedasSucias = bloquesCaja.filter((b) =>
+    b.filas.some((f) => f.currency !== b.currency)
+  );
+  ok(
+    "ninguna fila está en el bloque de otra moneda",
+    monedasSucias.length === 0,
+    JSON.stringify(monedasSucias.map((b) => b.currency))
+  );
+  const totalesMalSumados = bloquesCaja.filter(
+    (b) => b.total !== b.filas.reduce((s, f) => s + f.importe, 0)
+  );
+  ok(
+    "el total de cada bloque es la suma de SUS filas y de ninguna otra",
+    totalesMalSumados.length === 0,
+    JSON.stringify(totalesMalSumados.map((b) => [b.currency, b.total]))
+  );
+  const sumaCruzada = bloquesCaja.reduce((s, b) => s + b.total, 0);
+  ok(
+    "ninguna celda suma dos monedas (regresión del bug de la 007)",
+    bloquesCaja.length < 2 || !bloquesCaja.some((b) => b.total === sumaCruzada),
+    `suma cruzada ${sumaCruzada}, totales ${JSON.stringify(bloquesCaja.map((b) => b.total))}`
+  );
+  ok(
+    "y no existe ningún «total general» en la respuesta",
+    !/totalGeneral|granTotal|totalGlobal/i.test(JSON.stringify(cierre.json)),
+    Object.keys(cierre.json ?? {}).join(", ")
+  );
+
+  // FR-017 — Caja y devengado viajan como dos listas separadas. La misma
+  // cuota puede estar en el devengado de un mes y en la caja de otro: eso no
+  // es una inconsistencia, es la definición, y por eso no se combinan.
+  ok(
+    "caja y devengado son dos listas, nunca una combinada",
+    Array.isArray(cierre.json?.caja) && Array.isArray(cierre.json?.devengado),
+    JSON.stringify(Object.keys(cierre.json ?? {}))
+  );
+  const devengadoUyu = (cierre.json?.devengado ?? []).find((b) => b.currency === "UYU");
+  ok(
+    "el devengado muestra las cuotas del período con el estado que ya existe",
+    (devengadoUyu?.filas ?? []).every((f) =>
+      ["pagada", "parcial", "vencida", "pendiente"].includes(f.estado)
+    ) && (devengadoUyu?.filas ?? []).length > 0,
+    JSON.stringify((devengadoUyu?.filas ?? []).map((f) => f.estado))
+  );
+
+  /**
+   * SC-004 — La misma consulta dos veces devuelve las filas en el mismo
+   * orden. Sin esto, quien vuelve a la pantalla después de una interrupción
+   * saltea una fila o transcribe otra dos veces, y los dos errores aparecen
+   * semanas después.
+   */
+  const cierreOtraVez = await api("/api/finanzas/cierre");
+  const ordenA = bloquesCaja.flatMap((b) => b.filas.map((f) => f.id));
+  const ordenB = (cierreOtraVez.json?.caja ?? []).flatMap((b) =>
+    b.filas.map((f) => f.id)
+  );
+  ok(
+    "la misma consulta dos veces devuelve el mismo orden",
+    ordenA.length > 0 && JSON.stringify(ordenA) === JSON.stringify(ordenB),
+    `${JSON.stringify(ordenA)} vs ${JSON.stringify(ordenB)}`
+  );
+
+  // El ítem del menú lleva a una pantalla que responde, no a un 403.
+  const panelAdmin = await pagina026("/finanzas", cookieAdmin);
+  ok(
+    "administración abre la pantalla de finanzas",
+    panelAdmin.res.status === 200,
+    `${panelAdmin.res.status}`
+  );
+  ok("y ve el ítem en el menú", panelAdmin.html.includes("/finanzas"));
+  // No lleva `inbox.ver` ni `configuracion.editar`: la bandeja y ajustes no
+  // aparecen en su menú.
+  ok(
+    "no ve la bandeja ni ajustes: sólo lo suyo (SC-001)",
+    !panelAdmin.html.includes('href="/inbox"'),
+    "el menú de administración ofrece la bandeja"
+  );
+
+  /**
+   * DV-004 — Un pago anulado sale de Caja y aparece en el tercer listado, con
+   * su motivo. Se anula con la cuenta del operador porque administración
+   * **no** lleva `cobranza.editar`: transcribe, no cobra.
+   */
+  const pagoParaAnular = (bloqueUyu?.filas ?? [])[0];
+  cookie = cookieOperador026;
+  const anulacion026 = await api(`/api/payments/${pagoParaAnular?.id}/void`, {
+    method: "POST",
+    body: JSON.stringify({ reason: "cargado dos veces en el lote" }),
+  });
+  ok("el operador anula un pago del período", anulacion026.res.ok, JSON.stringify(anulacion026.json));
+
+  cookie = cookieAdmin;
+  const trasAnular026 = await api("/api/finanzas/cierre");
+  const sigueEnCaja = (trasAnular026.json?.caja ?? []).some((b) =>
+    b.filas.some((f) => f.id === pagoParaAnular?.id)
+  );
+  ok("el pago anulado desaparece de Caja: no entró (FR-010)", !sigueEnCaja);
+  const anulado026 = (trasAnular026.json?.anulados ?? []).find(
+    (a) => a.id === pagoParaAnular?.id
+  );
+  ok(
+    "y aparece en el listado aparte, con su motivo (DV-004)",
+    Boolean(anulado026) && anulado026?.motivo === "cargado dos veces en el lote",
+    JSON.stringify(trasAnular026.json?.anulados)
+  );
+  const bloqueUyuTras = (trasAnular026.json?.caja ?? []).find((b) => b.currency === "UYU");
+  ok(
+    "el total de la moneda bajó exactamente lo anulado: no afecta a las otras",
+    !bloqueUyuTras ||
+      bloqueUyuTras.total === (bloqueUyu?.total ?? 0) - (pagoParaAnular?.importe ?? 0),
+    `${bloqueUyuTras?.total} vs ${(bloqueUyu?.total ?? 0) - (pagoParaAnular?.importe ?? 0)}`
+  );
+
+  // DV-005 — El filtro por camada, encima del período.
+  const cierreFiltrado = await api(
+    `/api/finanzas/cierre?mes=${mesEsperado}&cohortId=${cohorteCobrada}`
+  );
+  ok(
+    "el filtro por camada acota el período sin cambiarlo",
+    cierreFiltrado.res.ok && cierreFiltrado.json?.periodo?.mes === mesEsperado,
+    JSON.stringify(cierreFiltrado.json?.periodo)
+  );
+
+  /**
+   * DoD-2 — El camino infeliz. El front oculta, el servidor prohíbe: sin
+   * `cobranza.ver` no hay ítem en el menú NI dato en el endpoint, y las dos
+   * cosas se comprueban por separado porque esconder el enlace no protege una
+   * URL que se puede tipear.
+   */
+  cookie = "";
+  const loginSoporte026 = await api("/api/auth/sign-in/email", {
+    method: "POST",
+    body: JSON.stringify({ email: soporteEmail026, password: soportePass026 }),
+  });
+  ok("la cuenta sin cobranza entra al panel", loginSoporte026.res.ok);
+  const cierre403 = await api("/api/finanzas/cierre");
+  ok(
+    "y recibe 403 del endpoint de finanzas (SC-007)",
+    cierre403.res.status === 403 && cierre403.json?.error?.code === "forbidden",
+    `${cierre403.res.status} ${JSON.stringify(cierre403.json)}`
+  );
+  const panelSoporte026 = await pagina026("/inbox", cookie);
+  ok(
+    "no ve el ítem de finanzas en el menú",
+    !panelSoporte026.html.includes('href="/finanzas"'),
+    "el menú le ofrece una puerta que devuelve 403"
+  );
+  const pantalla403 = await pagina026("/finanzas", cookie);
+  ok(
+    "y si tipea la URL, la pantalla tampoco se la muestra",
+    pantalla403.res.status === 307 || pantalla403.res.status === 302,
+    `${pantalla403.res.status}`
+  );
+
+  // Se devuelve la sesión del operador: lo que venga después no tiene por qué
+  // enterarse de que acá adentro se cambió de cuenta tres veces.
+  cookie = cookieOperador026;
+
+  // ============================================================
+  // 027 — La guía por rol (SC-007).
+  //
+  // Lo que se conduce acá es la promesa entera de la fase: la guía NO está
+  // escrita, se DERIVA de los permisos de la sesión. Y eso sólo se ve con
+  // dos sesiones distintas abriendo la MISMA pantalla y leyendo cosas
+  // distintas — con una sola sesión, una guía derivada y una escrita a mano
+  // se ven exactamente igual.
+  // ============================================================
+  console.log("\n== 027: la guía por rol ==");
+
+  const cookieOperador = cookie;
+
+  async function pagina(path, galleta) {
+    const res = await fetch(`${BASE}${path}`, {
+      headers: { cookie: galleta, origin: BASE },
+      redirect: "manual",
+    });
+    return { res, html: await res.text() };
+  }
+
+  // Un segundo miembro del staff con OTRO rol. `soporte` es el que no ve
+  // nada financiero: es justo la diferencia que la guía tiene que contar.
+  const soporteEmail = "e2e.soporte@vocero.test";
+  const soportePass = "password-soporte-027";
+  const altaSoporte = await api("/api/settings/team", {
+    method: "POST",
+    body: JSON.stringify({
+      name: "Cuenta Soporte E2E",
+      email: soporteEmail,
+      password: soportePass,
+      roleKey: "soporte",
+    }),
+  });
+  ok(
+    "se da de alta una cuenta con otro rol (o ya existía de una corrida previa)",
+    altaSoporte.res.status === 201 || altaSoporte.res.status === 409,
+    `${altaSoporte.res.status} ${JSON.stringify(altaSoporte.json)}`
+  );
+
+  const guiaOperador = await pagina("/guia", cookieOperador);
+  ok(
+    "la guía del staff responde",
+    guiaOperador.res.status === 200,
+    `${guiaOperador.res.status}`
+  );
+
+  cookie = "";
+  const loginSoporte = await api("/api/auth/sign-in/email", {
+    method: "POST",
+    body: JSON.stringify({ email: soporteEmail, password: soportePass }),
+  });
+  ok("la segunda cuenta entra", loginSoporte.res.ok, JSON.stringify(loginSoporte.json));
+  const guiaSoporte = await pagina("/guia", cookie);
+  ok(
+    "y también le responde la guía",
+    guiaSoporte.res.status === 200,
+    `${guiaSoporte.res.status}`
+  );
+
+  // FR-008 — Un manual que hay que tener permiso para leer no es un manual.
+  // Si alguien le pusiera un gate, acá se vería un 307 al panel, no un 200.
+  ok(
+    "ninguna de las dos fue rechazada: el manual no pide permiso",
+    guiaOperador.res.status === 200 && guiaSoporte.res.status === 200
+  );
+
+  // El texto de una capacidad financiera, y el de una que las dos comparten.
+  const TEXTO_COBRANZA = "as cuotas de un alumno";
+  const TEXTO_INBOX = "eer las conversaciones de WhatsApp";
+  const principal = (html) => html.split("<details")[0];
+
+  ok(
+    "quien cobra ve la cobranza entre lo que SÍ puede hacer",
+    principal(guiaOperador.html).includes(TEXTO_COBRANZA)
+  );
+  ok(
+    "y no le aparece «esto lo hace otro rol»: no le falta nada",
+    !guiaOperador.html.includes("Esto lo hace otro rol")
+  );
+
+  /**
+   * El corazón del check: la MISMA pantalla, otra sesión, otro contenido.
+   *
+   * La cobranza no desaparece —hacerla desaparecer mandaría a esta persona a
+   * preguntarle al dueño si el sistema la hace, que es el problema de
+   * origen—: se mueve a la sección secundaria, con el rol que sí la tiene.
+   */
+  ok(
+    "quien no cobra NO la ve entre lo suyo",
+    !principal(guiaSoporte.html).includes(TEXTO_COBRANZA)
+  );
+  ok(
+    "pero la ve en «esto lo hace otro rol», para saber a quién pedírsela",
+    guiaSoporte.html.includes("Esto lo hace otro rol") &&
+      guiaSoporte.html.includes(TEXTO_COBRANZA)
+  );
+  ok(
+    "lo que las dos comparten aparece en las dos, entre lo que SÍ pueden",
+    principal(guiaOperador.html).includes(TEXTO_INBOX) &&
+      principal(guiaSoporte.html).includes(TEXTO_INBOX)
+  );
+
+  // DV-001 — Colapsada por default: lo primero que se ve es lo que SÍ se
+  // puede hacer. `<details>` sin `open`, sin JavaScript y sin dependencias.
+  ok(
+    "la sección secundaria viene colapsada",
+    /<details(?![^>]*\bopen\b)/.test(guiaSoporte.html)
+  );
+
+  // FR-007 — Sin enlace: no se ofrece una puerta que va a devolver 403.
+  const seccionAjena = guiaSoporte.html.slice(guiaSoporte.html.indexOf("<details"));
+  ok(
+    "y sin enlaces a pantallas que devolverían 403",
+    !/<a\s/i.test(seccionAjena.slice(0, seccionAjena.indexOf("</details>")))
+  );
+
+  /**
+   * SC-004 — La otra audiencia, con su propia guía. El alumno invitado más
+   * arriba abre la suya y no encuentra una sola palabra del vocabulario del
+   * staff: ni permisos, ni roles, ni pantallas del panel.
+   */
+  const claveAlumno = invitarCon.json?.temporaryPassword;
+  if (claveAlumno) {
+    cookie = "";
+    const loginAlumno = await api("/api/auth/sign-in/email", {
+      method: "POST",
+      body: JSON.stringify({
+        email: "portal.e2e@example.com",
+        password: claveAlumno,
+      }),
+    });
+    ok("el alumno entra al portal", loginAlumno.res.ok, JSON.stringify(loginAlumno.json));
+    const guiaAlumno = await pagina("/portal/guia", cookie);
+    ok(
+      "la guía del portal responde",
+      guiaAlumno.res.status === 200,
+      `${guiaAlumno.res.status}`
+    );
+    ok(
+      "y le habla de lo suyo, sin una palabra del vocabulario del staff",
+      guiaAlumno.html.includes("Mientras cursás") &&
+        !guiaAlumno.html.includes("Esto lo hace otro rol") &&
+        !guiaAlumno.html.includes("cobranza.ver")
+    );
+  }
+
+  // Se devuelve la sesión del operador: lo que venga después no tiene por qué
+  // enterarse de que acá adentro se cambió de cuenta dos veces.
+  cookie = cookieOperador;
+
   console.log(`\n===== ${checks - failures}/${checks} checks OK, ${failures} fallos =====`);
   process.exit(failures > 0 ? 1 : 0);
 }
