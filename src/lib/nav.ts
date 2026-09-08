@@ -80,6 +80,15 @@ export const NAV_GROUPS = [
     items: [
       { href: "/academico", label: "Académico", icon: GraduationCap, capability: "academico.ver" },
       { href: "/calendar", label: "Calendario", icon: CalendarDays, capability: "academico.ver" },
+      /**
+       * 026 (FR-008) — El cierre contable del mes.
+       *
+       * `cobranza.ver` y no una capacidad propia: es exactamente el dato que
+       * esa capacidad ya gobierna. Un ítem que lleva a un 403 no es
+       * información, así que quien no puede ver la cobranza tampoco ve el
+       * ítem — y quien sí puede, lo encuentra sin que nadie se lo cuente.
+       */
+      { href: "/finanzas", label: "Finanzas", icon: Wallet, capability: "cobranza.ver" },
     ],
   },
   // {

@@ -116,6 +116,35 @@ export function formatInZone(instant: Date, timeZone: string): string {
   }).format(instant);
 }
 
+/**
+ * 026 (FR-018) — El mes de pared (`"2026-08"`) de un instante, en la zona dada.
+ *
+ * Vive acá y no en el módulo de finanzas por la misma razón que
+ * `classInstant`: **la zona horaria se resuelve en un solo lugar.** El cierre
+ * contable necesita saber en qué mes está la academia para abrir en el mes
+ * anterior (DV-002), y esa pregunta se contesta en la zona de la
+ * organización: a las 01:00 UTC del 1° de septiembre, en Montevideo todavía
+ * es 31 de agosto y el mes que se cierra es julio, no agosto.
+ *
+ * Zona inválida → `null`, mismo criterio que `classInstant`: antes devolver
+ * nada que una fecha inventada.
+ */
+export function monthInZone(instant: Date, timeZone: string): string | null {
+  try {
+    const partes = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+    }).formatToParts(instant);
+    const año = partes.find((p) => p.type === "year")?.value;
+    const mes = partes.find((p) => p.type === "month")?.value;
+    if (!año || !mes) return null;
+    return `${año.padStart(4, "0")}-${mes}`;
+  } catch {
+    return null;
+  }
+}
+
 export type MeetingWindow = { beforeMin: number; afterMin: number };
 
 /**

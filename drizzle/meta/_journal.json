@@ -253,6 +253,13 @@
       "when": 1788456788149,
       "tag": "0035_remarkable_mongoose",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1788543188149,
+      "tag": "0036_seed_rol_administracion",
+      "breakpoints": true
     }
   ]
 }

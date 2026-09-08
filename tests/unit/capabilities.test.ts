@@ -152,9 +152,18 @@ describe("SYSTEM_ROLES — la semilla de la fase 4", () => {
     expect(soporte?.capabilities).toContain("asistencia.editar");
   });
 
-  it("las tres llaves son las de DV-006 y no se repiten", () => {
+  /**
+   * 026 (FR-001) — Se suma un CUARTO rol: `administracion`.
+   *
+   * Los tres primeros siguen siendo los de DV-006 y en el mismo orden. El
+   * cuarto va al final y no en el medio a propósito: el orden de esta lista es
+   * el que usa `seed-roles.test.ts` para emparejar cada rol con la lista que
+   * siembra su migración, y reordenarla haría fallar esa comparación por un
+   * motivo que no tiene nada que ver con los permisos.
+   */
+  it("las llaves son las de DV-006 más `administracion`, y no se repiten", () => {
     const keys = SYSTEM_ROLES.map((r) => r.key);
-    expect(keys).toEqual(["direccion", "coordinacion", "soporte"]);
+    expect(keys).toEqual(["direccion", "coordinacion", "soporte", "administracion"]);
     expect(new Set(keys).size).toBe(keys.length);
   });
 });

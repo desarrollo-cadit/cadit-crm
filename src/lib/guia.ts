@@ -128,8 +128,8 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
    * dos destinos no indica nada.
    */
   "cobranza.ver": {
-    que: "ver el estado de cuenta de un alumno: sus cuotas, lo que pagó y lo que debe",
-    donde: "Alumnos → el alumno → Estado de cuenta",
+    que: "ver el cierre de un período —lo que se cobró y lo que se devengó, con su moneda— y el estado de cuenta de cada alumno",
+    donde: "/finanzas",
   },
   "cobranza.editar": {
     que: "armar el plan de cuotas de una cursada, registrar un pago y anular uno mal cargado",

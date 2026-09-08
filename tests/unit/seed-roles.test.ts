@@ -15,12 +15,26 @@ import { CAPABILITIES, SYSTEM_ROLES } from "@/lib/capabilities";
  * el primer error real**: a `soporte` le faltaba `contactos.editar`.
  */
 
-const SQL = readFileSync(
-  path.join(process.cwd(), "drizzle", "0024_seed_roles_sistema.sql"),
-  "utf8"
-);
+const migracion = (archivo: string) =>
+  readFileSync(path.join(process.cwd(), "drizzle", archivo), "utf8");
 
-/** Extrae las listas `jsonb` de la migración, en el orden en que aparecen. */
+/**
+ * 026 — La semilla ya no vive en un solo archivo.
+ *
+ * La 0024 sembró los tres roles de DV-006; la 0036 agrega `administracion` a
+ * las organizaciones que ya existían. Un rol nuevo NO se agrega editando la
+ * 0024: una migración ya aplicada no se vuelve a correr, así que ese cambio
+ * no llegaría a ninguna base y el error sería invisible.
+ *
+ * Se leen las dos juntas porque lo que este archivo verifica es lo mismo de
+ * siempre: que lo sembrado en SQL no se desvíe de `SYSTEM_ROLES`.
+ */
+const SQL = [
+  migracion("0024_seed_roles_sistema.sql"),
+  migracion("0036_seed_rol_administracion.sql"),
+].join("\n");
+
+/** Extrae las listas `jsonb` de las migraciones, en el orden en que aparecen. */
 function seededLists(): string[][] {
   return [...SQL.matchAll(/'(\[[^\]]*\])'::jsonb/g)].map(
     (m) => JSON.parse(m[1]!) as string[]
@@ -28,8 +42,8 @@ function seededLists(): string[][] {
 }
 
 describe("la semilla SQL de roles no puede desviarse del código", () => {
-  it("siembra exactamente los tres roles de DV-006", () => {
-    expect(seededLists()).toHaveLength(3);
+  it("siembra exactamente los roles de `SYSTEM_ROLES`", () => {
+    expect(seededLists()).toHaveLength(SYSTEM_ROLES.length);
     for (const { key } of SYSTEM_ROLES) {
       expect(SQL).toContain(`'${key}'`);
     }

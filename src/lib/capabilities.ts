@@ -113,6 +113,39 @@ export const SYSTEM_ROLES: readonly {
     name: "Soporte",
     capabilities: CAPABILITIES.filter((c) => !FINANCIAL_CAPABILITIES.includes(c)),
   },
+  /**
+   * 026 (FR-001) — Administración: 4 de las 17, y cada exclusión tiene motivo.
+   *
+   * La regla que las eligió es concreta: **entra la capacidad sin la cual la
+   * fila no se puede leer, y ninguna más.**
+   *
+   * - `cobranza.ver` es el dato; sin ella no hay pantalla.
+   * - `inscripciones.ver`: una cuota no significa nada sin la inscripción que
+   *   la originó —monto pactado, moneda, plan—.
+   * - `academico.ver` y `contactos.ver`: sin ellas la fila dice `ct_…` y un
+   *   id de cohorte, que no se transcribe a ningún lado.
+   *
+   * Lo que queda AFUERA y por qué, porque es la parte que importa:
+   * `cobranza.editar` —administración transcribe, no cobra: un rol que puede
+   * editar la plata "por las dudas" es el que anula un pago para que un total
+   * cuadre—; `inscripciones.editar` —cambiar el monto de una inscripción
+   * reescribe el devengado del período que se está copiando—; `inbox.*` —las
+   * conversaciones de 340 alumnos no aportan a ningún asiento—;
+   * `accesos.gestionar` —le permitiría concederse a sí misma cualquier otra
+   * capacidad, y un rol que reescribe su propio permiso no tiene un permiso:
+   * los tiene todos—.
+   *
+   * El costo asumido de `academico.ver` y `contactos.ver` es que también
+   * abren `/academico`, `/calendar`, `/contacts` y `/empresas` en lectura. La
+   * alternativa —un DTO de finanzas que lleve los nombres sin exigir la
+   * capacidad— ya se rechazó dos veces (014/FR-008, 015): un dato que se
+   * muestra sin una capacidad que lo autorice es un dato que se filtró.
+   */
+  {
+    key: "administracion",
+    name: "Administración",
+    capabilities: ["cobranza.ver", "inscripciones.ver", "academico.ver", "contactos.ver"],
+  },
 ];
 
 /**
