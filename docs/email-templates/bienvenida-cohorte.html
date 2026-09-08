@@ -10,7 +10,8 @@
   reescriben los botones.
 
   Variables: {{nombre}}, {{curso}}, {{fechaInicio}}, {{horario}}, {{modalidad}},
-  {{profesor}}, {{aula}}, {{grupoWhatsapp}}, {{academia}}, {{contactoSoporte}}.
+  {{profesor}}, {{aula}}, {{grupoWhatsapp}}, {{logoUrl}}, {{academia}}, {{acento}},
+  {{contactoSoporte}}.
 -->
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0;padding:0;background-color:#f4f4f5;">
   <tr>
@@ -20,11 +21,21 @@
 
         <!-- Encabezado -->
         <tr>
-          <td style="padding:28px 32px 20px;">
-            <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:13px;letter-spacing:1px;text-transform:uppercase;color:#71717a;">
+          <td align="center" style="padding:28px 32px 20px;text-align:center;">
+            <!-- El logo lleva width/height EXPLÍCITOS: Outlook ignora el
+                 dimensionado por CSS y lo pintaría a sus 2848px reales,
+                 reventando las 600px del correo. 180x109 conserva la
+                 proporción del archivo.
+
+                 `alt` lleva el nombre de la academia y va ESTILADO: la mayoría
+                 de los clientes bloquean imágenes por defecto, y cuando no
+                 carga es ese texto el que identifica al remitente. -->
+            <img src="{{logoUrl}}" width="180" height="109" alt="{{academia}}"
+                 style="display:block;margin:0 auto 14px;border:0;outline:none;text-decoration:none;width:180px;height:109px;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:bold;color:#18181b;" />
+            <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:13px;letter-spacing:1px;text-transform:uppercase;color:#71717a;text-align:center;">
               Te damos la bienvenida
             </p>
-            <p style="margin:6px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:24px;line-height:32px;font-weight:bold;color:#18181b;">
+            <p style="margin:6px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:24px;line-height:32px;font-weight:bold;color:#18181b;text-align:center;">
               {{curso}}
             </p>
           </td>
@@ -63,10 +74,17 @@
               horario, compartimos material y resolvemos dudas entre clases.
             </p>
 
-            <!-- Botón: celda de tabla, no un <a> estilizado -->
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 12px;">
+            <!-- Botón: celda de tabla, no un <a> estilizado.
+                 Centrado por partida doble: `align="center"` es lo que mira
+                 Outlook (motor de Word, ignora `margin:auto`) y `margin:0 auto`
+                 es lo que miran el resto. El `align` de la celda solo centra el
+                 texto DENTRO de la celda, no la tabla.
+                 Color: el acento de la marca en `bgcolor` Y en `background-color`
+                 —hay clientes que descartan uno u otro—. El verde de WhatsApp
+                 daba 1.98:1 contra el texto blanco (mínimo 4.5:1). -->
+            <table role="presentation" align="center" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto 12px;">
               <tr>
-                <td align="center" bgcolor="#25D366" style="border-radius:6px;">
+                <td align="center" bgcolor="{{acento}}" style="border-radius:6px;background-color:{{acento}};">
                   <a href="{{grupoWhatsapp}}"
                      style="display:inline-block;padding:12px 28px;font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:bold;color:#ffffff;text-decoration:none;border-radius:6px;">
                     Unirme al grupo de WhatsApp

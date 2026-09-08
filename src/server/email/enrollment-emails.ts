@@ -4,6 +4,7 @@ import { scoped } from "@/lib/db/tenant";
 import { getEnv } from "@/lib/env";
 import { sendMail } from "@/lib/m365/client";
 import { fullName } from "@/lib/utils";
+import { getBranding } from "@/server/branding";
 import { renderTemplate } from "@/server/email/templates";
 
 /**
@@ -43,12 +44,19 @@ async function loadContext(organizationId: string, enrollmentId: string) {
       cohort: schema.cohort,
       course: schema.course,
       teacherName: schema.teacher.name,
+      // El correo de términos declara QUÉ licencia se presta. Sale de la
+      // licencia de esta inscripción, no de un texto fijo: el documento
+      // nombra el producto ("AutoCAD") y ese dato ya vive en la base.
+      // `license.enrollment_id` es UNIQUE, así que el join no duplica filas.
+      softwareName: schema.software.name,
     })
     .from(schema.enrollment)
     .innerJoin(schema.contact, eq(schema.enrollment.contactId, schema.contact.id))
     .innerJoin(schema.cohort, eq(schema.enrollment.cohortId, schema.cohort.id))
     .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
     .leftJoin(schema.teacher, eq(schema.cohort.teacherId, schema.teacher.id))
+    .leftJoin(schema.license, eq(schema.license.enrollmentId, schema.enrollment.id))
+    .leftJoin(schema.software, eq(schema.license.softwareId, schema.software.id))
     .where(
       scoped(
         schema.enrollment.organizationId,
@@ -82,7 +90,7 @@ export async function sendEnrollmentEmail(
     return { ok: false, status: 404, code: "not_found", message: "Inscripción no encontrada" };
   }
 
-  const { enrollment, contact, cohort, course, teacherName } = ctx;
+  const { enrollment, contact, cohort, course, teacherName, softwareName } = ctx;
 
   if (!contact.email) {
     return {
@@ -112,19 +120,50 @@ export async function sendEnrollmentEmail(
   }
 
   const env = getEnv();
-  const academia = "CAD IT";
+  /**
+   * El nombre y el color salen de la marca de la organización, no de un texto
+   * fijo: una instancia = un negocio, y el nombre estaba escrito a mano acá
+   * mientras el real vivía en `organization.metadata.branding`.
+   *
+   * `normalizeBranding` ya valida el hex y cae al acento por defecto si no
+   * sirve, así que `acento` llega SIEMPRE como un color usable a la plantilla
+   * —que lo escribe en `bgcolor`, donde un valor inválido dejaría el botón sin
+   * fondo y el texto blanco sobre blanco—.
+   */
+  const branding = await getBranding(organizationId);
+  const academia = branding.name;
+  const acento = branding.accent;
+  /**
+   * URL ABSOLUTA y servida por la propia app (`public/`): el cliente de correo
+   * del alumno no conoce el servidor, así que una ruta relativa no resuelve.
+   * Tampoco puede ser `data:` — Gmail y Outlook bloquean esas imágenes— ni un
+   * bucket externo, que el Principio II de la constitución no admite.
+   */
+  const logoUrl = `${env.APP_BASE_URL}/logo-cadit.png`;
   const soporte = env.M365_SENDER ?? "";
   const courseName = cohort.name ?? course.name;
 
   const html =
     kind === "terms"
       ? renderTemplate("licencia-atc", {
-          nombre: contact.firstName,
+          // Nombre COMPLETO, no el de pila: esto documenta un préstamo y el
+          // encabezado del bloque de datos es parte del documento.
+          nombreCompleto: fullName(contact),
           curso: courseName,
-          software: "la licencia educativa de Autodesk",
           fechaInicio: formatDate(cohort.startDate),
           fechaFin: formatDate(cohort.endDate),
+          // La cuenta a la que se presta la licencia. El texto dice "una
+          // cuenta indicada por el beneficiario (preferentemente: personal)",
+          // así que puede no ser la de contacto — hoy no hay dónde guardar
+          // esa distinción y se usa la del alumno. Ver docs/deuda-tecnica.md.
+          usuario: contact.email,
+          // Sin licencia cargada el documento no puede nombrar el producto.
+          // Se declara la falta en vez de inventar un genérico: un préstamo
+          // que no dice qué se presta no documenta nada.
+          licencias: softwareName ?? "a confirmar",
           academia,
+          acento,
+          logoUrl,
           contactoSoporte: soporte,
         })
       : renderTemplate("bienvenida-cohorte", {
@@ -137,6 +176,8 @@ export async function sendEnrollmentEmail(
           aula: cohort.classroom ? `Aula ${cohort.classroom}` : "sin aula asignada",
           grupoWhatsapp: cohort.whatsappGroupLink ?? "",
           academia,
+          acento,
+          logoUrl,
           contactoSoporte: soporte,
         });
 

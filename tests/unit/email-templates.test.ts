@@ -10,12 +10,14 @@ import { escapeHtml } from "@/lib/utils";
  */
 describe("renderTemplate", () => {
   it("reemplaza los marcadores con los valores dados", () => {
+    // El correo de términos usa `nombreCompleto`, no el nombre de pila:
+    // documenta un préstamo y el nombre es parte del documento.
     const html = renderTemplate("licencia-atc", {
-      nombre: "Romina",
+      nombreCompleto: "Romina Bentancor",
       curso: "Civil 3D",
       academia: "CAD IT",
     });
-    expect(html).toContain("Hola Romina");
+    expect(html).toContain("Estimad@ Romina Bentancor");
     expect(html).toContain("Civil 3D");
   });
 
@@ -31,7 +33,7 @@ describe("renderTemplate", () => {
    */
   it("escapa el HTML de los valores", () => {
     const html = renderTemplate("licencia-atc", {
-      nombre: '<img src=x onerror="alert(1)">',
+      nombreCompleto: '<img src=x onerror="alert(1)">',
       curso: "Revit & AutoCAD",
     });
     expect(html).not.toContain("<img src=x");

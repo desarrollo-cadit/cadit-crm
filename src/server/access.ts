@@ -10,6 +10,7 @@ import { sendMail } from "@/lib/m365/client";
 import { PORTAL_NO_EMAIL_REASON } from "@/lib/portal-access";
 import { fullName } from "@/lib/utils";
 import { resolveMembership } from "@/server/auth/on-signup";
+import { getBranding } from "@/server/branding";
 import { renderTemplate } from "@/server/email/templates";
 
 /**
@@ -386,7 +387,7 @@ export async function grantPortalAccess(
       };
     }
 
-    return inviteExisting(existing.id, contact, linked.data);
+    return inviteExisting(organizationId, existing.id, contact, linked.data);
   }
 
   const temporaryPassword = generateTemporaryPassword();
@@ -410,7 +411,7 @@ export async function grantPortalAccess(
   });
   if (!linked.ok) return linked;
 
-  const envio = await sendInvitationEmail(contact, temporaryPassword);
+  const envio = await sendInvitationEmail(organizationId, contact, temporaryPassword);
 
   return {
     ok: true,
@@ -504,7 +505,7 @@ export async function grantTeacherPortalAccess(
         },
       };
     }
-    return inviteExisting(existing.id, comoContacto, linked.data);
+    return inviteExisting(organizationId, existing.id, comoContacto, linked.data);
   }
 
   const temporaryPassword = generateTemporaryPassword();
@@ -528,7 +529,7 @@ export async function grantTeacherPortalAccess(
   });
   if (!linked.ok) return linked;
 
-  const envio = await sendInvitationEmail(comoContacto, temporaryPassword);
+  const envio = await sendInvitationEmail(organizationId, comoContacto, temporaryPassword);
 
   return {
     ok: true,
@@ -538,6 +539,7 @@ export async function grantTeacherPortalAccess(
 
 /** Reinvitación de una cuenta de portal existente: contraseña nueva y correo. */
 async function inviteExisting(
+  organizationId: string,
   userId: string,
   contact: typeof schema.contact.$inferSelect,
   link: AccountLinkDto
@@ -553,7 +555,7 @@ async function inviteExisting(
     await authCtx.password.hash(temporaryPassword)
   );
 
-  const envio = await sendInvitationEmail(contact, temporaryPassword);
+  const envio = await sendInvitationEmail(organizationId, contact, temporaryPassword);
 
   return {
     ok: true,
@@ -565,16 +567,33 @@ async function inviteExisting(
 type EnvioDeInvitacion = { emailSentAt: string | null; emailError: string | null };
 
 async function sendInvitationEmail(
+  organizationId: string,
   contact: typeof schema.contact.$inferSelect,
   temporaryPassword: string
 ): Promise<EnvioDeInvitacion> {
   const env = getEnv();
+  /**
+   * El nombre y el color salen de la marca de la organización que invita, no
+   * de un texto fijo: estaban escritos a mano acá mientras el real vivía en
+   * `organization.metadata.branding`.
+   *
+   * `normalizeBranding` ya valida el hex y cae al acento por defecto si no
+   * sirve, así que `acento` llega SIEMPRE como un color usable a la plantilla
+   * —que lo escribe en `bgcolor`, donde un valor inválido dejaría el botón sin
+   * fondo y el texto blanco sobre blanco—.
+   */
+  const branding = await getBranding(organizationId);
   const sent = await sendMail({
     to: contact.email ?? "",
-    subject: "Tu acceso al portal — CAD IT",
+    subject: `Tu acceso al portal — ${branding.name}`,
     html: renderTemplate("acceso-portal", {
       nombre: contact.firstName,
-      academia: "CAD IT",
+      academia: branding.name,
+      // URL ABSOLUTA servida por la app (`public/`): el cliente de correo no
+      // conoce el servidor. Ni `data:` (Gmail y Outlook las bloquean) ni un
+      // bucket externo, que el Principio II no admite.
+      logoUrl: `${env.APP_BASE_URL}/logo-cadit.png`,
+      acento: branding.accent,
       urlPortal: env.APP_BASE_URL,
       usuario: (contact.email ?? "").toLowerCase(),
       contrasenaTemporal: temporaryPassword,
