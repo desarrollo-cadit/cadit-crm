@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import {
@@ -6,7 +6,12 @@ import {
   meetingLinkVisible,
   type MeetingWindow,
 } from "@/lib/schedule-time";
-import { buildClassSchedule, hoursFromTimes } from "@/server/attendance";
+import {
+  buildClassSchedule,
+  CAMADA_CON_MODULOS_SIN_CLASES,
+  hoursFromTimes,
+} from "@/server/attendance";
+import { listarModulos } from "@/server/program-modules";
 import { resolveMeetingUrl } from "@/server/virtual-rooms";
 
 /**
@@ -93,7 +98,14 @@ export type CohortClassesDto = {
 export function cannotGenerateReason(cohort: {
   endDate: Date | null;
   daysOfWeek: string | null;
+  /**
+   * 028 (DV-009) — ¿Es la camada de una especialización? Se pregunta por la
+   * presencia de módulos (FR-033) y se contesta antes que nada: aunque la
+   * camada tenga fechas y días cargados, sigue sin poder tener clases propias.
+   */
+  tieneModulos?: boolean;
 }): string | null {
+  if (cohort.tieneModulos) return CAMADA_CON_MODULOS_SIN_CLASES;
   if (!cohort.daysOfWeek?.trim()) {
     return "La cohorte no declara días de cursada. Cargalos en la edición de la cohorte y vas a poder generar el cronograma.";
   }
@@ -212,6 +224,12 @@ export async function listCalendarClasses(
       daysOfWeek: schema.cohort.daysOfWeek,
       startTime: schema.cohort.startTime,
       endTime: schema.cohort.endTime,
+      /**
+       * 028 (DV-009) — Viaja en la consulta que ya traía TODAS las cohortes,
+       * así que quiénes son camadas de especialización se deduce del mismo
+       * resultado, sin una lectura más.
+       */
+      parentCohortId: schema.cohort.parentCohortId,
     })
     .from(schema.cohort)
     .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
@@ -234,6 +252,19 @@ export async function listCalendarClasses(
     list.push(s);
     porCohorte.set(s.cohortId, list);
   }
+
+  /**
+   * 028 (DV-009) — Las camadas que tienen módulos. Sus clases son las de sus
+   * módulos, así que NO se les dibuja proyección: un dibujo colgado del padre
+   * no pertenece a ningún módulo y aparecería en el calendario duplicando lo
+   * que los módulos ya muestran, sin que nadie pueda decir de cuál es.
+   *
+   * Lo que sí se sigue mostrando son sus clases REALES, si alguna quedó
+   * cargada: esconder una fila que existe es peor que mostrarla mal ubicada.
+   */
+  const madres = new Set(
+    cohorts.map((c) => c.parentCohortId).filter((id): id is string => id !== null)
+  );
 
   const dentro = (d: Date) => d >= from && d <= to;
   const out: CalendarClassDto[] = [];
@@ -258,6 +289,7 @@ export async function listCalendarClasses(
     }
 
     // Sin cronograma: se dibuja, con la misma función de siempre.
+    if (madres.has(c.id)) continue;
     if (!c.endDate) continue;
     for (const p of buildClassSchedule(c.startDate, c.endDate, c.daysOfWeek, null)) {
       if (!dentro(p.date)) continue;
@@ -350,11 +382,21 @@ export async function listCohortClasses(
     };
   }
 
+  /**
+   * 028 (DV-009) — Recién acá se pregunta si la cohorte tiene módulos.
+   *
+   * Una camada de especialización no tiene clases propias, así que nunca
+   * llega con `sessions.length > 0` y la pregunta sólo hace falta en la rama
+   * que dibuja: así la consulta extra no la paga la cohorte que ya tiene su
+   * cronograma generado, que es a lo que tienden las 33 simples.
+   */
+  const modulos = await listarModulos(organizationId, cohortId);
+
   // Sin cronograma: se dibuja uno con la MISMA función que lo generaría de
   // verdad (`buildClassSchedule`, del ciclo 009). Dos algoritmos distintos
   // para el mismo cronograma es garantía de que un día no coincidan.
-  const motivo = cannotGenerateReason(cohort);
-  const plan = cohort.endDate
+  const motivo = cannotGenerateReason({ ...cohort, tieneModulos: modulos.length > 0 });
+  const plan = cohort.endDate && modulos.length === 0
     ? buildClassSchedule(
         cohort.startDate,
         cohort.endDate,
@@ -386,5 +428,164 @@ export async function listCohortClasses(
       // Una proyección no es una clase: no hay fila a la cual cargarle enlace.
       ownMeetingUrl: null,
     })),
+  };
+}
+
+/* ============================================================
+ * 028 (FR-030, DV-009) — Las clases de una ESPECIALIZACIÓN
+ * ============================================================ */
+
+export type ProgramModuleClassesDto = {
+  cohortId: string;
+  name: string | null;
+  /** El orden que decidió la academia (FR-002), no la fecha de inicio. */
+  position: number | null;
+  /** `true` si ninguna fila es real: el módulo todavía no tiene cronograma. */
+  projected: boolean;
+  cannotGenerateReason: string | null;
+  classes: StaffClassRowDto[];
+};
+
+export type ProgramClassesDto = {
+  /** La camada padre. Ella misma no aporta ninguna clase (DV-009). */
+  cohortId: string;
+  timezone: string;
+  modules: ProgramModuleClassesDto[];
+};
+
+/**
+ * Las clases de una especialización SON las clases de sus módulos, en el orden
+ * de `position`.
+ *
+ * La camada padre no aporta ninguna: una clase colgada de ella no pertenece a
+ * ningún módulo y rompe la pregunta "¿de qué módulo es esta clase?" (DV-009).
+ * Por eso esta función no lee `class_session` del padre — no las filtra
+ * después, directamente no las pide.
+ *
+ * Un módulo sin cronograma **se muestra igual**, proyectado y declarando que
+ * todavía no tiene clases (US3). Ocultarlo es exactamente de donde salieron
+ * los 0 `class_session` de las 9 camadas de programa: un módulo invisible es
+ * un módulo que nadie carga.
+ *
+ * Tres consultas y no una por módulo: organización, módulos y las clases de
+ * todos ellos de una vez. Y **ninguna fecha se compone acá**: `buildClassRow`
+ * sigue siendo el único que llama a `classInstant()`, igual que en la lista de
+ * una cohorte suelta.
+ */
+export async function listProgramClasses(
+  organizationId: string,
+  parentCohortId: string,
+  now: Date = new Date()
+): Promise<ProgramClassesDto | null> {
+  const db = getDb();
+
+  const orgRows = await db
+    .select({
+      timezone: schema.organization.timezone,
+      before: schema.organization.meetingOpenBeforeMin,
+      after: schema.organization.meetingOpenAfterMin,
+    })
+    .from(schema.organization)
+    .where(eq(schema.organization.id, organizationId))
+    .limit(1);
+  const org = orgRows[0];
+  if (!org) return null;
+
+  const modulos = await listarModulos(organizationId, parentCohortId);
+  if (modulos.length === 0) {
+    return { cohortId: parentCohortId, timezone: org.timezone, modules: [] };
+  }
+
+  const sessions = await db
+    .select()
+    .from(schema.classSession)
+    .where(
+      scoped(
+        schema.classSession.organizationId,
+        organizationId,
+        inArray(
+          schema.classSession.cohortId,
+          modulos.map((m) => m.id)
+        )
+      )
+    )
+    .orderBy(asc(schema.classSession.number));
+
+  const window: MeetingWindow = { beforeMin: org.before, afterMin: org.after };
+
+  return {
+    cohortId: parentCohortId,
+    timezone: org.timezone,
+    modules: modulos.map((m) => {
+      const propias = sessions.filter((s) => s.cohortId === m.id);
+      const comun = {
+        cohortMeetingUrl: m.meetingUrl,
+        timezone: org.timezone,
+        window,
+        now,
+      };
+
+      if (propias.length > 0) {
+        return {
+          cohortId: m.id,
+          name: m.name,
+          position: m.position,
+          projected: false,
+          cannotGenerateReason: null,
+          classes: propias.map((s) => ({
+            ...buildClassRow({
+              id: s.id,
+              number: s.number,
+              projected: false,
+              date: s.date,
+              startTime: s.startTime,
+              endTime: s.endTime,
+              topic: s.topic,
+              canceledAt: s.canceledAt,
+              cancelReason: s.cancelReason,
+              meetingUrl: s.meetingUrl,
+              recordingUrl: s.recordingUrl,
+              ...comun,
+            }),
+            ownMeetingUrl: s.meetingUrl,
+          })),
+        };
+      }
+
+      // Un módulo ES una cohorte: se dibuja con la misma función de siempre.
+      const plan = m.endDate
+        ? buildClassSchedule(
+            m.startDate,
+            m.endDate,
+            m.daysOfWeek,
+            hoursFromTimes(m.startTime, m.endTime)
+          )
+        : [];
+
+      return {
+        cohortId: m.id,
+        name: m.name,
+        position: m.position,
+        projected: true,
+        cannotGenerateReason: cannotGenerateReason(m),
+        classes: plan.map((p) => ({
+          ...buildClassRow({
+            id: null,
+            number: p.number,
+            projected: true,
+            date: p.date,
+            startTime: m.startTime,
+            endTime: m.endTime,
+            topic: null,
+            canceledAt: null,
+            cancelReason: null,
+            meetingUrl: null,
+            recordingUrl: null,
+            ...comun,
+          }),
+          ownMeetingUrl: null,
+        })),
+      };
+    }),
   };
 }

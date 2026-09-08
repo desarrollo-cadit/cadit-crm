@@ -355,6 +355,15 @@ export async function listarModulos(organizationId: string, parentCohortId: stri
       startDate: schema.cohort.startDate,
       endDate: schema.cohort.endDate,
       minAttendancePct: schema.cohort.minAttendancePct,
+      /**
+       * 028 fase 2 — Lo que hace falta para dibujar el cronograma del módulo
+       * (`classes.ts`). Viajan en la consulta que YA se hacía: el árbol se
+       * camina una vez, no una por columna que alguien descubra que falta.
+       */
+      daysOfWeek: schema.cohort.daysOfWeek,
+      startTime: schema.cohort.startTime,
+      endTime: schema.cohort.endTime,
+      meetingUrl: schema.cohort.meetingUrl,
     })
     .from(schema.cohort)
     .where(
@@ -405,11 +414,22 @@ export function dispensaVigente(inscripcion: {
   attendanceWaiverReason: string | null;
   attendanceWaiverRevokedAt: Date | null;
 }): boolean {
+  /**
+   * Fase 2 — Ausente y NULL significan lo mismo: no hay dispensa. La versión
+   * anterior comparaba con `!== null` y una fila sin la columna —una consulta
+   * que no la seleccionó— pasaba el primer filtro y reventaba en el `.trim()`.
+   * La regla que decide si alguien aprueba no puede depender de qué columnas
+   * pidió quien la llama.
+   */
+  const otorgadaEl = inscripcion.attendanceWaiverAt ?? null;
+  const motivo = inscripcion.attendanceWaiverReason ?? null;
+  const revocadaEl = inscripcion.attendanceWaiverRevokedAt ?? null;
+
   return (
-    inscripcion.attendanceWaiverAt !== null &&
-    inscripcion.attendanceWaiverReason !== null &&
-    inscripcion.attendanceWaiverReason.trim() !== "" &&
-    inscripcion.attendanceWaiverRevokedAt === null
+    otorgadaEl !== null &&
+    motivo !== null &&
+    motivo.trim() !== "" &&
+    revocadaEl === null
   );
 }
 
@@ -423,11 +443,36 @@ export async function listarHijas(organizationId: string, parentEnrollmentId: st
     .select({
       id: schema.enrollment.id,
       cohortId: schema.enrollment.cohortId,
+      enrolledAt: schema.enrollment.enrolledAt,
       position: schema.cohort.position,
+      /**
+       * La camada a la que pertenece el módulo que REALMENTE cursó. Cuando no
+       * es la de la madre, esto es una recursada o una baja voluntaria
+       * (FR-008): es el único lugar donde ese hecho está escrito.
+       */
       parentCohortId: schema.cohort.parentCohortId,
+      cohortName: schema.cohort.name,
+      courseName: schema.course.name,
+      startDate: schema.cohort.startDate,
+      endDate: schema.cohort.endDate,
+      /** La cadena de DV-002: manda el módulo, con el curso como respaldo. */
+      cohortMinAttendancePct: schema.cohort.minAttendancePct,
+      courseMinAttendancePct: schema.course.minAttendancePct,
+      /**
+       * La dispensa es POR MÓDULO y por eso viaja acá, en la fila de la hija.
+       * El nombre del autor se resuelve en el mismo viaje: sin él el motivo
+       * no se puede escribir, y un motivo a medias es una dispensa silenciosa
+       * (FR-025).
+       */
+      attendanceWaiverAt: schema.enrollment.attendanceWaiverAt,
+      attendanceWaiverReason: schema.enrollment.attendanceWaiverReason,
+      attendanceWaiverRevokedAt: schema.enrollment.attendanceWaiverRevokedAt,
+      attendanceWaiverByName: schema.user.name,
     })
     .from(schema.enrollment)
     .leftJoin(schema.cohort, eq(schema.enrollment.cohortId, schema.cohort.id))
+    .leftJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
+    .leftJoin(schema.user, eq(schema.enrollment.attendanceWaiverBy, schema.user.id))
     .where(
       scoped(
         schema.enrollment.organizationId,

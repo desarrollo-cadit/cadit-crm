@@ -126,6 +126,91 @@ export function resolveMinAttendance(
   return cohortPct ?? coursePct;
 }
 
+/**
+ * 028 (DV-009) — Una camada de especialización NO tiene clases propias.
+ *
+ * Vive acá, junto a `generateSchedule`, y lo importa `classes.ts` para que el
+ * motivo que se muestra en pantalla y el que rechaza la generación sean el
+ * MISMO texto. Dos frases distintas para la misma regla es cómo aparece una
+ * pantalla que promete lo que el servidor después niega.
+ *
+ * El motivo no es purismo: una clase colgada del padre no pertenece a ningún
+ * módulo y rompe la pregunta "¿de qué módulo es esta clase?", que es
+ * justamente la que el ciclo 028 viene a contestar. La clase inaugural del
+ * programa se carga como clase del módulo 1.
+ */
+export const CAMADA_CON_MODULOS_SIN_CLASES =
+  "Esta camada es una especialización: las clases se cargan en cada módulo, no en la camada padre.";
+
+/**
+ * 028 (FR-030, regla 5) — La asistencia de un recorrido, MÓDULO POR MÓDULO.
+ *
+ * Devuelve un porcentaje por inscripción hija y **nunca** uno agregado: "la
+ * asistencia de la especialización" no es un dato que exista. Cada módulo
+ * tiene su cronograma, su duración y su propio mínimo (DV-002); promediar
+ * ocho meses en un número sería inventar un criterio que nadie decidió.
+ *
+ * Es PURA: recibe las filas ya leídas y las cruza en memoria. Lo que fija es
+ * la cadena que la base **no** protege (decisión 3): `class_session.cohort_id`
+ * apunta a la cohorte del módulo y `attendance.enrollment_id` a la inscripción
+ * hija. No hay clave foránea que obligue a que coincidan —y esa laxitud es la
+ * que vuelve representable la recursada en otra camada—, así que la coherencia
+ * la sostiene esta función y el test que la acompaña (FR-037).
+ *
+ * Una sesión de la camada PADRE no aparece en el `cohortId` de ningún módulo,
+ * así que no aporta a nadie: DV-009 se cumple por construcción.
+ */
+export function attendanceByModule(
+  modulos: readonly {
+    enrollmentId: string;
+    cohortId: string | null;
+    enrolledAt: Date | null;
+  }[],
+  sesiones: readonly {
+    id: string;
+    cohortId: string;
+    date: Date;
+    canceledAt: Date | null;
+  }[],
+  marcas: readonly {
+    enrollmentId: string;
+    classSessionId: string;
+    status: AttendanceStatus;
+  }[]
+): Map<string, number | null> {
+  const out = new Map<string, number | null>();
+
+  for (const m of modulos) {
+    const mias = marcas.filter((k) => k.enrollmentId === m.enrollmentId);
+
+    /**
+     * 013 (T034), repetido acá a propósito — **0% porque nadie pasó lista NO
+     * es 0% porque no vino.** En la planilla de la cohorte el 0 está bien: el
+     * coordinador sabe que todavía no cargó nada. En el recorrido de una
+     * persona es una acusación, y encima una que después decide si aprueba.
+     */
+    if (!m.cohortId || mias.length === 0) {
+      out.set(m.enrollmentId, null);
+      continue;
+    }
+
+    const propias = sesiones.filter((s) => s.cohortId === m.cohortId);
+    out.set(
+      m.enrollmentId,
+      attendancePercentage(
+        propias.map((s) => ({
+          sessionDate: s.date,
+          canceled: Boolean(s.canceledAt),
+          status: mias.find((k) => k.classSessionId === s.id)?.status ?? null,
+        })),
+        m.enrolledAt
+      )
+    );
+  }
+
+  return out;
+}
+
 /* ============================================================
  * Operaciones sobre la base
  * ============================================================ */
@@ -153,6 +238,40 @@ export async function generateSchedule(
   if (!cohort) {
     return { ok: false, status: 404, code: "not_found", message: "Cohorte no encontrada" };
   }
+
+  /**
+   * 028 (DV-009) — La camada de una especialización no genera cronograma.
+   *
+   * Se pregunta por la PRESENCIA de módulos (FR-033), no por una bandera, y
+   * se pregunta acá y no en la pantalla: generar cuarenta clases que no
+   * pertenecen a ningún módulo es difícil de deshacer, y el endpoint se puede
+   * llamar sin pasar por el botón.
+   *
+   * Cuesta una consulta que las 33 cohortes simples también pagan. Se acepta
+   * porque `generateSchedule` es una acción explícita y única —no un listado—,
+   * y porque la alternativa (deducirlo del nombre del curso) es exactamente la
+   * heurística que FR-033 prohíbe.
+   */
+  const modulos = await db
+    .select({ id: schema.cohort.id })
+    .from(schema.cohort)
+    .where(
+      scoped(
+        schema.cohort.organizationId,
+        organizationId,
+        eq(schema.cohort.parentCohortId, cohortId)
+      )
+    )
+    .limit(1);
+  if (modulos.length > 0) {
+    return {
+      ok: false,
+      status: 422,
+      code: "camada_con_modulos",
+      message: CAMADA_CON_MODULOS_SIN_CLASES,
+    };
+  }
+
   if (!cohort.endDate) {
     return {
       ok: false,

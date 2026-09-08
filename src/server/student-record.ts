@@ -8,7 +8,12 @@ import {
   attendancePercentage,
   resolveMinAttendance,
 } from "@/server/attendance";
-import { approvalState, type ApprovalState } from "@/server/grading";
+import {
+  dispensaDeInscripcion,
+  moduleApprovalState,
+  programApprovalState,
+  type ApprovalState,
+} from "@/server/grading";
 
 /**
  * 013 (T026, US6/FR-009) — El legajo: todo el recorrido de una persona en una
@@ -52,6 +57,55 @@ export type RecordCourse = {
   approvalReasons: string[];
   assessments: { name: string; passed: boolean | null }[];
   certificate: { code: string; issuedAt: string; revokedAt: string | null } | null;
+  /**
+   * 028 (FR-022) — `true` cuando esta inscripción tiene una dispensa vigente.
+   * La dispensa es POR MÓDULO, así que en las 33 cohortes simples y en la
+   * madre de una especialización es siempre `false`.
+   */
+  dispensada: boolean;
+  /**
+   * 028 (FR-031) — Los módulos, cuando esta cursada es una especialización.
+   *
+   * `undefined` en las 33 cohortes simples: la clave no existe y el legajo es
+   * el de siempre (FR-032). La condición es la PRESENCIA de inscripciones
+   * hijas, no una bandera ni una heurística sobre el nombre (FR-033).
+   */
+  modules?: RecordModule[];
+};
+
+/**
+ * 028 (FR-031) — Un módulo del recorrido, tal como lo cursó esta persona.
+ *
+ * Lo que lo distingue de una cursada suelta es que dice **qué corrida** fue:
+ * un módulo puede haberse cursado con OTRA camada —baja voluntaria o
+ * recursada (US4)—, y sin decirlo el legajo mostraría el módulo 3 de EBIM 13
+ * cuando la persona lo cursó con EBIM 14. Es el hecho que el ciclo existe
+ * para poder representar; esconderlo lo desperdicia.
+ */
+export type RecordModule = {
+  enrollmentId: string;
+  cohortId: string | null;
+  cohortName: string;
+  courseName: string;
+  /** El orden que decidió la academia (FR-002). */
+  position: number | null;
+  /** La camada del módulo que efectivamente cursó. */
+  camadaId: string | null;
+  camadaName: string | null;
+  /** `true` = lo cursó con otra camada, no con la de su especialización. */
+  otraCamada: boolean;
+  startDate: string | null;
+  endDate: string | null;
+  enrolledAt: string | null;
+  /** El porcentaje REAL: la dispensa no lo infla (FR-026). */
+  attendancePct: number | null;
+  minAttendancePct: number | null;
+  approval: ApprovalState | "sin_datos";
+  approvalReasons: string[];
+  assessments: { name: string; passed: boolean | null }[];
+  certificate: { code: string; issuedAt: string; revokedAt: string | null } | null;
+  /** `true` cuando este módulo tiene una dispensa vigente (FR-022). */
+  dispensada: boolean;
 };
 
 export type RecordAccount = {
@@ -101,10 +155,18 @@ export async function getStudentRecord(
       enrollment: schema.enrollment,
       cohort: schema.cohort,
       course: schema.course,
+      /**
+       * 028 (FR-025) — Quién otorgó la dispensa, resuelto a nombre en el mismo
+       * viaje. Sin autor el motivo no se puede escribir, y un motivo a medias
+       * es una dispensa silenciosa. No agrega una consulta: es un `leftJoin`
+       * sobre la que ya traía las inscripciones.
+       */
+      waiverAuthor: schema.user.name,
     })
     .from(schema.enrollment)
     .leftJoin(schema.cohort, eq(schema.enrollment.cohortId, schema.cohort.id))
     .leftJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
+    .leftJoin(schema.user, eq(schema.enrollment.attendanceWaiverBy, schema.user.id))
     .where(
       scoped(
         schema.enrollment.organizationId,
@@ -119,9 +181,27 @@ export async function getStudentRecord(
     .map((e) => e.cohort?.id)
     .filter((id): id is string => Boolean(id));
 
+  /**
+   * 028 (FR-031) — Las camadas de los módulos que esta persona cursó y que NO
+   * están ya entre sus cohortes: es el caso de la recursada (US4), donde el
+   * módulo pertenece a la EBIM siguiente y esa camada no aparece por ningún
+   * otro lado del legajo. Sin su nombre, "lo cursó con otra camada" queda sin
+   * decir CUÁL, que es justo el dato que coordinación necesita.
+   *
+   * Vacío —y por lo tanto sin consulta— para toda persona sin especialización.
+   */
+  const camadasAjenas = [
+    ...new Set(
+      enrollments
+        .map((e) => e.cohort?.parentCohortId)
+        .filter((id): id is string => Boolean(id))
+        .filter((id) => !cohortIds.includes(id))
+    ),
+  ];
+
   // Se traen todas las piezas de una vez y se cruzan en memoria: una persona
   // con tres cursadas no debería costar quince consultas.
-  const [asistencias, clases, resultados, evaluaciones, certificados] =
+  const [asistencias, clases, resultados, evaluaciones, certificados, camadas] =
     await Promise.all([
       enrollmentIds.length
         ? db
@@ -183,9 +263,59 @@ export async function getStudentRecord(
               )
             )
         : [],
+      camadasAjenas.length
+        ? db
+            .select({ id: schema.cohort.id, name: schema.cohort.name })
+            .from(schema.cohort)
+            .where(
+              scoped(
+                schema.cohort.organizationId,
+                organizationId,
+                inArray(schema.cohort.id, camadasAjenas)
+              )
+            )
+        : [],
     ]);
 
-  const courses: RecordCourse[] = enrollments.map(({ enrollment, cohort, course }) => {
+  const camadaNombre = new Map<string, string>([
+    ...enrollments
+      .map((e) => e.cohort)
+      .filter((c): c is NonNullable<typeof c> => Boolean(c))
+      .map((c) => [c.id, c.name ?? ""] as const),
+    ...camadas.map((c) => [c.id, c.name ?? ""] as const),
+  ]);
+
+  /**
+   * 028 (FR-031) — El recorrido, agrupado por madre. Se arma sobre las
+   * inscripciones que YA se leyeron: las hijas son inscripciones de la misma
+   * persona, así que caminar el árbol no cuesta ni una consulta más.
+   */
+  const hijasPorMadre = new Map<string, typeof enrollments>();
+  for (const fila of enrollments) {
+    const madre = fila.enrollment.parentEnrollmentId;
+    if (!madre) continue;
+    const lista = hijasPorMadre.get(madre) ?? [];
+    lista.push(fila);
+    hijasPorMadre.set(madre, lista);
+  }
+
+  /**
+   * Una cursada, con la regla de aprobación de siempre más la dispensa.
+   *
+   * La comparten la cursada suelta y el módulo porque son **la misma cosa**:
+   * un módulo es una cohorte y se evalúa con la regla de cualquier cohorte
+   * (FR-016). Lo que el módulo agrega —posición, camada, si la cursó con otra—
+   * se pega afuera, donde se sabe de qué recorrido es.
+   */
+  const armarCursada = ({
+    enrollment,
+    cohort,
+    course,
+    waiverAuthor,
+  }: (typeof enrollments)[number]): Omit<
+    RecordModule,
+    "position" | "camadaId" | "camadaName" | "otraCamada"
+  > => {
     const clasesDeLaCohorte = clases.filter((c) => c.cohortId === cohort?.id);
     const asistenciaDeEsta = asistencias.filter((a) => a.enrollmentId === enrollment.id);
 
@@ -229,10 +359,21 @@ export async function getStudentRecord(
       required: a.required,
     }));
 
-    const { state, reasons } = approvalState(
+    /**
+     * 028 (FR-024) — La dispensa entra acá y en ningún otro lado: saltea la
+     * compuerta de asistencia y nada más. Sin dispensa —las 384 filas de
+     * hoy— `moduleApprovalState` devuelve exactamente lo que devolvía
+     * `approvalState` (FR-032).
+     */
+    const dispensa = dispensaDeInscripcion({
+      ...enrollment,
+      attendanceWaiverByName: waiverAuthor,
+    });
+    const { state, reasons } = moduleApprovalState(
       misResultados.filter((r) => r.required).map((r) => r.passed),
       pct,
-      minPct
+      minPct,
+      dispensa
     );
 
     // Sin evaluaciones Y sin asistencia registrada no hay nada que afirmar.
@@ -241,6 +382,7 @@ export async function getStudentRecord(
     const cert = certificados.find((c) => c.enrollmentId === enrollment.id);
 
     return {
+      dispensada: dispensa !== null,
       enrollmentId: enrollment.id,
       cohortId: cohort?.id ?? null,
       cohortName: cohort?.name ?? course?.name ?? "Lead sin cohorte",
@@ -263,7 +405,80 @@ export async function getStudentRecord(
           }
         : null,
     };
-  });
+  };
+
+  /**
+   * 028 (FR-031) — El legajo muestra la especialización ENTERA, y una sola vez.
+   *
+   * Las hijas no vuelven a aparecer sueltas arriba: cinco filas donde hubo una
+   * venta es el mismo número inflado que FR-014 persigue en el tablero, y
+   * además rompe la pregunta que el legajo contesta ("¿qué cursó Ana?" es una
+   * especialización, no cinco cursos).
+   *
+   * El estado de la madre se **compone** (FR-016) y no se calcula: su cohorte
+   * no tiene clases ni evaluaciones propias (DV-009), así que preguntarle a
+   * `approvalState` daría el default optimista `aprobado` sobre una persona.
+   * Es exactamente la trampa que en este mismo archivo obligó a inventar
+   * `sin_datos`, un nivel más arriba.
+   */
+  const courses: RecordCourse[] = enrollments
+    // Ausente o NULL significan lo mismo: inscripción normal, sin recorrido
+    // arriba. Es el estado de las 384 filas de hoy (FR-006).
+    .filter((e) => !e.enrollment.parentEnrollmentId)
+    .map((fila) => {
+      const cursada = armarCursada(fila);
+      const hijas = hijasPorMadre.get(fila.enrollment.id) ?? [];
+      if (hijas.length === 0) return cursada;
+
+      const camadaDeLaMadre = fila.cohort?.id ?? null;
+      const modules: RecordModule[] = hijas
+        .map((h) => {
+          const modulo = armarCursada(h);
+          const camadaId = h.cohort?.parentCohortId ?? null;
+          return {
+            ...modulo,
+            position: h.cohort?.position ?? null,
+            camadaId,
+            camadaName: camadaId ? (camadaNombre.get(camadaId) || null) : null,
+            // US4 — el módulo cursado con la camada siguiente, dicho como tal.
+            otraCamada: camadaId !== null && camadaId !== camadaDeLaMadre,
+          };
+        })
+        .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+
+      /**
+       * Un módulo en `sin_datos` cuenta como `pendiente`: todavía no hay nada
+       * que afirmar sobre él, y "nada que afirmar" nunca puede empujar una
+       * especialización a `aprobado`.
+       */
+      const compuesto = programApprovalState(
+        modules.map((m) => (m.approval === "sin_datos" ? "pendiente" : m.approval))
+      );
+      const culpables = modules.filter((m) =>
+        compuesto.state === "reprobado"
+          ? m.approval === "reprobado"
+          : m.approval !== "aprobado"
+      );
+
+      return {
+        ...cursada,
+        // Regla 5 — no existe "la asistencia de la especialización". Cada
+        // módulo tiene la suya, y promediarlas inventaría un criterio.
+        attendancePct: null,
+        minAttendancePct: null,
+        approval: compuesto.state,
+        approvalReasons: [
+          ...compuesto.reasons,
+          // SC-010 — las razones nombran el módulo que las causó.
+          ...culpables.map((m) =>
+            m.position === null
+              ? `${m.cohortName}: ${m.approval}`
+              : `Módulo ${m.position} — ${m.cohortName}: ${m.approval}`
+          ),
+        ],
+        modules,
+      };
+    });
 
   const base: StudentRecordDto = {
     contact: {

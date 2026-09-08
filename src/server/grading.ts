@@ -3,7 +3,12 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
-import { attendancePercentage, resolveMinAttendance } from "@/server/attendance";
+import {
+  attendanceByModule,
+  attendancePercentage,
+  resolveMinAttendance,
+} from "@/server/attendance";
+import { dispensaVigente, listarHijas } from "@/server/program-modules";
 
 /**
  * 010 — Evaluación y certificados.
@@ -151,6 +156,113 @@ export function programApprovalState(childStates: ApprovalState[]): {
   }
 
   return { state: "aprobado", reasons: [] };
+}
+
+/* ============================================================
+ * 028 (FR-022/FR-024/FR-025) — La dispensa de asistencia
+ * ============================================================ */
+
+/**
+ * Una dispensa ya verificada como VIGENTE (`dispensaVigente`, fase 1), con lo
+ * que hace falta para poder explicarla en una frase.
+ *
+ * `otorgadaPor` viene resuelto a nombre por quien consulta: la columna guarda
+ * un id de `user` y el `set null` de la baja hace que un día pueda faltar.
+ * Que falte es un estado real, no un error, y se dice como tal.
+ */
+export type DispensaDeAsistencia = {
+  otorgadaEl: Date;
+  /** Nombre de quien la otorgó. `null` = el autor ya no está en el sistema. */
+  otorgadaPor: string | null;
+  motivo: string;
+};
+
+/** D/M/AAAA en UTC: el texto no puede depender de la máquina que lo arma. */
+function fechaCorta(d: Date): string {
+  return `${d.getUTCDate()}/${d.getUTCMonth() + 1}/${d.getUTCFullYear()}`;
+}
+
+/**
+ * El motivo que viaja en `approvalReasons` (FR-025).
+ *
+ * `observacion` es la frase que la compuerta de asistencia habría dicho —
+ * "Asistencia 62% (mínimo 80%)"—, y se conserva ENTERA: el certificado congela
+ * la asistencia real (FR-026) y la pantalla tiene que mostrar el mismo número.
+ * Inflar el porcentaje para que la aprobación "cierre" sería falsificar el
+ * dato; el hecho es que faltó y que alguien lo habilitó igual, y las dos
+ * mitades quedan escritas en la misma línea.
+ */
+function motivoDeDispensa(observacion: string, d: DispensaDeAsistencia): string {
+  const quien = d.otorgadaPor
+    ? `por ${d.otorgadaPor}`
+    : "por un usuario que ya no está en el sistema";
+  return `${observacion} — dispensa otorgada ${quien} el ${fechaCorta(d.otorgadaEl)}: ${d.motivo}`;
+}
+
+/**
+ * 028 (FR-024) — `approvalState()` de un MÓDULO, con la dispensa adentro.
+ *
+ * `approvalState()` no se toca: es la regla por cohorte y la usan la planilla,
+ * el legajo y el portal. Lo que hace esta función es envolverla para el único
+ * caso que el ciclo 028 agrega, y hacerlo de manera que sin dispensa devuelva
+ * **exactamente** el mismo objeto (FR-032).
+ *
+ * La dispensa saltea **sólo la compuerta de asistencia**:
+ *
+ * - una evaluación obligatoria en `false` sigue reprobando —perdona faltas, no
+ *   trabajos—, y una en `null` sigue dejando `pendiente` (FR-017);
+ * - la asistencia deja de pesar tanto cuando está por debajo del mínimo como
+ *   cuando no hay una sola marca: con el módulo ya habilitado, quedar
+ *   `pendiente` para siempre por una lista que nadie tomó es el mismo
+ *   resultado equivocado por otro camino.
+ *
+ * La compuerta no se reimplementa: se le pregunta a `approvalState` con la
+ * lista de evaluaciones VACÍA, donde lo único que puede observar es la
+ * asistencia. Así el umbral vive en un solo lugar y no pueden divergir.
+ */
+export function moduleApprovalState(
+  results: (boolean | null)[],
+  attendancePct: number | null,
+  minAttendancePct: number | null,
+  dispensa: DispensaDeAsistencia | null
+): { state: ApprovalState; reasons: string[] } {
+  const conCompuerta = approvalState(results, attendancePct, minAttendancePct);
+  if (!dispensa) return conCompuerta;
+
+  const compuerta = approvalState([], attendancePct, minAttendancePct);
+  // Una dispensa que no tenía nada que perdonar no ensucia la pantalla: quien
+  // cumplió la asistencia no necesita que le expliquen por qué aprobó.
+  if (compuerta.reasons.length === 0) return conCompuerta;
+
+  const sinCompuerta = approvalState(results, null, null);
+  return {
+    state: sinCompuerta.state,
+    reasons: [
+      ...sinCompuerta.reasons,
+      motivoDeDispensa(compuerta.reasons[0]!, dispensa),
+    ],
+  };
+}
+
+/**
+ * Arma la dispensa vigente de una inscripción, o `null`.
+ *
+ * La vigencia la decide `dispensaVigente` (fase 1) y no esta función: si cada
+ * pantalla mirara las columnas por su cuenta, una acabaría honrando una
+ * dispensa revocada que otra ya descartó.
+ */
+export function dispensaDeInscripcion(fila: {
+  attendanceWaiverAt: Date | null;
+  attendanceWaiverReason: string | null;
+  attendanceWaiverRevokedAt: Date | null;
+  attendanceWaiverByName?: string | null;
+}): DispensaDeAsistencia | null {
+  if (!dispensaVigente(fila)) return null;
+  return {
+    otorgadaEl: fila.attendanceWaiverAt!,
+    otorgadaPor: fila.attendanceWaiverByName ?? null,
+    motivo: fila.attendanceWaiverReason!.trim(),
+  };
 }
 
 /**
@@ -456,6 +568,240 @@ export async function copyAssessments(
   };
 }
 
+/* ============================================================
+ * 028 (FR-016/FR-030) — La especialización, compuesta sobre sus módulos
+ * ============================================================ */
+
+export type ModuleGrading = {
+  /** La inscripción HIJA: es contra ella que se registró todo. */
+  enrollmentId: string;
+  cohortId: string | null;
+  cohortName: string;
+  courseName: string;
+  /** El orden que decidió la academia (FR-002). `null` = dato sin cargar. */
+  position: number | null;
+  /** La camada del módulo que efectivamente cursó. */
+  camadaId: string | null;
+  /** `true` = lo cursó con OTRA camada: recursada o baja voluntaria (US4). */
+  otraCamada: boolean;
+  startDate: string | null;
+  endDate: string | null;
+  /** El porcentaje REAL, nunca inflado por la dispensa (FR-026). */
+  attendancePct: number | null;
+  minAttendancePct: number | null;
+  state: ApprovalState;
+  reasons: string[];
+  /** `true` cuando este módulo tiene una dispensa vigente (FR-022). */
+  dispensada: boolean;
+};
+
+export type ProgramGradingDto = {
+  /** La inscripción MADRE. */
+  enrollmentId: string;
+  cohortId: string | null;
+  state: ApprovalState;
+  reasons: string[];
+  modules: ModuleGrading[];
+};
+
+/** "Módulo 2 — Revit Estructura", o sólo el nombre si no hay `position`. */
+function nombrarModulo(m: { position: number | null; cohortName: string }): string {
+  return m.position === null ? m.cohortName : `Módulo ${m.position} — ${m.cohortName}`;
+}
+
+/**
+ * 028 (FR-016) — El estado de una especialización, caminando el recorrido.
+ *
+ * Es la mitad que faltaba: `programApprovalState` (fase 1) es pura y compone
+ * estados ya calculados; acá se cargan las hijas, se resuelve el estado de
+ * **cada una como si fuera una cohorte cualquiera** —porque lo es— y recién
+ * después se compone.
+ *
+ * Tres cosas que esta función NO hace, y no por olvido:
+ *
+ * - **No agrega la asistencia.** No existe "la asistencia de la
+ *   especialización": cada módulo tiene su cronograma y su propio mínimo
+ *   (regla 5, DV-002). `attendanceByModule` devuelve un número por módulo y
+ *   ninguno por el programa.
+ * - **No toca `approvalState()`.** El módulo se evalúa con la misma regla que
+ *   cualquier cohorte, más la dispensa (`moduleApprovalState`), y esa regla no
+ *   sabe ni necesita saber que hay un programa arriba.
+ * - **No bloquea nada.** Reprobar un módulo no impide los demás (regla 2,
+ *   FR-018): el sistema registra, la academia decide quién recursa.
+ *
+ * Las razones de la madre nombran el módulo que las causó (SC-010): "faltan
+ * aprobar 2 módulos" sin decir cuáles obliga a abrir otra pantalla, que es
+ * exactamente lo que la vista de la madre viene a evitar.
+ */
+export async function programGrading(
+  organizationId: string,
+  parentEnrollmentId: string
+): Promise<ProgramGradingDto | null> {
+  const db = getDb();
+
+  const madreRows = await db
+    .select({ id: schema.enrollment.id, cohortId: schema.enrollment.cohortId })
+    .from(schema.enrollment)
+    .where(
+      scoped(
+        schema.enrollment.organizationId,
+        organizationId,
+        eq(schema.enrollment.id, parentEnrollmentId)
+      )
+    )
+    .limit(1);
+  const madre = madreRows[0];
+  if (!madre) return null;
+
+  const hijas = await listarHijas(organizationId, parentEnrollmentId);
+
+  // DV-005 — una madre sin hijas está `pendiente`, jamás `aprobado`. El
+  // paquete se vende y se paga antes de que la academia arme los módulos, y
+  // el default optimista de `approvalState([], null, null)` afirmaría que
+  // alguien aprobó una especialización de la que no se cargó nada.
+  if (hijas.length === 0) {
+    const compuesto = programApprovalState([]);
+    return { enrollmentId: madre.id, cohortId: madre.cohortId, ...compuesto, modules: [] };
+  }
+
+  const cohorteIds = hijas
+    .map((h) => h.cohortId)
+    .filter((id): id is string => id !== null);
+  const inscripcionIds = hijas.map((h) => h.id);
+
+  const [sesiones, marcas, evaluaciones, resultados] = await Promise.all([
+    cohorteIds.length
+      ? db
+          .select({
+            id: schema.classSession.id,
+            cohortId: schema.classSession.cohortId,
+            date: schema.classSession.date,
+            canceledAt: schema.classSession.canceledAt,
+          })
+          .from(schema.classSession)
+          .where(
+            scoped(
+              schema.classSession.organizationId,
+              organizationId,
+              inArray(schema.classSession.cohortId, cohorteIds)
+            )
+          )
+      : [],
+    db
+      .select({
+        enrollmentId: schema.attendance.enrollmentId,
+        classSessionId: schema.attendance.classSessionId,
+        status: schema.attendance.status,
+      })
+      .from(schema.attendance)
+      .where(
+        scoped(
+          schema.attendance.organizationId,
+          organizationId,
+          inArray(schema.attendance.enrollmentId, inscripcionIds)
+        )
+      ),
+    cohorteIds.length
+      ? db
+          .select({
+            id: schema.assessment.id,
+            cohortId: schema.assessment.cohortId,
+            required: schema.assessment.required,
+          })
+          .from(schema.assessment)
+          .where(
+            scoped(
+              schema.assessment.organizationId,
+              organizationId,
+              inArray(schema.assessment.cohortId, cohorteIds)
+            )
+          )
+      : [],
+    db
+      .select({
+        assessmentId: schema.assessmentResult.assessmentId,
+        enrollmentId: schema.assessmentResult.enrollmentId,
+        passed: schema.assessmentResult.passed,
+      })
+      .from(schema.assessmentResult)
+      .where(
+        scoped(
+          schema.assessmentResult.organizationId,
+          organizationId,
+          inArray(schema.assessmentResult.enrollmentId, inscripcionIds)
+        )
+      ),
+  ]);
+
+  const porModulo = attendanceByModule(
+    hijas.map((h) => ({
+      enrollmentId: h.id,
+      cohortId: h.cohortId,
+      enrolledAt: h.enrolledAt,
+    })),
+    sesiones,
+    marcas
+  );
+
+  const modules: ModuleGrading[] = hijas.map((h) => {
+    const minPct = resolveMinAttendance(
+      h.cohortMinAttendancePct,
+      h.courseMinAttendancePct
+    );
+    const pct = porModulo.get(h.id) ?? null;
+
+    // Sólo las obligatorias definen la aprobación, y una sin resultado cargado
+    // cuenta como pendiente y no como reprobada (FR-017).
+    const obligatorias = evaluaciones.filter(
+      (a) => a.cohortId === h.cohortId && a.required
+    );
+    const evaluadas = obligatorias.map(
+      (a) =>
+        resultados.find((r) => r.assessmentId === a.id && r.enrollmentId === h.id)
+          ?.passed ?? null
+    );
+
+    const dispensa = dispensaDeInscripcion(h);
+    const { state, reasons } = moduleApprovalState(evaluadas, pct, minPct, dispensa);
+    const cohortName = h.cohortName ?? h.courseName ?? "Módulo sin nombre";
+
+    return {
+      enrollmentId: h.id,
+      cohortId: h.cohortId,
+      cohortName,
+      courseName: h.courseName ?? "—",
+      position: h.position,
+      camadaId: h.parentCohortId,
+      // FR-008 — el módulo cursado con otra camada es el escenario que define
+      // la fase; que se note en el DTO es lo que permite decirlo en pantalla.
+      otraCamada: h.parentCohortId !== null && h.parentCohortId !== madre.cohortId,
+      startDate: h.startDate?.toISOString() ?? null,
+      endDate: h.endDate?.toISOString() ?? null,
+      attendancePct: pct,
+      minAttendancePct: minPct,
+      state,
+      reasons,
+      dispensada: dispensa !== null,
+    };
+  });
+
+  const compuesto = programApprovalState(modules.map((m) => m.state));
+  const culpables = modules.filter((m) =>
+    compuesto.state === "reprobado" ? m.state === "reprobado" : m.state === "pendiente"
+  );
+
+  return {
+    enrollmentId: madre.id,
+    cohortId: madre.cohortId,
+    state: compuesto.state,
+    reasons: [
+      ...compuesto.reasons,
+      ...culpables.map((m) => `${nombrarModulo(m)}: ${m.state}`),
+    ],
+    modules,
+  };
+}
+
 export type CohortGradingDto = {
   assessments: AssessmentDto[];
   minAttendancePct: number | null;
@@ -491,9 +837,24 @@ export async function cohortGrading(
       enrolledAt: schema.enrollment.enrolledAt,
       firstName: schema.contact.firstName,
       lastName: schema.contact.lastName,
+      /**
+       * 028 (FR-024) — La dispensa viaja en la consulta que YA lee el roster,
+       * con el nombre de su autor. Una cohorte de módulo se corrige con esta
+       * misma planilla (FR-030): si la dispensa no llegara acá, el módulo
+       * mostraría `reprobado` a alguien que el dueño ya habilitó, y la
+       * emisión del certificado —que lee esta planilla— lo negaría.
+       *
+       * En las 33 cohortes simples las tres columnas son NULL y no cambia
+       * absolutamente nada (FR-032).
+       */
+      attendanceWaiverAt: schema.enrollment.attendanceWaiverAt,
+      attendanceWaiverReason: schema.enrollment.attendanceWaiverReason,
+      attendanceWaiverRevokedAt: schema.enrollment.attendanceWaiverRevokedAt,
+      attendanceWaiverByName: schema.user.name,
     })
     .from(schema.enrollment)
     .innerJoin(schema.contact, eq(schema.enrollment.contactId, schema.contact.id))
+    .leftJoin(schema.user, eq(schema.enrollment.attendanceWaiverBy, schema.user.id))
     .where(
       scoped(
         schema.enrollment.organizationId,
@@ -591,7 +952,12 @@ export async function cohortGrading(
       const evaluadas = obligatorias.map((a) =>
         mine.has(a.id) ? (mine.get(a.id) ?? null) : null
       );
-      const { state, reasons } = approvalState(evaluadas, pct, minPct);
+      const { state, reasons } = moduleApprovalState(
+        evaluadas,
+        pct,
+        minPct,
+        dispensaDeInscripcion(e)
+      );
       const cert = certByEnrollment.get(e.id);
 
       return {
