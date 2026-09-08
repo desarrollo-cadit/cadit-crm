@@ -94,6 +94,66 @@ export function approvalState(
 }
 
 /**
+ * 028 (DV-005, FR-016) — El estado de una ESPECIALIZACIÓN, compuesto sobre
+ * el de sus módulos.
+ *
+ * `approvalState()` no se toca: corre tal cual está sobre cada inscripción de
+ * módulo, y no sabe ni necesita saber que hay un programa arriba. Lo que
+ * compone es esta función, y sólo sobre estados ya calculados — no camina el
+ * árbol ni consulta nada. QUIÉN la llama, recorriendo las inscripciones
+ * hijas, es trabajo de la fase 2.
+ *
+ * **Por qué existe la lista vacía como caso propio (DV-005)**: una madre PUEDE
+ * existir sin hijas todavía creadas — se vende y se paga el paquete antes de
+ * que la academia arme el detalle de los módulos. Si el estado de esa madre
+ * se calculara con `approvalState([], null, null)`, el default optimista
+ * devolvería `aprobado`: el sistema afirmaría que alguien aprobó una
+ * especialización de la que no se cargó un solo módulo.
+ *
+ * Ese default está bien en la planilla de cohorte y es falso cuando se afirma
+ * algo sobre una persona. Es exactamente la trampa que en el legajo (013)
+ * obligó a inventar `sin_datos`, y que CLAUDE.md deja anotada como ya
+ * conocida. Acá se paga con tres líneas y un test.
+ */
+export function programApprovalState(childStates: ApprovalState[]): {
+  state: ApprovalState;
+  reasons: string[];
+} {
+  if (childStates.length === 0) {
+    return {
+      state: "pendiente",
+      reasons: ["Todavía no hay ningún módulo cargado en la especialización"],
+    };
+  }
+
+  const reprobados = childStates.filter((s) => s === "reprobado").length;
+  if (reprobados > 0) {
+    return {
+      state: "reprobado",
+      reasons: [
+        reprobados === 1 ? "Reprobó un módulo" : `Reprobó ${reprobados} módulos`,
+      ],
+    };
+  }
+
+  // FR-017 — un módulo que todavía no empezó deja `pendiente`, jamás
+  // `reprobado`. Sobre ocho meses de cursada eso es la norma, no el matiz.
+  const pendientes = childStates.filter((s) => s === "pendiente").length;
+  if (pendientes > 0) {
+    return {
+      state: "pendiente",
+      reasons: [
+        pendientes === 1
+          ? "Falta aprobar un módulo"
+          : `Faltan aprobar ${pendientes} módulos`,
+      ],
+    };
+  }
+
+  return { state: "aprobado", reasons: [] };
+}
+
+/**
  * Código público del certificado. Aleatorio y NO secuencial (FR-010): con un
  * correlativo, cualquiera que tenga un código puede recorrer el endpoint de
  * verificación y listar a todos los egresados de la academia.

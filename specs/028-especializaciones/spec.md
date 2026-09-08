@@ -288,7 +288,12 @@ curso, un renglón por bloque, con sus `topics` en `jsonb`, para que el sitio
 comercial dibuje el acordeón de la ficha pública. No tiene profesor, ni
 fechas, ni alumnos. No es una unidad de cursada: es contenido de la página.
 
-**Y tiene 0 filas en producción.** Nadie la usó nunca desde el ciclo 006.
+**Y tiene 0 filas en producción.**
+
+> **Corrección de la fase 1**: la frase que seguía acá —*"nadie la usó nunca
+> desde el ciclo 006"*— es falsa y ya no está. La tabla la nombran 8 archivos
+> de `src/` y alimenta el catálogo público; 0 filas significa que el dueño no
+> cargó temarios, no que el código no la use. Ver DV-001, resuelta.
 
 Si los módulos de programa entran sin resolver esto, el repositorio queda con
 **dos cosas distintas llamadas "módulo"**, una de ellas vacía y la otra en el
@@ -536,8 +541,16 @@ y se resuelve con datos, no inventando la tabla por las dudas.
 - **FR-005**: Cómo se hacen cumplir FR-003 y FR-004, con el costo declarado:
   - La auto-referencia se expresa como
     `check (parent_cohort_id is null or parent_cohort_id <> id)` en la
-    migración. **Sería el primer `check` del repositorio** —hoy hay 0 en
-    `drizzle/`— y entra porque es una línea y cubre el error más tonto.
+    migración. Entra porque es una línea y cubre el error más tonto.
+
+    > **Corrección de la fase 1**: este párrafo decía que sería *"el primer
+    > `check` del repositorio — hoy hay 0 en `drizzle/`"*. Es falso, y se
+    > verificó: ya existen **dos**, `account_link_kind_coherente`
+    > (`drizzle/0023`) y `resource_contenedor_unico` (`drizzle/0030`,
+    > redefinido en `drizzle/0035`), declarados con `check()` en
+    > `src/lib/db/schema.ts`. El mecanismo no se inaugura acá: se usa. Lo que
+    > sí es cierto es que **no hay ningún trigger** en `drizzle/`, y por eso
+    > la profundidad no se resuelve con uno.
   - La profundidad **no es expresable en un `check`**: exige mirar otra fila.
     Las opciones reales son un trigger o el servidor, y se elige el
     **servidor**: la función que asigna un padre rechaza como candidata a
@@ -755,12 +768,40 @@ Las preguntas sobre certificados, bloqueo por reprobación y aprobación por
 módulo **ya no están acá**: las contestó el dueño el 2026-09-07 y viven en la
 decisión 2. Lo que queda abierto es esto:
 
-- **DV-001**: qué se hace con `course_module` — **renombrar** a
-  `course_syllabus_section` o **eliminar**. *(propuesta: eliminar. 0 filas, 0
-  uso desde el ciclo 006, y recrearla el día que el temario estructurado haga
-  falta cuesta menos que arrastrar una tabla vacía con el nombre equivocado.
-  Si el sitio comercial la tiene prevista, se renombra.)*
-- **DV-002**: la asistencia se exige por módulo (regla 5), pero **¿de dónde
+- **DV-001** — **RESUELTA en la fase 1, y de manera DISTINTA a la que esta
+  spec proponía. La propuesta original estaba apoyada en un dato falso.**
+
+  La propuesta decía *"eliminar. 0 filas, 0 uso desde el ciclo 006"*. Lo
+  segundo no es cierto y se verificó archivo por archivo: `course_module` /
+  `courseModule` lo nombran **8 archivos de `src/`** —
+  `src/app/api/courses/route.ts`, `src/app/api/courses/[id]/route.ts`,
+  `src/app/api/resources/route.ts`, `src/lib/db/ids.ts`,
+  `src/lib/db/schema.ts`, `src/server/course-content.ts`,
+  `src/server/public-catalog.ts`, `src/server/resources.ts` — más
+  `scripts/import/cadit-2026.ts` y dos tests
+  (`tests/unit/course-content.test.ts`, `tests/unit/resources.test.ts`).
+  **Alimenta el catálogo público.** Que la tabla esté vacía en producción dice
+  que el dueño todavía no cargó ningún temario, no que el código no la use:
+  borrarla o renombrarla rompe el catálogo y once archivos.
+
+  **Resolución: `course_module` NO se elimina y NO se renombra.** Tampoco hace
+  falta: **no hay colisión de tablas**. Los módulos de programa son cohortes
+  hijas (`cohort.parent_cohort_id`) y esta fase no crea ninguna tabla
+  `module`. La colisión es de **vocabulario**, y se resuelve donde nace — en
+  los nombres y en los comentarios:
+
+  - `courseModule` lleva en `schema.ts` un bloque que dice explícitamente que
+    es el **temario de un curso** y que **NO es un módulo de programa**, con
+    esta evidencia adentro para que nadie reabra la propuesta de borrarla.
+  - El código nuevo dice siempre **"módulo de programa"** o **"cohorte hija"**,
+    nunca "módulo" a secas.
+  - Los comentarios de `courseModule` hablan de **"bloque del temario"**.
+
+  FR-027 se cumple así: en el repositorio "módulo" tiene un solo significado
+  operativo —la cohorte hija— y el otro uso queda nombrado como lo que es.
+- **DV-002** — **RESUELTA (fase 1): sin cambio de esquema.** `cohort` YA tiene `min_attendance_pct` y `capacity`, verificado contra la base en vivo. Un módulo ES una cohorte, así que ya declara su propio mínimo con el del curso como respaldo (`resolveMinAttendance`, ciclo 009). La pregunta original queda abajo como registro.
+
+  La asistencia se exige por módulo (regla 5), pero **¿de dónde
   sale el número?** Hoy `min_attendance_pct` vive en `course` y la cohorte lo
   pisa. Las dos opciones: el módulo **hereda** el del curso de la
   especialización, o **cada módulo declara el suyo**. *(propuesta: cada módulo
@@ -770,7 +811,7 @@ decisión 2. Lo que queda abierto es esto:
   inventar nada, sólo decidir qué curso es el que se hereda cuando el módulo
   se cursa en otra camada.)* Con dispensas por módulo (decisión 4) esto pesa
   más: el umbral y su excepción tienen que hablar del mismo módulo.
-- **DV-003**: **¿qué capacidad gobierna la dispensa de asistencia?**
+- **DV-003** — **RESUELTA: `evaluacion.editar`.** No se agrega ninguna capacidad 18, y por lo tanto no hay nada que describir en `src/lib/guia.ts`. El razonamiento original:
   *(propuesta: `evaluacion.editar`. Es una decisión de aprobación —lo que
   cambia es si el alumno aprueba—, no de asistencia: `asistencia.editar` la
   tiene el profesor que pasa lista, y habilitar a alguien pese a sus faltas es
@@ -783,7 +824,7 @@ decisión 2. Lo que queda abierto es esto:
   capacidad puede existir sin que la guía diga qué es y dónde se usa. Se
   menciona acá para que la decisión se tome sabiendo lo que arrastra, no para
   desalentarla.
-- **DV-004**: **¿la dispensa se puede revocar?** *(propuesta: sí, con el mismo
+- **DV-004** — **RESUELTA: sí, es revocable**, con el trío `attendance_waiver_revoked_at` / `attendance_waiver_revoked_by` / `attendance_waiver_revoke_reason`, calcado del certificado del ciclo 010. Y revocar la dispensa y revocar el certificado son **dos actos separados**: nunca se encadenan automáticamente. El razonamiento original: *(propuesta: sí, con el mismo
   patrón que el ciclo 010 le dio al certificado —`revoked_at`, `revoked_by`,
   `revoke_reason`—: se marca revocada, **no se borra**. Borrarla dejaría un
   alumno que aprobó sin que ningún registro explique por qué; y si además ya
@@ -792,14 +833,14 @@ decisión 2. Lo que queda abierto es esto:
   actos separados. La propuesta es que sean dos actos separados y explícitos:
   encadenarlos automáticamente revoca un certificado ya entregado en la mano
   de una persona, sin que nadie lo haya decidido.)*
-- **DV-005**: ¿puede existir una inscripción **madre sin hijas** todavía
+- **DV-005** — **RESUELTA: sí puede.** Implementada en la fase 1 como `programApprovalState([])` → `pendiente` (`src/server/grading.ts`), con test. El razonamiento original: ¿puede existir una inscripción **madre sin hijas** todavía
   creadas? *(propuesta: sí. Se inscribe y se paga el paquete antes de que la
   academia arme el detalle de los módulos, y prohibirlo obligaría a crear
   cuatro filas en el momento de la venta, cuando quizás no están todas las
   cohortes de módulo definidas. Consecuencia que hay que aceptar y mostrar
   bien: una madre sin hijas está `pendiente`, nunca `aprobado` — el default
   optimista de `approvalState([], null, null)` NO puede aplicarse acá.)*
-- **DV-006**: al recursar en otra EBIM, ¿la persona **ocupa cupo** de esa
+- **DV-006** — **RESUELTA: sí, ocupa cupo** de `cohort.capacity` de esa camada. Un asiento es un asiento. El razonamiento original: al recursar en otra EBIM, ¿la persona **ocupa cupo** de esa
   camada? `cohort.capacity` existe desde el ciclo 005. *(propuesta: sí, ocupa.
   Un asiento en el aula es un asiento, lo pague quien lo pague. Si el dueño
   prefiere que los recursantes entren por encima del cupo, hay que decirlo
@@ -812,7 +853,7 @@ decisión 2. Lo que queda abierto es esto:
   `course` y no `cohort`: con los módulos como cohortes hijas esto se cumple
   solo. El pago por módulo de la regla 4 no cambia esto — no es una compra de
   catálogo, es una recursada que arma coordinación.)*
-- **DV-009**: ¿la camada padre tiene clases propias, o sólo las tienen sus
+- **DV-009** — **RESUELTA: sólo los módulos tienen clases.** La camada padre no tiene ninguna; la clase inaugural se carga como clase del módulo 1. El razonamiento original: ¿la camada padre tiene clases propias, o sólo las tienen sus
   módulos? *(propuesta: sólo los módulos. Una clase colgada del padre no
   pertenece a ningún módulo y rompe la pregunta "¿de qué módulo es esta
   clase?", que es justamente la que la fase viene a contestar. La clase

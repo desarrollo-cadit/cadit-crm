@@ -10,6 +10,7 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import type { Capability } from "@/lib/capabilities";
 
@@ -387,11 +388,35 @@ export const course = pgTable(
 );
 
 /**
- * 006 — Temario estructurado del curso: un módulo por fila, con sus temas.
+ * 006 — Temario estructurado del curso: un bloque por fila, con sus temas.
  * Estructurado y no un PDF suelto para que el sitio comercial pueda
- * renderizarlo (acordeón de módulos) y para poder corregir un tema sin
+ * renderizarlo (acordeón del temario) y para poder corregir un tema sin
  * regenerar un archivo. Convive con `course.syllabus_url`, que sigue siendo
  * el PDF descargable.
+ *
+ * ============================================================
+ * 028 (DV-001) — ESTO NO ES UN MÓDULO DE PROGRAMA
+ * ============================================================
+ * Esta tabla es el **temario de UN curso**: contenido de la ficha pública,
+ * sin profesor, sin fechas, sin clases y sin alumnos. NO es la unidad de
+ * cursada de una especialización.
+ *
+ * El **módulo de programa** de la 028 es una **cohorte hija**
+ * (`cohort.parent_cohort_id`): tiene profesor, fechas, clases,
+ * evaluaciones, asistencia e inscripciones propias. No hay tabla `module`
+ * ni colisión de nombres en la base — la colisión es de vocabulario, y se
+ * resuelve nombrando: acá se dice "bloque del temario", allá se dice
+ * "módulo de programa" o "cohorte hija".
+ *
+ * La spec de la 028 proponía renombrar o ELIMINAR esta tabla alegando "0 uso
+ * desde el ciclo 006". Es falso: la nombran 8 archivos de `src/`
+ * (`api/courses/route.ts`, `api/courses/[id]/route.ts`,
+ * `api/resources/route.ts`, `lib/db/ids.ts`, `lib/db/schema.ts`,
+ * `server/course-content.ts`, `server/public-catalog.ts`,
+ * `server/resources.ts`), más el importador y dos tests, y alimenta el
+ * catálogo público. Que la tabla esté vacía en producción dice que el dueño
+ * todavía no cargó temarios, no que el código no la use: borrarla rompería
+ * el catálogo. Queda como está.
  */
 export const courseModule = pgTable(
   "course_module",
@@ -465,6 +490,37 @@ export const cohort = pgTable(
     courseId: text("course_id")
       .notNull()
       .references(() => course.id, { onDelete: "restrict" }),
+    /**
+     * 028 (FR-001) — La camada de la especialización es el PADRE; cada
+     * **módulo de programa** es una cohorte HIJA. NULL = "no es módulo de
+     * nada", que es el estado de las 41 filas existentes y el que devuelve
+     * el comportamiento anterior sin ninguna bandera (FR-033).
+     *
+     * Un módulo es una cohorte y no un curso porque tiene profesor, fechas,
+     * clases, evaluaciones, asistencia y enlace de reunión propios — o sea,
+     * exactamente lo que una cohorte ya sabe llevar desde el ciclo 004. No
+     * confundir con `course_module`, que es el temario de la ficha pública.
+     *
+     * `restrict`: borrar la camada padre con módulos colgando dejaría
+     * huérfano el programa entero. Primero se desarma el árbol.
+     *
+     * El anidamiento es de UN solo nivel (FR-003) y nadie es su propio padre
+     * (FR-004). Lo segundo lo fija el CHECK de más abajo; lo primero exige
+     * mirar OTRA fila, así que vive en el servidor
+     * (`src/server/program-modules.ts`).
+     */
+    parentCohortId: text("parent_cohort_id").references(
+      (): AnyPgColumn => cohort.id,
+      { onDelete: "restrict" }
+    ),
+    /**
+     * 028 (FR-002) — Orden del módulo dentro de su programa.
+     *
+     * NO se deduce de `start_date`: dos módulos pueden solaparse en el
+     * calendario y el orden pedagógico lo decide la academia. En una cohorte
+     * sin padre no significa nada y no se muestra.
+     */
+    position: integer("position"),
     /** 005 iteración 2 — nombre propio de la cohorte; NULL = usar course.name. */
     name: text("name"),
     startDate: timestamp("start_date").notNull(),
@@ -534,6 +590,21 @@ export const cohort = pgTable(
   (t) => [
     index("cohort_org_course_idx").on(t.organizationId, t.courseId),
     index("cohort_teacher_idx").on(t.teacherId),
+    /**
+     * 028 (FR-001/FR-002) — Por acá se camina el árbol: "los módulos de esta
+     * camada, en orden". Org primero, como el resto de las tablas de dominio.
+     */
+    index("cohort_org_parent_idx").on(t.organizationId, t.parentCohortId, t.position),
+    /**
+     * 028 (FR-004) — Nadie es su propio padre. Es una línea y cubre el error
+     * más tonto; el repositorio ya tiene dos CHECK
+     * (`account_link_kind_coherente`, `resource_contenedor_unico`), así que
+     * esto no inaugura ningún mecanismo.
+     */
+    check(
+      "cohort_padre_distinto_de_si",
+      sql`${t.parentCohortId} is null or ${t.parentCohortId} <> ${t.id}`
+    ),
   ]
 );
 
@@ -581,6 +652,33 @@ export const enrollment = pgTable(
     cohortId: text("cohort_id").references(() => cohort.id, {
       onDelete: "restrict",
     }),
+    /**
+     * 028 (FR-006) — El RECORRIDO de la persona. NULL = inscripción normal,
+     * que es el estado de las 384 filas existentes (FR-033).
+     *
+     * La inscripción **madre** apunta a la camada de la especialización y
+     * lleva el **paquete cerrado**: monto, moneda y plan de cuotas de la
+     * venta (FR-007). Hay una inscripción **hija** por módulo efectivamente
+     * cursado (FR-008).
+     *
+     * **Acá está el punto de toda la fase**: el `cohort_id` de la hija apunta
+     * a la corrida del módulo que la persona REALMENTE cursó, y esa corrida
+     * puede pertenecer a OTRA especialización — la EBIM siguiente. Eso es lo
+     * que vuelve representables la baja voluntaria y la recursada: la madre
+     * contesta "de qué recorrido soy" y el `cohort_id` de la hija contesta
+     * "qué corrida cursé". Con una sola columna las dos preguntas se pisan;
+     * con dos, ninguna miente. Por eso NO existe (ni debe agregarse) una FK
+     * que obligue a la hija a quedarse dentro de los módulos de su madre.
+     *
+     * Un solo nivel de anidamiento (FR-009): la hija de una hija no existe.
+     *
+     * `restrict`: borrar la madre con hijas colgando borraría el paquete y
+     * dejaría los módulos sin recorrido.
+     */
+    parentEnrollmentId: text("parent_enrollment_id").references(
+      (): AnyPgColumn => enrollment.id,
+      { onDelete: "restrict" }
+    ),
     stageId: text("stage_id")
       .notNull()
       .references(() => pipelineStage.id),
@@ -632,6 +730,53 @@ export const enrollment = pgTable(
      * usa `termsEmailSentAt`, que ya existía.
      */
     welcomeEmailSentAt: timestamp("welcome_email_sent_at"),
+    /* ------------------------------------------------------------
+     * 028 (FR-022/FR-023, DV-003, DV-004) — La dispensa de asistencia
+     * ------------------------------------------------------------
+     * Habilita la aprobación de ESTE módulo pese a no alcanzar el mínimo de
+     * asistencia. Es por módulo —vive en la inscripción hija—, nunca por
+     * especialización: el dueño dijo "dependiendo del módulo".
+     *
+     * **Nunca es un booleano suelto** (FR-023). Una excepción sin autor ni
+     * motivo es indistinguible de un error de cálculo: a los seis meses,
+     * frente a alguien aprobado con 62% de asistencia, nadie puede decidir
+     * si tenía permiso o si el sistema falló. Es el mismo criterio de la 024
+     * ("un hito sólo se marca cumplido si el sistema puede probarlo") y del
+     * `sin_datos` del legajo (013).
+     *
+     * Saltea la compuerta de ASISTENCIA y nada más (FR-024): una evaluación
+     * obligatoria desaprobada sigue reprobando. Perdona faltas, no trabajos.
+     *
+     * La gobierna `evaluacion.editar` (DV-003): lo que cambia es si el
+     * alumno aprueba, no quién pasó lista.
+     *
+     * Los nombres copian a `certificate` a propósito —`issued_at`/
+     * `issued_by` para el acto, `revoked_at`/`revoked_by`/`revoke_reason`
+     * para deshacerlo—: dos patrones de revocación que se leen distinto son
+     * dos oportunidades de equivocarse.
+     */
+    /** Cuándo se otorgó. NULL = no hay dispensa. */
+    attendanceWaiverAt: timestamp("attendance_waiver_at"),
+    /** Quién la otorgó. `set null`: que alguien deje la academia no borra el acto. */
+    attendanceWaiverBy: text("attendance_waiver_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    /** Por qué. Sin motivo no hay dispensa: el servidor lo exige (FR-023). */
+    attendanceWaiverReason: text("attendance_waiver_reason"),
+    /**
+     * DV-004 — Revocable, y se MARCA revocada, no se borra: borrarla dejaría
+     * un alumno aprobado sin que ningún registro explique por qué.
+     *
+     * Revocar la dispensa y revocar el certificado son **dos actos separados
+     * y explícitos**. Encadenarlos revocaría un certificado ya entregado en
+     * la mano de una persona sin que nadie lo haya decidido.
+     */
+    attendanceWaiverRevokedAt: timestamp("attendance_waiver_revoked_at"),
+    attendanceWaiverRevokedBy: text("attendance_waiver_revoked_by").references(
+      () => user.id,
+      { onDelete: "set null" }
+    ),
+    attendanceWaiverRevokeReason: text("attendance_waiver_revoke_reason"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -651,6 +796,17 @@ export const enrollment = pgTable(
     index("enrollment_org_interest_course_idx").on(
       t.organizationId,
       t.interestCourseId
+    ),
+    /**
+     * 028 (FR-006) — Por acá se camina el recorrido: "las hijas de esta
+     * madre". Lo consultan el portal del alumno, el legajo y la composición
+     * del estado de la especialización.
+     */
+    index("enrollment_org_parent_idx").on(t.organizationId, t.parentEnrollmentId),
+    /** 028 (FR-009) — Nadie es su propia madre. Ver el CHECK gemelo de `cohort`. */
+    check(
+      "enrollment_madre_distinta_de_si",
+      sql`${t.parentEnrollmentId} is null or ${t.parentEnrollmentId} <> ${t.id}`
     ),
   ]
 );

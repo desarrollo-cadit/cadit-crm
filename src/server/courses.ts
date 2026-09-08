@@ -12,6 +12,7 @@ import {
   type CourseModuleInput,
 } from "@/server/course-content";
 import { findScheduleConflicts, type ScheduleConflict } from "@/server/teachers";
+import { verificarPadreDeCohorte } from "@/server/program-modules";
 
 
 /**
@@ -351,6 +352,18 @@ export type CohortInput = {
    * acá arriba.
    */
   virtualRoomId?: string | null;
+  /**
+   * 028 (FR-001) — La camada de la especialización de la que esta cohorte es
+   * MÓDULO. null/omitido = cohorte suelta, que es el caso de las 41 filas
+   * reales y el comportamiento de siempre (FR-032, FR-033).
+   *
+   * No lo valida `cohortInputSchema` todavía: el formulario del módulo llega
+   * en la fase 2. Lo que sí está desde ya es el guarda, para que el árbol no
+   * pueda nacer torcido por ninguna vía del servidor.
+   */
+  parentCohortId?: string | null;
+  /** 028 (FR-002) — Orden del módulo dentro de su programa. Sin padre, no significa nada. */
+  position?: number | null;
   /** 005 (DV-004) — software(s) que declara usar la cohorte. */
   softwareIds?: string[];
 };
@@ -497,10 +510,24 @@ export async function createCohort(
   if (fkError) return { ok: false, status: 422, code: "invalid_body", message: fkError };
 
   const id = newId("cohort");
+
+  // 028 (FR-003/FR-004) — antes de insertar: el árbol es de un solo nivel.
+  const treeError = await verificarPadreDeCohorte(
+    db,
+    organizationId,
+    id,
+    input.parentCohortId ?? null
+  );
+  if (treeError) {
+    return { ok: false, status: 422, code: "invalid_body", message: treeError.message };
+  }
+
   await db.insert(schema.cohort).values({
     id,
     organizationId,
     courseId: input.courseId,
+    parentCohortId: input.parentCohortId ?? null,
+    position: input.position ?? null,
     name: input.name ?? null,
     startDate: input.startDate,
     endDate: input.endDate ?? null,
@@ -565,10 +592,28 @@ export async function updateCohort(
   const fkError = await validateCohortForeignKeys(db, organizationId, input);
   if (fkError) return { ok: false, status: 422, code: "invalid_body", message: fkError };
 
+  // 028 (FR-003/FR-004) — sólo si el pedido TOCA el padre. Un PATCH que no lo
+  // menciona no puede fallar por una regla que no está ejerciendo (FR-032).
+  if (input.parentCohortId !== undefined) {
+    const treeError = await verificarPadreDeCohorte(
+      db,
+      organizationId,
+      cohortId,
+      input.parentCohortId
+    );
+    if (treeError) {
+      return { ok: false, status: 422, code: "invalid_body", message: treeError.message };
+    }
+  }
+
   const updated = await db
     .update(schema.cohort)
     .set({
       ...(input.courseId !== undefined ? { courseId: input.courseId } : {}),
+      ...(input.parentCohortId !== undefined
+        ? { parentCohortId: input.parentCohortId }
+        : {}),
+      ...(input.position !== undefined ? { position: input.position } : {}),
       ...(input.name !== undefined ? { name: input.name } : {}),
       ...(input.startDate !== undefined ? { startDate: input.startDate } : {}),
       ...(input.endDate !== undefined ? { endDate: input.endDate } : {}),

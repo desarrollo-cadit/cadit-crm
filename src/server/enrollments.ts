@@ -7,6 +7,7 @@ import { normalizePhoneOrRaw } from "@/lib/phone";
 import { fullName } from "@/lib/utils";
 import { PORTAL_NO_EMAIL_REASON } from "@/lib/portal-access";
 import type { Capability } from "@/lib/capabilities";
+import { verificarVinculoDeInscripcion } from "@/server/program-modules";
 
 /** 005 (US2, contracts/enrollments.md) — alta comercial de una inscripción. */
 export type CreateEnrollmentInput = {
@@ -28,6 +29,18 @@ export type CreateEnrollmentInput = {
   receiptNumber?: string | null;
   sellerId?: string | null;
   companyId?: string | null;
+  /**
+   * 028 (FR-006/FR-008) — La inscripción MADRE de la que ésta es un módulo.
+   * null/omitido = inscripción normal, el estado de las 384 filas reales.
+   *
+   * La madre lleva el paquete cerrado; esta hija apunta con su `cohortId` a
+   * la corrida del módulo que la persona realmente cursa, que puede ser la de
+   * otra especialización (la recursada de la regla 4).
+   *
+   * No lo valida todavía el Zod de `/api/enrollments`: el alta de un
+   * recorrido llega en la fase 2. El guarda, en cambio, ya corre.
+   */
+  parentEnrollmentId?: string | null;
 };
 
 export type CreateEnrollmentResult =
@@ -57,7 +70,10 @@ export async function createEnrollment(
   }
 
   const cohortRows = await db
-    .select({ id: schema.cohort.id })
+    // 028 (FR-010) — `parent_cohort_id` viaja en la consulta que YA se hacía
+    // para verificar que la cohorte existe: saber si es un módulo no le
+    // agrega una lectura al alta de las cohortes simples.
+    .select({ id: schema.cohort.id, parentCohortId: schema.cohort.parentCohortId })
     .from(schema.cohort)
     .where(
       scoped(
@@ -69,6 +85,25 @@ export async function createEnrollment(
     .limit(1);
   if (!cohortRows[0]) {
     return { ok: false, status: 422, code: "invalid_body", message: "Cohorte inexistente" };
+  }
+
+  /**
+   * 028 (FR-009/FR-010) — El recorrido, antes de crear nada.
+   *
+   * Se llama SIEMPRE, también sin madre declarada: la mitad de FR-010 que
+   * importa es la que rechaza una inscripción SUELTA contra una cohorte de
+   * módulo, y esa se rompe justamente cuando nadie declara nada. Para las
+   * cohortes sin padre —las 33 simples— devuelve `null` y no cambia nada
+   * (FR-032).
+   */
+  const treeError = await verificarVinculoDeInscripcion(db, organizationId, {
+    inscripcionId: null,
+    cohorteId: input.cohortId,
+    cohorteEsModulo: cohortRows[0].parentCohortId != null,
+    madreId: input.parentEnrollmentId ?? null,
+  });
+  if (treeError) {
+    return { ok: false, status: 422, code: "invalid_body", message: treeError.message };
   }
 
   if (input.sellerId) {
@@ -174,6 +209,7 @@ export async function createEnrollment(
       organizationId,
       contactId,
       cohortId: input.cohortId,
+      parentEnrollmentId: input.parentEnrollmentId ?? null,
       stageId,
       enrolledAt: new Date(),
       amount: input.amount ?? null,

@@ -260,6 +260,13 @@
       "when": 1788543188149,
       "tag": "0036_seed_rol_administracion",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1788878069438,
+      "tag": "0037_especializaciones_y_modulos",
+      "breakpoints": true
     }
   ]
 }
