@@ -284,6 +284,17 @@ describe("T021 — ni plata ni datos de contacto salen del portal", () => {
       "endTime",
       "id",
       "name",
+      /**
+       * 028 (FR-029) — El PROGRAMA de la cohorte, agregado a propósito y con
+       * su motivo escrito: un módulo se llama "Módulo 2" y sin el nombre del
+       * programa el profesor no sabe de cuál de las cuatro EBIM es.
+       *
+       * Viajan el nombre y la posición. NO viaja nada del árbol: ni los
+       * módulos hermanos, ni sus profesores, ni sus alumnos, ni sus notas —
+       * eso es exactamente la regresión que US2 nombra por su nombre, y que
+       * `especializaciones-portales.test.ts` frena con un guard estructural.
+       */
+      "program",
       "role",
       "startDate",
       "startTime",

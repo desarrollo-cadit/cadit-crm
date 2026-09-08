@@ -60,6 +60,16 @@ export type PortalNavCourse = {
   enrollmentId: string;
   label: string;
   active: boolean;
+  /**
+   * 028 (FR-028) — Cuántos módulos tiene esta cursada. `0` en la cursada
+   * simple.
+   *
+   * La especialización ocupa **una** línea, no una por módulo: cinco entradas
+   * en la barra para una sola cursada es exactamente lo que la 024 vino a
+   * evitar. Lo único que se dice acá es que adentro hay cuatro módulos, para
+   * que el enlace prometa lo que va a mostrar.
+   */
+  moduleCount: number;
 };
 
 function isActive(pathname: string, item: NavItem): boolean {
@@ -326,7 +336,14 @@ function ListaCursos({
               className={cn("h-[18px] w-[18px] shrink-0", active ? "text-brand" : "text-text-3")}
               strokeWidth={1.7}
             />
-            <span className="truncate">{c.label}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate">{c.label}</span>
+              {c.moduleCount > 0 && (
+                <span className="block text-[11px] text-text-3">
+                  {c.moduleCount} {c.moduleCount === 1 ? "módulo" : "módulos"}
+                </span>
+              )}
+            </span>
           </Link>
         );
       })}

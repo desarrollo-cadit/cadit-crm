@@ -10,6 +10,15 @@ type Cohort = {
   id: string;
   name: string | null;
   courseName: string;
+  /**
+   * 028 (FR-029) — Cuando esta cohorte es un MÓDULO de un programa, su nombre
+   * y su número de orden. `null` en una cohorte suelta.
+   *
+   * Es lo único que el portal del profesor gana con las especializaciones:
+   * "Módulo 2" a secas no dice de cuál de las cuatro EBIM es. Nada del árbol
+   * viaja hasta acá — ni los módulos hermanos, ni sus alumnos, ni sus notas.
+   */
+  program: { name: string; position: number | null } | null;
   startDate: string;
   endDate: string | null;
   startTime: string | null;
@@ -128,6 +137,13 @@ function Grupo({
                     <p className="truncate text-sm text-muted-foreground">
                       {c.name ?? "Sin nombre de edición"}
                     </p>
+                    {c.program && (
+                      <p className="truncate text-xs text-text-3">
+                        {c.program.position !== null &&
+                          `Módulo ${c.program.position} · `}
+                        {c.program.name}
+                      </p>
+                    )}
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1">
                     <Badge variant={ESTADO[c.status].variant}>

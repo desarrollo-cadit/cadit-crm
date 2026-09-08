@@ -10,7 +10,11 @@ import {
   resolveMinAttendance,
   type AttendanceStatus,
 } from "@/server/attendance";
-import { approvalState, type ApprovalState } from "@/server/grading";
+import {
+  approvalState,
+  programApprovalState,
+  type ApprovalState,
+} from "@/server/grading";
 import {
   listAnnouncements,
   listResources,
@@ -179,6 +183,42 @@ export type StudentCourseDto = {
     revokedAt: string | null;
   } | null;
   license: StudentLicenseDto | null;
+  /**
+   * 028 (FR-028) — Los módulos de una especialización, en orden de `position`.
+   *
+   * **`undefined` en una cursada simple, no una lista vacía**: FR-032 pide que
+   * la inscripción sin madre y sin hijas se comporte exactamente como hoy, y
+   * eso incluye la forma del objeto. Una lista vacía obligaría a cada pantalla
+   * a distinguir "no tiene módulos" de "todavía no cargaron ninguno", que es
+   * una pregunta que la cursada simple no tiene por qué contestar.
+   */
+  modules?: StudentModuleDto[];
+};
+
+/**
+ * 028 (US3, US4) — Un módulo dentro de la cursada de una especialización.
+ *
+ * Es una cursada como cualquier otra —tiene sus clases, su asistencia, sus
+ * evaluaciones y su certificado, porque un módulo **es** una cohorte— más las
+ * cuatro cosas que sólo existen cuando hay un programa arriba.
+ */
+export type StudentModuleDto = StudentCourseDto & {
+  /** El orden dentro del programa (FR-002). `null` = sin cargar todavía. */
+  position: number | null;
+  /**
+   * US3 — El módulo existe pero nadie generó su cronograma. **Se muestra
+   * igual, declarándolo**: un módulo invisible es un módulo que nadie carga, y
+   * de ahí vienen los 0 `class_session` de las 9 camadas de programa reales.
+   */
+  sinCronograma: boolean;
+  /**
+   * US4 — Lo cursó con una camada distinta a la de su especialización: una
+   * baja voluntaria o una recursada. Es el hecho que el ciclo existe para
+   * poder representar, así que se dice.
+   */
+  otraCamada: boolean;
+  /** El nombre de esa otra camada. `null` cuando no hay recursada. */
+  camadaName: string | null;
 };
 
 /* ============================================================
@@ -359,16 +399,48 @@ export async function studentOverview(
         : [],
     ]);
 
-  const courses = enrollments.map((e) =>
-    buildCourse(
-      e,
-      { sesiones, asistencias, evaluaciones, resultados, certificados, licencias },
+  const data: CrossData = {
+    sesiones,
+    asistencias,
+    evaluaciones,
+    resultados,
+    certificados,
+    licencias,
+  };
+
+  /**
+   * 028 (FR-028) — El recorrido: qué inscripción es madre y qué hijas cuelgan
+   * de ella. La condición es un DATO (`parent_enrollment_id`), no una bandera
+   * ni una heurística sobre el nombre del curso (FR-033): sin él, este bloque
+   * devuelve exactamente lo de siempre.
+   */
+  const madres = enrollments.filter((e) => e.enrollment.parentEnrollmentId === null);
+  const hijasDe = new Map<string, ScopedEnrollment[]>();
+  for (const e of enrollments) {
+    const madreId = e.enrollment.parentEnrollmentId;
+    if (!madreId) continue;
+    hijasDe.set(madreId, [...(hijasDe.get(madreId) ?? []), e]);
+  }
+
+  const camadasDeCadaModulo = await nombresDeCamadasAjenas(
+    organizationId,
+    madres,
+    hijasDe
+  );
+
+  const courses = madres.map((madre) => {
+    const curso = buildCourse(
+      madre,
+      data,
       // El `now` inyectado tiene que llegar hasta acá: sin él, `nextClass`
       // usaba el reloj de la prueba y la asistencia el reloj real, y la misma
       // pantalla contestaba con dos presentes distintos.
       now
-    )
-  );
+    );
+    const hijas = hijasDe.get(madre.enrollment.id) ?? [];
+    if (hijas.length === 0) return curso;
+    return componerEspecializacion(curso, madre, hijas, data, camadasDeCadaModulo, now);
+  });
 
 
   return {
@@ -543,6 +615,185 @@ function buildCourse(
   };
 }
 
+/* ============================================================
+ * 028 (US3, US4, FR-028) — La cursada de una ESPECIALIZACIÓN
+ * ============================================================
+ * Todo este bloque se activa por la presencia de `parent_enrollment_id`
+ * (FR-033). Sin hijas no se ejecuta una sola línea, que es lo que sostiene
+ * FR-032: las 33 cohortes simples siguen recorriendo el mismo camino de antes.
+ */
+
+/**
+ * Los nombres de las camadas AJENAS: aquellas con las que la persona cursó
+ * algún módulo sin que sean la suya (US4).
+ *
+ * Se consulta sólo cuando el hecho existe. La recursada es la excepción —hay
+ * 3 alumnos en EBIM 14 contra 384 inscripciones—, y hacerle pagar una consulta
+ * a todo el mundo por un caso que casi nunca ocurre es cómo una pantalla que
+ * se abre veinte veces por día se vuelve lenta por un borde.
+ */
+async function nombresDeCamadasAjenas(
+  organizationId: string,
+  madres: ScopedEnrollment[],
+  hijasDe: Map<string, ScopedEnrollment[]>
+): Promise<Map<string, string>> {
+  const ajenas = new Set<string>();
+  for (const madre of madres) {
+    for (const hija of hijasDe.get(madre.enrollment.id) ?? []) {
+      const camada = hija.cohort?.parentCohortId ?? null;
+      if (camada && camada !== madre.enrollment.cohortId) ajenas.add(camada);
+    }
+  }
+  if (ajenas.size === 0) return new Map();
+
+  const rows = await getDb()
+    .select({ id: schema.cohort.id, name: schema.cohort.name })
+    .from(schema.cohort)
+    .where(
+      scoped(
+        schema.cohort.organizationId,
+        organizationId,
+        inArray(schema.cohort.id, [...ajenas])
+      )
+    );
+
+  return new Map(rows.map((r) => [r.id, r.name ?? ""]));
+}
+
+/**
+ * US3 — El orden es el de `position`, **no** el de carga ni el de `start_date`.
+ *
+ * "Módulo 2" es un número que la academia decidió, no una inferencia sobre
+ * fechas: dos módulos pueden solaparse y el orden pedagógico sigue siendo el
+ * mismo. Un módulo sin `position` cargada va al final —es un dato que falta,
+ * no una razón para devolver la lista en orden aleatorio—, y el desempate por
+ * fecha replica el de `listarModulos` (fase 1).
+ */
+function ordenDeModulo(a: ScopedEnrollment, b: ScopedEnrollment): number {
+  const pa = a.cohort?.position ?? Number.MAX_SAFE_INTEGER;
+  const pb = b.cohort?.position ?? Number.MAX_SAFE_INTEGER;
+  if (pa !== pb) return pa - pb;
+  return (a.cohort?.startDate?.getTime() ?? 0) - (b.cohort?.startDate?.getTime() ?? 0);
+}
+
+function buildModule(
+  hija: ScopedEnrollment,
+  madre: ScopedEnrollment,
+  data: CrossData,
+  camadas: Map<string, string>,
+  now: Date
+): StudentModuleDto {
+  /**
+   * FR-037 — El invariante que la base NO protege: la asistencia y el
+   * resultado se leen contra la inscripción **hija**, aunque la cohorte de ese
+   * módulo pertenezca a otra especialización. `buildCourse` ya cruza por
+   * `enrollment.id` y por `cohort.id`, así que el módulo recursado se calcula
+   * solo — pero es exactamente por eso que hay un test que lo fija.
+   */
+  const base = buildCourse(hija, data, now);
+
+  const camadaDelModulo = hija.cohort?.parentCohortId ?? null;
+  const otraCamada =
+    camadaDelModulo !== null && camadaDelModulo !== madre.enrollment.cohortId;
+
+  return {
+    ...base,
+    position: hija.cohort?.position ?? null,
+    sinCronograma: !data.sesiones.some((s) => s.cohortId === hija.cohort?.id),
+    otraCamada,
+    camadaName:
+      otraCamada && camadaDelModulo ? (camadas.get(camadaDelModulo) ?? null) : null,
+  };
+}
+
+/**
+ * El estado de la especialización, compuesto sobre el de sus módulos (FR-016).
+ *
+ * `programApprovalState()` (fase 2) decide el ESTADO y no se toca. Lo que se
+ * agrega acá son las razones: SC-010 pide que **nombren el módulo que las
+ * causó**, y una razón que dice "reprobó un módulo" sin decir cuál obliga a la
+ * persona a abrir cuatro pantallas para enterarse de lo que el sistema ya
+ * sabe.
+ *
+ * `sin_datos` no es un `ApprovalState` y por eso no entra a la composición:
+ * cuenta como `pendiente`, salvo cuando **todos** los módulos están así — ahí
+ * la especialización entera es `sin_datos`, porque afirmar cualquier otra cosa
+ * sería afirmar algo sobre una persona sin un solo dato cargado.
+ */
+function estadoDeEspecializacion(modulos: StudentModuleDto[]): {
+  state: ApprovalState | "sin_datos";
+  reasons: string[];
+} {
+  if (modulos.every((m) => m.approval === "sin_datos")) {
+    return {
+      state: "sin_datos",
+      reasons: [
+        "Todavía no hay asistencia ni evaluaciones registradas en ningún módulo",
+      ],
+    };
+  }
+
+  const { state } = programApprovalState(
+    modulos.map((m) => (m.approval === "sin_datos" ? "pendiente" : m.approval))
+  );
+
+  if (state === "reprobado") {
+    return {
+      state,
+      reasons: modulos
+        .filter((m) => m.approval === "reprobado")
+        .map((m) =>
+          m.approvalReasons.length > 0
+            ? `${m.cohortName}: ${m.approvalReasons.join(" · ")}`
+            : `${m.cohortName}: no alcanzado`
+        ),
+    };
+  }
+
+  if (state === "pendiente") {
+    const faltan = modulos.filter((m) => m.approval !== "aprobado");
+    return {
+      state,
+      reasons: [`Falta aprobar ${faltan.map((m) => m.cohortName).join(", ")}`],
+    };
+  }
+
+  return { state, reasons: [] };
+}
+
+/** La madre, con sus módulos adentro: UNA cursada, no cinco (FR-028). */
+function componerEspecializacion(
+  curso: StudentCourseDto,
+  madre: ScopedEnrollment,
+  hijas: ScopedEnrollment[],
+  data: CrossData,
+  camadas: Map<string, string>,
+  now: Date
+): StudentCourseDto {
+  const modules = [...hijas]
+    .sort(ordenDeModulo)
+    .map((hija) => buildModule(hija, madre, data, camadas, now));
+
+  const { state, reasons } = estadoDeEspecializacion(modules);
+
+  return {
+    ...curso,
+    /**
+     * Regla 5 — **no existe "la asistencia de la especialización"**. Cada
+     * módulo tiene su cronograma y su propio mínimo; promediarlos inventaría
+     * un criterio que nadie decidió, y publicarlo lo volvería el número que la
+     * gente mira.
+     */
+    attendancePct: null,
+    minAttendancePct: null,
+    attendedCount: 0,
+    eligibleCount: 0,
+    approval: state,
+    approvalReasons: reasons,
+    modules,
+  };
+}
+
 /**
  * 015 (US2, SC-001) — La próxima clase: la pregunta más frecuente, arriba.
  *
@@ -673,11 +924,27 @@ export async function studentCourseDetail(
   const mia = enrollments.find((e) => e.enrollment.id === enrollmentId);
   if (!mia) return null;
 
-  const cohortId = mia.cohort?.id ?? null;
+  /**
+   * 028 (FR-028, FR-037) — Si esta inscripción es MADRE, el detalle tiene que
+   * traer también lo de sus hijas: la nota y la asistencia de cada módulo
+   * viven contra la inscripción **hija**, no contra la madre, y la cohorte de
+   * esa hija puede pertenecer a otra especialización.
+   *
+   * Sin hijas el recorrido es de un solo elemento y las consultas quedan
+   * idénticas a las de antes con un `in (...)` de un id (FR-032).
+   */
+  const hijas = enrollments.filter(
+    (e) => e.enrollment.parentEnrollmentId === mia.enrollment.id
+  );
+  const recorrido = [mia, ...hijas];
+  const enrollmentIds = recorrido.map((e) => e.enrollment.id);
+  const cohortIds = recorrido
+    .map((e) => e.cohort?.id)
+    .filter((id): id is string => Boolean(id));
 
   const [sesiones, asistencias, evaluaciones, resultados, certificados, licencias] =
     await Promise.all([
-      cohortId
+      cohortIds.length
         ? db
             .select()
             .from(schema.classSession)
@@ -685,7 +952,7 @@ export async function studentCourseDetail(
               scoped(
                 schema.classSession.organizationId,
                 organizationId,
-                eq(schema.classSession.cohortId, cohortId)
+                inArray(schema.classSession.cohortId, cohortIds)
               )
             )
             .orderBy(asc(schema.classSession.number))
@@ -697,10 +964,10 @@ export async function studentCourseDetail(
           scoped(
             schema.attendance.organizationId,
             organizationId,
-            eq(schema.attendance.enrollmentId, enrollmentId)
+            inArray(schema.attendance.enrollmentId, enrollmentIds)
           )
         ),
-      cohortId
+      cohortIds.length
         ? db
             .select()
             .from(schema.assessment)
@@ -708,7 +975,7 @@ export async function studentCourseDetail(
               scoped(
                 schema.assessment.organizationId,
                 organizationId,
-                eq(schema.assessment.cohortId, cohortId)
+                inArray(schema.assessment.cohortId, cohortIds)
               )
             )
             .orderBy(asc(schema.assessment.createdAt))
@@ -720,7 +987,7 @@ export async function studentCourseDetail(
           scoped(
             schema.assessmentResult.organizationId,
             organizationId,
-            eq(schema.assessmentResult.enrollmentId, enrollmentId)
+            inArray(schema.assessmentResult.enrollmentId, enrollmentIds)
           )
         ),
       db
@@ -730,7 +997,7 @@ export async function studentCourseDetail(
           scoped(
             schema.certificate.organizationId,
             organizationId,
-            eq(schema.certificate.enrollmentId, enrollmentId)
+            inArray(schema.certificate.enrollmentId, enrollmentIds)
           )
         ),
       db
@@ -747,19 +1014,54 @@ export async function studentCourseDetail(
           scoped(
             schema.license.organizationId,
             organizationId,
-            eq(schema.license.enrollmentId, enrollmentId)
+            inArray(schema.license.enrollmentId, enrollmentIds)
           )
         ),
     ]);
 
-  const course = buildCourse(
-    mia,
-    { sesiones, asistencias, evaluaciones, resultados, certificados, licencias },
-    now
+  const data: CrossData = {
+    sesiones,
+    asistencias,
+    evaluaciones,
+    resultados,
+    certificados,
+    licencias,
+  };
+
+  const camadas = await nombresDeCamadasAjenas(
+    organizationId,
+    [mia],
+    new Map([[mia.enrollment.id, hijas]])
   );
 
+  const propio = buildCourse(mia, data, now);
+  const course =
+    hijas.length > 0
+      ? componerEspecializacion(propio, mia, hijas, data, camadas, now)
+      : propio;
 
-  const classes: StudentClassDto[] = sesiones.map((s) => ({
+  /**
+   * El enlace de cada clase sale de la reunión recurrente de SU cohorte
+   * (025): con una especialización las clases vienen de varios módulos, así
+   * que la cohorte se busca por la de la clase y no se asume la de la madre —
+   * que justamente es la que no tiene reunión propia.
+   */
+  const cohortePorId = new Map(
+    recorrido
+      .filter((e): e is ScopedEnrollment & { cohort: NonNullable<typeof e.cohort> } =>
+        Boolean(e.cohort)
+      )
+      .map((e) => [e.cohort.id, e.cohort])
+  );
+
+  const ordenadas =
+    hijas.length > 0
+      ? [...sesiones].sort(
+          (a, b) => a.date.getTime() - b.date.getTime() || a.number - b.number
+        )
+      : sesiones;
+
+  const classes: StudentClassDto[] = ordenadas.map((s) => ({
     ...buildClassRow({
       id: s.id,
       number: s.number,
@@ -771,7 +1073,7 @@ export async function studentCourseDetail(
       canceledAt: s.canceledAt,
       cancelReason: s.cancelReason,
       meetingUrl: s.meetingUrl,
-      cohortMeetingUrl: mia.cohort?.meetingUrl ?? null,
+      cohortMeetingUrl: cohortePorId.get(s.cohortId)?.meetingUrl ?? null,
       recordingUrl: s.recordingUrl,
       timezone: clock.timezone,
       window: clock.window,
@@ -788,39 +1090,68 @@ export async function studentCourseDetail(
    * el profesor en su portal. No hay nada de compañeros acá — ni nombres, ni
    * notas, ni asistencia ajena (FR-002).
    */
+  const propia = mia.cohort?.id ?? null;
   const [announcements, resources] = await Promise.all([
-    cohortId ? listAnnouncements(organizationId, cohortId) : Promise.resolve([]),
+    propia ? listAnnouncements(organizationId, propia) : Promise.resolve([]),
     mia.course?.id
       ? listResources(organizationId, { courseId: mia.course.id })
       : Promise.resolve([]),
   ]);
 
+  const certificadoPropio = certificados.find(
+    (c) => c.enrollmentId === mia.enrollment.id
+  );
+
   /**
    * 024 — El recorrido. Se arma acá, en el servidor, y no en la pantalla: es
    * lo que el alumno lee sobre sí mismo, y la regla de qué se puede afirmar
    * no puede quedar a criterio de quien escriba el próximo componente.
+   *
+   * 028 — Con módulos el recorrido es un hito por módulo (US3); sin ellos es
+   * el de la 024, sin una coma de diferencia (FR-032). Las clases, las
+   * evaluaciones y el certificado que viajan acá son SIEMPRE los de esta
+   * inscripción: los del módulo se ven entrando al módulo.
    */
   const milestones = buildMilestones({
     enrolledAt: mia.enrollment.enrolledAt,
     classes: sesiones
-      .filter((s) => !s.canceledAt)
+      .filter((s) => !s.canceledAt && s.cohortId === propia)
       .map((s) => ({ date: s.date, number: s.number })),
     attendancePct: course.attendancePct,
     minAttendancePct: course.minAttendancePct,
-    assessments: evaluaciones.map((a) => {
-      const mio = resultados.find((r) => r.assessmentId === a.id);
-      return {
-        name: a.name,
-        required: a.required,
-        passed: mio?.passed ?? null,
-        // La fecha del hito es la de la CORRECCIÓN, no la de la evaluación:
-        // el logro es que se aprobó, y eso pasó cuando alguien la corrigió.
-        at: mio?.updatedAt ?? null,
-      };
-    }),
-    certificate: certificados[0]
-      ? { issuedAt: certificados[0].issuedAt, revokedAt: certificados[0].revokedAt }
+    assessments: evaluaciones
+      .filter((a) => a.cohortId === propia)
+      .map((a) => {
+        const mio = resultados.find(
+          (r) => r.assessmentId === a.id && r.enrollmentId === mia.enrollment.id
+        );
+        return {
+          name: a.name,
+          required: a.required,
+          passed: mio?.passed ?? null,
+          // La fecha del hito es la de la CORRECCIÓN, no la de la evaluación:
+          // el logro es que se aprobó, y eso pasó cuando alguien la corrigió.
+          at: mio?.updatedAt ?? null,
+        };
+      }),
+    certificate: certificadoPropio
+      ? { issuedAt: certificadoPropio.issuedAt, revokedAt: certificadoPropio.revokedAt }
       : null,
+    modules: course.modules?.map((m) => ({
+      name: m.cohortName,
+      approval: m.approval,
+      otraCamada: m.otraCamada,
+      camadaName: m.camadaName,
+      startDate: m.startDate ? new Date(m.startDate) : null,
+      certificate: m.certificate
+        ? {
+            issuedAt: new Date(m.certificate.issuedAt),
+            revokedAt: m.certificate.revokedAt
+              ? new Date(m.certificate.revokedAt)
+              : null,
+          }
+        : null,
+    })),
     now,
   });
 
@@ -1126,6 +1457,11 @@ export type StudentNavCourseDto = {
   enrollmentId: string;
   label: string;
   active: boolean;
+  /**
+   * 028 (FR-028) — Cuántos módulos cuelgan de esta cursada. `0` en la cursada
+   * simple, que es el caso de 33 de las 41 cohortes.
+   */
+  moduleCount: number;
 };
 
 export async function studentNavCourses(
@@ -1135,6 +1471,7 @@ export async function studentNavCourses(
   const rows = await getDb()
     .select({
       enrollmentId: schema.enrollment.id,
+      parentEnrollmentId: schema.enrollment.parentEnrollmentId,
       cohortName: schema.cohort.name,
       courseName: schema.course.name,
       status: schema.cohort.status,
@@ -1157,11 +1494,36 @@ export async function studentNavCourses(
     )
     .orderBy(desc(schema.cohort.startDate));
 
-  return rows.map((r) => ({
-    enrollmentId: r.enrollmentId,
-    label: r.courseName ?? r.cohortName ?? "Mi cursada",
-    active: r.status !== "finalizada",
-  }));
+  /**
+   * 028 (FR-028) — **UNA línea por especialización, no una por módulo.**
+   *
+   * Con la madre y cuatro hijas, el menú lateral mostraría cinco entradas para
+   * una sola cursada: exactamente lo que la 024 vino a evitar. Las hijas se
+   * cuentan y se descartan; el enlace apunta a la madre, que es la cursada que
+   * la persona compró y la única pantalla desde la que se ve el recorrido
+   * entero.
+   *
+   * Se resuelve acá y no en la barra por el mismo motivo que el resto del
+   * módulo: la regla de qué es una cursada no puede quedar a criterio de quien
+   * escriba el próximo componente.
+   */
+  const modulosPorMadre = new Map<string, number>();
+  for (const r of rows) {
+    if (!r.parentEnrollmentId) continue;
+    modulosPorMadre.set(
+      r.parentEnrollmentId,
+      (modulosPorMadre.get(r.parentEnrollmentId) ?? 0) + 1
+    );
+  }
+
+  return rows
+    .filter((r) => r.parentEnrollmentId === null)
+    .map((r) => ({
+      enrollmentId: r.enrollmentId,
+      label: r.courseName ?? r.cohortName ?? "Mi cursada",
+      active: r.status !== "finalizada",
+      moduleCount: modulosPorMadre.get(r.enrollmentId) ?? 0,
+    }));
 }
 
 /* ============================================================
@@ -1212,6 +1574,19 @@ export function buildMilestones(input: {
   minAttendancePct: number | null;
   assessments: { name: string; required: boolean; passed: boolean | null; at: Date | null }[];
   certificate: { issuedAt: Date; revokedAt: Date | null } | null;
+  /**
+   * 028 (US3) — Los módulos de una especialización, YA ordenados por
+   * `position`. Ausente o vacío = la cursada simple, y ahí el recorrido es
+   * exactamente el de la 024, sin una coma de diferencia (FR-032).
+   */
+  modules?: {
+    name: string;
+    approval: ApprovalState | "sin_datos";
+    otraCamada: boolean;
+    camadaName: string | null;
+    startDate: Date | null;
+    certificate: { issuedAt: Date; revokedAt: Date | null } | null;
+  }[];
   now: Date;
 }): StudentMilestone[] {
   const hitos: StudentMilestone[] = [];
@@ -1227,6 +1602,66 @@ export function buildMilestones(input: {
       state: "cumplido",
       at: input.enrolledAt.toISOString(),
       });
+  }
+
+  /**
+   * 028 (US3) — **El recorrido de una especialización es un hito por MÓDULO.**
+   *
+   * Es la misma idea de la 024 un nivel más arriba, y con la misma regla: un
+   * hito sólo se marca cumplido si el sistema tiene con qué probarlo. Un
+   * módulo sin nada cargado no es un logro y tampoco es un fracaso — es
+   * `sin_datos`, y se dibuja apagado, sin la cruz roja.
+   *
+   * Los hitos de la cursada simple (primera clase, mitad, evaluaciones,
+   * asistencia, última clase) NO se arman acá: la camada madre no tiene
+   * cronograma propio ni evaluaciones propias, y armarlos sobre la nada sería
+   * inventar un recorrido. El cronograma de cada módulo se ve entrando al
+   * módulo, que es una cursada como cualquier otra.
+   */
+  const modulos = input.modules ?? [];
+  if (modulos.length > 0) {
+    for (const [i, modulo] of modulos.entries()) {
+      hitos.push({
+        key: `modulo-${i}`,
+        label: modulo.name,
+        detail: detalleDeModulo(modulo),
+        state:
+          modulo.approval === "aprobado"
+            ? "cumplido"
+            : modulo.approval === "reprobado"
+              ? "no_alcanzado"
+              : modulo.approval === "sin_datos"
+                ? "sin_datos"
+                : "pendiente",
+        at: modulo.startDate?.toISOString() ?? null,
+      });
+    }
+
+    hitos.push({
+      key: "certificado",
+      label: "Certificado",
+      /**
+       * US5 — El general explica su CONDICIÓN. Quien reprobó un módulo tiene
+       * los certificados de los que aprobó y no tiene éste, y merece saber por
+       * qué sin tener que preguntar.
+       */
+      detail: input.certificate?.revokedAt
+        ? "Anulado — consultá con la academia"
+        : input.certificate
+          ? null
+          : "Se emite cuando estén aprobados todos los módulos de la especialización",
+      state: input.certificate
+        ? input.certificate.revokedAt
+          ? "no_alcanzado"
+          : "cumplido"
+        : "pendiente",
+      at: input.certificate?.issuedAt.toISOString() ?? null,
+    });
+
+    // "Acá estás" es el primer módulo pendiente: la misma regla de la 024.
+    const enCurso = hitos.find((h) => h.state === "pendiente" && h.at !== null);
+    if (enCurso) enCurso.state = "en_curso";
+    return hitos;
   }
 
   const clases = [...input.classes].sort((a, b) => a.date.getTime() - b.date.getTime());
@@ -1336,4 +1771,38 @@ export function buildMilestones(input: {
   if (siguiente) siguiente.state = "en_curso";
 
   return hitos;
+}
+
+/**
+ * 028 (US4, US5) — Lo que hay que decir de un módulo debajo de su nombre.
+ *
+ * Sólo hechos: con qué camada lo cursa cuando no es la suya, si su certificado
+ * ya está emitido, y —cuando no hay nada cargado— que no hay nada cargado. Sin
+ * dato no se escribe una línea: un detalle inventado es peor que ninguno.
+ */
+function detalleDeModulo(modulo: {
+  approval: ApprovalState | "sin_datos";
+  otraCamada: boolean;
+  camadaName: string | null;
+  certificate: { issuedAt: Date; revokedAt: Date | null } | null;
+}): string | null {
+  const partes: string[] = [];
+
+  if (modulo.otraCamada) {
+    partes.push(
+      modulo.camadaName
+        ? `Lo cursás con la camada ${modulo.camadaName}`
+        : "Lo cursás con otra camada"
+    );
+  }
+  if (modulo.certificate) {
+    partes.push(
+      modulo.certificate.revokedAt ? "Certificado anulado" : "Certificado emitido"
+    );
+  }
+  if (modulo.approval === "sin_datos") {
+    partes.push("Todavía sin asistencia ni evaluaciones registradas");
+  }
+
+  return partes.length > 0 ? partes.join(" · ") : null;
 }

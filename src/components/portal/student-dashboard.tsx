@@ -82,6 +82,22 @@ type Course = {
   assessments: Assessment[];
   certificate: { code: string; issuedAt: string; revokedAt: string | null } | null;
   license: License | null;
+  /**
+   * 028 (US3) — Los módulos de una especialización, en orden de `position`.
+   * Ausente en la cursada simple, que es el caso de la enorme mayoría.
+   */
+  modules?: Module[];
+};
+
+/**
+ * 028 — Un módulo dentro de una especialización: una cursada como cualquier
+ * otra, más su posición y de qué camada la cursa.
+ */
+type Module = Omit<Course, "modules"> & {
+  position: number | null;
+  sinCronograma: boolean;
+  otraCamada: boolean;
+  camadaName: string | null;
 };
 
 type NextClass = {
@@ -148,8 +164,19 @@ export function StudentDashboard() {
   const licencias = data.courses
     .map((c) => (c.license ? { curso: c.courseName, ...c.license } : null))
     .filter((l): l is License & { curso: string } => l !== null);
+  /**
+   * US5 — Un certificado POR MÓDULO, y el general al final. Quien aprobó el
+   * módulo 1 lo tiene sin esperar los ocho meses de la especialización, así
+   * que los certificados de los módulos se listan junto con los de las
+   * cursadas sueltas: son certificados suyos igual.
+   */
   const certificados = data.courses
-    .map((c) => (c.certificate ? { curso: c.courseName, ...c.certificate } : null))
+    .flatMap((c) => [
+      c.certificate ? { curso: c.courseName, ...c.certificate } : null,
+      ...(c.modules ?? []).map((m) =>
+        m.certificate ? { curso: m.cohortName, ...m.certificate } : null
+      ),
+    ])
     .filter((c): c is NonNullable<Course["certificate"]> & { curso: string } => c !== null);
 
   return (
@@ -390,6 +417,25 @@ function Alertas({ courses, balances }: { courses: Course[]; balances: Balance[]
         href: `/portal/cursadas/${c.enrollmentId}`,
       });
     }
+    /**
+     * 028 (Regla 5) — La asistencia es POR MÓDULO, así que el aviso también.
+     * "Vas 40% en la especialización" no existe: existe "vas 40% en el
+     * Módulo 2", que es el que hay que ir a arreglar.
+     */
+    for (const m of c.modules ?? []) {
+      if (
+        m.attendancePct !== null &&
+        m.minAttendancePct !== null &&
+        m.attendancePct < m.minAttendancePct
+      ) {
+        avisos.push({
+          key: `asis-${m.enrollmentId}`,
+          text: `En ${m.cohortName} vas ${m.attendancePct}% de asistencia y el mínimo para aprobar es ${m.minAttendancePct}%.`,
+          href: `/portal/cursadas/${c.enrollmentId}`,
+        });
+      }
+    }
+
     const lic = c.license;
     if (lic?.assigned && lic.daysLeft !== null && lic.daysLeft <= 30) {
       avisos.push({
@@ -498,10 +544,19 @@ function CourseCard({ course }: { course: Course }) {
       )}
 
       {/*
+        028 (US3) — La especialización muestra sus MÓDULOS, no un par de
+        números agregados. No existe "la asistencia de la especialización":
+        cada módulo tiene su cronograma y su propio mínimo, y promediarlos
+        inventaría un criterio que nadie decidió.
+      */}
+      {course.modules ? (
+        <ModulesList modules={course.modules} />
+      ) : (
+      /*
         Flex y no grid: en una tarjeta a ancho completo, dos columnas de grilla
         estiran los números hasta 600px cada una y el segundo queda flotando en
         el medio de la nada. Así se agrupan y se leen como un par.
-      */}
+      */
       <div className="mt-5 flex flex-wrap gap-x-12 gap-y-4 border-t border-border pt-4">
         <div className="min-w-[8rem]">
           <p className="text-xs text-text-3">Asistencia</p>
@@ -545,6 +600,7 @@ function CourseCard({ course }: { course: Course }) {
           )}
         </div>
       </div>
+      )}
 
       {course.approval === "sin_datos" && (
         <p className="mt-4 text-sm text-text-3">{course.approvalReasons[0]}</p>
@@ -558,6 +614,49 @@ function CourseCard({ course }: { course: Course }) {
         />
       </span>
     </Link>
+  );
+}
+
+/* ============================================================
+ * 028 (US3, US4) — Los módulos de una especialización
+ * ============================================================ */
+
+/**
+ * Los módulos en orden de `position`, cada uno con su estado.
+ *
+ * Tres reglas que no son de estilo:
+ *
+ * - **Un módulo sin cronograma se muestra igual, declarándolo.** Ocultarlo es
+ *   de donde vienen los 0 `class_session` de las camadas reales: un módulo
+ *   invisible es un módulo que nadie carga.
+ * - **El módulo cursado con otra camada lo dice** (US4). Es el hecho que el
+ *   ciclo existe para poder representar; esconderlo lo desperdicia.
+ * - **`sin_datos` no se dibuja como aprobado.** `ApprovalBadge` ya separa los
+ *   cuatro estados, y por eso se reusa en vez de inventar un cartel nuevo.
+ */
+function ModulesList({ modules }: { modules: Module[] }) {
+  return (
+    <ol className="mt-5 divide-y divide-border border-t border-border">
+      {modules.map((m, i) => (
+        <li key={m.enrollmentId} className="flex items-center gap-3 py-2.5">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-secondary text-[11px] font-semibold tabular-nums text-text-2">
+            {m.position ?? i + 1}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-medium">{m.cohortName}</span>
+            <span className="block truncate text-xs text-text-3">
+              {m.sinCronograma
+                ? "Todavía sin cronograma"
+                : `${m.completedClasses} de ${m.totalClasses} clases`}
+              {m.attendancePct !== null && ` · ${m.attendancePct}% de asistencia`}
+              {m.otraCamada &&
+                ` · lo cursás con ${m.camadaName ?? "otra camada"}`}
+            </span>
+          </span>
+          <ApprovalBadge value={m.approval} />
+        </li>
+      ))}
+    </ol>
   );
 }
 

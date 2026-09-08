@@ -23,6 +23,12 @@ type Cohort = {
    * Es una etiqueta de "dónde te toca", no un botón de entrar.
    */
   virtualRoom: { name: string } | null;
+  /**
+   * 028 (FR-029) — El programa del que este módulo forma parte, para poder
+   * titular la pantalla "Módulo 2 — Especialización en Proyectos BIM".
+   * `null` en una cohorte suelta, que son 33 de las 41.
+   */
+  program: { name: string; position: number | null } | null;
 };
 
 export type ClassRow = {
@@ -178,6 +184,8 @@ export function PortalCohortClient({ cohortId }: { cohortId: string }) {
           {datos.cohort.courseName}
         </h1>
         <p className="text-sm text-muted-foreground">
+          {datos.cohort.program &&
+            `${datos.cohort.program.name} · `}
           {datos.cohort.name ?? "Sin nombre de edición"} · {datos.cohort.students}{" "}
           {datos.cohort.students === 1 ? "alumno" : "alumnos"}
           {datos.cohort.role === "suplente" && " · suplencia"}

@@ -159,7 +159,42 @@ export type TeacherCohortDto = {
   status: "planificada" | "en_curso" | "finalizada";
   role: "titular" | "suplente";
   students: number;
+  /**
+   * 028 (FR-029) — **Lo único que este portal gana con las especializaciones**:
+   * saber que su cohorte es un módulo de un programa, para poder titularla
+   * "Módulo 2 — Especialización en Proyectos BIM" en vez de "Módulo 2" a secas.
+   *
+   * `null` en una cohorte suelta, que son 33 de las 41.
+   *
+   * Nada más. La regla de alcance NO cambia: `resolveTeacherScope()` sigue
+   * devolviendo ids de cohorte, y la cohorte del módulo 2 no es la del módulo
+   * 3. La tentación que US2 nombra por su nombre es reusar acá el armado de
+   * "la especialización entera" del portal del alumno "para que el profesor
+   * vea el contexto"; ese día el profesor del módulo 2 empieza a ver los
+   * alumnos y las notas de los módulos 1, 3 y 4, y nadie se entera hasta que
+   * un profesor lo comenta. Por eso lo que viaja es un nombre y un número, no
+   * un árbol.
+   */
+  program: { name: string; position: number | null } | null;
 };
+
+/**
+ * 028 (FR-029) — El programa de un módulo: su nombre y su número de orden.
+ *
+ * Manda el nombre del CURSO de la camada padre ("Especialización en Proyectos
+ * BIM") y no el de la camada ("EBIM 13"): lo que el profesor necesita para
+ * titular su pantalla es de qué programa es su módulo, no de qué edición.
+ */
+function nombreDelPrograma(
+  padreId: string | null,
+  padres: { id: string; name: string | null; courseName: string }[],
+  position: number | null
+): { name: string; position: number | null } | null {
+  if (!padreId) return null;
+  const padre = padres.find((p) => p.id === padreId);
+  if (!padre) return null;
+  return { name: padre.courseName ?? padre.name ?? "", position };
+}
 
 /** Las cohortes de este profesor, la más reciente primero. */
 export async function listTeacherCohorts(
@@ -183,6 +218,8 @@ export async function listTeacherCohorts(
       classroom: schema.cohort.classroom,
       courseName: schema.course.name,
       roomName: schema.virtualRoom.name,
+      parentCohortId: schema.cohort.parentCohortId,
+      position: schema.cohort.position,
     })
     .from(schema.cohort)
     .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
@@ -194,6 +231,35 @@ export async function listTeacherCohorts(
         inArray(schema.cohort.id, alcance)
       )
     );
+
+  /**
+   * 028 (FR-029) — El NOMBRE del programa al que pertenece cada módulo, y
+   * nada más que el nombre.
+   *
+   * Se consulta sólo si alguna de sus cohortes tiene padre: la cohorte suelta
+   * —33 de las 41— no paga ninguna consulta extra, y una cohorte sin padre no
+   * inventa un programa.
+   */
+  const padres = [
+    ...new Set(rows.map((c) => c.parentCohortId).filter((id): id is string => Boolean(id))),
+  ];
+  const programas = padres.length
+    ? await db
+        .select({
+          id: schema.cohort.id,
+          name: schema.cohort.name,
+          courseName: schema.course.name,
+        })
+        .from(schema.cohort)
+        .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
+        .where(
+          scoped(
+            schema.cohort.organizationId,
+            organizationId,
+            inArray(schema.cohort.id, padres)
+          )
+        )
+    : [];
 
   const inscriptos = await db
     .select({ cohortId: schema.enrollment.cohortId })
@@ -228,6 +294,7 @@ export async function listTeacherCohorts(
       status: computeCohortStatus(c.startDate, c.endDate),
       role: c.teacherId === teacherId ? ("titular" as const) : ("suplente" as const),
       students: cuantos.get(c.id) ?? 0,
+      program: nombreDelPrograma(c.parentCohortId, programas, c.position),
     }))
     // Con 18 cohortes (las de Ovidio) el orden no es cosmético: lo que está en
     // curso es lo único que se usa un martes a las 18:30.
