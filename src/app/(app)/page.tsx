@@ -52,7 +52,7 @@ export default async function HomePage() {
    */
   return (
     <div className="flex h-full flex-col">
-      <div className="mx-auto w-full max-w-5xl flex-1 space-y-6 overflow-y-auto p-6">
+      <div className="mx-auto w-full flex-1 space-y-6 overflow-y-auto p-6">
         <TodayPanel nombre={authSession?.user.name ?? "que tal"} />
 
         {fullAccess && (

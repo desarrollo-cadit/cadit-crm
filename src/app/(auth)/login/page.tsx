@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
 import { signIn } from "@/lib/auth/client";
@@ -136,16 +135,6 @@ export default function LoginPage() {
       */}
       <p className="text-sm text-muted-foreground">
         ¿No podés entrar? Escribile a la academia y te generan un acceso nuevo.
-      </p>
-
-      <p className="border-t border-border pt-5 text-sm text-muted-foreground">
-        ¿Estás instalando el sistema?{" "}
-        <Link
-          href="/register"
-          className="font-medium text-brand-text underline underline-offset-4"
-        >
-          Crear la cuenta inicial
-        </Link>
       </p>
     </div>
   );
