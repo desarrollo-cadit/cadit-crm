@@ -67,6 +67,12 @@ export type CourseContentInput = {
   syllabusUrl?: string | null;
   /** 007 — si sale o no en el catálogo público. Default `true` en el alta. */
   published?: boolean;
+  /**
+   * 028 fase 5 — si este curso ENTREGA certificado. Default `true` en el alta:
+   * el caso normal es el curso que certifica. Gobierna la EMISIÓN y nada más;
+   * un curso que no certifica se aprueba igual.
+   */
+  grantsCertificate?: boolean;
   /** 009/010 — asistencia mínima por defecto de las cohortes de este curso. */
   minAttendancePct?: number | null;
 };
@@ -115,6 +121,7 @@ export const courseContentSchema = {
   targetAudience: z.string().max(4000).nullable().optional(),
   syllabusUrl: httpUrl.nullable().optional(),
   published: z.boolean().optional(),
+  grantsCertificate: z.boolean().optional(),
   minAttendancePct: z.number().int().min(0).max(100).nullable().optional(),
 };
 
@@ -171,6 +178,9 @@ export async function createCourse(
       // 007 — un curso nuevo se publica salvo que se diga lo contrario:
       // el caso normal es el curso del catálogo.
       published: input.published ?? true,
+      // 028 fase 5 — y certifica salvo que se diga lo contrario: el curso que
+      // no entrega certificado es la excepción, no la regla.
+      grantsCertificate: input.grantsCertificate ?? true,
       minAttendancePct: input.minAttendancePct ?? null,
     })
     .returning();
@@ -251,6 +261,9 @@ export async function updateCourse(
       ...(input.targetAudience !== undefined ? { targetAudience: input.targetAudience } : {}),
       ...(input.syllabusUrl !== undefined ? { syllabusUrl: input.syllabusUrl } : {}),
       ...(input.published !== undefined ? { published: input.published } : {}),
+      ...(input.grantsCertificate !== undefined
+        ? { grantsCertificate: input.grantsCertificate }
+        : {}),
       ...(input.minAttendancePct !== undefined ? { minAttendancePct: input.minAttendancePct } : {}),
       updatedAt: new Date(),
     })

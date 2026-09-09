@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarDays, GraduationCap, MoveRight, RotateCcw } from "lucide-react";
+import { CalendarDays, GraduationCap, MoveRight, RotateCcw, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -82,6 +82,16 @@ type CohortOption = {
   startDate: string;
 };
 
+/**
+ * Los cuatro actos que se pueden hacer sobre la celda de un alumno.
+ *
+ * Los dos de US4 mueven la cursada; los dos de US6 tocan la dispensa, y son
+ * DOS y no un interruptor a propósito (DV-004): otorgar y revocar tienen cada
+ * uno su motivo, y quien revoca tiene que escribir por qué igual que quien
+ * otorgó.
+ */
+type Via = "baja" | "recursada" | "dispensar" | "revocar-dispensa";
+
 const ESTADO: Record<State, { label: string; variant: "success" | "destructive" | "warning" }> = {
   aprobado: { label: "Aprobado", variant: "success" },
   reprobado: { label: "Reprobado", variant: "destructive" },
@@ -116,10 +126,17 @@ function fecha(iso: string | null): string {
 export function ProgramClient({
   cohortId,
   canEditEnrollments,
+  canEditGrading,
 }: {
   cohortId: string;
   /** `inscripciones.editar` — mover una cursada o armar una recursada (US4). */
   canEditEnrollments: boolean;
+  /**
+   * `evaluacion.editar` (DV-003) — otorgar y revocar la dispensa de
+   * asistencia (US6). Es la misma capacidad que corrige una evaluación
+   * porque lo que cambia es si el alumno aprueba, no quién pasó lista.
+   */
+  canEditGrading: boolean;
 }) {
   const [data, setData] = useState<Programa | null>(null);
   const [cohorts, setCohorts] = useState<CohortOption[]>([]);
@@ -127,11 +144,15 @@ export function ProgramClient({
   const [error, setError] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   /** Qué celda tiene el panel de US4 abierto, y por cuál de los dos caminos. */
-  const [accion, setAccion] = useState<
-    { alumno: Alumno; modulo: ModuloDelAlumno; via: "baja" | "recursada" } | null
-  >(null);
+  const [accion, setAccion] = useState<{
+    alumno: Alumno;
+    modulo: ModuloDelAlumno;
+    via: Via;
+  } | null>(null);
   const [destino, setDestino] = useState("");
   const [monto, setMonto] = useState("");
+  /** US6/FR-023 — el motivo de la dispensa: sin él no hay dispensa. */
+  const [motivo, setMotivo] = useState("");
   const [guardando, setGuardando] = useState(false);
 
   const refetch = useCallback(async () => {
@@ -185,12 +206,57 @@ export function ProgramClient({
       .sort((a, b) => a.startDate.localeCompare(b.startDate));
   }, [accion, cohorts]);
 
-  function abrir(alumno: Alumno, modulo: ModuloDelAlumno, via: "baja" | "recursada") {
+  function abrir(alumno: Alumno, modulo: ModuloDelAlumno, via: Via) {
     setAccion({ alumno, modulo, via });
     setDestino("");
     setMonto("");
+    setMotivo("");
     setAviso(null);
     setError(null);
+  }
+
+  const esDispensa =
+    accion?.via === "dispensar" || accion?.via === "revocar-dispensa";
+
+  /**
+   * US6 — Otorgar y revocar la dispensa de asistencia.
+   *
+   * Los dos actos van a la MISMA ruta con verbos distintos, y los dos exigen
+   * motivo: una dispensa sin motivo es indistinguible de un error de cálculo
+   * (FR-023), y quitarle a alguien una habilitación sin decir por qué es tan
+   * poco auditable como dársela.
+   *
+   * Revocar la dispensa NO anula el certificado (DV-004). Si ya se emitió, hay
+   * que decidirlo y pedirlo aparte — y por eso el aviso lo dice.
+   */
+  async function confirmarDispensa() {
+    if (!accion || motivo.trim().length < 3) return;
+    setGuardando(true);
+    setError(null);
+
+    const res = await fetch(`/api/enrollments/${accion.modulo.enrollmentId}/dispensa`, {
+      method: accion.via === "dispensar" ? "POST" : "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ motivo: motivo.trim() }),
+    }).catch(() => null);
+
+    setGuardando(false);
+    if (!res?.ok) {
+      const body = (await res?.json().catch(() => null)) as
+        | { error?: { message?: string } }
+        | null;
+      setError(body?.error?.message ?? "No se pudo registrar la dispensa");
+      return;
+    }
+
+    const via = accion.via;
+    setAccion(null);
+    setAviso(
+      via === "dispensar"
+        ? "Dispensa otorgada. El motivo, con tu nombre y la fecha, aparece junto al estado del alumno."
+        : "Dispensa revocada. El certificado, si ya se emitió, sigue vigente: anularlo es un acto aparte."
+    );
+    void refetch();
   }
 
   async function confirmar() {
@@ -377,31 +443,70 @@ export function ProgramClient({
                       {celda.dispensada ? (
                         <p className="mt-1 text-xs text-warning">Con dispensa</p>
                       ) : null}
+                      {/*
+                        FR-025 — el motivo NO alcanza con que viaje: tiene que
+                        leerse. "Con dispensa" dice que la hay; esta línea dice
+                        quién la otorgó, cuándo y por qué —y también, cuando no
+                        hay dispensa, por qué el módulo está como está—. Sin
+                        ella la celda afirma un estado que nadie puede
+                        explicar, que es la dispensa silenciosa que la decisión
+                        4 prohíbe.
+                      */}
+                      {celda.reasons.length > 0 ? (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {celda.reasons.join(" · ")}
+                        </p>
+                      ) : null}
                       {celda.otraCamada ? (
                         <p className="mt-1 text-xs text-muted-foreground">
                           Cursa con {celda.camadaName ?? "otra camada"}
                         </p>
                       ) : null}
-                      {canEditEnrollments ? (
-                        <div className="mt-1 flex flex-wrap gap-1">
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {canEditEnrollments ? (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => abrir(a, celda, "baja")}
+                            >
+                              <MoveRight className="mr-1 h-3 w-3" aria-hidden />
+                              Mudar
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => abrir(a, celda, "recursada")}
+                            >
+                              <RotateCcw className="mr-1 h-3 w-3" aria-hidden />
+                              Recursar
+                            </Button>
+                          </>
+                        ) : null}
+                        {/*
+                          US6 — el botón dice cuál de los dos actos ofrece,
+                          nunca "dispensa" a secas: con una vigente lo único
+                          que queda por hacer es quitarla, y un interruptor sin
+                          motivo sería exactamente la dispensa silenciosa que
+                          FR-025 prohíbe.
+                        */}
+                        {canEditGrading ? (
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => abrir(a, celda, "baja")}
+                            onClick={() =>
+                              abrir(
+                                a,
+                                celda,
+                                celda.dispensada ? "revocar-dispensa" : "dispensar"
+                              )
+                            }
                           >
-                            <MoveRight className="mr-1 h-3 w-3" aria-hidden />
-                            Mudar
+                            <ShieldCheck className="mr-1 h-3 w-3" aria-hidden />
+                            {celda.dispensada ? "Quitar dispensa" : "Dispensar"}
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => abrir(a, celda, "recursada")}
-                          >
-                            <RotateCcw className="mr-1 h-3 w-3" aria-hidden />
-                            Recursar
-                          </Button>
-                        </div>
-                      ) : null}
+                        ) : null}
+                      </div>
                     </TableCell>
                   );
                 })}
@@ -416,7 +521,58 @@ export function ProgramClient({
         mecanismo y se distinguen sólo por la plata, así que la pantalla tiene
         que decir cuál se está eligiendo: mudar no cobra nada, recursar sí.
       */}
-      {accion ? (
+      {/*
+        US6 — La dispensa, con su motivo obligatorio. Es el panel más corto de
+        la pantalla y el que más se justifica: el texto que se escribe acá es
+        lo que, a los seis meses, permite distinguir una habilitación del dueño
+        de un error de cálculo.
+      */}
+      {accion && esDispensa ? (
+        <div className="rounded-lg border bg-card p-4">
+          <h4 className="text-sm font-semibold text-foreground">
+            {accion.via === "dispensar"
+              ? `Dispensar la asistencia de ${accion.modulo.label} — ${accion.alumno.contact.name}`
+              : `Quitar la dispensa de ${accion.modulo.label} — ${accion.alumno.contact.name}`}
+          </h4>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {accion.via === "dispensar"
+              ? "Habilita la aprobación de ESTE módulo pese a no llegar al mínimo de asistencia. No perdona evaluaciones: una obligatoria desaprobada sigue reprobando. El porcentaje real no cambia — queda a la vista, junto al motivo, tu nombre y la fecha."
+              : "La dispensa deja de tener efecto y el módulo vuelve a exigir su asistencia. El acto original se conserva. Si ya se emitió el certificado, éste NO se anula: es una decisión aparte y explícita."}
+          </p>
+
+          <div className="mt-3 flex flex-wrap items-end gap-2">
+            <label className="flex min-w-[18rem] flex-1 flex-col gap-1 text-xs text-muted-foreground">
+              Motivo
+              <Input
+                value={motivo}
+                onChange={(e) => setMotivo(e.target.value)}
+                placeholder={
+                  accion.via === "dispensar"
+                    ? "Avisó antes de empezar que se iba de viaje"
+                    : "Se comprobó que la razón no era la declarada"
+                }
+              />
+            </label>
+
+            <Button
+              onClick={() => void confirmarDispensa()}
+              disabled={motivo.trim().length < 3 || guardando}
+            >
+              {guardando ? "Guardando…" : "Confirmar"}
+            </Button>
+            <Button variant="ghost" onClick={() => setAccion(null)}>
+              Cancelar
+            </Button>
+          </div>
+
+          <p className="mt-2 text-xs text-muted-foreground">
+            Sin motivo no hay dispensa: quien la lea dentro de seis meses tiene
+            que poder entender por qué se otorgó sin preguntarle a nadie.
+          </p>
+        </div>
+      ) : null}
+
+      {accion && !esDispensa ? (
         <div className="rounded-lg border bg-card p-4">
           <h4 className="text-sm font-semibold text-foreground">
             {accion.via === "baja"

@@ -87,7 +87,11 @@ export function CohortTabs({
         {tab === "roster" ? (
           <RosterClient cohortId={cohortId} canEnroll={canEnroll} />
         ) : tab === "program" ? (
-          <ProgramClient cohortId={cohortId} canEditEnrollments={canEditEnrollments} />
+          <ProgramClient
+            cohortId={cohortId}
+            canEditEnrollments={canEditEnrollments}
+            canEditGrading={canEditGrading}
+          />
         ) : tab === "classes" ? (
           <ClassesClient
             cohortId={cohortId}

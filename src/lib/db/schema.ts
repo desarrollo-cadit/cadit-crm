@@ -358,6 +358,26 @@ export const course = pgTable(
      */
     published: boolean("published").notNull().default(true),
     /**
+     * 028 fase 5 (FR-019) — si este curso ENTREGA certificado.
+     *
+     * Regla del dueño (2026-09-09): el certificado de un módulo se emite sólo
+     * si el curso de ese módulo lo otorga. No todo producto de la academia
+     * entrega uno —hay inducciones, talleres y módulos introductorios que
+     * forman parte del recorrido sin certificar—, y hasta acá el sistema
+     * emitía igual porque no tenía cómo saberlo.
+     *
+     * **Gobierna la EMISIÓN y NADA MÁS.** No entra en `approvalState`, ni en
+     * `moduleApprovalState`, ni en `programApprovalState`: aprobar y
+     * certificar son cosas distintas, y un módulo que no otorga certificado
+     * propio igual cuenta para el certificado general de la especialización
+     * (decisión del dueño, 2026-09-09). Excluirlo del cómputo le entregaría
+     * el general a alguien que reprobó un módulo del programa.
+     *
+     * Default `true` para que los 41 cursos ya cargados —AutoCAD entre
+     * ellos— sigan comportándose exactamente como en el ciclo 010 (FR-032).
+     */
+    grantsCertificate: boolean("grants_certificate").notNull().default(true),
+    /**
      * 009 (DV-001) — mínimo de asistencia por defecto para las cohortes de este
      * curso, 0-100. La cohorte puede pisarlo con `cohort.min_attendance_pct`.
      */

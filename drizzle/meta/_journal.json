@@ -267,6 +267,13 @@
       "when": 1788878069438,
       "tag": "0037_especializaciones_y_modulos",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1788959721497,
+      "tag": "0038_curso_otorga_certificado",
+      "breakpoints": true
     }
   ]
 }

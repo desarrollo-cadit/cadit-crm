@@ -31,6 +31,26 @@ export const GET = requireCapability(
       learningObjectives: c.learningObjectives ?? [],
       targetAudience: c.targetAudience,
       syllabusUrl: c.syllabusUrl,
+      /*
+        Estos tres FALTABAN, y el hueco no era inocuo: el editor de cursos se
+        precarga desde ESTE payload —el detalle por id sólo se pide para el
+        temario—, así que un campo ausente llega al form como `undefined`, cae
+        en su default optimista y se guarda pisado en el próximo Guardar.
+
+        `published` venía así desde el 007 y `minAttendancePct` desde el 009:
+        destildar "Publicar en el catálogo web", volver a entrar a corregir
+        una frase y guardar volvía a publicar el curso, sin que nadie lo
+        pidiera ni lo notara. La bandera de certificado del 028 iba camino a
+        lo mismo, y ahí el precio era emitir un certificado de un curso que no
+        certifica.
+
+        `Response.json()` no se contrasta contra `CourseDto`, así que el
+        compilador nunca vio la diferencia entre lo que el tipo promete y lo
+        que la ruta manda. Hoy lo mira un test.
+      */
+      published: c.published,
+      grantsCertificate: c.grantsCertificate,
+      minAttendancePct: c.minAttendancePct,
     })),
   });
 });
