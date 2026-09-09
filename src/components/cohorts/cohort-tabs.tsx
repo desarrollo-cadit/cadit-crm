@@ -5,6 +5,7 @@ import { AttendanceClient } from "@/components/cohorts/attendance-client";
 import { AnnouncementsClient } from "@/components/cohorts/announcements-client";
 import { ClassesClient } from "@/components/cohorts/classes-client";
 import { GradingClient } from "@/components/cohorts/grading-client";
+import { ProgramClient } from "@/components/cohorts/program-client";
 import { RosterClient } from "@/components/cohorts/roster-client";
 
 /**
@@ -19,6 +20,8 @@ export function CohortTabs({
   canEditAcademic,
   canEditAttendance,
   canEditGrading,
+  canEditEnrollments,
+  esEspecializacion,
 }: {
   cohortId: string;
   canEnroll: boolean;
@@ -28,9 +31,20 @@ export function CohortTabs({
   canEditAttendance: boolean;
   /** 014 — `evaluacion.editar`: crear, copiar y corregir evaluaciones. */
   canEditGrading: boolean;
+  /** 028 — `inscripciones.editar`: mudar una cursada o armar una recursada. */
+  canEditEnrollments: boolean;
+  /**
+   * 028 fase 4 (FR-032/FR-033) — ¿Esta camada tiene módulos colgando?
+   *
+   * La pestaña se agrega SÓLO cuando los tiene, y la condición es un dato —la
+   * presencia de cohortes hijas—, nunca una bandera ni una heurística sobre el
+   * nombre del curso. Una pestaña de más en las 33 cohortes simples ya es un
+   * cambio de pantalla, y FR-032 es un requisito duro.
+   */
+  esEspecializacion: boolean;
 }) {
   const [tab, setTab] = useState<
-    "roster" | "classes" | "attendance" | "grading" | "announcements"
+    "roster" | "program" | "classes" | "attendance" | "grading" | "announcements"
   >("roster");
 
   return (
@@ -39,8 +53,13 @@ export function CohortTabs({
         {(
           [
             { key: "roster", label: "Alumnos" },
-            // 013 — Va segunda: después de saber QUIÉNES cursan, lo que se
-            // mira es CUÁNDO. Asistencia y evaluación vienen después.
+            // 028 — Segunda y sólo en una especialización: antes de mirar
+            // clases o notas, lo que hay que ver es de qué está hecha.
+            ...(esEspecializacion
+              ? ([{ key: "program", label: "Especialización" }] as const)
+              : []),
+            // 013 — Después de saber QUIÉNES cursan, lo que se mira es CUÁNDO.
+            // Asistencia y evaluación vienen después.
             { key: "classes", label: "Clases" },
             { key: "attendance", label: "Asistencia" },
             { key: "grading", label: "Evaluación" },
@@ -67,6 +86,8 @@ export function CohortTabs({
       <div className="min-h-0 flex-1 overflow-y-auto">
         {tab === "roster" ? (
           <RosterClient cohortId={cohortId} canEnroll={canEnroll} />
+        ) : tab === "program" ? (
+          <ProgramClient cohortId={cohortId} canEditEnrollments={canEditEnrollments} />
         ) : tab === "classes" ? (
           <ClassesClient
             cohortId={cohortId}

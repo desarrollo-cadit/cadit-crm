@@ -486,6 +486,7 @@ function hija(over: Record<string, unknown> = {}) {
   return {
     id: "enr_m1",
     cohortId: "coh_m1",
+    courseId: "cur_1",
     enrolledAt: null,
     position: 1,
     parentCohortId: "coh_padre",
@@ -503,12 +504,47 @@ function hija(over: Record<string, unknown> = {}) {
   };
 }
 
-/** madre, hijas, y después clases / marcas / evaluaciones / resultados. */
-function colaDePrograma(hijas: unknown[], resto: unknown[][] = [[], [], [], []]) {
+/**
+ * madre, hijas, los módulos del PROGRAMA, y después clases / marcas /
+ * evaluaciones / resultados.
+ *
+ * Los módulos del programa son el orden de la academia: es de ahí de donde
+ * sale el ordinal de cada módulo, no del lugar que ocupa en la lista de la
+ * persona. Vacío = la camada no tiene módulos cargados.
+ */
+function colaDePrograma(
+  hijas: unknown[],
+  resto: unknown[][] = [[], [], [], []],
+  modulosDelPrograma: unknown[] = []
+) {
   selectQueue.push([{ id: "enr_madre", cohortId: "coh_padre" }]);
   selectQueue.push(hijas);
+  selectQueue.push(modulosDelPrograma);
   for (const r of resto) selectQueue.push(r);
 }
+
+/** Una fila de `listarModulos`: la cohorte de un módulo del programa. */
+function moduloDelPrograma(over: Record<string, unknown> = {}) {
+  return {
+    id: "coh_m1",
+    name: "Revit Arquitectura",
+    position: 10,
+    courseId: "cur_1",
+    teacherId: null,
+    startDate: null,
+    endDate: null,
+    minAttendancePct: null,
+    ...over,
+  };
+}
+
+/** EBIM con cuatro módulos cargados 10/20/30/40: el hueco deliberado. */
+const PROGRAMA_DE_CUATRO = [
+  moduloDelPrograma(),
+  moduloDelPrograma({ id: "coh_m2", courseId: "cur_2", position: 20, name: "Revit Estructura" }),
+  moduloDelPrograma({ id: "coh_m3", courseId: "cur_3", position: 30, name: "Revit MEP" }),
+  moduloDelPrograma({ id: "coh_m4", courseId: "cur_4", position: 40, name: "Revit Familias" }),
+];
 
 describe("programGrading — el estado de la madre, compuesto sobre sus hijas (FR-016)", () => {
   /** DV-005 — la trampa del default optimista, ahora contra datos reales. */
@@ -680,6 +716,96 @@ describe("programGrading — el estado de la madre, compuesto sobre sus hijas (F
     selectQueue.push([]);
     const { programGrading } = await import("@/server/grading");
     expect(await programGrading("org_1", "enr_fantasma")).toBeNull();
+  });
+
+  /* ============================================================
+   * El ordinal sale del PROGRAMA, no del recorrido de la persona
+   * ============================================================
+   * "Módulo 2" es el módulo 2 de la especialización para todo el mundo. Contar
+   * sobre la lista propia de cada alumno renumera al que tiene huecos: le dice
+   * que está en el módulo 1 cuando no lo está, y hace que esta pantalla y la
+   * grilla del staff afirmen cosas distintas sobre la misma persona.
+   */
+
+  it("un alumno al que le falta el módulo 1 ve sus módulos como 2, 3 y 4", async () => {
+    colaDePrograma(
+      [
+        hija({ id: "enr_m2", cohortId: "coh_m2", courseId: "cur_2", position: 20, cohortName: "Revit Estructura" }),
+        hija({ id: "enr_m3", cohortId: "coh_m3", courseId: "cur_3", position: 30, cohortName: "Revit MEP" }),
+        hija({ id: "enr_m4", cohortId: "coh_m4", courseId: "cur_4", position: 40, cohortName: "Revit Familias" }),
+      ],
+      [[], [], [], []],
+      PROGRAMA_DE_CUATRO
+    );
+    const { programGrading } = await import("@/server/grading");
+    const r = await programGrading("org_1", "enr_madre");
+
+    expect(r!.modules.map((m) => m.ordinal)).toEqual([2, 3, 4]);
+    // Y el rótulo tampoco imprime el número guardado: 10/20/30/40 no aparecen.
+    expect(r!.modules.map((m) => m.label)).toEqual([
+      "Módulo 2 — Revit Estructura",
+      "Módulo 3 — Revit MEP",
+      "Módulo 4 — Revit Familias",
+    ]);
+  });
+
+  /**
+   * US4 / FR-008 — El módulo recursado con OTRA camada es otra cohorte, pero
+   * es el MISMO módulo: conserva su lugar en el programa. Es lo que ya hace la
+   * grilla del staff, y por eso se indexa también por curso.
+   */
+  it("un módulo recursado en otra camada conserva su lugar en el programa", async () => {
+    colaDePrograma(
+      [
+        hija({ position: 10 }),
+        hija({
+          id: "enr_m2",
+          cohortId: "coh_m2_ebim14",
+          courseId: "cur_2",
+          position: 20,
+          parentCohortId: "coh_padre_ebim14",
+          cohortName: "Revit Estructura — EBIM 14",
+        }),
+      ],
+      [[], [], [], []],
+      PROGRAMA_DE_CUATRO
+    );
+    const { programGrading } = await import("@/server/grading");
+    const r = await programGrading("org_1", "enr_madre");
+
+    const recursado = r!.modules.find((m) => m.enrollmentId === "enr_m2")!;
+    expect(recursado.otraCamada).toBe(true);
+    expect(recursado.ordinal).toBe(2);
+    expect(recursado.label).toBe("Módulo 2 — Revit Estructura — EBIM 14");
+  });
+
+  /** La misma persona, las dos pantallas, el mismo número. */
+  it("el ordinal del portal es el mismo que el de la grilla del staff", async () => {
+    colaDePrograma(
+      [
+        hija({ id: "enr_m2", cohortId: "coh_m2", courseId: "cur_2", position: 20 }),
+        hija({ id: "enr_m4", cohortId: "coh_m4", courseId: "cur_4", position: 40 }),
+      ],
+      [[], [], [], []],
+      PROGRAMA_DE_CUATRO
+    );
+    const { programGrading } = await import("@/server/grading");
+    const r = await programGrading("org_1", "enr_madre");
+
+    const { armarModulosDeCamada } = await import("@/server/program-staff");
+    const grilla = armarModulosDeCamada(
+      PROGRAMA_DE_CUATRO,
+      new Map(),
+      new Map(),
+      new Map(),
+      new Date("2026-09-08T12:00:00.000Z")
+    );
+
+    for (const cohorteId of ["coh_m2", "coh_m4"]) {
+      expect(r!.modules.find((m) => m.cohortId === cohorteId)!.ordinal).toBe(
+        grilla.find((g) => g.cohortId === cohorteId)!.ordinal
+      );
+    }
   });
 });
 

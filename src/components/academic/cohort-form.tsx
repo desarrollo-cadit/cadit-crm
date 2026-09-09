@@ -24,6 +24,7 @@ export function CohortForm({
   courses,
   teachers,
   software,
+  cohorts,
   initial,
   onClose,
   onSaved,
@@ -32,6 +33,8 @@ export function CohortForm({
   courses: CourseDto[];
   teachers: TeacherDto[];
   software: SoftwareDto[];
+  /** 028 — Todas las camadas cargadas, para poder elegir la padre. */
+  cohorts: CohortDto[];
   initial?: CohortDto | null;
   onClose: () => void;
   onSaved: () => void;
@@ -94,6 +97,18 @@ export function CohortForm({
   const [softwareIds, setSoftwareIds] = useState<string[]>(
     initial?.software.map((s) => s.id) ?? []
   );
+  /**
+   * 028 fase 4 (FR-001/FR-002) — Armar la especialización: de qué camada es
+   * módulo esta cohorte, y en qué lugar.
+   *
+   * Vacío = cohorte suelta, que es el estado de las 33 simples y lo que sigue
+   * pasando si nadie toca nada (FR-032). Colgar y descolgar son la misma
+   * operación con distinto valor, y la regla del árbol —un solo nivel, nadie
+   * es su propio padre— la aplica `verificarPadreDeCohorte` en el servidor: el
+   * formulario ofrece, no valida.
+   */
+  const [parentCohortId, setParentCohortId] = useState(initial?.parentCohortId ?? "");
+  const [position, setPosition] = useState(initial?.position?.toString() ?? "");
   const [newTeacherName, setNewTeacherName] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -168,6 +183,10 @@ export function CohortForm({
       capacity: capacity.trim() ? Number(capacity) : null,
       whatsappGroupLink: whatsappGroupLink.trim() || null,
       minAttendancePct: minAttendancePct.trim() ? Number(minAttendancePct) : null,
+      // 028 — Cadena vacía = "no es módulo de nada", y se manda null explícito
+      // para poder DESCOLGAR: omitirlo dejaría el padre como está.
+      parentCohortId: parentCohortId || null,
+      position: parentCohortId && position.trim() ? Number(position) : null,
       softwareIds,
     };
     const res = await fetch(
@@ -333,6 +352,54 @@ export function CohortForm({
                 value={capacity}
                 onChange={(e) => setCapacity(e.target.value)}
               />
+            </div>
+          </div>
+
+          {/*
+            028 fase 4 (US3) — Armar la especialización. Va junto al mínimo de
+            asistencia porque las dos son decisiones de la ESTRUCTURA de la
+            cursada, no del calendario ni de la venta.
+          */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="cohort-parent">Módulo de la especialización</Label>
+              <Select
+                id="cohort-parent"
+                value={parentCohortId}
+                onChange={(e) => setParentCohortId(e.target.value)}
+              >
+                <option value="">No es un módulo</option>
+                {cohorts
+                  // Un módulo no tiene sub-módulos y nadie es su propio padre
+                  // (FR-003/FR-004): se filtran acá para no ofrecer lo que el
+                  // servidor va a rechazar. La regla sigue siendo del servidor.
+                  .filter((c) => c.parentCohortId === null && c.id !== initial?.id)
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name ?? c.courseName}
+                    </option>
+                  ))}
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Elegí la camada de la que esta cohorte es un módulo. Vacío = cohorte
+                suelta.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="cohort-position">Orden dentro del programa</Label>
+              <Input
+                id="cohort-position"
+                type="number"
+                min={0}
+                disabled={!parentCohortId}
+                placeholder="10, 20, 30…"
+                value={position}
+                onChange={(e) => setPosition(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Ordena los módulos; no es el número que se muestra. Podés dejar huecos
+                (10, 20, 30) para insertar uno en el medio más adelante.
+              </p>
             </div>
           </div>
 

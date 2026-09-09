@@ -172,10 +172,60 @@ describe("validarPadreDeCohorte (FR-003, FR-004)", () => {
     padreExiste: false,
     padreYaEsModulo: false,
     cohorteYaTieneModulos: false,
+    cohorteTieneCursadasDeModulo: false,
   };
 
   it("sin padre no hay nada que validar: es el estado de las 41 cohortes de hoy", () => {
     expect(validarPadreDeCohorte(base)).toBeNull();
+  });
+
+  /**
+   * FR-010 — La otra punta de "una hija apunta a un módulo": descolgar el
+   * módulo.
+   *
+   * Sacarle el padre a una cohorte que todavía tiene alumnos cursándola dentro
+   * de una especialización deja a esas inscripciones hijas apuntando a una
+   * camada que ya NO es un módulo. Es exactamente el estado que FR-010
+   * prohíbe, y se alcanzaba por la puerta de atrás: el guarda se rendía en la
+   * primera línea porque el padre venía en NULL.
+   *
+   * La regla vive ACÁ y no en la pantalla que descuelga: una segunda
+   * validación en otro lado es cómo dos reglas terminan diciendo cosas
+   * distintas, y la que diverge es siempre la que nadie mira.
+   */
+  it("rechaza descolgar un módulo que todavía tiene alumnos cursándolo", () => {
+    const error = validarPadreDeCohorte({
+      ...base,
+      padreId: null,
+      cohorteTieneCursadasDeModulo: true,
+    });
+    expect(error?.code).toBe("modulo_con_alumnos_cursandolo");
+  });
+
+  /** Sin nadie cursándolo no hay a quién dejar colgado: descolgar se permite. */
+  it("descolgar un módulo SIN alumnos cursándolo sigue permitido", () => {
+    expect(
+      validarPadreDeCohorte({
+        ...base,
+        padreId: null,
+        cohorteTieneCursadasDeModulo: false,
+      })
+    ).toBeNull();
+  });
+
+  /**
+   * Colgar —o mudar el módulo a otro programa— no mira las cursadas: el módulo
+   * sigue siendo un módulo, así que sus hijas siguen apuntando a uno.
+   */
+  it("colgar un módulo con alumnos cursándolo no se toca", () => {
+    expect(
+      validarPadreDeCohorte({
+        ...base,
+        padreId: "cohort_madre",
+        padreExiste: true,
+        cohorteTieneCursadasDeModulo: true,
+      })
+    ).toBeNull();
   });
 
   it("acepta colgar una cohorte simple de una camada sin padre", () => {
@@ -234,6 +284,7 @@ describe("validarPadreDeCohorte (FR-003, FR-004)", () => {
         padreExiste: true,
         padreYaEsModulo: false,
         cohorteYaTieneModulos: false,
+        cohorteTieneCursadasDeModulo: false,
       })
     ).toBeNull();
     // Ahora B→A: A ya es módulo (tiene padre B) y B ya tiene módulos.
@@ -243,6 +294,7 @@ describe("validarPadreDeCohorte (FR-003, FR-004)", () => {
       padreExiste: true,
       padreYaEsModulo: true,
       cohorteYaTieneModulos: true,
+      cohorteTieneCursadasDeModulo: false,
     });
     expect(error?.code).toBe("anidamiento_de_dos_niveles");
   });
@@ -450,6 +502,7 @@ describe("sin regresión: 33 cohortes simples y 284 inscripciones (FR-032)", () 
         padreExiste: false,
         padreYaEsModulo: false,
         cohorteYaTieneModulos: false,
+        cohorteTieneCursadasDeModulo: false,
       })
     ).toBeNull();
     expect(

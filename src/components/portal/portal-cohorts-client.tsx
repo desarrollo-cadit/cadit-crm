@@ -12,13 +12,19 @@ type Cohort = {
   courseName: string;
   /**
    * 028 (FR-029) — Cuando esta cohorte es un MÓDULO de un programa, su nombre
-   * y su número de orden. `null` en una cohorte suelta.
+   * y el LUGAR del módulo dentro de él. `null` en una cohorte suelta.
    *
    * Es lo único que el portal del profesor gana con las especializaciones:
    * "Módulo 2" a secas no dice de cuál de las cuatro EBIM es. Nada del árbol
    * viaja hasta acá — ni los módulos hermanos, ni sus alumnos, ni sus notas.
+   *
+   * `ordinal` y no `position`: el número guardado es una CLAVE DE ORDEN, y una
+   * especialización cargada 10/20/30 —el hueco que se deja para insertar un
+   * módulo en el medio— haría que esta pantalla dijera "Módulo 30". El ordinal
+   * lo deriva el servidor del lugar en el programa, igual que la grilla del
+   * staff y el recorrido del alumno.
    */
-  program: { name: string; position: number | null } | null;
+  program: { name: string; ordinal: number | null } | null;
   startDate: string;
   endDate: string | null;
   startTime: string | null;
@@ -139,8 +145,8 @@ function Grupo({
                     </p>
                     {c.program && (
                       <p className="truncate text-xs text-text-3">
-                        {c.program.position !== null &&
-                          `Módulo ${c.program.position} · `}
+                        {c.program.ordinal !== null &&
+                          `Módulo ${c.program.ordinal} · `}
                         {c.program.name}
                       </p>
                     )}

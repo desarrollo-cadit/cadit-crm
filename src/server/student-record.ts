@@ -14,6 +14,7 @@ import {
   programApprovalState,
   type ApprovalState,
 } from "@/server/grading";
+import { etiquetaDeModulo } from "@/server/program-modules";
 
 /**
  * 013 (T026, US6/FR-009) — El legajo: todo el recorrido de una persona en una
@@ -454,11 +455,19 @@ export async function getStudentRecord(
       const compuesto = programApprovalState(
         modules.map((m) => (m.approval === "sin_datos" ? "pendiente" : m.approval))
       );
-      const culpables = modules.filter((m) =>
-        compuesto.state === "reprobado"
-          ? m.approval === "reprobado"
-          : m.approval !== "aprobado"
-      );
+      /**
+       * SC-010 — el módulo que causó la razón, nombrado por su ORDINAL: el
+       * lugar en la lista ya ordenada, nunca la columna `position`. Con
+       * posiciones 10/20/30 —el hueco que se deja para insertar un módulo en
+       * el medio— el número guardado diría "Módulo 30" para el tercero.
+       */
+      const culpables = modules
+        .map((m, i) => ({ m, ordinal: m.position === null ? null : i + 1 }))
+        .filter(({ m }) =>
+          compuesto.state === "reprobado"
+            ? m.approval === "reprobado"
+            : m.approval !== "aprobado"
+        );
 
       return {
         ...cursada,
@@ -470,10 +479,8 @@ export async function getStudentRecord(
         approvalReasons: [
           ...compuesto.reasons,
           // SC-010 — las razones nombran el módulo que las causó.
-          ...culpables.map((m) =>
-            m.position === null
-              ? `${m.cohortName}: ${m.approval}`
-              : `Módulo ${m.position} — ${m.cohortName}: ${m.approval}`
+          ...culpables.map(
+            ({ m, ordinal }) => `${etiquetaDeModulo(ordinal, m.cohortName)}: ${m.approval}`
           ),
         ],
         modules,

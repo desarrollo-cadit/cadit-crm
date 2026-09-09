@@ -12,6 +12,7 @@ import {
   type AnnouncementDto,
   type ResourceDto,
 } from "@/server/resources";
+import { modulosConOrdinal } from "@/server/program-modules";
 import type { ResourceKind } from "@/lib/db/schema";
 
 /**
@@ -175,25 +176,31 @@ export type TeacherCohortDto = {
    * un profesor lo comenta. Por eso lo que viaja es un nombre y un número, no
    * un árbol.
    */
-  program: { name: string; position: number | null } | null;
+  program: { name: string; ordinal: number | null } | null;
 };
 
 /**
- * 028 (FR-029) — El programa de un módulo: su nombre y su número de orden.
+ * 028 (FR-029) — El programa de un módulo: su nombre y su lugar.
  *
  * Manda el nombre del CURSO de la camada padre ("Especialización en Proyectos
  * BIM") y no el de la camada ("EBIM 13"): lo que el profesor necesita para
  * titular su pantalla es de qué programa es su módulo, no de qué edición.
+ *
+ * Y viaja el ORDINAL, no `position`. `position` es una clave de orden: quien
+ * carga 10/20/30 para poder insertar un módulo en el medio sin renumerar haría
+ * que esta pantalla dijera "Módulo 30" en el tercero de tres. El ordinal sale
+ * del lugar del módulo entre los de su programa, que es el mismo número que
+ * muestran la grilla del staff y el recorrido del alumno.
  */
 function nombreDelPrograma(
   padreId: string | null,
   padres: { id: string; name: string | null; courseName: string }[],
-  position: number | null
-): { name: string; position: number | null } | null {
+  ordinal: number | null
+): { name: string; ordinal: number | null } | null {
   if (!padreId) return null;
   const padre = padres.find((p) => p.id === padreId);
   if (!padre) return null;
-  return { name: padre.courseName ?? padre.name ?? "", position };
+  return { name: padre.courseName ?? padre.name ?? "", ordinal };
 }
 
 /** Las cohortes de este profesor, la más reciente primero. */
@@ -233,8 +240,14 @@ export async function listTeacherCohorts(
     );
 
   /**
-   * 028 (FR-029) — El NOMBRE del programa al que pertenece cada módulo, y
-   * nada más que el nombre.
+   * 028 (FR-029) — El NOMBRE del programa al que pertenece cada módulo, y el
+   * LUGAR del módulo dentro de él. Nada más.
+   *
+   * En la MISMA consulta viajan la camada padre y sus módulos hermanos, porque
+   * el ordinal es una propiedad del programa entero: no se puede saber que un
+   * módulo es "el 2" mirando sólo ese módulo. Lo que se lee de los hermanos es
+   * su id y su orden — ni sus alumnos, ni sus notas, ni su cronograma. La regla
+   * de alcance no se toca: el profesor sigue llegando sólo a sus cohortes.
    *
    * Se consulta sólo si alguna de sus cohortes tiene padre: la cohorte suelta
    * —33 de las 41— no paga ninguna consulta extra, y una cohorte sin padre no
@@ -243,12 +256,15 @@ export async function listTeacherCohorts(
   const padres = [
     ...new Set(rows.map((c) => c.parentCohortId).filter((id): id is string => Boolean(id))),
   ];
-  const programas = padres.length
+  const delPrograma = padres.length
     ? await db
         .select({
           id: schema.cohort.id,
           name: schema.cohort.name,
           courseName: schema.course.name,
+          parentCohortId: schema.cohort.parentCohortId,
+          position: schema.cohort.position,
+          startDate: schema.cohort.startDate,
         })
         .from(schema.cohort)
         .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
@@ -256,10 +272,26 @@ export async function listTeacherCohorts(
           scoped(
             schema.cohort.organizationId,
             organizationId,
-            inArray(schema.cohort.id, padres)
+            or(
+              inArray(schema.cohort.id, padres),
+              inArray(schema.cohort.parentCohortId, padres)
+            )
           )
         )
     : [];
+
+  const programas = delPrograma.filter((c) => padres.includes(c.id));
+
+  /**
+   * El ordinal de cada módulo, derivado con `modulosConOrdinal` (fase 1) — la
+   * misma función que usan la grilla del staff y el recorrido del alumno, para
+   * que las tres pantallas digan el mismo número del mismo módulo.
+   */
+  const ordinalDeModulo = new Map<string, number | null>();
+  for (const padreId of padres) {
+    const modulos = delPrograma.filter((c) => c.parentCohortId === padreId);
+    for (const m of modulosConOrdinal(modulos)) ordinalDeModulo.set(m.id, m.ordinal);
+  }
 
   const inscriptos = await db
     .select({ cohortId: schema.enrollment.cohortId })
@@ -294,7 +326,11 @@ export async function listTeacherCohorts(
       status: computeCohortStatus(c.startDate, c.endDate),
       role: c.teacherId === teacherId ? ("titular" as const) : ("suplente" as const),
       students: cuantos.get(c.id) ?? 0,
-      program: nombreDelPrograma(c.parentCohortId, programas, c.position),
+      program: nombreDelPrograma(
+        c.parentCohortId,
+        programas,
+        ordinalDeModulo.get(c.id) ?? null
+      ),
     }))
     // Con 18 cohortes (las de Ovidio) el orden no es cosmético: lo que está en
     // curso es lo único que se usa un martes a las 18:30.

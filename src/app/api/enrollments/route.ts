@@ -29,6 +29,24 @@ const createSchema = z.object({
   receiptNumber: z.string().max(60).nullable().optional(),
   sellerId: z.string().min(1).nullable().optional(),
   companyId: z.string().min(1).nullable().optional(),
+  /**
+   * 028 fase 4 (US4, regla 4) — La RECURSADA tras reprobar.
+   *
+   * Con `parentEnrollmentId` esta alta crea la inscripción **hija** de un
+   * módulo contra la cohorte de otra camada, con su propio `amount` y su
+   * propio plan de cuotas: es el pago por módulo suelto del camino de
+   * recuperación. El intento anterior no se toca — quedó reprobado y esa es la
+   * evidencia de por qué hay que recursar (FR-021).
+   *
+   * No hace falta ningún endpoint nuevo ni ninguna categoría de cobro: una
+   * hija es una inscripción como cualquier otra, así que las cuotas de 008 y
+   * la Caja del mes de la 026 la toman tal cual (FR-011, SC-006).
+   *
+   * Quién puede ser madre de quién lo decide `verificarVinculoDeInscripcion`
+   * (fase 1), que ya corre dentro de `createEnrollment`: acá sólo se valida la
+   * forma.
+   */
+  parentEnrollmentId: z.string().min(1).nullable().optional(),
 });
 
 // 005 (T019, US2, contracts/enrollments.md) — alta comercial de una

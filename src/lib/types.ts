@@ -170,6 +170,17 @@ export type CohortDto = {
   meetingUrl: string | null;
   /** 023 (FR-002) — Aula virtual de la cohorte; sus clases la heredan. */
   virtualRoomId: string | null;
+  /**
+   * 028 (FR-001) — La camada de la especialización de la que esta cohorte es
+   * MÓDULO. `null` = cohorte suelta, que es el caso de las 33 simples.
+   */
+  parentCohortId: string | null;
+  /**
+   * 028 (FR-002) — El orden del módulo dentro de su programa. Es una CLAVE DE
+   * ORDEN, no una etiqueta: viaja para poder editarla, y lo que se muestra es
+   * el ordinal derivado del lugar en la lista. Sin padre no significa nada.
+   */
+  position: number | null;
   status: "planificada" | "en_curso" | "finalizada";
   software: { id: string; name: string }[];
 };

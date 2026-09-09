@@ -734,7 +734,9 @@ const MODULO_2 = {
   classroom: "Aula 2",
   courseName: "Revit Estructura",
   parentCohortId: "coh_ebim13",
-  position: 2,
+  // 10/20/30: el hueco que alguien deja para insertar un módulo en el medio.
+  // El ordinal que se muestra sale del lugar en la lista, no de este número.
+  position: 20,
 };
 
 describe("028 — el portal del profesor sigue siendo POR COHORTE (US2, FR-029)", () => {
@@ -790,7 +792,19 @@ describe("028 — el portal del profesor sigue siendo POR COHORTE (US2, FR-029)"
     responder("classSession", []);
     responder("cohort", [MODULO_2]);
     responder("cohort", [
-      { id: "coh_ebim13", name: "EBIM 13", courseName: "Especialización en Proyectos BIM" },
+      // La camada padre, y los módulos que la componen: el ordinal sale del
+      // LUGAR en esa lista ordenada, nunca del número guardado en `position`.
+      {
+        id: "coh_ebim13",
+        name: "EBIM 13",
+        courseName: "Especialización en Proyectos BIM",
+        parentCohortId: null,
+        position: null,
+        startDate: null,
+      },
+      { id: "coh_m1", name: "Módulo 1", courseName: "Revit Arquitectura", parentCohortId: "coh_ebim13", position: 10, startDate: null },
+      { id: "coh_m2", name: "Módulo 2", courseName: "Revit Estructura", parentCohortId: "coh_ebim13", position: 20, startDate: null },
+      { id: "coh_m3", name: "Módulo 3", courseName: "Revit MEP", parentCohortId: "coh_ebim13", position: 30, startDate: null },
     ]);
     responder("enrollment", []);
 
@@ -799,7 +813,7 @@ describe("028 — el portal del profesor sigue siendo POR COHORTE (US2, FR-029)"
 
     expect(cohorte!.program).toEqual({
       name: "Especialización en Proyectos BIM",
-      position: 2,
+      ordinal: 2,
     });
   });
 

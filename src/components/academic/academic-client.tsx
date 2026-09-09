@@ -832,6 +832,12 @@ export function AcademicClient() {
           courses={courses}
           teachers={teachers}
           software={software}
+          /**
+           * 028 fase 4 — Las camadas candidatas a ser padre. Se pasan las que
+           * ya están cargadas en la pantalla: el formulario no las vuelve a
+           * pedir, y quién puede ser padre de quién lo decide el servidor.
+           */
+          cohorts={cohorts}
           initial={cohortForm.mode === "edit" ? cohortForm.cohort : null}
           onClose={() => setCohortForm(null)}
           onSaved={() => {

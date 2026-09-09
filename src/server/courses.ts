@@ -406,6 +406,25 @@ export const cohortInputSchema = {
   whatsappGroupLink: httpUrl.nullable().optional(),
   meetingUrl: httpUrl.nullable().optional(),
   virtualRoomId: z.string().min(1).nullable().optional(),
+  /**
+   * 028 fase 4 (FR-001/FR-002) — Armar y desarmar la especialización.
+   *
+   * `null` explícito DESCUELGA el módulo; omitirlo no toca nada. Esa
+   * distinción es la que le permite al PATCH editar un módulo sin tener que
+   * reenviar a qué camada pertenece.
+   *
+   * **No hay validación acá y no es un olvido**: quién puede ser padre de
+   * quién lo decide `verificarPadreDeCohorte` (fase 1), que ya corre dentro de
+   * `createCohort` y `updateCohort`. Zod comprueba la forma; el árbol lo
+   * comprueba el guarda, en un solo lugar.
+   *
+   * `position` es una CLAVE DE ORDEN. Nadie la imprime: el ordinal que se
+   * muestra sale del lugar en la lista ordenada (`etiquetaDeModulo`), así que
+   * cargar 10/20/30 para dejar hueco entre módulos es una decisión válida y
+   * la pantalla sigue leyéndose bien.
+   */
+  parentCohortId: z.string().min(1).nullable().optional(),
+  position: z.number().int().min(0).nullable().optional(),
   softwareIds: z.array(z.string().min(1)).optional(),
 };
 
@@ -512,11 +531,14 @@ export async function createCohort(
   const id = newId("cohort");
 
   // 028 (FR-003/FR-004) — antes de insertar: el árbol es de un solo nivel.
+  // El último argumento declara un HECHO, no una excepción a la regla: esta
+  // cohorte todavía no existe, así que nadie puede estar cursándola.
   const treeError = await verificarPadreDeCohorte(
     db,
     organizationId,
     id,
-    input.parentCohortId ?? null
+    input.parentCohortId ?? null,
+    true
   );
   if (treeError) {
     return { ok: false, status: 422, code: "invalid_body", message: treeError.message };
@@ -745,6 +767,18 @@ function serializeCohort(
     courseId: cohort.courseId,
     courseName: course.name,
     name: cohort.name,
+    /**
+     * 028 fase 4 (FR-033) — De qué camada es módulo esta cohorte, y en qué
+     * lugar. `null` = cohorte suelta, que es el caso de las 33 simples y el
+     * comportamiento de siempre.
+     *
+     * Viajan porque la pantalla del staff los necesita para dos cosas
+     * concretas: saber si ofrecer la pestaña de la especialización, y armar el
+     * selector de "el mismo módulo en otra camada" de US4. `position` viaja
+     * para poder EDITARLA, nunca para imprimirla.
+     */
+    parentCohortId: cohort.parentCohortId,
+    position: cohort.position,
     startDate: cohort.startDate.toISOString(),
     endDate: cohort.endDate?.toISOString() ?? null,
     startTime: cohort.startTime,

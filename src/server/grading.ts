@@ -8,7 +8,14 @@ import {
   attendancePercentage,
   resolveMinAttendance,
 } from "@/server/attendance";
-import { dispensaVigente, listarHijas } from "@/server/program-modules";
+import {
+  dispensaVigente,
+  etiquetaDeModulo,
+  listarHijas,
+  listarModulos,
+  lugaresDelPrograma,
+  modulosConOrdinal,
+} from "@/server/program-modules";
 
 /**
  * 010 — Evaluación y certificados.
@@ -580,6 +587,14 @@ export type ModuleGrading = {
   courseName: string;
   /** El orden que decidió la academia (FR-002). `null` = dato sin cargar. */
   position: number | null;
+  /**
+   * 1..n según el lugar del módulo en el PROGRAMA, no en la lista de esta
+   * persona. `null` = sin `position` cargada, o un módulo que la camada no
+   * tiene entre los suyos.
+   */
+  ordinal: number | null;
+  /** "Módulo 2 — Revit Estructura", ya armado con el ordinal del programa. */
+  label: string;
   /** La camada del módulo que efectivamente cursó. */
   camadaId: string | null;
   /** `true` = lo cursó con OTRA camada: recursada o baja voluntaria (US4). */
@@ -603,11 +618,6 @@ export type ProgramGradingDto = {
   reasons: string[];
   modules: ModuleGrading[];
 };
-
-/** "Módulo 2 — Revit Estructura", o sólo el nombre si no hay `position`. */
-function nombrarModulo(m: { position: number | null; cohortName: string }): string {
-  return m.position === null ? m.cohortName : `Módulo ${m.position} — ${m.cohortName}`;
-}
 
 /**
  * 028 (FR-016) — El estado de una especialización, caminando el recorrido.
@@ -663,6 +673,30 @@ export async function programGrading(
     const compuesto = programApprovalState([]);
     return { enrollmentId: madre.id, cohortId: madre.cohortId, ...compuesto, modules: [] };
   }
+
+  /**
+   * El ORDEN DEL PROGRAMA, que es de donde sale el ordinal de cada módulo.
+   *
+   * No sale del lugar que el módulo ocupa en la lista de esta persona, y la
+   * diferencia no es cosmética: quien nunca cursó el módulo 1 vería su módulo
+   * 2 rotulado "Módulo 1". Eso le afirma que está en un lugar donde no está, y
+   * hace que esta pantalla y la grilla del staff —que ya numera por el
+   * programa— digan cosas distintas de la misma persona.
+   *
+   * Es la MISMA lectura y la misma regla que `program-staff.ts`: `listarModulos`
+   * de la camada madre, `modulosConOrdinal` para el lugar y
+   * `lugaresDelPrograma` para poder preguntarlo por cohorte o por curso.
+   */
+  const modulosDelPrograma = madre.cohortId
+    ? modulosConOrdinal(await listarModulos(organizationId, madre.cohortId))
+    : [];
+  const lugarEnElPrograma = lugaresDelPrograma(
+    modulosDelPrograma.map((m) => ({
+      cohortId: m.id,
+      courseId: m.courseId,
+      ordinal: m.ordinal,
+    }))
+  );
 
   const cohorteIds = hijas
     .map((h) => h.cohortId)
@@ -743,7 +777,7 @@ export async function programGrading(
     marcas
   );
 
-  const modules: ModuleGrading[] = hijas.map((h) => {
+  const modules: ModuleGrading[] = hijas.map((h, i) => {
     const minPct = resolveMinAttendance(
       h.cohortMinAttendancePct,
       h.courseMinAttendancePct
@@ -765,12 +799,22 @@ export async function programGrading(
     const { state, reasons } = moduleApprovalState(evaluadas, pct, minPct, dispensa);
     const cohortName = h.cohortName ?? h.courseName ?? "Módulo sin nombre";
 
+    const enElPrograma =
+      (h.cohortId ? lugarEnElPrograma.get(`cohorte:${h.cohortId}`) : undefined) ??
+      (h.courseId ? lugarEnElPrograma.get(`curso:${h.courseId}`) : undefined);
+    // Sin lugar en el programa —un módulo que la camada no tiene cargado— se
+    // cae al lugar en la propia lista, que es lo único que hay. Es el mismo
+    // respaldo que usa la grilla del staff.
+    const ordinal = enElPrograma?.ordinal ?? (h.position === null ? null : i + 1);
+
     return {
       enrollmentId: h.id,
       cohortId: h.cohortId,
       cohortName,
       courseName: h.courseName ?? "—",
       position: h.position,
+      ordinal,
+      label: etiquetaDeModulo(ordinal, cohortName),
       camadaId: h.parentCohortId,
       // FR-008 — el módulo cursado con otra camada es el escenario que define
       // la fase; que se note en el DTO es lo que permite decirlo en pantalla.
@@ -786,6 +830,14 @@ export async function programGrading(
   });
 
   const compuesto = programApprovalState(modules.map((m) => m.state));
+  /**
+   * SC-010 — las razones nombran el módulo que las causó, con la MISMA
+   * etiqueta que ya lleva el módulo: el ordinal del programa, nunca el número
+   * guardado en `position`. Con posiciones 10/20/30 —el hueco que alguien deja
+   * para poder insertar un módulo en el medio sin renumerar— imprimir la
+   * columna diría "Módulo 30" para el tercero de tres, y recontar sobre la
+   * lista de esta persona renumeraría al que tiene huecos.
+   */
   const culpables = modules.filter((m) =>
     compuesto.state === "reprobado" ? m.state === "reprobado" : m.state === "pendiente"
   );
@@ -796,7 +848,7 @@ export async function programGrading(
     state: compuesto.state,
     reasons: [
       ...compuesto.reasons,
-      ...culpables.map((m) => `${nombrarModulo(m)}: ${m.state}`),
+      ...culpables.map((m) => `${m.label}: ${m.state}`),
     ],
     modules,
   };
