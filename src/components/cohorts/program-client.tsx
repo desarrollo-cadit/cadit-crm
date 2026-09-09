@@ -243,6 +243,26 @@ export function ProgramClient({
     );
   }
 
+  /**
+   * "No pudimos cargarlo" y "no tiene módulos" son dos hechos DISTINTOS, y
+   * mezclarlos convierte un fallo de red en una afirmación falsa sobre el
+   * programa de la academia. Es el mismo error que el ciclo 013 ya pagó caro
+   * en el legajo: un default optimista dicho como si fuera un dato.
+   *
+   * Por eso el error se mira PRIMERO, y ofrece reintentar en vez de explicar
+   * cómo armar una especialización que probablemente ya esté armada.
+   */
+  if (error && !data) {
+    return (
+      <div className="space-y-3 p-6">
+        <p className="text-sm text-danger">{error}</p>
+        <Button variant="outline" onClick={() => void refetch()}>
+          Reintentar
+        </Button>
+      </div>
+    );
+  }
+
   if (!data || data.modules.length === 0) {
     return (
       <p className="p-6 text-sm text-muted-foreground">

@@ -1,5 +1,6 @@
 import { getSessionOrNull } from "@/lib/auth/session";
 import { sessionCapabilities } from "@/lib/capabilities";
+import { withTenantTransaction } from "@/lib/db/with-tenant";
 import { listarModulos } from "@/server/program-modules";
 import { CohortTabs } from "@/components/cohorts/cohort-tabs";
 
@@ -30,10 +31,39 @@ export default async function CohortPage({
    *
    * Se resuelve acá y no con una llamada del cliente a propósito: las 33
    * cohortes simples tienen que seguir pidiendo exactamente los mismos
-   * endpoints que hoy (FR-032). Cuesta una consulta a `cohort` por apertura de
-   * pantalla y es la misma que ya paga `generateSchedule` por el mismo motivo.
+   * endpoints que hoy (FR-032).
+   *
+   * ============================================================
+   * Y va DENTRO de `withTenantTransaction`, que no es opcional
+   * ============================================================
+   *
+   * `cohort` es una tabla de dominio con la política `tenant_isolation`, y un
+   * server component NO pasa por `withAuth`: `getSessionOrNull()` sólo llama a
+   * `requireSession()`, que no abre ninguna transacción. `set_config(...,
+   * true)` es transaction-local por diseño, así que fuera de una transacción
+   * `app.current_org` no existe, la política compara contra NULL y la consulta
+   * devuelve CERO filas — sin error, sin log y sin aviso.
+   *
+   * El síntoma sería `esEspecializacion` en `false` para siempre bajo
+   * `cadit_app`: la pestaña no aparecería nunca y toda la fase 4 sería código
+   * muerto en producción.
+   *
+   * El precedente que engaña es `guia/page.tsx`, que también lee del server
+   * component: lee `role`, una de las CINCO tablas deliberadamente fuera de
+   * RLS. `cohort` no es una de ellas.
+   *
+   * La pestaña se pinta con la MISMA capacidad que exige
+   * `/api/cohorts/[id]/program` (`academico.ver`). Sin eso, una sesión sin esa
+   * capacidad vería una pestaña cuyo fetch le contesta 403. Y de paso: quien
+   * no puede verla tampoco paga la consulta.
    */
-  const modulos = session ? await listarModulos(session.organizationId, id) : [];
+  const puedeVerPrograma = caps.includes("academico.ver");
+  const modulos =
+    session && puedeVerPrograma
+      ? await withTenantTransaction(session, () =>
+          listarModulos(session.organizationId, id)
+        )
+      : [];
   return (
     <CohortTabs
       cohortId={id}

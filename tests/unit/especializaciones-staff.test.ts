@@ -1091,3 +1091,87 @@ describe("`position` tampoco se imprime en las pantallas (.tsx)", () => {
     expect(infractores, infractores.join("\n")).toEqual([]);
   });
 });
+
+/* ============================================================
+ * K — El defecto que hacía inalcanzable la fase entera
+ * ============================================================ */
+
+describe("RLS — la pestaña se resuelve DENTRO de la transacción de inquilino", () => {
+  /**
+   * `esEspecializacion` se resuelve en el server component leyendo `cohort`,
+   * que es una tabla de dominio con la política `tenant_isolation`. Y un
+   * server component NO pasa por `withAuth`: `getSessionOrNull()` sólo llama a
+   * `requireSession()`, que no abre transacción.
+   *
+   * Sin transacción no hay `app.current_org`, la política compara contra NULL
+   * y la consulta devuelve CERO filas — sin error y sin aviso. El efecto es
+   * que `esEspecializacion` queda en `false` para siempre bajo `cadit_app`, la
+   * pestaña no aparece nunca, y `program-client.tsx`, `program-staff.ts` y
+   * `/api/cohorts/[id]/program` son código muerto en producción.
+   *
+   * El arreglo NO es mudar la consulta al cliente: eso le agregaría un pedido
+   * a las 33 cohortes simples y rompería FR-032. Es declarar el alcance, que
+   * es lo que `withTenantTransaction` hace en una línea.
+   *
+   * El precedente que engaña: `guia/page.tsx` también lee del server
+   * component, pero lee `role` — una de las cinco tablas deliberadamente
+   * FUERA de RLS. `cohort` no es una de ellas.
+   */
+  it("la página de la cohorte declara el alcance antes de leer `cohort`", () => {
+    const src = readFileSync(
+      path.join(process.cwd(), "src/app/(app)/cohorts/[id]/page.tsx"),
+      "utf8"
+    );
+    expect(src).toContain("listarModulos");
+    expect(src, "lee una tabla de dominio sin declarar `app.current_org`").toContain(
+      "withTenantTransaction"
+    );
+  });
+
+  /**
+   * Y la pestaña se pinta con la MISMA capacidad que exige la ruta que va a
+   * consumir. Sin esto, una sesión sin `academico.ver` veía una pestaña cuyo
+   * fetch le contesta 403: el front oculta, el servidor prohíbe, pero los dos
+   * tienen que estar hablando de la misma capacidad.
+   */
+  it("la pestaña exige la misma capacidad que `/api/cohorts/[id]/program`", () => {
+    const page = readFileSync(
+      path.join(process.cwd(), "src/app/(app)/cohorts/[id]/page.tsx"),
+      "utf8"
+    );
+    const route = readFileSync(
+      path.join(process.cwd(), "src/app/api/cohorts/[id]/program/route.ts"),
+      "utf8"
+    );
+    expect(route).toContain('"academico.ver"');
+    expect(page).toContain('"academico.ver"');
+  });
+});
+
+describe("un fetch fallido no se reporta como “no es una especialización”", () => {
+  /**
+   * `if (!data || data.modules.length === 0)` mezcla dos hechos distintos: la
+   * camada no tiene módulos, y no pudimos averiguarlo. El segundo caso le
+   * decía al usuario una afirmación FALSA sobre su propio programa —el mismo
+   * error de los defaults optimistas que el ciclo 013 ya pagó caro en el
+   * legajo (`sin_datos`).
+   */
+  it("el error de carga se distingue del programa vacío", () => {
+    const src = readFileSync(
+      path.join(process.cwd(), "src/components/cohorts/program-client.tsx"),
+      "utf8"
+    );
+    /*
+     * Se ancla en la frase COMPLETA que ve el usuario y no en un fragmento:
+     * "no tiene módulos" también aparece en el comentario que explica esta
+     * misma distinción, y `indexOf` encontraría la prosa antes que el código.
+     */
+    const guard = src.indexOf("Esta camada no tiene módulos");
+    expect(guard).toBeGreaterThan(-1);
+    const antes = src.slice(0, guard);
+    expect(
+      antes,
+      "el guard del programa vacío corre antes de mirar si la carga falló"
+    ).toMatch(/if \(error/);
+  });
+});
