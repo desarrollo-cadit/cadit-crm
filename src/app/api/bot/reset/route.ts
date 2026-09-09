@@ -1,7 +1,9 @@
-import { and, eq } from "drizzle-orm";
+import { eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, schema } from "@/lib/db";
+import { withOrganizationScope } from "@/lib/db/with-tenant";
 import { apiError, parseBody } from "@/lib/api";
+import { scoped } from "@/lib/db/tenant";
 import { requireBotKey, resolveInstanceOrg } from "@/server/bot/auth";
 import { publish } from "@/server/events/bus";
 
@@ -26,66 +28,77 @@ export async function POST(req: Request) {
     return apiError(409, "no_org", "La instancia aún no tiene organización");
   }
 
-  const body = await parseBody(req, bodySchema);
-  if (!body.ok) return body.response;
+  /**
+   * 012 (T028) — Declarar el alcance antes de tocar nada: todo lo que sigue
+   * lee o escribe tablas con política `tenant_isolation`. Sin esto, el bot
+   * externo no encuentra NINGUNA conversación y el síntoma es un 404 que
+   * culpa al id que mandó.
+   */
+  return withOrganizationScope(organizationId, "system:bot", async () => {
+    const body = await parseBody(req, bodySchema);
+    if (!body.ok) return body.response;
 
-  const db = getDb();
-  const rows = await db
-    .select({
-      id: schema.conversation.id,
-      contactId: schema.conversation.contactId,
-    })
-    .from(schema.conversation)
-    .where(
-      and(
-        eq(schema.conversation.organizationId, organizationId),
-        eq(schema.conversation.id, body.data.conversationId)
-      )
-    )
-    .limit(1);
-  const conv = rows[0];
-  if (!conv) return apiError(404, "not_found", "Conversación no encontrada");
-
-  await db
-    .update(schema.conversation)
-    .set({
-      aiEnabled: true,
-      handoffAt: null,
-      handoffReason: null,
-      updatedAt: new Date(),
-    })
-    .where(eq(schema.conversation.id, conv.id));
-
-  // Etapa al inicio del funnel (best-effort: sin etapas no revienta el reset).
-  try {
-    const stages = await db
-      .select()
-      .from(schema.pipelineStage)
-      .where(eq(schema.pipelineStage.organizationId, organizationId));
-    const first = [...stages].sort((a, b) => a.position - b.position)[0];
-    const leadRows = await db
-      .select({ id: schema.lead.id })
-      .from(schema.lead)
+    const db = getDb();
+    const rows = await db
+      .select({
+        id: schema.conversation.id,
+        contactId: schema.conversation.contactId,
+      })
+      .from(schema.conversation)
       .where(
-        and(
-          eq(schema.lead.organizationId, organizationId),
-          eq(schema.lead.contactId, conv.contactId)
+        scoped(
+          schema.conversation.organizationId,
+          organizationId,
+          eq(schema.conversation.id, body.data.conversationId)
         )
       )
       .limit(1);
-    if (first && leadRows[0]) {
-      await db
-        .update(schema.lead)
-        .set({ stageId: first.id, updatedAt: new Date() })
-        .where(eq(schema.lead.id, leadRows[0].id));
-    }
-  } catch (err) {
-    console.warn(`[bot/reset] reinicio de etapa falló: ${err}`);
-  }
+    const conv = rows[0];
+    if (!conv) return apiError(404, "not_found", "Conversación no encontrada");
 
-  publish(organizationId, {
-    type: "conversation.updated",
-    data: { conversation: { id: conv.id } },
+    await db
+      .update(schema.conversation)
+      .set({
+        aiEnabled: true,
+        handoffAt: null,
+        handoffReason: null,
+        updatedAt: new Date(),
+      })
+      .where(scoped(schema.conversation.organizationId, organizationId, eq(schema.conversation.id, conv.id)));
+
+    // Etapa al inicio del funnel (best-effort: sin etapas no revienta el reset).
+    try {
+      const stages = await db
+        .select()
+        .from(schema.pipelineStage)
+        .where(scoped(schema.pipelineStage.organizationId, organizationId));
+      const first = [...stages].sort((a, b) => a.position - b.position)[0];
+      const leadRows = await db
+        .select({ id: schema.enrollment.id })
+        .from(schema.enrollment)
+        .where(
+          scoped(
+            schema.enrollment.organizationId,
+            organizationId,
+            eq(schema.enrollment.contactId, conv.contactId),
+            isNull(schema.enrollment.cohortId)
+          )
+        )
+        .limit(1);
+      if (first && leadRows[0]) {
+        await db
+          .update(schema.enrollment)
+          .set({ stageId: first.id, updatedAt: new Date() })
+          .where(scoped(schema.enrollment.organizationId, organizationId, eq(schema.enrollment.id, leadRows[0].id)));
+      }
+    } catch (err) {
+      console.warn(`[bot/reset] reinicio de etapa falló: ${err}`);
+    }
+
+    publish(organizationId, {
+      type: "conversation.updated",
+      data: { conversation: { id: conv.id } },
+    });
+    return Response.json({ ok: true });
   });
-  return Response.json({ ok: true });
 }

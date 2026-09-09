@@ -6,14 +6,23 @@ import type { ConversationDto } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { formatTime, previewText } from "./helpers";
 
+/**
+ * 021 — Eran cinco hex escritos a mano: los colores del tema claro y de nadie
+ * más. Ahora salen de los tokens, que el tema oscuro ya sabe invertir.
+ *
+ * Se declaran como `var(...)` y no como clases porque el punto se pinta con un
+ * `style`, y el color de la etapa viene de la base: no hay un conjunto fijo de
+ * clases que Tailwind pueda compilar por adelantado.
+ */
 const STAGE_DOT: Record<string, string> = {
-  Nuevo: "#9ca3af",
-  "En conversación": "#7b93b3",
-  Interesado: "#b08b5e",
-  Cliente: "#5f8f74",
-  Perdido: "#a2504c",
+  Nuevo: "var(--text-3)",
+  "En conversación": "var(--voice-client)",
+  Interesado: "var(--warning)",
+  Cliente: "var(--success)",
+  Perdido: "var(--danger)",
 };
 
 function EmptyState({ onSeeded }: { onSeeded: () => void }) {
@@ -112,7 +121,7 @@ export function ConversationList({
             className={cn(
               "flex items-center gap-1.5 rounded-full border px-3 py-[5px] text-[12.5px] font-medium transition-colors",
               filter === f.id
-                ? "border-brand bg-brand text-white"
+                ? "border-brand bg-brand text-on-accent"
                 : "bg-background text-text-2 hover:bg-accent"
             )}
           >
@@ -120,7 +129,7 @@ export function ConversationList({
             <span
               className={cn(
                 "rounded-full px-1.5 text-[11px]",
-                filter === f.id ? "bg-white/20" : "bg-secondary text-text-3"
+                filter === f.id ? "bg-on-accent/20" : "bg-secondary text-text-3"
               )}
             >
               {f.count}
@@ -131,7 +140,25 @@ export function ConversationList({
 
       <div className="flex-1 overflow-y-auto">
         {loading ? (
-          <p className="p-6 text-center text-xs text-text-3">Cargando…</p>
+          /*
+            021 — Era un "Cargando…" centrado: la lista aparecía de golpe y
+            la pantalla saltaba. El esqueleto ya tiene la FORMA de las filas
+            que vienen, así que nada se mueve cuando llegan.
+
+            La densidad no cambia: cada esqueleto usa el mismo `--row-py`
+            que una fila real, y esta lista se mira ocho horas por día.
+          */
+          <ul className="divide-y">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <li key={i} className="flex items-center gap-[11px] px-4 py-[var(--row-py)]">
+                <Skeleton className="h-10 w-10 shrink-0 rounded-full" />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <Skeleton className="h-3 w-2/5" />
+                  <Skeleton className="h-3 w-4/5" />
+                </div>
+              </li>
+            ))}
+          </ul>
         ) : conversations.length === 0 ? (
           <EmptyState onSeeded={onSeeded} />
         ) : visible.length === 0 ? (
@@ -190,7 +217,7 @@ export function ConversationList({
                           {previewText(c.preview)}
                         </span>
                         {unread && (
-                          <span className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-brand px-1.5 text-[10.5px] font-semibold text-white">
+                          <span className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-brand px-1.5 text-[10.5px] font-semibold text-on-accent">
                             {c.unreadCount}
                           </span>
                         )}
@@ -201,14 +228,14 @@ export function ConversationList({
                             <span
                               className="h-[7px] w-[7px] rounded-full"
                               style={{
-                                background: STAGE_DOT[c.stageName] ?? "#9ca3af",
+                                background: STAGE_DOT[c.stageName] ?? "var(--text-3)",
                               }}
                             />
                             {c.stageName}
                           </span>
                         )}
                         {c.handoffAt && (
-                          <span className="inline-flex items-center gap-1 rounded-full border border-[#ece2cf] bg-[#faf7f0] px-2 py-0.5 text-[11px] text-[#8a6d3b]">
+                          <span className="inline-flex items-center gap-1 rounded-full border border-warning-border bg-warning-soft px-2 py-0.5 text-[11px] text-warning">
                             <UserRound className="h-3 w-3" strokeWidth={1.7} />
                             Atención humana
                           </span>

@@ -1,5 +1,5 @@
 import { asc } from "drizzle-orm";
-import { withAuth } from "@/lib/api";
+import { requireCapability } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { renderKb } from "@/server/ai/prompts";
@@ -12,7 +12,9 @@ export const dynamic = "force-dynamic";
  */
 const WARN_CHARS = 24_000;
 
-export const GET = withAuth(async (session) => {
+export const GET = requireCapability(
+  "configuracion.editar",
+  async (session) => {
   const db = getDb();
   const entries = await db
     .select()

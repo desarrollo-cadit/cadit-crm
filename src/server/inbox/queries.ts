@@ -1,6 +1,7 @@
 import { and, desc, eq, gt, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
+import { fullName } from "@/lib/utils";
 import { isWindowOpen, windowRemainingMs } from "@/server/inbox/window";
 
 export type ConversationDto = {
@@ -31,9 +32,9 @@ export async function listConversations(
     limit 1
   )`;
   const stageSql = sql<string | null>`(
-    select s.name from lead l
-    join pipeline_stage s on s.id = l.stage_id
-    where l.contact_id = ${schema.contact.id}
+    select s.name from enrollment e
+    join pipeline_stage s on s.id = e.stage_id
+    where e.contact_id = ${schema.contact.id} and e.cohort_id is null
     limit 1
   )`;
 
@@ -119,7 +120,7 @@ export function serializeConversation(
 ): ConversationDto {
   return {
     id: c.id,
-    contact: { id: contact.id, name: contact.name, phone: contact.phone },
+    contact: { id: contact.id, name: fullName(contact), phone: contact.phone },
     stageName,
     aiEnabled: c.aiEnabled,
     handoffAt: c.handoffAt?.toISOString() ?? null,

@@ -5,6 +5,7 @@ import type { TemplateDto } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 
 /**
  * Selector de plantilla aprobada para conversaciones con ventana cerrada
@@ -43,7 +44,8 @@ export function TemplateSender({
   }, []);
 
   if (templates === null) {
-    return <p className="text-xs text-muted-foreground">Cargando plantillas…</p>;
+    // 021 — Mismo criterio que la lista: ocupar la forma, no anunciarla.
+    return <Skeleton className="h-9 w-full" />;
   }
 
   if (templates.length === 0) {
@@ -108,7 +110,7 @@ export function TemplateSender({
         </select>
       </div>
       {selected && (
-        <p className="rounded-md bg-secondary/60 p-2.5 text-xs text-muted-foreground">
+        <p className="rounded-md bg-subtle p-2.5 text-xs text-muted-foreground">
           {selected.body}
         </p>
       )}

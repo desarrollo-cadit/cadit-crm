@@ -1,14 +1,20 @@
-import { eq } from "drizzle-orm";
+import { eq, isNull } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 
 export function serializeContact(c: typeof schema.contact.$inferSelect) {
   return {
     id: c.id,
-    name: c.name,
+    firstName: c.firstName,
+    lastName: c.lastName,
     phone: c.phone,
     notes: c.notes,
+    source: c.source,
+    utmCampaign: c.utmCampaign,
+    email: c.email,
+    nationalId: c.nationalId,
     archivedAt: c.archivedAt?.toISOString() ?? null,
+    createdAt: c.createdAt.toISOString(),
   };
 }
 
@@ -31,24 +37,30 @@ export async function getContactById(
   return rows[0] ?? null;
 }
 
-/** Etapa actual del lead del contacto (si existe). */
+/**
+ * Etapa actual del LEAD GENERAL del contacto (si existe) — 004: el panel de
+ * contacto opera desde la conversación de WhatsApp, no desde una cohorte
+ * concreta, así que resuelve el `enrollment` sin `cohort_id` (ver
+ * research.md DV-005/T010).
+ */
 export async function getContactStage(
   organizationId: string,
   contactId: string
 ) {
   const db = getDb();
   const rows = await db
-    .select({ stage: schema.pipelineStage, lead: schema.lead })
-    .from(schema.lead)
+    .select({ stage: schema.pipelineStage, lead: schema.enrollment })
+    .from(schema.enrollment)
     .innerJoin(
       schema.pipelineStage,
-      eq(schema.lead.stageId, schema.pipelineStage.id)
+      eq(schema.enrollment.stageId, schema.pipelineStage.id)
     )
     .where(
       scoped(
-        schema.lead.organizationId,
+        schema.enrollment.organizationId,
         organizationId,
-        eq(schema.lead.contactId, contactId)
+        eq(schema.enrollment.contactId, contactId),
+        isNull(schema.enrollment.cohortId)
       )
     )
     .limit(1);

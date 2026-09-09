@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 
 type Connection = {
   wabaId: string;
@@ -50,19 +51,25 @@ export function WhatsappWizard() {
   }, [refetch]);
 
   if (!loaded) {
-    return <p className="text-sm text-muted-foreground">Cargando…</p>;
+    // 021 — Mismo criterio: ocupar la forma en vez de anunciarla.
+    return (
+      <div className="max-w-2xl space-y-3">
+        <Skeleton className="h-14 w-full" />
+        <Skeleton className="h-32 w-full" />
+      </div>
+    );
   }
 
   return (
     <div className="max-w-3xl space-y-6">
       {connection?.status === "reconnect_required" && (
-        <div className="flex items-start gap-2 rounded-lg border border-[#ecd4d2] bg-[#faf1f0] p-4 text-sm">
+        <div className="flex items-start gap-2 rounded-lg border border-danger-border bg-danger-soft p-4 text-sm">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
           <div>
-            <p className="font-medium text-[#a2504c]">
+            <p className="font-medium text-danger">
               El token de WhatsApp expiró o fue revocado.
             </p>
-            <p className="text-[#a2504c]/80">
+            <p className="text-danger">
               Los envíos están pausados. Pega un token nuevo abajo y prueba la
               conexión para reconectar.
             </p>
@@ -71,13 +78,13 @@ export function WhatsappWizard() {
       )}
 
       {connection && connection.status === "connected" && (
-        <div className="flex items-center gap-3 rounded-lg border border-[#d8e8dd] bg-[#eff7f1] p-4">
+        <div className="flex items-center gap-3 rounded-lg border border-success-border bg-success-soft p-4">
           <CheckCircle2 className="h-5 w-5 text-success" />
           <div className="flex-1 text-sm">
-            <p className="font-medium text-[#3f6b52]">
+            <p className="font-medium text-success">
               Número conectado: {connection.displayPhoneNumber ?? connection.phoneNumberId}
             </p>
-            <p className="text-[#3f6b52]/80">
+            <p className="text-success80">
               {connection.verifiedName ? `${connection.verifiedName} · ` : ""}
               token …{connection.tokenLast4}
             </p>
@@ -176,7 +183,7 @@ function ConnectForm({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid gap-3 rounded-md border bg-background/40 p-4 text-sm">
+        <div className="grid gap-3 rounded-md border bg-background p-4 text-sm">
           <p className="font-medium">¿De dónde sale el token?</p>
           <div className="grid gap-3 md:grid-cols-2">
             <div className="rounded-md border p-3">
@@ -294,7 +301,7 @@ function WebhookCard({ webhook }: { webhook: WebhookInfo }) {
       </CardHeader>
       <CardContent className="space-y-3">
         {!webhook.isHttps && (
-          <p className="flex items-start gap-2 rounded-md border border-[#ece2cf] bg-[#faf7f0] p-3 text-xs text-[#8a6d3b]">
+          <p className="flex items-start gap-2 rounded-md border border-warning-border bg-warning-soft p-3 text-xs text-warning">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             La URL configurada no es https: Meta exige https para los webhooks.
             Ajusta APP_BASE_URL con tu dominio público.
@@ -303,7 +310,7 @@ function WebhookCard({ webhook }: { webhook: WebhookInfo }) {
         <div className="space-y-1.5">
           <Label>URL del webhook (callback URL)</Label>
           <div className="flex items-center gap-2">
-            <code className="min-w-0 flex-1 truncate rounded-md border bg-background/60 px-3 py-2 text-xs">
+            <code className="min-w-0 flex-1 truncate rounded-md border bg-background px-3 py-2 text-xs">
               {webhook.url}
             </code>
             <Button
@@ -326,7 +333,7 @@ function WebhookCard({ webhook }: { webhook: WebhookInfo }) {
         <div className="space-y-1.5">
           <Label>Verify token</Label>
           <div className="flex items-center gap-2">
-            <code className="min-w-0 flex-1 truncate rounded-md border bg-background/60 px-3 py-2 text-xs">
+            <code className="min-w-0 flex-1 truncate rounded-md border bg-background px-3 py-2 text-xs">
               {webhook.verifyToken}
             </code>
             <Button

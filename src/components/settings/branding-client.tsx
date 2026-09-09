@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export function BrandingClient() {
   const router = useRouter();
@@ -56,7 +57,17 @@ export function BrandingClient() {
     router.refresh();
   }
 
-  if (!loaded) return <p className="text-sm text-text-3">Cargando…</p>;
+  if (!loaded) {
+    // 021 — Esqueleto con la forma del formulario, no un "Cargando…" suelto:
+    // el texto deja la pantalla casi vacía y después salta de golpe.
+    return (
+      <div className="max-w-lg space-y-4">
+        <Skeleton className="h-9 w-full" />
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-9 w-32" />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -76,7 +87,7 @@ export function BrandingClient() {
               maxLength={30}
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Vocero"
+              placeholder="CadIT"
               className="max-w-xs"
             />
           </div>
@@ -93,7 +104,7 @@ export function BrandingClient() {
                   className={cn(
                     "flex items-center gap-2 rounded-full border px-3 py-1.5 text-[12.5px] font-medium transition-colors",
                     accent.toLowerCase() === hex
-                      ? "border-foreground/40 bg-secondary"
+                      ? "border-border-strong bg-secondary"
                       : "hover:bg-accent"
                   )}
                 >
@@ -107,7 +118,7 @@ export function BrandingClient() {
               <label
                 className={cn(
                   "flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-[12.5px] font-medium transition-colors",
-                  !isPreset ? "border-foreground/40 bg-secondary" : "hover:bg-accent"
+                  !isPreset ? "border-border-strong bg-secondary" : "hover:bg-accent"
                 )}
               >
                 <input
@@ -129,20 +140,20 @@ export function BrandingClient() {
           <div className="rounded-md border p-4" style={{ background: previewSet.tint }}>
             <div className="flex items-center gap-2.5">
               <span
-                className="flex h-[30px] w-[30px] items-center justify-center rounded-sm text-[15px] font-bold text-white"
+                className="flex h-[30px] w-[30px] items-center justify-center rounded-sm text-[15px] font-bold text-on-accent"
                 style={{ background: previewSet.accent }}
               >
-                {(name.trim() || "Vocero").charAt(0).toUpperCase()}
+                {(name.trim() || "CadIT").charAt(0).toUpperCase()}
               </span>
               <span>
                 <span className="block text-[15px] font-[650] leading-tight">
-                  {name.trim() || "Vocero"}
+                  {name.trim() || "CadIT"}
                 </span>
                 <span className="block text-[11px] text-text-3">CRM · WhatsApp</span>
               </span>
               <span className="flex-1" />
               <span
-                className="rounded-md px-3 py-1.5 text-xs font-medium text-white"
+                className="rounded-md px-3 py-1.5 text-xs font-medium text-on-accent"
                 style={{ background: previewSet.accent }}
               >
                 Botón de ejemplo

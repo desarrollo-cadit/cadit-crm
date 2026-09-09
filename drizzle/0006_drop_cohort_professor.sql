@@ -1,0 +1,1 @@
+ALTER TABLE "cohort" DROP COLUMN "professor";

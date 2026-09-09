@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 
 type Member = {
   id: string;
@@ -19,22 +20,48 @@ type Member = {
 
 export function TeamClient() {
   const [members, setMembers] = useState<Member[]>([]);
+  const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [tempPassword, setTempPassword] = useState("");
+  // 005 (DV-001) — rol funcional de la cuenta nueva: acceso completo
+  // (ventas/coordinación) o restringido (soporte, sin datos financieros).
+  /**
+   * 012 (T029) — La llave del rol y la lista REAL de la organización.
+   *
+   * Antes era un enum fijo (`member` / `soporte`) escrito acá adentro. Con los
+   * roles editables desde `/settings/roles`, una lista quemada en el
+   * componente queda vieja en cuanto alguien crea o renombra uno — y ofrecer
+   * un rol que no existe da de alta cuentas sin permisos mapeados, que por el
+   * respaldo en código terminan pudiendo TODO.
+   */
+  const [roleKey, setRoleKey] = useState("");
+  const [roles, setRoles] = useState<{ key: string; name: string }[]>([]);
   const [created, setCreated] = useState<{ email: string; password: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const refetch = useCallback(async () => {
     const res = await fetch("/api/settings/team").catch(() => null);
-    if (!res?.ok) return;
+    if (!res?.ok) {
+      setLoading(false);
+      return;
+    }
     const data = (await res.json()) as { members: Member[] };
     setMembers(data.members);
+    setLoading(false);
   }, []);
 
   useEffect(() => {
     void refetch();
+    // Los roles que EXISTEN, para no ofrecer ninguno que no esté mapeado.
+    void (async () => {
+      const res = await fetch("/api/settings/roles").catch(() => null);
+      if (!res?.ok) return;
+      const data = (await res.json()) as { roles: { key: string; name: string }[] };
+      setRoles(data.roles);
+      setRoleKey((actual) => actual || data.roles[0]?.key || "");
+    })();
   }, [refetch]);
 
   function generatePassword() {
@@ -54,7 +81,7 @@ export function TeamClient() {
     const res = await fetch("/api/settings/team", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name, email, password: tempPassword }),
+      body: JSON.stringify({ name, email, password: tempPassword, roleKey }),
     }).catch(() => null);
     setSaving(false);
     if (!res?.ok) {
@@ -68,6 +95,7 @@ export function TeamClient() {
     setName("");
     setEmail("");
     setTempPassword("");
+    setRoleKey(roles[0]?.key ?? "");
     void refetch();
   }
 
@@ -102,6 +130,28 @@ export function TeamClient() {
             </div>
           </div>
           <div className="space-y-1.5">
+            <Label htmlFor="team-role">Rol</Label>
+            <select
+              id="team-role"
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+              value={roleKey}
+              onChange={(e) => setRoleKey(e.target.value)}
+            >
+              {roles.map((r) => (
+                <option key={r.key} value={r.key}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground">
+              Qué puede hacer cada rol se configura en{" "}
+              <a href="/settings/roles" className="underline">
+                Roles
+              </a>
+              .
+            </p>
+          </div>
+          <div className="space-y-1.5">
             <Label htmlFor="team-password">Contraseña temporal</Label>
             <div className="flex gap-2">
               <Input
@@ -117,9 +167,9 @@ export function TeamClient() {
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
           {created && (
-            <div className="rounded-md border border-[#d8e8dd] bg-[#eff7f1] p-3 text-sm">
-              <p className="font-medium text-[#3f6b52]">Cuenta creada ✓</p>
-              <p className="mt-1 text-[#3f6b52]/90">
+            <div className="rounded-md border border-success-border bg-success-soft p-3 text-sm">
+              <p className="font-medium text-success">Cuenta creada ✓</p>
+              <p className="mt-1 text-success">
                 Comparte estos datos ahora (no se volverán a mostrar):
                 <br />
                 <code>{created.email}</code> · contraseña{" "}
@@ -143,7 +193,13 @@ export function TeamClient() {
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Miembros
         </p>
-        {members.map((m) => (
+        {loading && (
+          <>
+            <Skeleton className="h-14 w-full" />
+            <Skeleton className="h-14 w-full" />
+          </>
+        )}
+        {!loading && members.map((m) => (
           <div
             key={m.id}
             className="flex items-center gap-3 rounded-lg border bg-card px-4 py-3"
@@ -153,8 +209,12 @@ export function TeamClient() {
               <p className="truncate text-sm font-medium">{m.name}</p>
               <p className="text-xs text-muted-foreground">{m.email}</p>
             </div>
-            <Badge variant={m.role === "owner" ? "default" : "secondary"}>
-              {m.role === "owner" ? "Propietario" : "Miembro"}
+            {/* 012 (T029) — El rótulo sale de la tabla `role`, no de un
+                `if` con nombres quemados: si la dueña renombra un rol desde
+                Roles, acá se ve el nombre nuevo. Si el rol no está sembrado,
+                se muestra la llave cruda antes que inventar un rótulo. */}
+            <Badge variant="secondary">
+              {roles.find((r) => r.key === m.role)?.name ?? m.role}
             </Badge>
           </div>
         ))}

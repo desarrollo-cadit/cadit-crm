@@ -19,7 +19,7 @@ export function ContactAvatar({
   return (
     <div
       className={cn(
-        "flex shrink-0 items-center justify-center rounded-full font-semibold text-white",
+        "flex shrink-0 items-center justify-center rounded-full font-semibold text-on-accent",
         sizes[size],
         avatarColor(seed)
       )}

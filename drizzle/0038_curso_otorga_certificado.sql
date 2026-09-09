@@ -1,0 +1,30 @@
+-- 028 fase 5 — El curso declara si OTORGA certificado.
+--
+-- Una columna. Ninguna tabla, ningún índice.
+--
+-- Regla del dueño (2026-09-09): el certificado de un módulo se emite sólo si
+-- el curso de ese módulo lo otorga. No todo producto de la academia entrega
+-- uno —hay inducciones y módulos introductorios que forman parte del
+-- recorrido sin certificar—, y hasta acá el sistema emitía igual porque no
+-- tenía cómo saberlo.
+--
+-- ALCANCE, que es lo que importa de esta bandera: gobierna la EMISIÓN y NADA
+-- MÁS. No entra en `approvalState`, ni en `moduleApprovalState`, ni en
+-- `programApprovalState`. Aprobar y certificar son cosas distintas, y un
+-- módulo que no otorga certificado propio igual cuenta para el certificado
+-- general de la especialización (decisión del dueño, 2026-09-09): excluirlo
+-- del cómputo le entregaría el general a alguien que reprobó un módulo del
+-- programa.
+--
+-- SIN REGRESIÓN (FR-032): `default true` y `not null`, así que los 41 cursos
+-- ya cargados —AutoCAD entre ellos, el ejemplo del dueño— siguen emitiendo
+-- exactamente como en el ciclo 010. No hay backfill que correr.
+--
+-- RLS: `course` ya tiene su política `tenant_isolation` desde el ciclo 012 y
+-- una columna nueva no necesita ninguna. `db:generate` no genera políticas,
+-- pero acá no falta ninguna: `tests/unit/rls-cobertura.test.ts` lo verifica.
+--
+-- RE-EJECUTABLE (constitución IV): `add column if not exists`. Correrla dos
+-- veces contra la misma base no falla ni pisa el valor de nadie.
+
+alter table "course" add column if not exists "grants_certificate" boolean default true not null;

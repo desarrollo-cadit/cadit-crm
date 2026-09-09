@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { apiError, parseBody, withAuth } from "@/lib/api";
+import { apiError, parseBody, requireCapability } from "@/lib/api";
 import { getConversation, listMessages } from "@/server/inbox/queries";
 import { serializeMessage } from "@/server/inbox/ingest";
 import { SendError, sendStructured, sendText } from "@/server/inbox/send";
@@ -8,7 +8,9 @@ export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ id: string }> };
 
-export const GET = withAuth(async (session, req: Request, ctx: Params) => {
+export const GET = requireCapability(
+  "inbox.ver",
+  async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const row = await getConversation(session.organizationId, id);
   if (!row) return apiError(404, "not_found", "Conversación no encontrada");
@@ -66,7 +68,9 @@ const SEND_ERROR_STATUS: Record<SendError["code"], number> = {
   upload_failed: 502,
 };
 
-export const POST = withAuth(async (session, req: Request, ctx: Params) => {
+export const POST = requireCapability(
+  "inbox.responder",
+  async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const body = await parseBody(req, sendSchema);
   if (!body.ok) return body.response;

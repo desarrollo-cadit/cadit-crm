@@ -36,6 +36,14 @@ function thenableChain(rows: unknown[]) {
 }
 
 vi.mock("@/lib/db", () => ({
+  // 012 (T024) — `withAuth` abre la transacción del pedido con
+  // `getRootDb().transaction()` para declarar `app.current_org`. Sin este
+  // doble, cualquier prueba que atraviese el borde de autenticación falla
+  // antes de llegar al handler.
+  getRootDb: () => ({
+    transaction: async (fn: (tx: unknown) => unknown) =>
+      fn({ execute: async () => [] }),
+  }),
   getDb: () => ({
     select: () => thenableChain(selectQueue.shift() ?? []),
     insert: (table: unknown) => ({

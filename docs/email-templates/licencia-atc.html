@@ -1,0 +1,252 @@
+<!--
+  Correo de préstamo de licencia ATC — Términos y condiciones.
+
+  ATENCIÓN: este correo es un DOCUMENTO LEGAL, no una comunicación amable.
+  El texto reproduce el que CAD IT venía enviando a mano y NO debe resumirse
+  ni "mejorarse" en su redacción: el deslinde de responsabilidad, los enlaces
+  a los términos de Autodesk y el pedido de aprobación por respuesta son
+  cláusulas, no adorno. Una versión anterior de esta plantilla los había
+  reemplazado por un resumen de cinco puntos; se corrigió el 2026-09-07.
+
+  Reglas de correo, NO de web (esto se ve mayormente en Outlook de escritorio,
+  que renderiza con el motor de Word):
+    · Maquetado con <table>, no con flex ni grid.
+    · CSS EN LÍNEA en cada etiqueta; las hojas de estilo <style> las descartan
+      varios clientes (Gmail recorta, Outlook ignora buena parte).
+    · Ancho fijo de 600px: es lo que entra en el panel de lectura de Outlook.
+    · Sin imágenes de fondo, sin webfonts, sin JavaScript.
+    · Colores con contraste propio: nunca depender del modo oscuro del cliente.
+
+  Variables: {{nombreCompleto}}, {{curso}}, {{fechaInicio}}, {{fechaFin}},
+  {{usuario}}, {{licencias}}, {{logoUrl}}, {{academia}}, {{acento}}, {{contactoSoporte}}.
+-->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0;padding:0;background-color:#f4f4f5;">
+  <tr>
+    <td align="center" style="padding:24px 12px;">
+
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:100%;background-color:#ffffff;border-radius:8px;border:1px solid #e4e4e7;">
+
+        <!-- Encabezado -->
+        <tr>
+          <td align="center" style="padding:24px 32px;border-bottom:2px solid #18181b;text-align:center;">
+            <!-- El logo lleva width/height EXPLÍCITOS: Outlook ignora el
+                 dimensionado por CSS y lo pintaría a sus 2848px reales,
+                 reventando las 600px del correo. 180x109 conserva la
+                 proporción del archivo.
+
+                 `alt` lleva el nombre de la academia y va ESTILADO: la mayoría
+                 de los clientes bloquean imágenes por defecto, y cuando no
+                 carga es ese texto el que identifica al remitente. -->
+            <img src="{{logoUrl}}" width="180" height="109" alt="{{academia}}"
+                 style="display:block;margin:0 auto 14px;border:0;outline:none;text-decoration:none;width:180px;height:109px;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:bold;color:#18181b;" />
+            <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:18px;font-weight:bold;color:#18181b;text-align:center;">
+              {{academia}} &ndash; Solution Provider
+            </p>
+            <p style="margin:4px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#71717a;text-align:center;">
+              Autodesk&reg; Authorized Training Center
+            </p>
+          </td>
+        </tr>
+
+        <!-- Presentación -->
+        <tr>
+          <td style="padding:32px 32px 0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:24px;color:#27272a;">
+            <p style="margin:0 0 16px;">Estimad@ {{nombreCompleto}},</p>
+
+            <p style="margin:0 0 16px;">
+              A los efectos de documentar el pr&eacute;stamo de licencias de
+              {{academia}} &ndash; Solution Provider para la capacitaci&oacute;n
+              <strong>{{curso}}</strong>, hago llegar los T&eacute;rminos y
+              condiciones de uso de licencia en pr&eacute;stamo con la
+              informaci&oacute;n relevante.
+            </p>
+          </td>
+        </tr>
+
+        <!-- Pedido de aprobación: es una acción, va destacado -->
+        <tr>
+          <td style="padding:0 32px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;">
+              <tr>
+                <td style="padding:14px 18px;background-color:#fef9c3;border-left:4px solid #ca8a04;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:23px;color:#3f3f46;">
+                  Se agradece leer atentamente y <strong>responder a este correo
+                  con el visto de aprobaci&oacute;n</strong>.
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Datos del préstamo -->
+        <tr>
+          <td style="padding:0 32px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;border:1px solid #e4e4e7;border-radius:6px;">
+              <tr>
+                <td colspan="2" style="padding:10px 16px;background-color:#fafafa;border-bottom:1px solid #e4e4e7;font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:bold;letter-spacing:0.5px;text-transform:uppercase;color:#71717a;">
+                  Informaci&oacute;n del pr&eacute;stamo
+                </td>
+              </tr>
+              <tr>
+                <td width="180" style="padding:10px 16px;font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#71717a;border-bottom:1px solid #f4f4f5;">Nombre</td>
+                <td style="padding:10px 16px;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:bold;color:#18181b;border-bottom:1px solid #f4f4f5;">{{nombreCompleto}}</td>
+              </tr>
+              <tr>
+                <td style="padding:10px 16px;font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#71717a;border-bottom:1px solid #f4f4f5;">Curso</td>
+                <td style="padding:10px 16px;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:bold;color:#18181b;border-bottom:1px solid #f4f4f5;">{{curso}}</td>
+              </tr>
+              <tr>
+                <td style="padding:10px 16px;font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#71717a;border-bottom:1px solid #f4f4f5;">Inicio</td>
+                <td style="padding:10px 16px;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:bold;color:#18181b;border-bottom:1px solid #f4f4f5;">{{fechaInicio}}</td>
+              </tr>
+              <tr>
+                <td style="padding:10px 16px;font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#71717a;border-bottom:1px solid #f4f4f5;">Fin</td>
+                <td style="padding:10px 16px;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:bold;color:#18181b;border-bottom:1px solid #f4f4f5;">{{fechaFin}}</td>
+              </tr>
+              <tr>
+                <td style="padding:10px 16px;font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#71717a;border-bottom:1px solid #f4f4f5;">Usuario</td>
+                <td style="padding:10px 16px;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:bold;color:#18181b;border-bottom:1px solid #f4f4f5;">{{usuario}}</td>
+              </tr>
+              <tr>
+                <td style="padding:10px 16px;font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#71717a;">Licencias en pr&eacute;stamo</td>
+                <td style="padding:10px 16px;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:bold;color:#18181b;">{{licencias}}</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Cuerpo legal -->
+        <tr>
+          <td style="padding:0 32px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:23px;color:#27272a;">
+
+            <p style="margin:0 0 16px;">
+              Las licencias de los productos detalladas en la informaci&oacute;n
+              previa son facilitadas por {{academia}} &ndash; Solution Provider
+              durante la capacitaci&oacute;n y son propiedad del Autodesk&reg;
+              Authorized Training Center, prestadas con el fin de ser utilizadas
+              &uacute;nicamente para la participaci&oacute;n en el curso
+              (capacitaci&oacute;n), durante el plazo fijado entre el Inicio y Fin
+              estipulado en la informaci&oacute;n y en forma excepcional.
+            </p>
+
+            <p style="margin:0 0 16px;">
+              En el caso de que el alumno no disponga de un equipo personal con los
+              recursos necesarios para la instalaci&oacute;n del software de
+              Autodesk y deba recurrir a ordenadores corporativos, o la
+              capacitaci&oacute;n sea abordada desde un entorno en una empresa,
+              {{academia}} &ndash; Solution Provider proveer&aacute; una licencia
+              ATC con las siguientes condiciones:
+            </p>
+
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px;">
+              <tr>
+                <td style="padding:16px 18px;background-color:#fafafa;border-left:3px solid #18181b;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:23px;color:#3f3f46;">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td valign="top" width="22" style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:23px;color:#71717a;">1.</td>
+                      <td style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:23px;color:#3f3f46;padding-bottom:10px;">
+                        La licencia ser&aacute; prestada a una cuenta indicada por el
+                        beneficiario (preferentemente: personal) y s&oacute;lo puede
+                        iniciar sesi&oacute;n en el equipo acordado.
+                      </td>
+                    </tr>
+                    <tr>
+                      <td valign="top" style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:23px;color:#71717a;">2.</td>
+                      <td style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:23px;color:#3f3f46;padding-bottom:10px;">
+                        La licencia ser&aacute; prestada durante la vigencia del curso
+                        indicada en la informaci&oacute;n con el Inicio y Fin del mismo.
+                      </td>
+                    </tr>
+                    <tr>
+                      <td valign="top" style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:23px;color:#71717a;">3.</td>
+                      <td style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:23px;color:#3f3f46;padding-bottom:10px;">
+                        La licencia ser&aacute; prestada con fines de
+                        capacitaci&oacute;n, excluyendo expl&iacute;citamente cualquier
+                        actividad comercial, empresarial o con fines de lucro.
+                      </td>
+                    </tr>
+                    <tr>
+                      <td valign="top" style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:23px;color:#71717a;">4.</td>
+                      <td style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:23px;color:#3f3f46;padding-bottom:10px;">
+                        Se har&aacute; una instalaci&oacute;n del programa
+                        &uacute;nicamente en la versi&oacute;n convenida para la
+                        capacitaci&oacute;n.
+                      </td>
+                    </tr>
+                    <tr>
+                      <td valign="top" style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:23px;color:#71717a;">5.</td>
+                      <td style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:23px;color:#3f3f46;">
+                        Una vez finalizado el curso, {{academia}} Uruguay
+                        remover&aacute; al usuario de la consola del ATC, por lo que
+                        la licencia dejar&aacute; de funcionar.
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+
+            <p style="margin:0 0 12px;">
+              El producto deber&aacute; ser desinstalado completamente del equipo al
+              finalizar el curso mediante los procedimientos recomendados por
+              Autodesk:
+            </p>
+
+            <p style="margin:0 0 16px;">
+              <a href="https://www.autodesk.es/support/download-install/individuals/manage/remove-autodesk-software" style="color:{{acento}};text-decoration:underline;word-break:break-all;">https://www.autodesk.es/support/download-install/individuals/manage/remove-autodesk-software</a>
+              <br />
+              <span style="color:#71717a;font-size:13px;">(puede solicitarse asistencia t&eacute;cnica para esta desinstalaci&oacute;n)</span>
+            </p>
+
+            <p style="margin:0 0 8px;">
+              Aplican igualmente los t&eacute;rminos y condiciones de uso generales de
+              Autodesk:
+            </p>
+            <p style="margin:0 0 16px;">
+              <a href="https://www.autodesk.com/company/terms-of-use/es/general-terms" style="color:{{acento}};text-decoration:underline;word-break:break-all;">https://www.autodesk.com/company/terms-of-use/es/general-terms</a>
+            </p>
+
+            <p style="margin:0 0 8px;">
+              Y T&eacute;rminos y condiciones de Usuario &Uacute;nico de Autodesk:
+            </p>
+            <p style="margin:0 0 20px;">
+              <a href="https://www.autodesk.com/company/terms-of-use/es/subscriptiontypes" style="color:{{acento}};text-decoration:underline;word-break:break-all;">https://www.autodesk.com/company/terms-of-use/es/subscriptiontypes</a>
+            </p>
+
+            <p style="margin:0 0 16px;font-weight:bold;color:#18181b;">
+              La instalaci&oacute;n del software implica la aceptaci&oacute;n de estos
+              t&eacute;rminos y condiciones.
+            </p>
+
+            <p style="margin:0 0 20px;">
+              {{academia}} &ndash; Solution Provider deslinda toda responsabilidad
+              ante cualquier manejo por parte del cliente fuera de estas condiciones
+              expresadas.
+            </p>
+
+            <p style="margin:0 0 24px;">
+              Sin otro particular y quedando desde ya atentos a cualquier consulta,
+              saluda atentamente,
+            </p>
+
+            <p style="margin:0 0 32px;font-weight:bold;color:#18181b;">
+              Equipo de Soporte T&eacute;cnico<br />
+              <span style="font-weight:normal;color:#71717a;font-size:13px;">{{academia}} &ndash; Solution Provider</span>
+            </p>
+          </td>
+        </tr>
+
+        <!-- Pie -->
+        <tr>
+          <td style="padding:20px 32px;border-top:1px solid #e4e4e7;background-color:#fafafa;border-radius:0 0 8px 8px;">
+            <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:#71717a;">
+              {{academia}} &ndash; Autodesk&reg; Authorized Training Center<br />
+              Ante cualquier consulta respond&eacute; este correo o escribinos a
+              {{contactoSoporte}}.
+            </p>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+</table>

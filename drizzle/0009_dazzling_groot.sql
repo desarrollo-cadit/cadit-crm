@@ -1,0 +1,1 @@
+ALTER TABLE "cohort" ADD COLUMN "days_of_week" text;

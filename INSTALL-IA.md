@@ -1,4 +1,4 @@
-# INSTALL-IA.md — Instalación de Vocero CRM guiada por IA
+# INSTALL-IA.md — Instalación de CadIT CRM guiada por IA
 
 > **Para el asistente de IA** (Claude Code u otro agente con acceso a
 > herramientas): este archivo ES tu guion de instalación. Síguelo de arriba a
@@ -83,7 +83,7 @@ docker compose up -d --build
 
 ## Cierre (obligatorio decirlo al usuario)
 
-> ✅ Vocero quedó instalado en `https://<dominio>`.
+> ✅ CadIT quedó instalado en `https://<dominio>`.
 >
 > 1. Entra y **regístrate**: el primer registro crea tu organización (después
 >    el registro público se cierra solo).

@@ -6,6 +6,20 @@
   Sistema de diseño "Atlas": modo claro sobrio (neutros fríos + un acento).
   Los tokens de acento (--accent*) se sobreescriben en runtime por el
   white-label de la organización (Configuración → Marca).
+
+  020 (fase 1) — Los neutros del handoff original NO alcanzaban el mínimo
+  legible: `--text-3` daba 3.33:1 sobre blanco y `--text-4`, 2.20:1. Como
+  `--text-3` es lo que Tailwind expone como `text-muted-foreground` —234 usos
+  en 45 archivos—, más de la mitad del texto secundario de la plataforma
+  estaba por debajo de 4.5:1. Esa era la causa mecánica de que la interfaz se
+  viera lavada, antes que cualquier discusión de paleta.
+
+  Los valores nuevos se calcularon buscando el más CLARO que alcanza el umbral
+  contra el peor fondo claro (`--bg-hover`), no eligiendo un gris a ojo: la
+  sobriedad de Atlas se conserva, la ilegibilidad no.
+
+  `tests/unit/contraste.test.ts` recalcula todo esto y falla si alguien afloja
+  un token.
 */
 @layer base {
   :root {
@@ -16,15 +30,49 @@
     --bg-hover: #f4f4f5;
     --text: #1a1a1e;
     --text-2: #56565e;
-    --text-3: #8c8c95;
-    --text-4: #aeaeb6;
+    /* 020: era #8c8c95 (3.33:1). Ahora 4.60:1 contra el peor fondo claro. */
+    --text-3: #6e6e75;
+    /*
+      020: era #aeaeb6 (2.20:1). NO se lleva a 4.5 porque ahí se volvería
+      indistinguible de --text-3 y la escala de cuatro niveles se colapsaría
+      en tres. Se redefine por su ROL: deja de ser un token de texto y pasa a
+      ser de ícono y decoración, donde WCAG 1.4.11 pide 3:1.
+      El único texto que lo usaba —la hora del mensaje— se migró a --text-3.
+    */
+    --text-4: #8d8d93;
     --border: #ecedf0;
-    --border-strong: #e0e1e6;
+    /*
+      020: era #e0e1e6 (1.31:1). `--border-strong` es `input` en Tailwind: es
+      el borde que dice DÓNDE SE ESCRIBE, sobre campos blancos en fondo
+      blanco. Sin 3:1 el campo no se distingue de la página.
+      `--border` se queda claro a propósito: solo separa bloques que ya se
+      distinguen por fondo, y endurecerlo llenaría la pantalla de líneas.
+    */
+    --border-strong: #939397;
 
     /* Chat */
     --chat-bg: #f4f5f7;
     --bubble-out: #f2f5f8;
     --bubble-out-text: #33414f;
+    /*
+      020 (T011) — El celeste del doble tilde LEÍDO. Es el azul de WhatsApp y
+      lo reconoce cualquiera que use la app; no es una elección de marca ni se
+      configura. Vive acá y no escrito a mano en el componente para que el
+      tema oscuro lo pueda ajustar.
+    */
+    --tick-read: #53bdeb;
+    /*
+      020 (T011) — El color de la voz del CLIENTE en el Laboratorio, para
+      distinguirla de la del agente (que usa el acento). Un neutro azulado
+      propio: si usara el acento, las dos voces se confundirían.
+    */
+    --voice-client: #5b7291;
+    /*
+      020 (T011) — Blanco puro para la perilla de un interruptor y elementos
+      que van SOBRE el acento. En tema oscuro deja de ser blanco, y por eso es
+      un token y no `bg-white`.
+    */
+    --on-accent: #ffffff;
 
     /* Acento (default: azul acero apagado; white-label lo sobreescribe) */
     --accent: #3f5972;
@@ -34,10 +82,90 @@
     --accent-text: #2b4056;
     --bg-active: var(--accent-tint);
 
-    /* Estado */
-    --success: #5f8f74;
-    --warning: #b08b5e;
+    /*
+      Estado. 020: `--success` (3.71:1) y `--warning` (3.13:1) solo pasaban
+      para texto grande, y se usan como TEXTO chico (`text-success`). Mismo
+      criterio y mismo método que los neutros.
+    */
+    --success: #4f7761;
+    --warning: #866a48;
     --danger: #a2504c;
+
+    /*
+      020 (T004) — Los fondos suaves de estado. Existían, pero escritos a mano
+      dentro de `ui/badge.tsx`, que es un PRIMITIVO: el badge es lo que más se
+      repite en las pantallas de cursada y era lo que menos respondía al tema.
+      Corregir `--success` sin migrar el badge no habría cambiado nada en
+      pantalla.
+    */
+    --success-soft: #eff7f1;
+    --success-border: #d8e8dd;
+    --warning-soft: #faf7f0;
+    --warning-border: #ece2cf;
+    --danger-soft: #faf1f0;
+    --danger-border: #ecd4d2;
+    --danger-hover: #8c4441;
+    /*
+      020 (T021) — El texto que va ENCIMA de un relleno de estado sólido
+      (el botón "Vino/Tarde/Faltó" del portal).
+      No puede ser `--on-accent`: en tema oscuro los estados se ACLARAN para
+      contrastar con el fondo, y ahí el blanco encima cae a 3.1:1. Cada tema
+      elige el suyo — claro sobre relleno oscuro, oscuro sobre relleno claro.
+    */
+    --on-state: #ffffff;
+
+    /*
+      020 (T021) — El velo de los diálogos. Era `bg-black/60` en 10 pantallas:
+      un negro fijo que en tema oscuro tapa con más negro y hace desaparecer
+      los bordes del diálogo.
+    */
+    --overlay: rgba(20, 20, 25, 0.55);
+
+    /*
+      020 (T021) — La paleta de COHORTES del calendario.
+
+      Es categórica, no semántica: su trabajo es que dos cohortes seguidas se
+      distingan de un vistazo, no comunicar un estado. Vive en tokens igual que
+      todo lo demás porque en tema oscuro un `bg-sky-100` es una mancha clara
+      sobre una pantalla negra.
+
+      Cada una lleva su color de texto, para que el contraste sea una garantía
+      del par y no una coincidencia.
+    */
+    --cohort-1-bg: #e0f2fe;
+    --cohort-1-fg: #0c4a6e;
+    --cohort-2-bg: #d1fae5;
+    --cohort-2-fg: #064e3b;
+    --cohort-3-bg: #fef3c7;
+    --cohort-3-fg: #713f12;
+    --cohort-4-bg: #ede9fe;
+    --cohort-4-fg: #4c1d95;
+    --cohort-5-bg: #ffe4e6;
+    --cohort-5-fg: #881337;
+    --cohort-6-bg: #ccfbf1;
+    --cohort-6-fg: #134e4a;
+    --cohort-7-bg: #e0e7ff;
+    --cohort-7-fg: #312e81;
+    --cohort-8-bg: #ffedd5;
+    --cohort-8-fg: #7c2d12;
+    /* La línea del "ahora" en el calendario. */
+    --now-line: #dc2626;
+
+    /*
+      020 (T005) — Escala tipográfica.
+
+      La jerarquía no se aplanaba solo por el contraste: un título en
+      `text-lg` (1.125rem) contra un cuerpo en `text-sm` (0.875rem) da apenas
+      1.28× de diferencia, y eso se lee como una lista de cosas del mismo
+      peso.
+
+      Se agrandan SOLO los pasos de titular. Los de cuerpo y los chicos no se
+      tocan: agrandarlos bajaría la densidad del panel, que el equipo mira
+      ocho horas por día (FR-006).
+    */
+    --text-step-1: 1.25rem; /* era 1.125 */
+    --text-step-2: 1.5rem; /* era 1.25  */
+    --text-step-3: 1.875rem; /* era 1.5   */
 
     /* Radios y sombras */
     --radius-sm: 7px;
@@ -50,6 +178,135 @@
     /* Densidad de filas de conversación */
     --row-py: 11px;
   }
+
+  /*
+    020 (T013, FR-002) — Tema oscuro.
+
+    No es "los mismos colores invertidos". Los neutros se derivaron con el
+    mismo método que los del tema claro: buscar el valor que alcanza el umbral
+    contra el PEOR fondo del tema —acá `--bg-hover` (#232328), que es el más
+    claro de los oscuros— en vez de elegir grises a ojo.
+
+    Dos cosas que no se pueden mover sin romper algo:
+
+    1. `--bg` tiene que coincidir con `THEME_SURFACES.dark.bg` de
+       `src/lib/branding.ts`, que es contra lo que se deriva el acento de cada
+       organización. Si se separan, la derivación calcula el contraste contra
+       un fondo que no existe. `tests/unit/tema-oscuro.test.ts` lo compara.
+    2. **Todo token de color del tema claro necesita su contraparte acá.** El
+       que falte se queda con el valor claro, y una sola mancha blanca arruina
+       el tema entero. También hay test.
+
+    Los tokens de acento (`--accent*`) NO están: los inyecta el servidor en el
+    `<head>` con los dos juegos, porque dependen de la organización.
+  */
+  :root[data-theme="dark"] {
+    --bg: #141417;
+    --bg-subtle: #18181b;
+    --bg-panel: #1c1c20;
+    --bg-hover: #232328;
+    --text: #e8e8ec;
+    --text-2: #a8a8b0;
+    --text-3: #8a8a93;
+    /* Ícono y decoración, 3:1 — mismo rol que en claro. */
+    --text-4: #6e6e77;
+    --border: #2a2a30;
+    --border-strong: #6d6d73;
+
+    /*
+      El chat se aclara UN paso respecto del fondo en vez de oscurecerse: la
+      burbuja tiene que despegarse del panel, y en oscuro despegarse es subir.
+    */
+    --chat-bg: #191920;
+    --bubble-out: #263141;
+    --bubble-out-text: #cfd8e3;
+    /* El celeste del tilde leído se reconoce igual; no hace falta tocarlo. */
+    --tick-read: #53bdeb;
+    /* La voz del cliente se aclara para seguir separándose del acento. */
+    --voice-client: #8fa5bf;
+    --on-accent: #ffffff;
+
+    --success: #66947a;
+    --warning: #b08b5e;
+    --danger: #cb716d;
+    --success-soft: #1e2323;
+    --success-border: #33453d;
+    --warning-soft: #2a2521;
+    --warning-border: #4f4132;
+    --danger-soft: #2a1f21;
+    --danger-border: #5a3738;
+    --danger-hover: #dc8f8b;
+    /* Invertido: los rellenos de estado son claros en este tema. */
+    --on-state: #141417;
+
+    /* Más opaco que en claro: sobre fondo oscuro un velo tenue no separa nada. */
+    --overlay: rgba(0, 0, 0, 0.7);
+
+    /*
+      Las cohortes en oscuro: fondo profundo y texto claro. Invertir el par
+      —no solo oscurecer el fondo— es lo que mantiene el contraste; dejar el
+      texto oscuro sobre un fondo oscuro lo perdería.
+    */
+    --cohort-1-bg: #14293a;
+    --cohort-1-fg: #a8d8f5;
+    --cohort-2-bg: #12302a;
+    --cohort-2-fg: #9fe0c4;
+    --cohort-3-bg: #33291a;
+    --cohort-3-fg: #f0d093;
+    --cohort-4-bg: #241f3d;
+    --cohort-4-fg: #c9bcf5;
+    --cohort-5-bg: #351c24;
+    --cohort-5-fg: #f5b3c0;
+    --cohort-6-bg: #113230;
+    --cohort-6-fg: #93e0d6;
+    --cohort-7-bg: #1c2145;
+    --cohort-7-fg: #b6c0f7;
+    --cohort-8-bg: #34241a;
+    --cohort-8-fg: #f3c39a;
+    --now-line: #f87171;
+
+    /* Las sombras casi no funcionan sobre fondo oscuro: se profundizan. */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 6px 20px -6px rgba(0, 0, 0, 0.55);
+    --shadow-pop: 0 12px 32px -8px rgba(0, 0, 0, 0.7);
+  }
+
+  /*
+    020 (T021, DV-003) — Intensidad "portal".
+
+    El MISMO sistema de tokens, más presente. No es un segundo diseño: dos
+    diseños se mantienen por separado y se separan en tres meses.
+
+    La distinción de la fase: **corrección para todos, personalidad para los
+    portales**. El staff mira el panel ocho horas por día y ahí lo apagado es
+    una virtud; el alumno entra tres minutos dos veces por semana y ahí el
+    mismo silencio se lee como que no pasa nada.
+
+    **Lo que este bloque NO toca, y es deliberado**: `--bg`, `--bg-panel` y los
+    tokens de texto. Se probó tintar la superficie con `--accent-tint` y el
+    peor caso —un acento casi negro— dejaba `--text-3` en **4.44:1**, abajo del
+    mínimo. Una página tintada en todos lados además se lee lavada, no
+    marcada. La presencia de la marca viene de los ELEMENTOS acentuados
+    (encabezado, estados activos, bordes), no del fondo bajo el texto.
+    `tests/unit/portal-intensidad.test.ts` falla si alguien redefine acá una
+    superficie de texto.
+  */
+  [data-surface="portal"] {
+    /* Más redondeo: la misma información se lee menos administrativa. */
+    --radius-sm: 10px;
+    --radius: 14px;
+    --radius-lg: 20px;
+
+    /*
+      El hover pasa del gris neutro al tinte de la marca. Es donde más se nota
+      que la pantalla responde, y no cae debajo de ningún texto largo.
+    */
+    --bg-hover: var(--accent-tint);
+
+    /* El aire de las tarjetas, para que respiren en una pantalla de celular. */
+    --portal-gap: 1rem;
+    --portal-card-pad: 1.15rem;
+  }
 }
 
 @layer base {
@@ -60,6 +317,23 @@
     @apply bg-background text-foreground antialiased;
     letter-spacing: -0.01em;
   }
+  /*
+    021 — Las superficies que NO dibujamos también son parte del diseño.
+
+    La selección de texto y el cursor vienen con el azul del navegador, que no
+    pertenece a ningún sistema de diseño y se ve prestado sobre cualquier
+    paleta — y en tema oscuro, directamente mal. Costo: cuatro líneas.
+  */
+  ::selection {
+    background: var(--accent-soft);
+    color: var(--accent-text);
+  }
+  :root {
+    caret-color: var(--accent);
+    /* Los números de una tabla no deben bailar al cambiar de valor. */
+    font-variant-numeric: tabular-nums;
+  }
+
   ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -70,6 +344,84 @@
   }
   ::-webkit-scrollbar-track {
     background: transparent;
+  }
+}
+
+@layer components {
+  /*
+    021 — La trama del panel de acceso.
+
+    Es una grilla de plano: la retícula fina cada 28px y la gruesa cada 140px,
+    igual que el papel de dibujo técnico. No es decoración genérica — la
+    academia enseña CAD, y la textura dice de qué se trata esto antes de que
+    nadie lea una palabra.
+
+    Vive acá y no en el `.tsx` por la regla del ciclo 020: **los colores viven
+    en tokens**. Las líneas se derivan de `--on-accent` con `color-mix`, así
+    que siguen al acento de cada organización sin que nadie configure nada, y
+    el tema oscuro las ajusta solo.
+  */
+  .brand-grid {
+    background-image:
+      linear-gradient(
+        to right,
+        color-mix(in srgb, var(--on-accent) 16%, transparent) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to bottom,
+        color-mix(in srgb, var(--on-accent) 16%, transparent) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to right,
+        color-mix(in srgb, var(--on-accent) 7%, transparent) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to bottom,
+        color-mix(in srgb, var(--on-accent) 7%, transparent) 1px,
+        transparent 1px
+      );
+    background-size:
+      140px 140px,
+      140px 140px,
+      28px 28px,
+      28px 28px;
+    background-position: center;
+  }
+
+  /*
+    El velo que apaga la trama hacia abajo, para que el texto del panel no
+    compita con las líneas. Un degradado del propio acento: no entra ningún
+    negro que en tema oscuro tapara con más negro.
+  */
+  /*
+    El velo que calma la trama detrás del texto. Es más fuerte en la banda
+    central —donde va el texto— y se abre arriba y abajo, para que la grilla se
+    vea sin competir con lo que hay que leer.
+  */
+  .brand-grid-veil {
+    background-image: linear-gradient(
+      to bottom,
+      transparent 0%,
+      color-mix(in srgb, var(--accent) 62%, transparent) 38%,
+      color-mix(in srgb, var(--accent) 62%, transparent) 78%,
+      transparent 100%
+    );
+  }
+
+  /*
+    El recuadro de un ícono SOBRE el acento.
+
+    Es una clase y no `bg-on-accent/10` porque **el modificador de opacidad de
+    Tailwind no funciona sobre un `var()`** (ciclo 020, trampa 1): esas clases
+    no emiten ninguna regla y el recuadro no existiría. Mismo motivo por el que
+    la trama de arriba vive acá.
+  */
+  .on-brand-chip {
+    border-color: color-mix(in srgb, var(--on-accent) 28%, transparent);
+    background-color: color-mix(in srgb, var(--on-accent) 12%, transparent);
   }
 }
 

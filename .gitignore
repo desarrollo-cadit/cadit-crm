@@ -39,4 +39,34 @@ Thumbs.db
 .claude/settings.local.json
 .playwright-mcp/
 .tmp-seed-demo.mjs
+.tmp-seed-academic.mjs
+.tmp-import-cadit.mjs
+.tmp-verify-billing.mjs
+.tmp-verify-grading.mjs
+.tmp-reset-password.mjs
+.tmp-dar-acceso.mjs
+dev.log
 .dev-media/
+
+# --- Self-test E2E contra base efímera (ver scripts/e2e-selftest.mjs) ---
+# El arnés REGISTRA un operador, así que corre contra su propia base y su
+# propio dist dir: dos procesos de Next sobre el mismo `.next` se corrompen
+# el grafo de módulos.
+e2e-dev.log
+dev-e2e.log
+.next-e2e/
+.dev-media-e2e/
+
+# --- Skill registry index (regenerable) ---
+.atl/
+
+# --- CodeGraph / Gentle AI: estado local de la herramienta (no compartir) ---
+.codegraph/
+.gga
+.tmp-verificar-aulas.mjs
+.tmp-verificar-correo.mjs
+.tmp-demo-cohorte.mjs
+
+# Contraseña suelta de una prueba local: nunca al repositorio.
+.tmp-pass.txt
+.next-build/

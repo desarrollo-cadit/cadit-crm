@@ -1,4 +1,4 @@
-# Tasks: Vocero CRM — Núcleo v1
+# Tasks: CadIT CRM — Núcleo v1
 
 **Input**: Design documents from `/specs/001-vocero-core/`
 

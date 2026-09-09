@@ -244,7 +244,7 @@ async function upsertTestContact(
       organizationId,
       phone: persona.phone,
       waIdentity: persona.phone,
-      name: persona.contactName,
+      firstName: persona.contactName,
       archivedAt: new Date(),
     })
     .onConflictDoNothing({

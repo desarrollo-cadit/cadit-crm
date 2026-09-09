@@ -1,6 +1,6 @@
-import { desc, ilike, or } from "drizzle-orm";
+import { desc, ilike, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
-import { apiError, parseBody, withAuth } from "@/lib/api";
+import { apiError, parseBody, parseQuery, requireCapability } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
@@ -9,46 +9,85 @@ import { serializeContact } from "@/server/contacts";
 
 export const dynamic = "force-dynamic";
 
-export const GET = withAuth(async (session, req: Request) => {
-  const url = new URL(req.url);
-  const q = url.searchParams.get("q")?.trim();
-  const includeArchived = url.searchParams.get("archived") === "true";
+const DEFAULT_PAGE_SIZE = 20;
+const MAX_PAGE_SIZE = 100;
+
+const listQuerySchema = z.object({
+  q: z.string().trim().optional(),
+  archived: z.string().optional(),
+  // .catch(): query params de listado/paginación son tolerantes por diseño
+  // (un page/pageSize inválido vuelve al default en vez de 422).
+  page: z.coerce.number().int().min(1).catch(1),
+  pageSize: z.coerce.number().int().min(1).max(MAX_PAGE_SIZE).catch(DEFAULT_PAGE_SIZE),
+});
+
+/**
+ * Iteración 3 (Parte C) — paginación real de servidor (page/pageSize), no
+ * solo corte del array en el cliente: la tabla nueva de Contactos no puede
+ * traer 200 filas de una. El filtro de archivados pasa a SQL (antes se
+ * cortaba en JS después de traer 200 filas, lo que rompía la paginación).
+ */
+export const GET = requireCapability(
+  "contactos.ver",
+  async (session, req: Request) => {
+  const query = parseQuery(new URL(req.url), listQuerySchema);
+  if (!query.ok) return query.response;
+  const { page, pageSize } = query.data;
+  const q = query.data.q?.trim();
+  const includeArchived = query.data.archived === "true";
 
   const db = getDb();
-  const rows = await db
-    .select()
-    .from(schema.contact)
-    .where(
-      scoped(
-        schema.contact.organizationId,
-        session.organizationId,
-        q
-          ? or(
-              ilike(schema.contact.name, `%${q}%`),
-              ilike(schema.contact.phone, `%${q}%`)
-            )
-          : undefined
+  const searchCondition = q
+    ? or(
+        ilike(schema.contact.firstName, `%${q}%`),
+        ilike(schema.contact.lastName, `%${q}%`),
+        ilike(schema.contact.phone, `%${q}%`)
       )
-    )
-    .orderBy(desc(schema.contact.updatedAt))
-    .limit(200);
+    : undefined;
+  const archivedCondition = includeArchived
+    ? undefined
+    : isNull(schema.contact.archivedAt);
 
-  const contacts = rows
-    .filter((c) => includeArchived || !c.archivedAt)
-    .map(serializeContact);
-  return Response.json({ contacts });
+  const whereClause = scoped(
+    schema.contact.organizationId,
+    session.organizationId,
+    searchCondition,
+    archivedCondition
+  );
+
+  const [rows, countRows] = await Promise.all([
+    db
+      .select()
+      .from(schema.contact)
+      .where(whereClause)
+      .orderBy(desc(schema.contact.updatedAt))
+      .limit(pageSize)
+      .offset((page - 1) * pageSize),
+    db.select({ n: sql<number>`count(*)` }).from(schema.contact).where(whereClause),
+  ]);
+
+  const contacts = rows.map(serializeContact);
+  const total = Number(countRows[0]?.n ?? 0);
+  return Response.json({ contacts, total, page, pageSize });
 });
 
 const createSchema = z.object({
-  name: z.string().trim().min(1).max(120),
+  firstName: z.string().trim().min(1).max(120),
+  lastName: z.string().trim().max(120).optional(),
   phone: z
     .string()
     .trim()
     .regex(/^\d{7,15}$/, "Teléfono en dígitos, con código de país (ej. 5215512345678)"),
   notes: z.string().max(4000).optional(),
+  // 005 (T017, DV-003) — la unicidad la resuelven los índices parciales +
+  // el mapeo 409 de withAuth (ver src/lib/api.ts).
+  email: z.string().trim().email().max(200).optional(),
+  nationalId: z.string().trim().max(60).optional(),
 });
 
-export const POST = withAuth(async (session, req: Request) => {
+export const POST = requireCapability(
+  "contactos.editar",
+  async (session, req: Request) => {
   const body = await parseBody(req, createSchema);
   if (!body.ok) return body.response;
 
@@ -60,10 +99,13 @@ export const POST = withAuth(async (session, req: Request) => {
     .values({
       id: newId("contact"),
       organizationId: session.organizationId,
-      name: body.data.name,
+      firstName: body.data.firstName,
+      lastName: body.data.lastName ?? null,
       phone,
       waIdentity: phone,
       notes: body.data.notes ?? null,
+      email: body.data.email ?? null,
+      nationalId: body.data.nationalId ?? null,
     })
     .onConflictDoNothing({
       target: [schema.contact.organizationId, schema.contact.waIdentity],

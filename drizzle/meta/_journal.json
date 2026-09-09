@@ -22,6 +22,258 @@
       "when": 1785872764254,
       "tag": "0002_closed_millenium_guard",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786386600925,
+      "tag": "0003_damp_thor",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1786386627378,
+      "tag": "0004_great_steve_rogers",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786393941593,
+      "tag": "0005_gestion_academica_operativa",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786393949992,
+      "tag": "0006_drop_cohort_professor",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1786461928827,
+      "tag": "0007_deep_chat",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1786462273935,
+      "tag": "0008_lying_leper_queen",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786474366987,
+      "tag": "0009_dazzling_groot",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1786476127521,
+      "tag": "0010_fancy_aaron_stack",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1786476719468,
+      "tag": "0011_solid_speedball",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1786477929156,
+      "tag": "0012_harsh_groot",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1786477985906,
+      "tag": "0013_flimsy_the_executioner",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1786558873265,
+      "tag": "0014_bored_ricochet",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1786558932780,
+      "tag": "0015_breezy_lady_deathstrike",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1786561085498,
+      "tag": "0016_ambitious_sphinx",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1786738696880,
+      "tag": "0017_concerned_dreaming_celestial",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1786979429699,
+      "tag": "0018_overrated_the_captain",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1786990843544,
+      "tag": "0019_talented_firestar",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1787239978768,
+      "tag": "0020_medical_wendigo",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1787317458736,
+      "tag": "0021_cultured_doctor_strange",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1787751303599,
+      "tag": "0022_familiar_gargoyle",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1787772687329,
+      "tag": "0023_colorful_black_crow",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1787777485029,
+      "tag": "0024_seed_roles_sistema",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1787834149538,
+      "tag": "0025_rls_tenant_isolation",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1787834183358,
+      "tag": "0026_rol_conexion_cadit_app",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1787836850265,
+      "tag": "0027_rls_excluir_meta_credentials",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1787840178895,
+      "tag": "0028_migrar_cuentas_a_roles_nuevos",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1787842554902,
+      "tag": "0029_woozy_wild_child",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1787851125905,
+      "tag": "0030_cold_puma",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1787921057631,
+      "tag": "0031_overconfident_fantastic_four",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1788270356693,
+      "tag": "0032_calm_triathlon",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1788283290241,
+      "tag": "0033_strange_jasper_sitwell",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1788372011232,
+      "tag": "0034_left_ted_forrester",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1788456788149,
+      "tag": "0035_remarkable_mongoose",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1788543188149,
+      "tag": "0036_seed_rol_administracion",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1788878069438,
+      "tag": "0037_especializaciones_y_modulos",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1788959721497,
+      "tag": "0038_curso_otorga_certificado",
+      "breakpoints": true
     }
   ]
 }

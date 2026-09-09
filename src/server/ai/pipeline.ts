@@ -1,5 +1,7 @@
-import { asc, desc, eq } from "drizzle-orm";
+import { asc, desc, eq, isNull } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
+import { scoped } from "@/lib/db/tenant";
+import { withOrganizationScope } from "@/lib/db/with-tenant";
 import { newId } from "@/lib/db/ids";
 import { getEnv, isAiConfigured } from "@/lib/env";
 import { chatJson, type ChatMessage } from "@/lib/ai";
@@ -36,8 +38,18 @@ function coalesceMap(): Map<string, CoalesceEntry> {
   return globalForAgent.__agentCoalesce;
 }
 
-/** Punto de entrada con debounce (mensajes entrantes reales). */
-export function scheduleAgentTurn(conversationId: string): void {
+/**
+ * Punto de entrada con debounce (mensajes entrantes reales).
+ *
+ * 012 (T028) — Recibe `organizationId` porque el turno corre FUERA del pedido
+ * que lo disparó: el `setTimeout` del debounce lo deja para después, cuando la
+ * transacción de la ingesta ya cerró. Sin un alcance propio, el agente no ve
+ * la conversación que tiene que responder.
+ */
+export function scheduleAgentTurn(
+  conversationId: string,
+  organizationId: string
+): void {
   const map = coalesceMap();
   const entry = map.get(conversationId) ?? {
     timer: null,
@@ -54,24 +66,31 @@ export function scheduleAgentTurn(conversationId: string): void {
   const delay = getEnv().AGENT_COALESCE_MS;
   entry.timer = setTimeout(() => {
     entry.timer = null;
-    void executeTurn(conversationId);
+    void executeTurn(conversationId, organizationId);
   }, delay);
 }
 
-async function executeTurn(conversationId: string): Promise<void> {
+async function executeTurn(
+  conversationId: string,
+  organizationId: string
+): Promise<void> {
   const map = coalesceMap();
   const entry = map.get(conversationId);
   if (!entry || entry.running) return;
   entry.running = true;
   try {
-    await runAgentTurn(conversationId);
+    // `withOrganizationScope` abre desde `getRootDb()`, así que ignora la
+    // transacción heredada —y ya cerrada— del pedido que agendó este turno.
+    await withOrganizationScope(organizationId, "system:agente", () =>
+      runAgentTurn(conversationId)
+    );
   } catch (err) {
     console.error("[agente] turno falló:", err);
   } finally {
     entry.running = false;
     if (entry.pending) {
       entry.pending = false;
-      void executeTurn(conversationId);
+      void executeTurn(conversationId, organizationId);
     } else {
       map.delete(conversationId);
     }
@@ -89,6 +108,16 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   const convRows = await db
     .select()
     .from(schema.conversation)
+    /**
+     * Constitución III — la ÚNICA consulta del módulo sin `scoped()`, y no es
+     * un olvido: la organización se DERIVA de esta fila, así que todavía no
+     * hay alcance que declarar. Es el mismo caso que `member` y
+     * `account_link`, que quedan fuera de RLS por responder "¿de quién es
+     * esto?" antes de que exista un alcance.
+     *
+     * Igual queda protegida: el turno del agente corre dentro de la
+     * transacción del webhook, que ya declaró `app.current_org`.
+     */
     .where(eq(schema.conversation.id, conversationId))
     .limit(1);
   const conversation = convRows[0];
@@ -101,7 +130,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   const profileRows = await db
     .select()
     .from(schema.agentProfile)
-    .where(eq(schema.agentProfile.organizationId, organizationId))
+    .where(scoped(schema.agentProfile.organizationId, organizationId))
     .limit(1);
   const profile = profileRows[0];
   if (!profile) return;
@@ -112,7 +141,13 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   const history = await db
     .select()
     .from(schema.message)
-    .where(eq(schema.message.conversationId, conversationId))
+    .where(
+      scoped(
+        schema.message.organizationId,
+        organizationId,
+        eq(schema.message.conversationId, conversationId)
+      )
+    )
     .orderBy(desc(schema.message.createdAt))
     .limit(20);
   history.reverse();
@@ -134,12 +169,12 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   const kb = await db
     .select()
     .from(schema.kbEntry)
-    .where(eq(schema.kbEntry.organizationId, organizationId))
+    .where(scoped(schema.kbEntry.organizationId, organizationId))
     .orderBy(asc(schema.kbEntry.createdAt));
   const stages = await db
     .select({ id: schema.pipelineStage.id, name: schema.pipelineStage.name })
     .from(schema.pipelineStage)
-    .where(eq(schema.pipelineStage.organizationId, organizationId))
+    .where(scoped(schema.pipelineStage.organizationId, organizationId))
     .orderBy(asc(schema.pipelineStage.position));
 
   const messages: ChatMessage[] = [
@@ -251,7 +286,13 @@ async function persistTestOutbound(
   await db
     .update(schema.conversation)
     .set({ lastMessageAt: new Date(), updatedAt: new Date() })
-    .where(eq(schema.conversation.id, conversation.id));
+    .where(
+      scoped(
+        schema.conversation.organizationId,
+        conversation.organizationId,
+        eq(schema.conversation.id, conversation.id)
+      )
+    );
 }
 
 export async function applyHandoff(
@@ -263,7 +304,13 @@ export async function applyHandoff(
   const updated = await db
     .update(schema.conversation)
     .set({ handoffAt: new Date(), handoffReason: reason, updatedAt: new Date() })
-    .where(eq(schema.conversation.id, conversationId))
+    .where(
+      scoped(
+        schema.conversation.organizationId,
+        organizationId,
+        eq(schema.conversation.id, conversationId)
+      )
+    )
     .returning();
   if (!updated[0]) return;
   publish(organizationId, {
@@ -274,6 +321,11 @@ export async function applyHandoff(
   });
 }
 
+/**
+ * 004 — Mueve el LEAD GENERAL del contacto (sin `cohort_id`): el agente de
+ * IA opera desde la conversación de WhatsApp, no desde una cohorte concreta
+ * (ver research.md DV-005/T010).
+ */
 async function moveLeadToStage(
   organizationId: string,
   contactId: string,
@@ -281,9 +333,16 @@ async function moveLeadToStage(
 ): Promise<void> {
   const db = getDb();
   await db
-    .update(schema.lead)
+    .update(schema.enrollment)
     .set({ stageId, updatedAt: new Date(), lastActivityAt: new Date() })
-    .where(eq(schema.lead.contactId, contactId));
+    .where(
+      scoped(
+        schema.enrollment.organizationId,
+        organizationId,
+        eq(schema.enrollment.contactId, contactId),
+        isNull(schema.enrollment.cohortId)
+      )
+    );
 }
 
 async function appendLeadNote(
@@ -295,7 +354,7 @@ async function appendLeadNote(
   const rows = await db
     .select({ id: schema.contact.id, notes: schema.contact.notes })
     .from(schema.contact)
-    .where(eq(schema.contact.id, contactId))
+    .where(scoped(schema.contact.organizationId, organizationId, eq(schema.contact.id, contactId)))
     .limit(1);
   const contact = rows[0];
   if (!contact) return;
@@ -306,5 +365,5 @@ async function appendLeadNote(
       notes: contact.notes ? `${contact.notes}\n${stamped}` : stamped,
       updatedAt: new Date(),
     })
-    .where(eq(schema.contact.id, contact.id));
+    .where(scoped(schema.contact.organizationId, organizationId, eq(schema.contact.id, contact.id)));
 }

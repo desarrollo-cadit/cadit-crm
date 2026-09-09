@@ -34,6 +34,30 @@ const envSchema = z.object({
   BOT_API_KEY: z.string().optional(),
   // 008: volumen local de adjuntos (constitución II: sin S3/R2).
   MEDIA_DIR: z.string().default("./.dev-media"),
+  /**
+   * 007 — Orígenes autorizados a llamar `/api/public/*` desde el NAVEGADOR,
+   * separados por coma (ej. "https://cadit.com.uy,https://www.cadit.com.uy").
+   * `*` (default) permite cualquiera: esos endpoints ya son públicos y sin
+   * auth, así que restringirlos no agrega seguridad real —un bot con curl
+   * ni pasa por CORS—, solo evita que otro sitio los use desde su front.
+   */
+  PUBLIC_CORS_ORIGINS: z.string().default("*"),
+  /**
+   * 007 — Microsoft Graph para el correo transaccional a alumnos
+   * (constitución 1.3.0, principio II). Sin estas cuatro, la app arranca
+   * igual y las acciones de correo responden "no configurado" en vez de
+   * romperse. El buzón `M365_SENDER` debe estar acotado por
+   * ApplicationAccessPolicy en Exchange Online (ver src/lib/m365/client.ts).
+   */
+  M365_TENANT_ID: z.string().optional(),
+  M365_CLIENT_ID: z.string().optional(),
+  M365_CLIENT_SECRET: z.string().optional(),
+  M365_SENDER: z.string().email().optional(),
+  /** Copia oculta de cada correo enviado, para registro del equipo. */
+  M365_BCC: z.string().email().optional(),
+  /** 007 — Envíos del formulario público permitidos por IP y ventana. */
+  PUBLIC_FORM_RATE_LIMIT: z.coerce.number().int().min(1).default(5),
+  PUBLIC_FORM_RATE_WINDOW_MS: z.coerce.number().int().min(1000).default(600_000),
   NODE_ENV: z.string().default("development"),
 });
 

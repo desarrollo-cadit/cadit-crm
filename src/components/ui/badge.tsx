@@ -6,12 +6,18 @@ const badgeVariants = cva(
   {
     variants: {
       variant: {
-        default: "border-transparent bg-brand text-white",
+        default: "border-transparent bg-brand text-on-accent",
         secondary: "border bg-secondary text-text-2",
         outline: "text-foreground",
-        success: "border-[#d8e8dd] bg-[#eff7f1] text-[#3f6b52]",
-        warning: "border-[#ece2cf] bg-[#faf7f0] text-[#8a6d3b]",
-        destructive: "border-[#ecd4d2] bg-[#faf1f0] text-[#a2504c]",
+        /*
+          020 (T004/T011) — Eran seis hex escritos a mano. En un primitivo eso
+          es peor que en una pantalla: el badge se repite en toda la cursada y
+          era lo único que no respondía ni al tema ni a la corrección de
+          contraste. Ahora sale de tokens, y el test de contraste los alcanza.
+        */
+        success: "border-success-border bg-success-soft text-success",
+        warning: "border-warning-border bg-warning-soft text-warning",
+        destructive: "border-danger-border bg-danger-soft text-danger",
       },
     },
     defaultVariants: { variant: "default" },

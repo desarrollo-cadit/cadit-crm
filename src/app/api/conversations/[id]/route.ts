@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { apiError, parseBody, withAuth } from "@/lib/api";
+import { apiError, parseBody, requireCapability } from "@/lib/api";
 import { publish } from "@/server/events/bus";
 import { serializeConversation, getConversation, updateConversation } from "@/server/inbox/queries";
 
@@ -13,7 +13,9 @@ const patchSchema = z.object({
 
 type Params = { params: Promise<{ id: string }> };
 
-export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
+export const PATCH = requireCapability(
+  "inbox.responder",
+  async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const body = await parseBody(req, patchSchema);
   if (!body.ok) return body.response;

@@ -45,6 +45,24 @@ function createAuth() {
   return betterAuth({
     baseURL: env.APP_BASE_URL,
     secret: env.BETTER_AUTH_SECRET,
+    /**
+     * Better Auth valida el header `Origin` contra `baseURL` y responde 403
+     * si no coinciden. En desarrollo eso muerde por una razón tonta: si el
+     * 3000 está ocupado, Next arranca en 3001 y el login deja de funcionar
+     * con un "Invalid origin" que no dice nada sobre puertos. Se habilita
+     * localhost en cualquier puerto SOLO fuera de producción.
+     *
+     * En producción la lista queda vacía a propósito: el único origen válido
+     * es `APP_BASE_URL`, que es justamente la protección que hace que un
+     * sitio ajeno no pueda postear al login de esta instancia.
+     */
+    trustedOrigins: (request?: Request) => {
+      if (env.NODE_ENV === "production") return [];
+      const origin = request?.headers.get("origin");
+      if (!origin) return [];
+      // Solo localhost/127.0.0.1 en cualquier puerto; nada más entra.
+      return /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin) ? [origin] : [];
+    },
     database: drizzleAdapter(getDb(), {
       provider: "pg",
       schema: {

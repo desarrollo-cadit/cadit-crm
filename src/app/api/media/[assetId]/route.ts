@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { apiError, withAuth } from "@/lib/api";
+import { apiError, requireCapability } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import {
@@ -17,7 +17,9 @@ type Params = { params: Promise<{ assetId: string }> };
  * filtra existencia entre tenants). Si el archivo aún no se descargó,
  * intenta on-demand contra Graph; si Meta ya lo expiró → 410.
  */
-export const GET = withAuth(async (session, _req: Request, ctx: Params) => {
+export const GET = requireCapability(
+  "inbox.ver",
+  async (session, _req: Request, ctx: Params) => {
   const { assetId } = await ctx.params;
   if (!/^[\w.-]{1,64}$/.test(assetId)) {
     return apiError(422, "invalid", "assetId inválido");

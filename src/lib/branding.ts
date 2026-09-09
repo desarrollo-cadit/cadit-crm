@@ -17,7 +17,7 @@ export type Branding = {
   accent: string; // hex del acento base elegido
 };
 
-export const DEFAULT_BRANDING: Branding = { name: "Vocero", accent: "#3f5972" };
+export const DEFAULT_BRANDING: Branding = { name: "CadIT", accent: "#3f5972" };
 
 /** Presets del handoff (valores exactos). */
 export const ACCENT_PRESETS: Record<string, { label: string; set: AccentSet }> = {
@@ -81,33 +81,126 @@ function luminance({ r, g, b }: Rgb): number {
 }
 
 /**
- * Set completo para cualquier acento: preset exacto si existe; si no, se
- * deriva. Un base demasiado claro (texto blanco ilegible encima) se oscurece
- * hasta contraste ≥ 3:1 con blanco.
+ * 020 (T002) — Contraste WCAG entre dos colores, de 1 a 21.
+ *
+ * Se exporta para que el test de contraste use **esta** fórmula y no una copia:
+ * dos implementaciones de lo mismo se separan, y el día que se separen el test
+ * va a decir que todo está bien mientras la pantalla está mal.
+ *
+ * El umbral no es uno solo: **4.5:1** para texto normal, **3:1** para texto
+ * grande y para elementos no textuales (íconos, bordes de foco).
  */
-export function resolveAccentSet(accentHex: string): AccentSet {
-  const preset = ACCENT_PRESETS[accentHex.toLowerCase()];
-  if (preset) return preset.set;
-  if (!isValidHex(accentHex)) return ACCENT_PRESETS["#3f5972"]!.set;
+export function contrastRatio(a: string, b: string): number {
+  const la = luminance(hexToRgb(a));
+  const lb = luminance(hexToRgb(b));
+  const [hi, lo] = la > lb ? [la, lb] : [lb, la];
+  return (hi + 0.05) / (lo + 0.05);
+}
 
-  let base = hexToRgb(accentHex.toLowerCase());
-  // contraste con blanco = (1.05) / (L + 0.05); exigir ≥ 3
-  while (1.05 / (luminance(base) + 0.05) < 3 && luminance(base) > 0.005) {
-    base = mix(base, BLACK, 0.12);
+/* ============================================================
+ * 020 (T008, FR-003) — La derivación, abierta al tema
+ * ============================================================ */
+
+export type ThemeName = "light" | "dark";
+
+/**
+ * El fondo de cada tema. **Es la única fuente de verdad del color de fondo**:
+ * `globals.css` declara el mismo valor y `tests/unit/tema-oscuro.test.ts`
+ * falla si se separan. Dos definiciones del mismo color se separan siempre, y
+ * cuando se separan la derivación calcula contra un fondo que ya no existe.
+ */
+export const THEME_SURFACES: Record<ThemeName, { bg: string }> = {
+  light: { bg: "#ffffff" },
+  dark: { bg: "#141417" },
+};
+
+/**
+ * Aleja `color` del fondo hasta alcanzar el contraste pedido.
+ *
+ * Dicho así vale para los dos temas, y esa es la corrección de fondo de esta
+ * fase: la versión vieja decía "oscurecer hasta contrastar con blanco", que en
+ * tema oscuro es exactamente lo contrario de lo que hay que hacer. Sobre fondo
+ * claro, alejarse es oscurecer; sobre fondo oscuro, aclarar.
+ */
+function ensureContrast(color: Rgb, bg: Rgb, target: number): Rgb {
+  const away = luminance(bg) > 0.5 ? BLACK : WHITE;
+  let c = color;
+  // Tope de vueltas: sin él, un objetivo imposible cuelga el render.
+  for (let i = 0; i < 60 && contrast(c, bg) < target; i++) {
+    c = mix(c, away, 0.08);
   }
+  return c;
+}
+
+function contrast(a: Rgb, b: Rgb): number {
+  const la = luminance(a);
+  const lb = luminance(b);
+  const [hi, lo] = la > lb ? [la, lb] : [lb, la];
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+/**
+ * Set completo para cualquier acento y tema.
+ *
+ * En **claro** los presets del handoff de la 002 se devuelven tal cual: son
+ * valores que alguien eligió a mano, y que esta fase no se los pise es lo que
+ * evita cambiarle el color a una organización sin que nadie lo pidiera.
+ *
+ * En **oscuro** no hay presets —el handoff no tenía tema oscuro— así que todo
+ * se deriva.
+ */
+export function resolveAccentSet(
+  accentHex: string,
+  theme: ThemeName = "light"
+): AccentSet {
+  /**
+   * La normalización va ANTES de buscar el preset, no después: el acento por
+   * defecto ES un preset, así que un hex inválido tiene que devolver sus
+   * valores exactos del handoff y no una derivación parecida.
+   */
+  const hex = isValidHex(accentHex) ? accentHex.toLowerCase() : DEFAULT_BRANDING.accent;
+
+  const preset = ACCENT_PRESETS[hex];
+  if (preset && theme === "light") return preset.set;
+
+  const bg = hexToRgb(THEME_SURFACES[theme].bg);
+  /** Hacia el fondo: es lo que aclara en tema claro y oscurece en tema oscuro. */
+  const haciaElFondo = bg;
+  /** Al frente: lo contrario del fondo. */
+  const alFrente = luminance(bg) > 0.5 ? BLACK : WHITE;
+
+  const base = ensureContrast(hexToRgb(hex), bg, 3);
+  const tint = mix(base, haciaElFondo, 0.94);
+
   return {
     accent: rgbToHex(base),
-    hover: rgbToHex(mix(base, BLACK, 0.16)),
-    soft: rgbToHex(mix(base, WHITE, 0.82)),
-    tint: rgbToHex(mix(base, WHITE, 0.94)),
-    text: rgbToHex(mix(base, BLACK, 0.28)),
+    hover: rgbToHex(mix(base, alFrente, 0.16)),
+    soft: rgbToHex(mix(base, haciaElFondo, 0.82)),
+    tint: rgbToHex(tint),
+    /**
+     * `text` va ENCIMA de `tint` (chips, badges de marca), así que su contraste
+     * se mide contra `tint` y no contra el fondo de la página. Antes no había
+     * ninguna garantía: los cuatro presets pasaban por suerte, no por
+     * construcción.
+     */
+    text: rgbToHex(ensureContrast(mix(base, alFrente, 0.28), tint, 4.5)),
   };
 }
 
-/** CSS de variables para inyectar en el <head> (SSR, sin flash). */
+/**
+ * CSS de variables para inyectar en el `<head>` (SSR, sin flash).
+ *
+ * Emite los DOS juegos: el claro en `:root` y el oscuro bajo
+ * `[data-theme="dark"]`. Que viajen juntos es lo que permite cambiar de tema
+ * sin volver al servidor.
+ */
 export function accentCssVariables(accentHex: string): string {
-  const s = resolveAccentSet(accentHex);
-  return `:root{--accent:${s.accent};--accent-hover:${s.hover};--accent-soft:${s.soft};--accent-tint:${s.tint};--accent-text:${s.text};}`;
+  const bloque = (s: AccentSet) =>
+    `--accent:${s.accent};--accent-hover:${s.hover};--accent-soft:${s.soft};--accent-tint:${s.tint};--accent-text:${s.text};`;
+  return (
+    `:root{${bloque(resolveAccentSet(accentHex, "light"))}}` +
+    `[data-theme="dark"]{${bloque(resolveAccentSet(accentHex, "dark"))}}`
+  );
 }
 
 export function normalizeBranding(input: Partial<Branding> | null): Branding {

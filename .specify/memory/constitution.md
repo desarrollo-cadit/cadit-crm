@@ -1,10 +1,21 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Versión: 1.1.0 (plantilla starter) → 1.2.0
+Versión: 1.2.0 → 1.3.0
 
-Cambios:
-  - Título y descripción del producto: Vocero CRM (CRM de WhatsApp con agente de
+Cambios (1.3.0, 2026-08-17):
+  - Principio II: se AGREGA Microsoft 365 / Microsoft Graph como tercera
+    dependencia de runtime permitida, para correo transaccional a alumnos
+    (términos de licencia ATC y bienvenida a la cohorte), tras el adaptador
+    `src/lib/m365`. Se elimina "servicios de email" de la lista de prohibidos
+    y se suma la credencial de M365 a los requisitos del instalador. Decisión
+    del dueño del producto; se documenta el requisito de acotar el buzón con
+    ApplicationAccessPolicy.
+  Bump: MINOR (1.2.0 → 1.3.0) — amplía la lista cerrada del Principio II sin
+  redefinir principios existentes.
+
+Cambios (1.2.0):
+  - Título y descripción del producto: CadIT CRM (CRM de WhatsApp con agente de
     IA, open source MIT, self-hosted, gratuito; una instancia = un negocio).
   - Principio II "Soberanía / Self-Hosted" → ENDURECIDO: se elimina la excepción
     de almacenamiento de objetos S3-compatible; lista cerrada de dependencias
@@ -30,9 +41,9 @@ Plantillas dependientes:
 TODOs diferidos: ninguno.
 -->
 
-# Vocero CRM Constitution
+# CadIT CRM Constitution
 
-Vocero CRM es un CRM de WhatsApp con agente de IA, open source (MIT), self-hosted y
+CadIT CRM es un CRM de WhatsApp con agente de IA, open source (MIT), self-hosted y
 gratuito, diseñado para que las agencias de IA lo desplieguen en el VPS de sus
 clientes: una instancia = un negocio. Esta constitución define las reglas no
 negociables del producto. Aplica a todas las fases del flujo de trabajo (specify,
@@ -59,7 +70,7 @@ fallo catastrófico e irreversible; prevenirlo siempre cuesta menos que remediar
 
 ### II. Soberanía / Self-Hosted (ENDURECIDO)
 
-Vocero CRM opera completo sobre la infraestructura del operador. La lista de
+CadIT CRM opera completo sobre la infraestructura del operador. La lista de
 dependencias externas en runtime es CERRADA:
 
 - Dependencias externas permitidas en runtime, ÚNICAMENTE:
@@ -68,11 +79,19 @@ dependencias externas en runtime es CERRADA:
   2. **El proveedor LLM**, opcional, accedido EXCLUSIVAMENTE a través del adaptador
      OpenRouter-compatible (`OPENROUTER_BASE_URL` / `OPENROUTER_MODEL`). Sin token
      configurado, el producto funciona como CRM sin agente de IA.
-- **PROHIBIDO en v1**: almacenamiento de objetos externo (S3/R2), servicios de
-  email, Stripe u otro billing, y servicios de Google. Cualquier feature que los
-  requiera queda fuera del alcance de v1.
+  3. **Microsoft 365 / Microsoft Graph**, para el envío de correo transaccional
+     a los alumnos (términos de licencia ATC, bienvenida a la cohorte), accedido
+     EXCLUSIVAMENTE a través del adaptador `src/lib/m365`. Autenticación por
+     client credentials contra Entra ID; el buzón emisor DEBE estar acotado con
+     una `ApplicationAccessPolicy` de Exchange Online, porque el permiso de
+     aplicación `Mail.Send` sin acotar habilita enviar como CUALQUIER buzón del
+     tenant.
+- **PROHIBIDO en v1**: almacenamiento de objetos externo (S3/R2), Stripe u otro
+  billing, y servicios de Google. Cualquier feature que los requiera queda fuera
+  del alcance de v1.
 - El instalador solo necesita: un VPS con Coolify o Docker, un dominio, credenciales
-  de Meta y (opcional) un token de OpenRouter. Nada más.
+  de Meta, (opcional) un token de OpenRouter y las credenciales de M365 para el
+  envío de correo. Nada más.
 - Las funciones core —autenticación y base de datos— corren self-hosted (Better
   Auth + PostgreSQL propios de la instancia).
 - Las integraciones externas permitidas se aíslan tras adaptadores dedicados
@@ -85,7 +104,7 @@ fuga de soberanía que rompe la promesa "gratis y tuyo".
 ### III. Multi-Tenancy Real
 
 El sistema sirve a organizaciones independientes desde una sola instancia lógica.
-En Vocero cada instancia sirve a UN negocio, pero el modelo de datos es
+En CadIT cada instancia sirve a UN negocio, pero el modelo de datos es
 multi-tenant real (organización del plugin de auth) para mantener el aislamiento
 exigible y no cerrar la puerta a evoluciones.
 
@@ -260,4 +279,4 @@ práctica, convención o preferencia; ante un conflicto, gana la constitución.
 - **Propagación**: al enmendar la constitución se revisan y, si procede, se actualizan
   las plantillas dependientes (plan, spec, tasks).
 
-**Version**: 1.2.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-07-09
+**Version**: 1.3.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-08-17
