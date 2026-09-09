@@ -662,7 +662,15 @@ describe("revocarDispensa — DV-004", () => {
  * ============================================================ */
 
 const SRC = path.join(process.cwd(), "src");
-const leer = (rel: string) => readFileSync(path.join(SRC, rel), "utf8");
+/**
+ * Los guardas estructurales leen el fuente y buscan texto que ATRAVIESA varias
+ * líneas, así que el final de línea es parte de la comparación. En Windows git
+ * entrega los archivos en CRLF y en el worktree de origen estaban en LF: el
+ * mismo test pasaba en un checkout y fallaba en el otro, hablando de un
+ * problema que no existe. Se normaliza al leer, una vez, para todos.
+ */
+const leer = (rel: string) =>
+  readFileSync(path.join(SRC, rel), "utf8").replace(/\r\n/g, "\n");
 
 describe("guardas estructurales de la fase 5", () => {
   /**
