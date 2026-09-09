@@ -110,6 +110,12 @@ export function CourseForm({
   // 007 — un curso nuevo se publica por defecto; los talleres a medida y las
   // capacitaciones in-company se destildan para que no salgan en la web.
   const [published, setPublished] = useState(initial?.published ?? true);
+  // 028 fase 5 — un curso nuevo certifica por defecto; se destilda para las
+  // inducciones y los módulos introductorios que forman parte del recorrido
+  // sin entregar certificado propio.
+  const [grantsCertificate, setGrantsCertificate] = useState(
+    initial?.grantsCertificate ?? true
+  );
   /** 009/010 — default de asistencia mínima para las cohortes de este curso. */
   const [minAttendancePct, setMinAttendancePct] = useState(
     initial?.minAttendancePct?.toString() ?? ""
@@ -175,6 +181,7 @@ export function CourseForm({
       learningObjectives: textToTopics(objectives),
       targetAudience: targetAudience.trim() || null,
       published,
+      grantsCertificate,
       minAttendancePct: minAttendancePct.trim() ? Number(minAttendancePct) : null,
       // Omitir `modules` deja el temario como está; mandarlo lo reemplaza.
       ...(modulesLoaded
@@ -257,6 +264,23 @@ export function CourseForm({
                 el curso sigue existiendo en el CRM, con sus cohortes e
                 inscripciones, pero no aparece en tu sitio ni recibe leads del
                 formulario público.
+              </span>
+            </span>
+          </label>
+
+          <label className="flex items-start gap-2.5 rounded-md border p-3">
+            <Checkbox
+              className="mt-0.5"
+              checked={grantsCertificate}
+              onChange={(e) => setGrantsCertificate(e.target.checked)}
+            />
+            <span className="space-y-0.5">
+              <span className="block text-sm font-medium">Entrega certificado</span>
+              <span className="block text-xs text-muted-foreground">
+                Destildalo para las inducciones y los módulos introductorios de
+                una especialización: se cursan, se aprueban y su aprobación
+                sigue contando para el certificado general del programa, pero
+                no emiten uno propio.
               </span>
             </span>
           </label>

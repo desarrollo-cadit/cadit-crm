@@ -96,6 +96,13 @@ export type CourseDto = {
   syllabusUrl: string | null;
   /** 007 — si el curso sale en el catálogo público de la web. */
   published: boolean;
+  /**
+   * 028 fase 5 — si el curso ENTREGA certificado. Gobierna la emisión y nada
+   * más: un curso que no certifica se cursa y se aprueba igual, y su
+   * aprobación sigue contando para el certificado general de una
+   * especialización.
+   */
+  grantsCertificate: boolean;
   /** 009/010 — asistencia mínima por defecto de sus cohortes. */
   minAttendancePct: number | null;
 };

@@ -112,6 +112,22 @@ determinan el modelo de datos, y por eso van antes que él.
 
 1. **Un certificado POR MÓDULO.** Además, el certificado **general** de la
    especialización se entrega sólo si aprobó **todos** los módulos.
+
+   > **Regla agregada por el dueño el 2026-09-09**, en la fase 5: el
+   > certificado de un módulo se emite **sólo si el CURSO de ese módulo otorga
+   > certificado**. No todo producto de la academia entrega uno —hay
+   > inducciones y módulos introductorios que forman parte del recorrido sin
+   > certificar—. Un curso **sin módulos** (el ejemplo que dio: AutoCAD) sigue
+   > con un único certificado del curso, que es el comportamiento del ciclo
+   > 010 y no se toca.
+   >
+   > Y la pregunta que abría esa regla, **respondida por el dueño el mismo
+   > día**: si un módulo no otorga certificado, **su aprobación igual cuenta
+   > para el general**. Aprobar y certificar son cosas distintas. La bandera
+   > gobierna la **emisión** y nada más: no entra en `approvalState`, ni en
+   > `moduleApprovalState`, ni en `programApprovalState`. Excluir del cómputo
+   > al módulo no certificable le entregaría el general a alguien que reprobó
+   > un módulo del programa.
 2. **Reprobar un módulo NO bloquea.** La persona sigue cursando los demás.
    Recibe los certificados de los módulos que aprobó, y no recibe el general.
 3. **Baja voluntaria de un módulo** —falta de tiempo, enfermedad; ya les
@@ -468,6 +484,11 @@ en `aprobado`.
   que es la que aprobó.
 - Emitir dos veces devuelve el mismo certificado, como en el ciclo 010: la
   unicidad es la idempotencia (constitución IV).
+- El módulo 2 es una **inducción que no otorga certificado** → lo curso, lo
+  apruebo, y **no** recibo un certificado suyo. Pero su aprobación cuenta: con
+  los otros tres aprobados, el general se emite igual (regla del dueño,
+  2026-09-09). Si lo **reprobara**, el general **no** se emite — no otorgar
+  certificado no lo saca del programa.
 
 ### US6 — Habilitar a alguien que no llegó a la asistencia (Priority: P1)
 
@@ -629,10 +650,40 @@ y se resuelve con datos, no inventando la tabla por las dudas.
 - **FR-019**: El certificado **de módulo** se emite contra la inscripción del
   módulo. `certificate.enrollment_id` es UNIQUE, así que la unicidad y la
   idempotencia ya están garantizadas por el esquema (constitución IV).
+- **FR-019b** *(agregado en la fase 5, regla del dueño de 2026-09-09)*: el
+  certificado se emite **sólo si el curso lo otorga**. `course` DEBE llevar
+  una bandera —`grants_certificate`, `not null default true`, migración
+  0038— para que los 41 cursos ya cargados sigan emitiendo exactamente como
+  hoy (FR-032). La condición vive en el servidor, junto a las otras dos.
+
+  Vale **también para la emisión histórica** (010, DV-004): esa excepción
+  saltea notas y asistencia —lo que no se pudo verificar—, no el catálogo.
+  Lo que la bandera dice es qué vende la academia, y de eso no hay cohorte
+  vieja que exima.
+
+  Y NO vale hacia atrás: un certificado **ya emitido** sigue siendo válido
+  aunque la academia deje de entregar el de ese curso. Lo emitido no se
+  desemite por un cambio de catálogo, así que la idempotencia de FR-007 se
+  comprueba **antes** que la bandera.
+- **FR-019c**: la bandera gobierna la **emisión y nada más**. Está prohibido
+  que entre en `approvalState()`, en `moduleApprovalState()` o en
+  `programApprovalState()`: un módulo que no otorga certificado se cursa, se
+  aprueba, y **su aprobación cuenta para el general** (respuesta del dueño,
+  2026-09-09). Hay un test estructural que falla si `grading.ts` la nombra.
 - **FR-020**: El certificado **general** se emite contra la inscripción
   **madre**, y sólo si **todas** sus hijas están en `aprobado` (regla 1). La
   condición vive en el servidor, no en la pantalla: no se puede emitir
   llamando al endpoint directamente.
+
+  Quién es "madre" se responde por la **presencia de hijas** (FR-033), nunca
+  por una bandera: una inscripción sin hijas cae al camino de siempre.
+
+  El general queda con `attendance_pct` en **NULL**, y no con un promedio: no
+  existe "la asistencia de la especialización" —cada módulo tiene su
+  cronograma y su propio mínimo (regla 5, DV-002)—, y congelar un número que
+  no se calcula en ningún otro lado sería congelar algo que después nadie
+  puede reproducir. La asistencia real vive, módulo por módulo, en el
+  certificado de cada uno.
 - **FR-021**: Cuando alguien recursa y aprueba, el certificado de ese módulo
   se emite contra la inscripción **de la recursada** —la que aprobó—, y el
   intento reprobado anterior se conserva. Borrarlo perdería la evidencia de
@@ -665,6 +716,14 @@ y se resuelve con datos, no inventando la tabla por las dudas.
   **junto a** ese número. Está prohibido inflar el porcentaje para que la
   emisión "cierre": el hecho es que faltó y que alguien lo habilitó igual, y
   las dos mitades tienen que quedar escritas.
+
+  **Cómo aterrizó en la fase 5**: `CertificateDto` gana `dispensada`, resuelto
+  con la MISMA `dispensaVigente()` que usa la aprobación, y viaja al lado de
+  `attendancePct` tanto al emitir como al anular. El **diploma impreso no
+  cambia**: hoy no imprime asistencia (ciclo 010, DV-002), así que agregarle
+  "aprobado con dispensa" sería rediseñar lo que el alumno tiene en la mano,
+  y eso es una decisión de producto que esta fase no toma. La marca se muestra
+  donde ya se muestra el estado: la grilla del staff y el legajo.
 
 ### El vocabulario
 
@@ -750,7 +809,9 @@ nombre y tamaño para que nadie lo descubra a mitad de camino.
   impide, lo fija un test.
 - **FR-038**: DEBE haber un test del certificado general: no se emite con una
   hija en `pendiente` ni con una en `reprobado`, y se emite —una sola vez— con
-  todas en `aprobado` (FR-020).
+  todas en `aprobado` (FR-020). Y, desde la fase 5, dos más sobre la bandera
+  del curso: un módulo **no certificable reprobado** sigue impidiendo el
+  general, y uno **no certificable aprobado** deja emitirlo (FR-019c).
 - **FR-039**: DEBE haber un test de la dispensa sobre `approvalState()`: con
   asistencia por debajo del mínimo y dispensa vigente el estado es `aprobado`
   y el motivo aparece en `approvalReasons` con autor y fecha; **con una
