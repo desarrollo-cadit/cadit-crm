@@ -2,29 +2,19 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { SETTINGS_TABS } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 
 /**
- * 012 (T029) — Cada pestaña declara la capacidad que exige.
- *
- * `accesos.gestionar` y `configuracion.editar` son cosas distintas: alguien
- * puede dar de alta cuentas sin poder tocar la conexión de WhatsApp. Por eso
- * Equipo pide una y el resto la otra.
+ * 012 (T029) — Cada pestaña declara la capacidad que exige, y la lista vive en
+ * `@/lib/nav` porque no es sólo de esta barra: el índice de la sección la usa
+ * para decidir a dónde entrar, y un test la usa para exigir que cada pantalla
+ * declare su gate. Tenerla acá adentro fue lo que dejó al índice mandando a
+ * todo el mundo a WhatsApp.
  */
-const TABS = [
-  { href: "/settings/whatsapp", label: "WhatsApp", capability: "configuracion.editar" },
-  { href: "/settings/branding", label: "Marca", capability: "configuracion.editar" },
-  { href: "/settings/templates", label: "Plantillas", capability: "configuracion.editar" },
-  { href: "/settings/forms", label: "Formularios", capability: "configuracion.editar" },
-  { href: "/settings/team", label: "Equipo", capability: "accesos.gestionar" },
-  // 012 (T020) — Va después de Equipo a propósito: primero se ve QUIÉN está,
-  // y después qué puede hacer cada rol.
-  { href: "/settings/roles", label: "Roles", capability: "configuracion.editar" },
-] as const;
-
 export function SettingsNav({ capabilities }: { capabilities: readonly string[] }) {
   const pathname = usePathname();
-  const tabs = TABS.filter((t) => capabilities.includes(t.capability));
+  const tabs = SETTINGS_TABS.filter((t) => capabilities.includes(t.capability));
   return (
     <nav className="w-44 shrink-0 space-y-1 border-r p-3">
       {tabs.map((t) => (

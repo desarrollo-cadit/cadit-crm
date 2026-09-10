@@ -191,3 +191,50 @@ export const ITEM_GUIA_PORTAL = {
 
 export type HrefAlumno = (typeof ITEMS_ALUMNO)[number]["href"];
 export type HrefProfesor = (typeof ITEMS_PROFESOR)[number]["href"];
+
+/* ============================================================
+ * Configuración — las pestañas y a dónde entra cada quien
+ * ============================================================ */
+
+/**
+ * 012 (T029) — Cada pestaña de Configuración declara la capacidad que exige.
+ *
+ * `accesos.gestionar` y `configuracion.editar` son cosas DISTINTAS: alguien
+ * puede dar de alta cuentas sin poder tocar la conexión de WhatsApp. Con los
+ * roles reales de la academia eso no es teórico — Coordinación tiene la
+ * primera y no la segunda.
+ *
+ * La lista vive acá, y no dentro del componente de la barra, porque hay tres
+ * lugares que necesitan la MISMA respuesta: la barra que dibuja las pestañas,
+ * el índice que decide a dónde entrar, y el test que exige que cada pantalla
+ * declare su gate. Tres listas paralelas se separan en cuanto alguien agrega
+ * una pestaña en una sola: así nació el bug que esto viene a cerrar.
+ */
+export const SETTINGS_TABS = [
+  { href: "/settings/whatsapp", label: "WhatsApp", capability: "configuracion.editar" },
+  { href: "/settings/branding", label: "Marca", capability: "configuracion.editar" },
+  { href: "/settings/templates", label: "Plantillas", capability: "configuracion.editar" },
+  { href: "/settings/forms", label: "Formularios", capability: "configuracion.editar" },
+  { href: "/settings/team", label: "Equipo", capability: "accesos.gestionar" },
+  // 012 (T020) — Va después de Equipo a propósito: primero se ve QUIÉN está,
+  // y después qué puede hacer cada rol.
+  { href: "/settings/roles", label: "Roles", capability: "configuracion.editar" },
+] as const;
+
+/**
+ * La primera pestaña de Configuración que esta sesión puede abrir de verdad.
+ *
+ * `null` = ninguna. Y `null` NO es "mandala a la primera igual": devolver una
+ * pestaña que la persona no puede usar es mandarla a un 403 con cara de
+ * pantalla rota. Quien llama decide qué hacer con el `null` — hoy, volver al
+ * inicio.
+ *
+ * El orden lo manda ESTA lista y no el orden en que lleguen las capacidades:
+ * quién entra primero a WhatsApp y quién a Equipo es una decisión de producto,
+ * no un accidente del arreglo que devuelva la sesión.
+ */
+export function primerDestinoDeSettings(
+  capabilities: readonly string[]
+): string | null {
+  return SETTINGS_TABS.find((t) => capabilities.includes(t.capability))?.href ?? null;
+}
