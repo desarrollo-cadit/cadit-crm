@@ -497,7 +497,14 @@ export type CreateCohortResult =
 async function validateCohortForeignKeys(
   db: DbOrTx,
   organizationId: string,
-  input: { courseId?: string; teacherId?: string | null; softwareIds?: string[] }
+  input: {
+    courseId?: string;
+    teacherId?: string | null;
+    softwareIds?: string[];
+    virtualRoomId?: string | null;
+  },
+  /** La cohorte que se edita; ausente en el alta. */
+  cohortId?: string
 ): Promise<string | null> {
   if (input.courseId !== undefined) {
     const rows = await db
@@ -527,6 +534,46 @@ async function validateCohortForeignKeys(
         )
       );
     if (rows.length !== new Set(input.softwareIds).size) return "Software inexistente";
+  }
+  /**
+   * 023 (FR-009) — Un aula dada de baja no se asigna a nada NUEVO, y lo que ya
+   * la tenía la conserva. El selector del front la oculta; esto es lo que lo
+   * prohíbe cuando el id llega por la API.
+   *
+   * "Nuevo" se decide contra la cohorte, no contra el pedido: el formulario de
+   * edición reenvía todos los campos, el aula incluida, y una cohorte que
+   * tenía el aula antes de la baja tiene que poder cambiar su costo sin que el
+   * aula que conserva la bloquee. Por eso la cohorte actual se consulta SOLO
+   * cuando el aula está de baja: es el único caso en que la respuesta cambia.
+   */
+  if (input.virtualRoomId) {
+    const rooms = await db
+      .select({ id: schema.virtualRoom.id, archivedAt: schema.virtualRoom.archivedAt })
+      .from(schema.virtualRoom)
+      .where(
+        scoped(
+          schema.virtualRoom.organizationId,
+          organizationId,
+          eq(schema.virtualRoom.id, input.virtualRoomId)
+        )
+      )
+      .limit(1);
+    const room = rooms[0];
+    if (!room) return "Aula inexistente";
+    if (room.archivedAt) {
+      const actual = cohortId
+        ? await db
+            .select({ virtualRoomId: schema.cohort.virtualRoomId })
+            .from(schema.cohort)
+            .where(
+              scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, cohortId))
+            )
+            .limit(1)
+        : [];
+      if (actual[0]?.virtualRoomId !== input.virtualRoomId) {
+        return "El aula está dada de baja: no se puede asignar";
+      }
+    }
   }
   return null;
 }
@@ -624,7 +671,7 @@ export async function updateCohort(
 ): Promise<UpdateCohortResult> {
   const db = getDb();
 
-  const fkError = await validateCohortForeignKeys(db, organizationId, input);
+  const fkError = await validateCohortForeignKeys(db, organizationId, input, cohortId);
   if (fkError) return { ok: false, status: 422, code: "invalid_body", message: fkError };
 
   // 028 (FR-003/FR-004) — sólo si el pedido TOCA el padre. Un PATCH que no lo

@@ -256,6 +256,103 @@ describe("courses: createCourse / createCohort (004)", () => {
     ]);
   });
 
+  /**
+   * 023 (FR-009) — Un aula dada de baja NO se asigna a nada nuevo, y lo que ya
+   * la tenía la conserva. El selector del front la oculta; esto es lo que lo
+   * prohíbe cuando alguien manda el id por la API.
+   */
+  describe("023 FR-009 — el aula dada de baja", () => {
+    const ARCHIVADA = new Date("2026-09-01T00:00:00.000Z");
+
+    it("createCohort rechaza un aula dada de baja con 422 invalid_body", async () => {
+      pushCourseExists();
+      selectQueue.push([{ id: "vr_a", archivedAt: ARCHIVADA }]); // aula
+      const { createCohort } = await import("@/server/courses");
+      const result = await createCohort("org_1", {
+        courseId: "crs_revit",
+        startDate: new Date("2026-10-01"),
+        virtualRoomId: "vr_a",
+      });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error("no debería haber creado");
+      expect(result.status).toBe(422);
+      expect(result.code).toBe("invalid_body");
+      expect(inserts).toHaveLength(0);
+    });
+
+    it("createCohort rechaza un aula que no pertenece a la organización", async () => {
+      pushCourseExists();
+      selectQueue.push([]); // aula: ninguna fila
+      const { createCohort } = await import("@/server/courses");
+      const result = await createCohort("org_1", {
+        courseId: "crs_revit",
+        startDate: new Date("2026-10-01"),
+        virtualRoomId: "vr_de_otra_org",
+      });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error("no debería haber creado");
+      expect(result.code).toBe("invalid_body");
+      expect(inserts).toHaveLength(0);
+    });
+
+    it("createCohort acepta un aula activa", async () => {
+      pushCourseExists();
+      selectQueue.push([{ id: "vr_b", archivedAt: null }]);
+      const { createCohort } = await import("@/server/courses");
+      const result = await createCohort("org_1", {
+        courseId: "crs_revit",
+        startDate: new Date("2026-10-01"),
+        virtualRoomId: "vr_b",
+      });
+
+      expect(result.ok).toBe(true);
+      const values = inserts[0]!.values as { virtualRoomId: string | null };
+      expect(values.virtualRoomId).toBe("vr_b");
+    });
+
+    it("updateCohort rechaza CAMBIAR a un aula dada de baja", async () => {
+      selectQueue.push([{ id: "vr_a", archivedAt: ARCHIVADA }]); // aula
+      selectQueue.push([{ virtualRoomId: "vr_b" }]); // la que tiene hoy
+      const { updateCohort } = await import("@/server/courses");
+      const result = await updateCohort("org_1", "coh_1", { virtualRoomId: "vr_a" });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error("no debería haber actualizado");
+      expect(result.status).toBe(422);
+      expect(result.code).toBe("invalid_body");
+      expect(updates).toHaveLength(0);
+    });
+
+    /**
+     * El formulario de edición reenvía TODOS los campos, el aula incluida.
+     * Una cohorte que ya tenía el aula antes de la baja tiene que poder
+     * cambiar su costo sin que el aula que conserva la bloquee.
+     */
+    it("updateCohort deja editar una cohorte que YA tenía el aula antes de la baja", async () => {
+      selectQueue.push([{ id: "vr_a", archivedAt: ARCHIVADA }]); // aula
+      selectQueue.push([{ virtualRoomId: "vr_a" }]); // la que tiene hoy: la misma
+      const { updateCohort } = await import("@/server/courses");
+      const result = await updateCohort("org_1", "coh_1", {
+        cost: 90000,
+        virtualRoomId: "vr_a",
+      });
+
+      expect(result.ok).toBe(true);
+      expect(updates).toHaveLength(1);
+    });
+
+    it("quitar el aula (null) no consulta nada ni falla", async () => {
+      const { updateCohort } = await import("@/server/courses");
+      const result = await updateCohort("org_1", "coh_1", { virtualRoomId: null });
+
+      expect(result.ok).toBe(true);
+      const set = updates[0]!.set as Record<string, unknown>;
+      expect(set.virtualRoomId).toBeNull();
+    });
+  });
+
   it("updateCohort rechaza un courseId que no pertenece a la organización (hallazgo del reviewer)", async () => {
     selectQueue.push([]); // course: ninguna fila
     const { updateCohort } = await import("@/server/courses");

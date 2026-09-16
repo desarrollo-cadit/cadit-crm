@@ -336,6 +336,116 @@ describe("028 — la cursada de una especialización en el portal del alumno", (
     expect(m2.approval).toBe("aprobado");
   });
 
+  /**
+   * DoD-5 / FR-025 / SC-011 — La dispensa llega a la pantalla del ALUMNO.
+   *
+   * El staff veía el módulo `aprobado` con motivo y autor; el alumno veía
+   * `pendiente` y "Todavía no hay asistencia registrada", porque el portal
+   * calculaba con `approvalState()` y nunca leía la dispensa. FR-025 le da al
+   * alumno el motivo, quién la otorgó y cuándo — y nada más.
+   */
+  describe("la dispensa de asistencia en el portal del alumno", () => {
+    const clases = (cohortId: string) =>
+      [1, 2, 3, 4].map((n) => ({
+        id: `cls_${n}`,
+        cohortId,
+        number: n,
+        date: new Date(`2026-05-0${n}T00:00:00.000Z`),
+        canceledAt: null,
+        startTime: null,
+        endTime: null,
+        topic: null,
+        cancelReason: null,
+        meetingUrl: null,
+        recordingUrl: null,
+      }));
+    // Vino a 2 de 4: 50%, contra un mínimo de 80%.
+    const marcas = (enrollmentId: string) =>
+      [1, 2, 3, 4].map((n) => ({
+        enrollmentId,
+        classSessionId: `cls_${n}`,
+        status: n <= 2 ? "presente" : "ausente",
+      }));
+    const dispensa = {
+      attendanceWaiverAt: new Date("2026-08-20T15:00:00.000Z"),
+      attendanceWaiverReason: "Licencia médica documentada",
+      attendanceWaiverRevokedAt: null,
+    };
+
+    function moduloDispensado(over: { passed?: boolean; waiver?: Record<string, unknown> } = {}) {
+      const { madre } = recorridoEbim13();
+      const hija = fila(
+        inscripcion({
+          id: "enr_m1",
+          cohortId: "coh_m1",
+          parentEnrollmentId: "enr_madre",
+          ...(over.waiver ?? dispensa),
+        }),
+        camada({
+          id: "coh_m1",
+          name: "Módulo 1",
+          parentCohortId: "coh_ebim13",
+          position: 1,
+          minAttendancePct: 80,
+        }),
+        "Revit 1",
+        { waiverAuthorName: "Coordinación Uno" }
+      );
+      colaDeOverview([madre, hija], {
+        sesiones: clases("coh_m1"),
+        marcas: marcas("enr_m1"),
+        evaluaciones: [
+          { id: "as_1", cohortId: "coh_m1", name: "Entrega", required: true, createdAt: AHORA },
+        ],
+        resultados: [{ assessmentId: "as_1", enrollmentId: "enr_m1", passed: over.passed ?? true }],
+      });
+    }
+
+    it("con dispensa vigente el módulo figura aprobado, con motivo, autor y fecha", async () => {
+      moduloDispensado();
+      const { studentOverview } = await import("@/server/student-portal");
+      const r = await studentOverview(ORG, CONTACTO, AHORA);
+      const m1 = r!.courses[0]!.modules![0]!;
+
+      expect(m1.attendancePct).toBe(50); // FR-026: el real, no inflado
+      expect(m1.approval).toBe("aprobado");
+      const razon = m1.approvalReasons.join(" | ");
+      expect(razon).toContain("Licencia médica documentada");
+      expect(razon).toContain("Coordinación Uno");
+      expect(razon).toContain("20/8/2026");
+      expect(razon).toContain("50%");
+    });
+
+    it("el alumno no recibe ids ni columnas crudas de la dispensa", async () => {
+      moduloDispensado();
+      const { studentOverview } = await import("@/server/student-portal");
+      const r = await studentOverview(ORG, CONTACTO, AHORA);
+      const json = JSON.stringify(r!.courses[0]!.modules![0]!);
+
+      expect(json).not.toMatch(/attendanceWaiver|waiverAuthor|dispensada/);
+    });
+
+    it("con la evaluación obligatoria desaprobada la dispensa NO lo salva", async () => {
+      moduloDispensado({ passed: false });
+      const { studentOverview } = await import("@/server/student-portal");
+      const r = await studentOverview(ORG, CONTACTO, AHORA);
+
+      expect(r!.courses[0]!.modules![0]!.approval).toBe("reprobado");
+    });
+
+    it("una dispensa REVOCADA no cuenta: vuelve a reprobar por asistencia", async () => {
+      moduloDispensado({
+        waiver: { ...dispensa, attendanceWaiverRevokedAt: new Date("2026-08-25T00:00:00.000Z") },
+      });
+      const { studentOverview } = await import("@/server/student-portal");
+      const r = await studentOverview(ORG, CONTACTO, AHORA);
+      const m1 = r!.courses[0]!.modules![0]!;
+
+      expect(m1.approval).toBe("reprobado");
+      expect(m1.approvalReasons.join(" ")).not.toContain("Licencia médica");
+    });
+  });
+
   /** US5 — el alumno ve QUÉ CERTIFICADOS ya tiene, módulo por módulo. */
   it("el certificado de cada módulo viaja en su módulo", async () => {
     const { madre, modulo } = recorridoEbim13();
@@ -548,6 +658,34 @@ describe("028 — el recorrido de la especialización", () => {
     });
 
     expect(hitos.find((h) => h.key === "modulo-0")!.state).toBe("sin_datos");
+  });
+
+  /**
+   * 028 (FR-026) + 024 — Con dispensa, el hito de asistencia sigue diciendo
+   * el hecho (no alcanzó el mínimo: no se regala un "cumplido"), pero lo
+   * explica: una asistencia insuficiente al lado de una aprobación sin
+   * explicación es lo que SC-011 prohíbe.
+   */
+  it("con dispensa, el hito de asistencia no se regala pero se explica", async () => {
+    const { buildMilestones } = await import("@/server/student-portal");
+    const hitos = buildMilestones({
+      ...base,
+      attendancePct: 50,
+      minAttendancePct: 80,
+      attendanceWaived: true,
+    });
+    const asistencia = hitos.find((h) => h.key === "asistencia")!;
+
+    expect(asistencia.state).not.toBe("cumplido");
+    expect(asistencia.detail).toMatch(/dispensa/i);
+  });
+
+  it("sin dispensa, el hito de asistencia es exactamente el de la 024", async () => {
+    const { buildMilestones } = await import("@/server/student-portal");
+    const hitos = buildMilestones({ ...base, attendancePct: 50, minAttendancePct: 80 });
+    const asistencia = hitos.find((h) => h.key === "asistencia")!;
+
+    expect(asistencia).toMatchObject({ state: "no_alcanzado", detail: "Vas 50%" });
   });
 
   it("un módulo reprobado sí se dice: ahí el dato existe", async () => {

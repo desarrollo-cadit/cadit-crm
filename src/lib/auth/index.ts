@@ -5,7 +5,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { organization } from "better-auth/plugins";
 import { getDb, schema } from "@/lib/db";
 import { getEnv } from "@/lib/env";
-import { AUTH_RATE_LIMIT, checkRateLimit } from "@/lib/rate-limit";
+import { authAttemptAllowed } from "@/lib/rate-limit";
 import {
   onUserCreated,
   resolveActiveOrganizationId,
@@ -37,8 +37,6 @@ export function runInternalSignup<T>(fn: () => Promise<T>): Promise<T> {
 function isInternalSignup(): boolean {
   return internalSignupContext().getStore() === true;
 }
-
-const RATE_LIMITED_PATHS = new Set(["/sign-in/email", "/sign-up/email"]);
 
 function createAuth() {
   const env = getEnv();
@@ -84,17 +82,19 @@ function createAuth() {
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
         // Rate limit por IP en login/registro (FR-062): 10 / 10 min → 429.
-        if (RATE_LIMITED_PATHS.has(ctx.path)) {
-          const ip =
-            ctx.headers?.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-            ctx.headers?.get("x-real-ip") ||
-            "local";
-          const result = checkRateLimit(`${ctx.path}:${ip}`, AUTH_RATE_LIMIT);
-          if (!result.allowed) {
-            throw new APIError("TOO_MANY_REQUESTS", {
-              message: "Demasiados intentos; espera unos minutos",
-            });
-          }
+        // El alta interna (invitaciones, equipo) no gasta el balde público:
+        // ver `authAttemptAllowed` para por qué el discriminador no se puede
+        // falsificar desde afuera.
+        const allowed = authAttemptAllowed({
+          path: ctx.path,
+          request: ctx.request,
+          headers: ctx.headers,
+          internal: isInternalSignup(),
+        });
+        if (!allowed) {
+          throw new APIError("TOO_MANY_REQUESTS", {
+            message: "Demasiados intentos; espera unos minutos",
+          });
         }
         // Registro público cerrado tras la primera organización (FR-060).
         if (ctx.path === "/sign-up/email") {

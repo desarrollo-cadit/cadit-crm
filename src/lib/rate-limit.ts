@@ -47,6 +47,49 @@ export function resetRateLimit(): void {
 /** 10 intentos / 10 minutos por IP en login y registro (FR-062). */
 export const AUTH_RATE_LIMIT = { windowMs: 10 * 60 * 1000, max: 10 };
 
+const AUTH_RATE_LIMITED_PATHS = new Set(["/sign-in/email", "/sign-up/email"]);
+
+/**
+ * FR-062 — ¿Se deja pasar este intento de login/registro? Cuenta el intento
+ * cuando corresponde.
+ *
+ * El límite existe contra la fuerza bruta DESDE AFUERA. Un alta que el
+ * servidor hace por su cuenta —invitar a un alumno o a un profesor al portal,
+ * sumar a alguien al equipo— ya pasó por la compuerta de capacidad del staff
+ * y no es un intento de nadie: contarla hacía que todas las invitaciones
+ * compartieran el balde "local" (no traen headers) y que la undécima de la
+ * tarde fallara con `signup_failed`.
+ *
+ * El discriminador son DOS condiciones, y hacen falta las dos:
+ *
+ * - `request` ausente. El handler HTTP de Better Auth siempre le pasa el
+ *   `Request` al endpoint; una llamada `auth.api.*` desde el servidor no.
+ *   Un cliente externo no tiene forma de llegar sin pasar por el handler, así
+ *   que no lo puede falsificar — a diferencia de un header, que sí.
+ * - `internal`: la marca de `runInternalSignup()`, que solo existe dentro del
+ *   proceso. Así un `auth.api.signInEmail` server-side sin marca sigue
+ *   contando, y un pedido HTTP sigue contando aunque la marca se filtrara.
+ */
+export function authAttemptAllowed(
+  input: {
+    path: string;
+    request: Request | undefined;
+    headers?: Headers;
+    internal: boolean;
+  },
+  now: number = Date.now()
+): boolean {
+  if (!AUTH_RATE_LIMITED_PATHS.has(input.path)) return true;
+  if (input.internal && !input.request) return true;
+
+  const headers = input.headers ?? input.request?.headers;
+  const ip =
+    headers?.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    headers?.get("x-real-ip") ||
+    "local";
+  return checkRateLimit(`${input.path}:${ip}`, AUTH_RATE_LIMIT, now).allowed;
+}
+
 /**
  * 007 — Envíos del formulario público por IP. Se agrega junto con CORS: al
  * habilitar la llamada desde el navegador del sitio comercial, la puerta

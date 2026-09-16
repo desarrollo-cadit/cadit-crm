@@ -11,7 +11,8 @@ import {
   type AttendanceStatus,
 } from "@/server/attendance";
 import {
-  approvalState,
+  dispensaDeInscripcion,
+  moduleApprovalState,
   programApprovalState,
   type ApprovalState,
 } from "@/server/grading";
@@ -78,6 +79,12 @@ type ScopedEnrollment = {
   cohort: typeof schema.cohort.$inferSelect | null;
   course: typeof schema.course.$inferSelect | null;
   teacherName: string | null;
+  /**
+   * 028 (FR-025) — Nombre de quien otorgó la dispensa de esta inscripción.
+   * Es interno del módulo: viaja al alumno SOLO dentro de la frase del motivo
+   * (`approvalReasons`), que es lo que FR-025 le concede — nunca como campo.
+   */
+  waiverAuthorName: string | null;
 };
 
 /**
@@ -97,11 +104,14 @@ async function scopedEnrollments(
       cohort: schema.cohort,
       course: schema.course,
       teacherName: schema.teacher.name,
+      // 028 (FR-025) — el autor de la dispensa, en el mismo viaje.
+      waiverAuthorName: schema.user.name,
     })
     .from(schema.enrollment)
     .leftJoin(schema.cohort, eq(schema.enrollment.cohortId, schema.cohort.id))
     .leftJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
     .leftJoin(schema.teacher, eq(schema.cohort.teacherId, schema.teacher.id))
+    .leftJoin(schema.user, eq(schema.enrollment.attendanceWaiverBy, schema.user.id))
     .where(
       scoped(
         schema.enrollment.organizationId,
@@ -116,6 +126,7 @@ async function scopedEnrollments(
     cohort: r.cohort,
     course: r.course,
     teacherName: r.teacherName,
+    waiverAuthorName: r.waiverAuthorName,
   }));
 }
 
@@ -473,7 +484,7 @@ type CrossData = {
 const DIA_MS = 86_400_000;
 
 function buildCourse(
-  { enrollment, cohort, course, teacherName }: ScopedEnrollment,
+  { enrollment, cohort, course, teacherName, waiverAuthorName }: ScopedEnrollment,
   data: CrossData,
   now: Date = new Date()
 ): StudentCourseDto {
@@ -546,10 +557,26 @@ function buildCourse(
     };
   });
 
-  const { state, reasons } = approvalState(
+  /**
+   * 028 (FR-024/FR-025, SC-011) — La MISMA regla que la planilla del staff y
+   * el legajo: `moduleApprovalState` con la dispensa vigente adentro. Con
+   * `approvalState` a secas el staff leía `aprobado` y el alumno `pendiente`
+   * sobre la misma inscripción. Sin dispensa devuelve exactamente lo de antes
+   * (FR-032).
+   *
+   * Lo que el alumno recibe de la dispensa es la frase del motivo —observación
+   * real, quién, cuándo y por qué—, que es lo que FR-025 concede. Ni el id del
+   * autor ni las columnas crudas salen de esta función.
+   */
+  const dispensa = dispensaDeInscripcion({
+    ...enrollment,
+    attendanceWaiverByName: waiverAuthorName,
+  });
+  const { state, reasons } = moduleApprovalState(
     assessments.filter((a) => a.required).map((a) => a.passed),
     attendancePct,
-    minAttendancePct
+    minAttendancePct,
+    dispensa
   );
 
   const sinDatos = assessments.length === 0 && attendancePct === null;
@@ -1119,6 +1146,7 @@ export async function studentCourseDetail(
       .map((s) => ({ date: s.date, number: s.number })),
     attendancePct: course.attendancePct,
     minAttendancePct: course.minAttendancePct,
+    attendanceWaived: dispensaDeInscripcion(mia.enrollment) !== null,
     assessments: evaluaciones
       .filter((a) => a.cohortId === propia)
       .map((a) => {
@@ -1572,6 +1600,12 @@ export function buildMilestones(input: {
   classes: { date: Date; number: number }[];
   attendancePct: number | null;
   minAttendancePct: number | null;
+  /**
+   * 028 (FR-026) — `true` cuando la inscripción tiene una dispensa vigente. No
+   * cambia el ESTADO del hito de asistencia —no alcanzar el mínimo es el
+   * hecho, y regalar un "cumplido" sería inventarlo—; cambia su explicación.
+   */
+  attendanceWaived?: boolean;
   assessments: { name: string; required: boolean; passed: boolean | null; at: Date | null }[];
   certificate: { issuedAt: Date; revokedAt: Date | null } | null;
   /**
@@ -1719,7 +1753,9 @@ export function buildMilestones(input: {
       detail:
         input.attendancePct === null
           ? "Todavía no se registró asistencia"
-          : `Vas ${input.attendancePct}%`,
+          : input.attendanceWaived && input.attendancePct < input.minAttendancePct
+            ? `Vas ${input.attendancePct}% — habilitada por dispensa`
+            : `Vas ${input.attendancePct}%`,
       /**
        * `sin_datos` y no "no alcanzado": **0% porque nadie pasó lista no es 0%
        * porque no vino**. Es la corrección de 013/T034, y acá es la diferencia
