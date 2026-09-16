@@ -140,7 +140,7 @@ de construir la función y el permiso al mismo tiempo.
         │            │
         │    026 Administración y finanzas ✅
         │    027 Guía por rol ✅
-        │    028 Especializaciones multi-módulo (spec escrita)
+        │    028 Especializaciones multi-módulo ✅
         │            │
         │    016 Entregas y corrección       (alumno entrega · profesor corrige)
         │            │
@@ -161,7 +161,7 @@ de construir la función y el permiso al mismo tiempo.
 | 025 ✅ | Corrección del enlace de clase | **IMPLEMENTADA (2026-09-04, commits `b5540ac`, `947581a`, `8f232ec`).** Sin spec propia: es una corrección de la 023, registrada dentro de su spec. La URL de la reunión sale de la COHORTE, no del aula — el aula es la *cuenta* que se ocupa. Cadena de dos escalones (`clase ?? cohorte ?? null`), sin tercer fallback: mejor no mostrar enlace que mostrar el equivocado. | 023 |
 | [026](026-administracion-y-finanzas/spec.md) ✅ | Administración y finanzas | **IMPLEMENTADA (2026-09-08).** Rol `administracion` con 4 de las 17 capacidades, y la pantalla `/finanzas` con Caja y Devengado separadas, nunca sumadas, por moneda y por período. `drizzle/0036` aplicada. Arnés e2e en verde. | 012, 022 |
 | [027](027-guia-por-rol/spec.md) ✅ | Guía por rol | **IMPLEMENTADA (2026-09-08).** La guía se deriva de `CAPABILITIES` + `NAV_GROUPS`: agregar una capacidad sin describirla rompe `pnpm typecheck` — verificado a mano. Arnés e2e en verde. | 012 |
-| [028](028-especializaciones/spec.md) | Especializaciones multi-módulo | **SPEC ESCRITA (2026-09-07), sin implementar.** El 26% de las inscripciones (100 de 384) está hoy en programas multi-módulo modelados como texto dentro de `course.name`. Dos auto-referencias: `cohort.parent_cohort_id` (la estructura) y `enrollment.parent_enrollment_id` (el recorrido de la persona). Certificado por módulo, asistencia y aprobación por módulo, recursada en una camada posterior, y dispensa de asistencia nombrada. | 013, 023 |
+| [028](028-especializaciones/spec.md) ✅ | Especializaciones multi-módulo | **IMPLEMENTADA (2026-09-09, commits `ad664cb`..`ec7cfd0`).** El 26% de las inscripciones (100 de 384) estaba en programas multi-módulo modelados como texto dentro de `course.name`. Dos auto-referencias: `cohort.parent_cohort_id` (la estructura) y `enrollment.parent_enrollment_id` (el recorrido de la persona). Certificado por módulo, asistencia y aprobación por módulo, recursada en una camada posterior, y dispensa de asistencia nombrada. Arnés e2e con bloque propio; la dispensa llega al portal del alumno desde el 2026-09-15 (ver "Verificación en vivo"). | 013, 023 |
 | [016](016-entregas/spec.md) | Entregas y corrección | El alumno entrega (por enlace) y el profesor registra la corrección. | 014, 015 |
 | [017](017-chat-y-notificaciones/spec.md) | Chat y notificaciones | Canal por cohorte + privado alumno↔profesor, sobre SSE. Avisos in-app y por correo. **Fuera de alcance por ahora** (decisión del dueño). | 014, 015 |
 | [018](018-zoom-automatico/spec.md) | Zoom automático | *Idea, sin comprometer.* Crear reuniones y adjudicar grabaciones solo. Exigiría una CUARTA dependencia de runtime. **La 023 le sacó la urgencia**: qué aula usa cada clase y si se pisan ya se responde sin la API. | 013, 023 |
@@ -273,6 +273,54 @@ Se sumaron tres bloques —**022** (cobranza en bloque), **026** y **027**— y 
 arnés completo corre en **227/227 checks, 0 fallos**, contra base efímera.
 Quedan sin bloque propio la **023** (aulas virtuales) y la **024** (recorrido
 del alumno): es la deuda que sobrevive.
+
+#### 2026-09-15 — la deuda saldada, y lo que la pasada encontró
+
+La **023**, la **024** y la **028** tienen ahora bloque propio. El arnés pasa
+de 227 a **329 checks**. No está en verde, y los fallos son del producto, no
+del arnés:
+
+- **Corrida completa, base efímera: 296/329.** 30 de los 33 fallos tienen una
+  sola causa: el límite de 10 intentos cada 10 minutos por IP
+  (`src/lib/auth/index.ts:87-92`) también se aplica a las altas **internas**.
+  `grantPortalAccess` (`src/server/access.ts:396`) crea la cuenta con
+  `signUpEmail` sin headers, así que todas caen en el mismo balde `"local"`.
+  La undécima invitación en 10 minutos devuelve 422 `signup_failed`, sin
+  contraseña. En la vida real: **coordinación no puede invitar a una camada
+  de 16 alumnos de una sentada.**
+- **Con el balde vacío** (copia diagnóstica con 10 minutos de pausa antes de
+  la 024, no versionada): **326/329.** Quedan tres fallos, los tres del
+  producto:
+  - **023 FR-009**: una cohorte nueva acepta un aula dada de baja (201, se
+    esperaba 422). `validateCohortForeignKeys` (`src/server/courses.ts:497`)
+    no mira `virtualRoomId`.
+  - **028 DoD-5 / FR-025 / SC-011**, dos checks: el staff ve el módulo
+    dispensado como `aprobado` y con el motivo; **el alumno lo ve `pendiente`
+    y sin motivo**. `student-portal.ts` arma la aprobación con
+    `approvalState()` y no con `moduleApprovalState()`: la dispensa no llega
+    al portal.
+
+**Los tres, corregidos el mismo 2026-09-15:**
+
+- Las altas internas de `grantPortalAccess` ya no consumen el límite por IP
+  del login (`src/lib/auth/index.ts`, `src/lib/rate-limit.ts`): invitar a una
+  camada entera de una sentada funciona.
+- `validateCohortForeignKeys` (`src/server/courses.ts`) rechaza un aula dada
+  de baja con 422.
+- `student-portal.ts` arma la aprobación con `moduleApprovalState()`: el alumno
+  ve el módulo dispensado como `aprobado` y lee el motivo.
+
+**Corrida completa, base efímera recreada, sin ninguna pausa: 329/329, 0
+fallos**, en una sola pasada. El arnés no necesitó cambios: sus checks ya
+exigían el comportamiento de la spec.
+
+Además, un check de la **008** fallaba sin que nadie tocara el código: el
+vencimiento estaba escrito como `"2026-09-10"`, esa fecha pasó, y la cuota
+pasó a `vencida`, que es lo correcto. Ahora el vencimiento se calcula desde el
+día de la corrida.
+
+**4. Una fecha escrita a mano en el arnés es una bomba de tiempo.** Todo lo que
+dependa de "antes o después de hoy" se calcula relativo al día de la corrida.
 
 #### Dos cosas que enseñó esa corrida, y conviene no olvidar
 

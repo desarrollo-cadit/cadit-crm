@@ -63,9 +63,24 @@ historial de lo anterior.
 - **FR-003**: El enlace DEBE validarse como http(s), con el mismo criterio que
   el resto del sistema (`httpUrl`).
 - **FR-004**: DEBE registrarse la fecha exacta de entrega.
-- **FR-005**: La evaluación DEBE poder declarar fecha límite. Una entrega
-  posterior se marca como fuera de plazo, pero NO se rechaza: la decisión de
-  aceptarla es del profesor.
+- **FR-005**: La evaluación DEBE poder declarar fecha límite para toda la
+  cohorte (`assessment.due_at`, instante con zona horaria). Una entrega
+  posterior a la fecha vigente se marca como fuera de plazo, pero NO se
+  rechaza: la decisión de aceptarla es del profesor.
+- **FR-005b**: Coordinación y el profesor DEBEN poder modificar la fecha límite
+  del grupo, y otorgar una prórroga individual por inscripción. La prórroga
+  registra la nueva fecha, quién la otorgó y el motivo.
+- **FR-005c**: La fecha vigente de un alumno es la MÁS TARDÍA entre la del
+  grupo y su prórroga. Una prórroga solo puede sumar plazo: si después se
+  corre la fecha del grupo más allá de ella, el alumno no queda por detrás de
+  sus compañeros.
+- **FR-005d**: "Fuera de plazo" se calcula contra la fecha vigente AL MOSTRAR,
+  no contra la del momento de la entrega: una prórroga posterior convierte una
+  entrega tardía en entrega a tiempo.
+- **FR-005e**: La fecha límite se compone y se muestra con zona horaria, con el
+  mismo criterio que `classInstant()` (`src/lib/schedule-time.ts`). Un
+  "23:59" sin zona cierra el plazo antes de hora para los alumnos de otros
+  países.
 - **FR-006**: Corregir DEBE actualizar el resultado en `assessment_result`,
   sin doble carga.
 - **FR-007**: La devolución escrita DEBE ser visible para el alumno.
@@ -81,7 +96,12 @@ historial de lo anterior.
 - **DV-002**: ¿La corrección de una entrega marca automáticamente el
   resultado, o el profesor lo confirma aparte? *(propuesta: automático — el
   doble paso es la razón por la que hoy los datos no se cargan.)*
-- **DV-003**: ¿Cuántas reentregas se permiten?
+- **DV-003**: ¿Cuántas reentregas se permiten? *(propuesta: sin límite, pero
+  solo cuando el profesor reabre la entrega — sin confirmar.)*
+- **DV-006** ✅ *(2026-09-15, decisión del dueño)*: la fecha límite NO bloquea.
+  Pasada la fecha vigente, la entrega se acepta marcada como tardía y el
+  profesor decide. Hay fecha del grupo modificable y prórroga individual
+  (FR-005b a FR-005e).
 - **DV-004**: ¿El sistema verifica que el enlace sea accesible? *(propuesta:
   no — no puede autenticarse contra el Drive del alumno, y un chequeo que
   falla en falso es peor que ninguno.)*
