@@ -737,9 +737,13 @@ async function main() {
   const inscId = insc.json?.enrollment?.id;
   ok("inscripción con monto creada", Boolean(inscId), JSON.stringify(insc.json));
 
+  // El primer vencimiento va SIEMPRE en el futuro. Estaba escrito como
+  // "2026-09-10" y el check de 'parcial' empezó a fallar solo cuando esa fecha
+  // pasó: una cuota vencida con pago parcial es `vencida`, y eso es correcto.
+  const primerVencimiento = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
   const plan = await api(`/api/enrollments/${inscId}/installments`, {
     method: "POST",
-    body: JSON.stringify({ count: 3, firstDueDate: "2026-09-10" }),
+    body: JSON.stringify({ count: 3, firstDueDate: primerVencimiento }),
   });
   const cuotas = plan.json?.installments ?? [];
   ok(
@@ -2381,6 +2385,1281 @@ async function main() {
   // Se devuelve la sesión del operador: lo que venga después no tiene por qué
   // enterarse de que acá adentro se cambió de cuenta dos veces.
   cookie = cookieOperador;
+
+  /** Un día relativo a hoy, como `YYYY-MM-DD`: lo que aceptan las altas de cohorte. */
+  const isoDia = (desplazamiento) =>
+    new Date(Date.now() + desplazamiento * 86_400_000).toISOString().slice(0, 10);
+
+  /**
+   * El login está limitado a 10 intentos cada 10 minutos POR IP (FR-062), y el
+   * arnés entero sale del mismo 127.0.0.1: los bloques de 023, 024 y 028 suman
+   * siete personas más y el undécimo login recibía 429. Cada una de esas
+   * personas entra, en la vida real, desde su propia conexión — así que cada
+   * una declara su propia IP, del rango reservado para documentación
+   * (198.51.100.0/24, RFC 5737). No se toca el límite: se deja de simular que
+   * toda la academia comparte un router.
+   */
+  let ipDePrueba = 0;
+  const otraIp = () => ({ "x-forwarded-for": `198.51.100.${++ipDePrueba}` });
+
+  /** Un profesor dado de alta, invitado y con su propia sesión de portal. */
+  async function profesorConPortal(nombre, correo) {
+    const alta = await api("/api/teachers", {
+      method: "POST",
+      body: JSON.stringify({ name: nombre, email: correo }),
+    });
+    const id = alta.json?.teacher?.id ?? alta.json?.id;
+    const invitacion = await api(`/api/teachers/${id}/access`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    const jar = { cookie: "" };
+    const login = await comoProfesor(jar, "/api/auth/sign-in/email", {
+      method: "POST",
+      headers: otraIp(),
+      body: JSON.stringify({ email: correo, password: invitacion.json?.temporaryPassword }),
+    });
+    return {
+      id,
+      jar,
+      entro: login.res.ok,
+      motivo: `${invitacion.res.status} ${JSON.stringify(invitacion.json?.error ?? null)} / login ${login.res.status}`,
+    };
+  }
+
+  /** Acceso al portal para la persona de una inscripción, con su propio tarro. */
+  async function alumnoConPortal(enrollmentId, correo) {
+    const acceso = await api(`/api/enrollments/${enrollmentId}/access`, { method: "POST" });
+    const jar = { cookie: "" };
+    const como = conJar(jar);
+    const login = await como("/api/auth/sign-in/email", {
+      method: "POST",
+      headers: otraIp(),
+      body: JSON.stringify({ email: correo, password: acceso.json?.temporaryPassword }),
+    });
+    return {
+      como,
+      jar,
+      entro: login.res.ok,
+      motivo: `${acceso.res.status} ${JSON.stringify(acceso.json?.error ?? null)} / login ${login.res.status}`,
+    };
+  }
+
+  async function cohorteNueva(datos) {
+    const r = await api("/api/cohorts", { method: "POST", body: JSON.stringify(datos) });
+    return { id: r.json?.cohort?.id, status: r.res.status, json: r.json };
+  }
+
+  // ============================================================
+  // 023 — Aulas virtuales y choques de horario (con la corrección de la 025).
+  //
+  // Se declaró "Hecho" sin pasada de comportamiento. Lo que se conduce acá es
+  // lo que la fase vino a responder sin integración con Zoom: qué aula usa
+  // cada clase, si dos se pisan, y cuándo NO se pisan (pegadas o canceladas).
+  //
+  // Y la mitad que corrigió la 025, que es la que llega a una persona: el
+  // enlace sale de la clase o de la COHORTE, nunca del aula. El aula es una
+  // cuenta compartida; si su sala se colara como respaldo, un alumno entraría
+  // a la clase de otra cohorte. Se comprueba sobre el JSON entero, no sobre un
+  // campo, porque el riesgo es que la URL del aula viaje por cualquier lado.
+  // ============================================================
+  console.log("\n== 023: aulas virtuales y choques de horario ==");
+
+  const sello023 = Date.now();
+  const salaA = `https://zoom.example.com/j/pmi-a-${sello023}`;
+  const salaB = `https://zoom.example.com/j/pmi-b-${sello023}`;
+  const nombreAulaA = `Aula E2E A ${sello023}`;
+  const nombreAulaB = `Aula E2E B ${sello023}`;
+
+  const aulaA = await api("/api/virtual-rooms", {
+    method: "POST",
+    body: JSON.stringify({ name: nombreAulaA, url: salaA }),
+  });
+  const aulaB = await api("/api/virtual-rooms", {
+    method: "POST",
+    body: JSON.stringify({ name: nombreAulaB, url: salaB }),
+  });
+  const aulaAId = aulaA.json?.room?.id;
+  const aulaBId = aulaB.json?.room?.id;
+  ok(
+    "US1 — dos aulas declaradas con nombre y enlace",
+    aulaA.res.status === 201 && aulaB.res.status === 201 && Boolean(aulaAId && aulaBId),
+    `${aulaA.res.status}/${aulaB.res.status}`
+  );
+
+  const aulaRepetida = await api("/api/virtual-rooms", {
+    method: "POST",
+    body: JSON.stringify({ name: nombreAulaA, url: salaB }),
+  });
+  ok(
+    "un aula con el nombre de otra se rechaza (409), no se duplica",
+    aulaRepetida.res.status === 409 && aulaRepetida.json?.error?.code === "duplicate_name",
+    `${aulaRepetida.res.status} ${JSON.stringify(aulaRepetida.json)}`
+  );
+
+  const curso023 = await api("/api/courses", {
+    method: "POST",
+    body: JSON.stringify({ name: `Curso Aulas E2E ${sello023}`, published: false }),
+  });
+  const curso023Id = curso023.json?.course?.id;
+
+  /**
+   * Tres cohortes en la MISMA aula y los mismos días:
+   * - X de 18:30 a 20:30,
+   * - Y de 18:00 a 19:30 → se solapa con X,
+   * - Z de 20:30 a 22:30 → pegada a X, y según DV-003 eso NO es choque.
+   */
+  const rango023 = { startDate: isoDia(30), endDate: isoDia(44), daysOfWeek: "1,3" };
+  const cohX = await cohorteNueva({
+    courseId: curso023Id,
+    name: `Aulas X ${sello023}`,
+    ...rango023,
+    startTime: "18:30",
+    endTime: "20:30",
+    virtualRoomId: aulaAId,
+  });
+  const cohY = await cohorteNueva({
+    courseId: curso023Id,
+    name: `Aulas Y ${sello023}`,
+    ...rango023,
+    startTime: "18:00",
+    endTime: "19:30",
+    virtualRoomId: aulaAId,
+  });
+  const cohZ = await cohorteNueva({
+    courseId: curso023Id,
+    name: `Aulas Z ${sello023}`,
+    ...rango023,
+    startTime: "20:30",
+    endTime: "22:30",
+    virtualRoomId: aulaAId,
+  });
+  ok(
+    "US2 — tres cohortes con el aula asignada",
+    Boolean(cohX.id && cohY.id && cohZ.id),
+    JSON.stringify([cohX.json, cohY.json, cohZ.json])
+  );
+
+  const genX = await api(`/api/cohorts/${cohX.id}/schedule`, { method: "POST" });
+  const genY = await api(`/api/cohorts/${cohY.id}/schedule`, { method: "POST" });
+  const genZ = await api(`/api/cohorts/${cohZ.id}/schedule`, { method: "POST" });
+  // FR-006 — Y pisa a X, y su cronograma se genera igual: el choque avisa.
+  ok(
+    "el cronograma que choca se genera igual: el choque avisa, no bloquea (FR-006)",
+    genX.res.status === 201 && genY.res.status === 201 && genZ.res.status === 201,
+    `${genX.res.status}/${genY.res.status}/${genZ.res.status}`
+  );
+
+  const clasesX = (await api(`/api/cohorts/${cohX.id}/classes`)).json?.classes ?? [];
+  const choquesX = (await api(`/api/virtual-rooms/clashes?cohortId=${cohX.id}`)).json?.clashes ?? [];
+  const esParXY = (c) =>
+    [c.cohortId, c.otherCohortId].sort().join() === [cohX.id, cohY.id].sort().join();
+  ok(
+    "SC-002 — cada clase de X aparece chocando con Y, en el aula A",
+    clasesX.length > 0 &&
+      choquesX.length === clasesX.length &&
+      choquesX.every((c) => esParXY(c) && c.roomId === aulaAId),
+    JSON.stringify({ clases: clasesX.length, choques: choquesX.map((c) => [c.cohortName, c.otherCohortName, c.roomId]) })
+  );
+
+  const choquesZ = (await api(`/api/virtual-rooms/clashes?cohortId=${cohZ.id}`)).json?.clashes ?? [];
+  ok(
+    "SC-003 — la cohorte pegada (termina una, empieza la otra) no choca con nadie",
+    choquesZ.length === 0,
+    JSON.stringify(choquesZ)
+  );
+
+  // SC-004 — una clase cancelada sale del cómputo de choques.
+  const claseYCancelada = ((await api(`/api/cohorts/${cohY.id}/classes`)).json?.classes ?? [])[0];
+  const cancelacion023 = await api(`/api/class-sessions/${claseYCancelada?.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ cancelReason: "feriado E2E" }),
+  });
+  const choquesTrasCancelar =
+    (await api(`/api/virtual-rooms/clashes?cohortId=${cohX.id}`)).json?.clashes ?? [];
+  ok(
+    "SC-004 — cancelar una clase de Y le saca exactamente un choque a X",
+    cancelacion023.res.ok &&
+      choquesTrasCancelar.length === choquesX.length - 1 &&
+      !choquesTrasCancelar.some(
+        (c) =>
+          c.classSessionId === claseYCancelada?.id ||
+          c.otherClassSessionId === claseYCancelada?.id
+      ),
+    `${cancelacion023.res.status} ${choquesX.length} → ${choquesTrasCancelar.length}`
+  );
+
+  // US4 / FR-011 — la agenda: qué aula, qué cohorte, cuándo. La cancelada se
+  // ve marcada: en la agenda es información ("esa aula quedó libre").
+  const agendaDesde = encodeURIComponent(`${isoDia(28)}T00:00:00.000Z`);
+  const agendaHasta = encodeURIComponent(`${isoDia(47)}T00:00:00.000Z`);
+  const agenda = (
+    await api(`/api/virtual-rooms/agenda?desde=${agendaDesde}&hasta=${agendaHasta}`)
+  ).json?.agenda ?? [];
+  const agendaX = agenda.filter((f) => f.cohortId === cohX.id);
+  ok(
+    "US4 — la agenda dice aula, cohorte y horario de cada clase",
+    agendaX.length === clasesX.length &&
+      agendaX.every((f) => f.roomId === aulaAId && f.roomName === nombreAulaA && f.startsAt < f.endsAt),
+    JSON.stringify(agendaX.slice(0, 2))
+  );
+  ok(
+    "y la clase cancelada aparece marcada, no borrada",
+    agenda.some((f) => f.classSessionId === claseYCancelada?.id && f.canceled === true)
+  );
+
+  /**
+   * FR-002 — La clase HEREDA el aula de la cohorte, no se la copia. Si se
+   * copiara al generar, cambiar el aula de Y dejaría sus clases en A y el
+   * choque seguiría ahí. Se comprueba en las dos superficies que lo leen.
+   */
+  const reasignacion = await api(`/api/cohorts/${cohY.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ virtualRoomId: aulaBId }),
+  });
+  const choquesTrasMover =
+    (await api(`/api/virtual-rooms/clashes?cohortId=${cohX.id}`)).json?.clashes ?? [];
+  ok(
+    "cambiar el aula de la cohorte recalcula al vuelo: X deja de chocar (DV-002)",
+    reasignacion.res.ok && choquesTrasMover.length === 0,
+    `${reasignacion.res.status} ${JSON.stringify(choquesTrasMover)}`
+  );
+  const agendaTrasMover = (
+    await api(`/api/virtual-rooms/agenda?desde=${agendaDesde}&hasta=${agendaHasta}`)
+  ).json?.agenda ?? [];
+  const agendaY = agendaTrasMover.filter((f) => f.cohortId === cohY.id);
+  ok(
+    "FR-002 — las clases ya generadas de Y siguen a su cohorte al aula B: herencia, no copia",
+    agendaY.length > 0 && agendaY.every((f) => f.roomId === aulaBId),
+    JSON.stringify(agendaY.map((f) => f.roomId))
+  );
+
+  // FR-009 — la baja es lógica y conserva la evidencia.
+  const bajaAula = await api(`/api/virtual-rooms/${aulaAId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ archived: true }),
+  });
+  const aulasActivas = (await api("/api/virtual-rooms")).json?.rooms ?? [];
+  ok(
+    "el aula dada de baja deja de ofrecerse para asignar",
+    bajaAula.res.ok && !aulasActivas.some((r) => r.id === aulaAId) && aulasActivas.some((r) => r.id === aulaBId),
+    `${bajaAula.res.status} ${JSON.stringify(aulasActivas.map((r) => r.id))}`
+  );
+  const cohXTrasBaja = await api(`/api/cohorts/${cohX.id}`);
+  ok(
+    "y lo que ya la usaba la conserva: es evidencia de dónde se dictó (FR-009)",
+    cohXTrasBaja.json?.cohort?.virtualRoomId === aulaAId,
+    String(cohXTrasBaja.json?.cohort?.virtualRoomId)
+  );
+  const borrarAula = await api(`/api/virtual-rooms/${aulaAId}`, { method: "DELETE" });
+  ok(
+    "un aula no se borra: no existe DELETE",
+    borrarAula.res.status === 405 || borrarAula.res.status === 404,
+    `${borrarAula.res.status}`
+  );
+
+  /**
+   * FR-009, el camino infeliz — el front oculta, el servidor prohíbe. Que el
+   * selector no ofrezca el aula de baja no impide mandarla por la API.
+   */
+  const conAulaDeBaja = await cohorteNueva({
+    courseId: curso023Id,
+    name: `Aulas con baja ${sello023}`,
+    startDate: isoDia(50),
+    virtualRoomId: aulaAId,
+  });
+  ok(
+    "FR-009 — asignar un aula dada de baja a una cohorte NUEVA se rechaza (422)",
+    conAulaDeBaja.status === 422,
+    `${conAulaDeBaja.status} ${JSON.stringify(conAulaDeBaja.json)}`
+  );
+
+  /**
+   * 025 (FR-004 corregido) — De dónde sale el enlace que ve el alumno.
+   *
+   * Dos cohortes comparten el aula B. L no tiene reunión cargada; M sí. Las
+   * clases van todo el día y todos los días, de anteayer a pasado mañana: así
+   * alguna cae dentro de la ventana horaria ahora, sin depender de la hora a la
+   * que corre el arnés.
+   */
+  const reunionL = `https://zoom.example.com/j/reunion-l-${sello023}`;
+  const reunionM = `https://zoom.example.com/j/reunion-m-${sello023}`;
+  const enlaceDeClase = `https://zoom.example.com/j/clase-propia-${sello023}`;
+  const hoyTodoElDia = {
+    startDate: isoDia(-2),
+    endDate: isoDia(2),
+    daysOfWeek: "0,1,2,3,4,5,6",
+    startTime: "00:00",
+    endTime: "23:59",
+    virtualRoomId: aulaBId,
+  };
+  const cohL = await cohorteNueva({
+    courseId: curso023Id,
+    name: `Aulas L ${sello023}`,
+    ...hoyTodoElDia,
+  });
+  const cohM = await cohorteNueva({
+    courseId: curso023Id,
+    name: `Aulas M ${sello023}`,
+    ...hoyTodoElDia,
+    meetingUrl: reunionM,
+  });
+  await api(`/api/cohorts/${cohL.id}/schedule`, { method: "POST" });
+  await api(`/api/cohorts/${cohM.id}/schedule`, { method: "POST" });
+
+  const correoAula = `alumno-aula-${sello023}@e2e.test`;
+  const inscAula = await api("/api/enrollments", {
+    method: "POST",
+    body: JSON.stringify({
+      cohortId: cohL.id,
+      contact: {
+        firstName: "Alumna",
+        lastName: `Aula ${sello023}`,
+        phone: `5987${String(sello023).slice(-9)}`,
+        email: correoAula,
+      },
+    }),
+  });
+  const inscAulaId = inscAula.json?.enrollment?.id;
+  const alumnaAula = await alumnoConPortal(inscAulaId, correoAula);
+  ok("la alumna de la cohorte L entra a su portal", alumnaAula.entro, alumnaAula.motivo);
+
+  const sinReunion = await alumnaAula.como(`/api/portal/me/cursadas/${inscAulaId}`);
+  const clasesSinReunion = sinReunion.json?.classes ?? [];
+  ok(
+    "sin reunión en la cohorte NO hay enlace: no se cae a la sala del aula (FR-004)",
+    clasesSinReunion.length > 0 &&
+      clasesSinReunion.every((c) => c.meetingUrl === null) &&
+      !JSON.stringify(sinReunion.json).includes(salaB),
+    JSON.stringify(clasesSinReunion.map((c) => c.meetingUrl))
+  );
+
+  await api(`/api/cohorts/${cohL.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ meetingUrl: reunionL }),
+  });
+  const conReunion = await alumnaAula.como(`/api/portal/me/cursadas/${inscAulaId}`);
+  const clasesConReunion = conReunion.json?.classes ?? [];
+  const claseAbierta = clasesConReunion.find((c) => c.meetingUrl !== null);
+  ok(
+    "SC-005 — la clase de ahora ofrece el enlace de SU cohorte",
+    claseAbierta?.meetingUrl === reunionL &&
+      clasesConReunion.every((c) => c.meetingUrl === null || c.meetingUrl === reunionL),
+    JSON.stringify(clasesConReunion.map((c) => c.meetingUrl))
+  );
+  ok(
+    "y fuera de la ventana horaria el enlace no viaja",
+    clasesConReunion.some((c) => c.meetingUrl === null)
+  );
+  ok(
+    "el enlace de la otra cohorte del aula no aparece en ningún lado de la respuesta",
+    !JSON.stringify(conReunion.json).includes(reunionM) &&
+      !JSON.stringify(conReunion.json).includes(salaB)
+  );
+
+  // FR-003 / FR-004 — el primer escalón: el enlace propio de la clase gana.
+  await api(`/api/class-sessions/${claseAbierta?.id}/links`, {
+    method: "PATCH",
+    body: JSON.stringify({ meetingUrl: enlaceDeClase }),
+  });
+  const conEnlaceDeClase = await alumnaAula.como(`/api/portal/me/cursadas/${inscAulaId}`);
+  ok(
+    "el enlace propio de la clase gana sobre el de la cohorte",
+    (conEnlaceDeClase.json?.classes ?? []).find((c) => c.id === claseAbierta?.id)?.meetingUrl ===
+      enlaceDeClase
+  );
+
+  // FR-010 — el profesor ve el aula como ETIQUETA, sin la sala compartida.
+  const profeAula = await profesorConPortal(
+    `Profe Aula E2E ${sello023}`,
+    `profe-aula-${sello023}@e2e.test`
+  );
+  await api(`/api/cohorts/${cohL.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ teacherId: profeAula.id }),
+  });
+  const cohortesProfeAula = await comoProfesor(profeAula.jar, "/api/portal/cohorts");
+  const cohLEnPortal = (cohortesProfeAula.json?.cohorts ?? []).find((c) => c.id === cohL.id);
+  ok(
+    "FR-010 — el profesor ve en qué aula dicta, por nombre",
+    profeAula.entro && cohLEnPortal?.virtualRoom?.name === nombreAulaB,
+    JSON.stringify(cohLEnPortal?.virtualRoom)
+  );
+  ok(
+    "y la sala compartida del aula no le viaja",
+    !JSON.stringify(cohortesProfeAula.json).includes(salaB)
+  );
+
+  // ============================================================
+  // 024 — El recorrido del alumno.
+  //
+  // La regla que gobierna la fase entera: un hito sólo se marca cumplido si el
+  // sistema tiene con qué probarlo. Lo que se conduce acá es sobre todo el
+  // lado que nadie mira: que SIN datos no aparezca ni un logro regalado ni una
+  // acusación. Una camada importada sin lista tomada no puede leer "no
+  // alcanzado" sobre sí misma (SC-002).
+  //
+  // Se comparan claves y estados del DTO, nunca los rótulos: los rótulos son
+  // prosa de pantalla y cambian sin que cambie la regla.
+  // ============================================================
+  console.log("\n== 024: el recorrido del alumno ==");
+
+  const sello024 = Date.now();
+  const curso024 = await api("/api/courses", {
+    method: "POST",
+    body: JSON.stringify({ name: `Curso Recorrido E2E ${sello024}`, published: false }),
+  });
+  const curso024Id = curso024.json?.course?.id;
+
+  // Una cursada que todavía no empezó, con cuatro clases o más y mínimo del 80%.
+  const cohR = await cohorteNueva({
+    courseId: curso024Id,
+    name: `Recorrido ${sello024}`,
+    startDate: isoDia(10),
+    endDate: isoDia(30),
+    daysOfWeek: "1,3",
+    startTime: "18:30",
+    endTime: "20:30",
+    minAttendancePct: 80,
+  });
+  await api(`/api/cohorts/${cohR.id}/schedule`, { method: "POST" });
+  const entregaObligatoria = `Entrega obligatoria ${sello024}`;
+  const entregaOpcional = `Entrega opcional ${sello024}`;
+  const evalObligatoria = await api(`/api/cohorts/${cohR.id}/grading`, {
+    method: "POST",
+    body: JSON.stringify({ name: entregaObligatoria, required: true }),
+  });
+  await api(`/api/cohorts/${cohR.id}/grading`, {
+    method: "POST",
+    body: JSON.stringify({ name: entregaOpcional, required: false }),
+  });
+  const evalObligatoriaId = evalObligatoria.json?.assessment?.id;
+
+  const correo024 = `alumno-recorrido-${sello024}@e2e.test`;
+  const inscR = await api("/api/enrollments", {
+    method: "POST",
+    body: JSON.stringify({
+      cohortId: cohR.id,
+      contact: {
+        firstName: "Alumno",
+        lastName: `Recorrido ${sello024}`,
+        phone: `5986${String(sello024).slice(-9)}`,
+        email: correo024,
+      },
+    }),
+  });
+  const inscRId = inscR.json?.enrollment?.id;
+  const contacto024 = inscR.json?.enrollment?.contactId;
+  const alumno024 = await alumnoConPortal(inscRId, correo024);
+  ok("la persona entra a su portal con una cursada por empezar", alumno024.entro, alumno024.motivo);
+
+  const hitosDe = async (enrollmentId) =>
+    (await alumno024.como(`/api/portal/me/cursadas/${enrollmentId}`)).json?.milestones ?? [];
+  const hito = (hitos, key) => hitos.find((h) => h.key === key);
+  const hitoPorNombre = (hitos, label) => hitos.find((h) => h.label === label);
+
+  const hitos0 = await hitosDe(inscRId);
+  ok(
+    "FR-005 — el recorrido viaja armado desde el servidor",
+    hitos0.length > 0 && hitos0.every((h) => typeof h.key === "string" && typeof h.state === "string"),
+    JSON.stringify(hitos0.map((h) => [h.key, h.state]))
+  );
+  ok(
+    "US2 — la inscripción es un hecho con fecha: cumplido",
+    hito(hitos0, "inscripcion")?.state === "cumplido" && Boolean(hito(hitos0, "inscripcion")?.at)
+  );
+  ok(
+    "FR-002 — sin lista tomada, la asistencia dice sin_datos",
+    hito(hitos0, "asistencia")?.state === "sin_datos",
+    JSON.stringify(hito(hitos0, "asistencia"))
+  );
+  ok(
+    "SC-002 — sin datos, NINGÚN hito aparece como no alcanzado",
+    !hitos0.some((h) => h.state === "no_alcanzado"),
+    JSON.stringify(hitos0.filter((h) => h.state === "no_alcanzado"))
+  );
+  ok(
+    "FR-003 — la entrega sin corregir es pendiente, no desaprobada",
+    hitoPorNombre(hitos0, entregaObligatoria)?.state === "pendiente" &&
+      hitoPorNombre(hitos0, entregaOpcional)?.state === "pendiente",
+    JSON.stringify([hitoPorNombre(hitos0, entregaObligatoria), hitoPorNombre(hitos0, entregaOpcional)])
+  );
+  const enCurso0 = hitos0.filter((h) => h.state === "en_curso");
+  ok(
+    "FR-004 — EXACTAMENTE un «acá estás», y es el primer pendiente con fecha",
+    enCurso0.length === 1 && enCurso0[0].key === "primera-clase",
+    JSON.stringify(enCurso0)
+  );
+  ok("con cuatro clases o más hay hito de mitad de camino", Boolean(hito(hitos0, "mitad")));
+  ok(
+    "un certificado que no existe no se regala: pendiente",
+    hito(hitos0, "certificado")?.state === "pendiente"
+  );
+
+  // Una ausencia cargada sobre una clase que todavía no ocurrió no es un dato
+  // de asistencia sobre la persona: no puede volverse "no alcanzado".
+  const clasesR = (await api(`/api/cohorts/${cohR.id}/classes`)).json?.classes ?? [];
+  await api(`/api/class-sessions/${clasesR[0]?.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ attendance: [{ enrollmentId: inscRId, status: "ausente" }] }),
+  });
+  const hitos1 = await hitosDe(inscRId);
+  ok(
+    "una marca sobre una clase que no pasó no acusa: la asistencia sigue sin_datos",
+    hito(hitos1, "asistencia")?.state === "sin_datos" &&
+      hito(hitos1, "primera-clase")?.state !== "cumplido",
+    JSON.stringify([hito(hitos1, "asistencia"), hito(hitos1, "primera-clase")])
+  );
+
+  // FR-001 — con evidencia, el hito se mueve. Y se mueve en los dos sentidos.
+  await api(`/api/assessments/${evalObligatoriaId}/results`, {
+    method: "PATCH",
+    body: JSON.stringify({ results: [{ enrollmentId: inscRId, passed: false }] }),
+  });
+  const hitos2 = await hitosDe(inscRId);
+  ok(
+    "con la corrección cargada como desaprobada, recién ahí es no_alcanzado",
+    hitoPorNombre(hitos2, entregaObligatoria)?.state === "no_alcanzado",
+    JSON.stringify(hitoPorNombre(hitos2, entregaObligatoria))
+  );
+  await api(`/api/assessments/${evalObligatoriaId}/results`, {
+    method: "PATCH",
+    body: JSON.stringify({ results: [{ enrollmentId: inscRId, passed: true }] }),
+  });
+  const hitos3 = await hitosDe(inscRId);
+  ok(
+    "US2 — corregida como aprobada es cumplido, con la fecha de la corrección",
+    hitoPorNombre(hitos3, entregaObligatoria)?.state === "cumplido" &&
+      Boolean(hitoPorNombre(hitos3, entregaObligatoria)?.at),
+    JSON.stringify(hitoPorNombre(hitos3, entregaObligatoria))
+  );
+  ok(
+    "y la opcional sin corregir sigue pendiente: una no arrastra a la otra",
+    hitoPorNombre(hitos3, entregaOpcional)?.state === "pendiente"
+  );
+
+  // FR-006 — una cursada corta no muestra mitad de camino.
+  const cohCorta = await cohorteNueva({
+    courseId: curso024Id,
+    name: `Recorrido corto ${sello024}`,
+    startDate: isoDia(10),
+    endDate: isoDia(11),
+    daysOfWeek: "0,1,2,3,4,5,6",
+    startTime: "18:30",
+    endTime: "20:30",
+  });
+  await api(`/api/cohorts/${cohCorta.id}/schedule`, { method: "POST" });
+  const clasesCorta = (await api(`/api/cohorts/${cohCorta.id}/classes`)).json?.classes ?? [];
+  const inscCorta = await api("/api/enrollments", {
+    method: "POST",
+    body: JSON.stringify({ cohortId: cohCorta.id, contactId: contacto024 }),
+  });
+  const hitosCorta = await hitosDe(inscCorta.json?.enrollment?.id);
+  ok(
+    "FR-006 — con menos de 4 clases no hay hito de mitad",
+    clasesCorta.length > 0 && clasesCorta.length < 4 && hitosCorta.length > 0 && !hito(hitosCorta, "mitad"),
+    JSON.stringify({ clases: clasesCorta.length, hitos: hitosCorta.map((h) => h.key) })
+  );
+
+  // FR-004, segunda mitad — una cursada terminada no marca «acá estás».
+  const cohTerminada = await cohorteNueva({
+    courseId: curso024Id,
+    name: `Recorrido terminado ${sello024}`,
+    startDate: isoDia(-40),
+    endDate: isoDia(-30),
+    daysOfWeek: "1,3",
+    startTime: "18:30",
+    endTime: "20:30",
+    minAttendancePct: 80,
+  });
+  await api(`/api/cohorts/${cohTerminada.id}/schedule`, { method: "POST" });
+  const inscTerminada = await api("/api/enrollments", {
+    method: "POST",
+    body: JSON.stringify({ cohortId: cohTerminada.id, contactId: contacto024 }),
+  });
+  const hitosTerminada = await hitosDe(inscTerminada.json?.enrollment?.id);
+  ok(
+    "FR-004 — la cursada terminada no marca ningún «acá estás»",
+    hitosTerminada.length > 0 && !hitosTerminada.some((h) => h.state === "en_curso"),
+    JSON.stringify(hitosTerminada.map((h) => [h.key, h.state]))
+  );
+  ok(
+    "sus clases pasadas son hechos cumplidos",
+    hito(hitosTerminada, "primera-clase")?.state === "cumplido" &&
+      hito(hitosTerminada, "ultima-clase")?.state === "cumplido"
+  );
+  ok(
+    "SC-002 — la camada vieja sin asistencia no acusa a nadie: sin_datos, no no_alcanzado",
+    hito(hitosTerminada, "asistencia")?.state === "sin_datos" &&
+      !hitosTerminada.some((h) => h.state === "no_alcanzado"),
+    JSON.stringify(hito(hitosTerminada, "asistencia"))
+  );
+
+  // FR-007 — la pantalla por pestañas responde; y el recorrido ajeno no se ve.
+  const pantallaCursada = await fetch(`${BASE}/portal/cursadas/${inscRId}`, {
+    headers: { cookie: alumno024.jar.cookie },
+  });
+  ok(
+    "la pantalla de la cursada responde",
+    pantallaCursada.status < 400,
+    `${pantallaCursada.status}`
+  );
+  const recorridoAjeno = await comoA(`/api/portal/me/cursadas/${inscRId}`);
+  ok(
+    "otro alumno pide este recorrido y recibe 404: no es suyo",
+    recorridoAjeno.res.status === 404,
+    `${recorridoAjeno.res.status}`
+  );
+
+  // ============================================================
+  // 028 — Especializaciones y módulos (DoD-1 a DoD-6).
+  //
+  // El modelo es correcto o incorrecto AL RECORRERLO, y por eso este bloque
+  // conduce una persona entera: una camada con tres módulos y un profesor por
+  // módulo; una madre con sus hijas; una baja voluntaria y una recursada en la
+  // camada siguiente; la dispensa de asistencia; y los certificados, que son
+  // donde las reglas del dueño se vuelven un papel en la mano de alguien.
+  //
+  // Los caminos infelices son la mitad del punto: el profesor que pide el
+  // módulo de otro recibe 404 y no 403, el árbol no admite un segundo nivel, y
+  // el certificado general no sale con una hija pendiente ni con una
+  // reprobada — sale recién cuando todas aprobaron, y una sola vez.
+  // ============================================================
+  console.log("\n== 028: especializaciones y módulos ==");
+
+  const sello028 = Date.now();
+  const nuevoCurso = async (name, extra = {}) =>
+    (
+      await api("/api/courses", {
+        method: "POST",
+        body: JSON.stringify({ name, published: false, ...extra }),
+      })
+    ).json?.course?.id;
+  const cursoPrograma = await nuevoCurso(`Especialización E2E ${sello028}`);
+  const cursoModulo = await nuevoCurso(`Módulo Revit E2E ${sello028}`);
+  const cursoInduccion = await nuevoCurso(`Inducción E2E ${sello028}`, {
+    grantsCertificate: false,
+  });
+  ok(
+    "curso de programa, de módulo y una inducción que no otorga certificado",
+    Boolean(cursoPrograma && cursoModulo && cursoInduccion)
+  );
+
+  const profe1 = await profesorConPortal(`Profe Mod1 E2E ${sello028}`, `profe-m1-${sello028}@e2e.test`);
+  const profe2 = await profesorConPortal(`Profe Mod2 E2E ${sello028}`, `profe-m2-${sello028}@e2e.test`);
+  const profe3 = await profesorConPortal(`Profe Siguiente E2E ${sello028}`, `profe-m3-${sello028}@e2e.test`);
+  ok(
+    "tres profesores con acceso al portal",
+    profe1.entro && profe2.entro && profe3.entro,
+    [profe1.motivo, profe2.motivo, profe3.motivo].join(" | ")
+  );
+
+  const nombreCamada = `EBIM E2E ${sello028}`;
+  const nombreCamadaSiguiente = `EBIM siguiente E2E ${sello028}`;
+  const camada = await cohorteNueva({
+    courseId: cursoPrograma,
+    name: nombreCamada,
+    startDate: isoDia(20),
+  });
+  const camadaSiguiente = await cohorteNueva({
+    courseId: cursoPrograma,
+    name: nombreCamadaSiguiente,
+    startDate: isoDia(60),
+  });
+
+  // Se cargan FUERA del orden de `position` a propósito: el orden que se ve
+  // tiene que ser el que decidió la academia, no el de carga (US3).
+  const mod2 = await cohorteNueva({
+    courseId: cursoInduccion,
+    name: `Mod2 Inducción ${sello028}`,
+    parentCohortId: camada.id,
+    position: 20,
+    teacherId: profe2.id,
+    startDate: isoDia(20),
+    endDate: isoDia(34),
+    daysOfWeek: "1,3",
+    startTime: "18:30",
+    endTime: "20:30",
+  });
+  const mod1 = await cohorteNueva({
+    courseId: cursoModulo,
+    name: `Mod1 Revit ${sello028}`,
+    parentCohortId: camada.id,
+    position: 10,
+    teacherId: profe1.id,
+    startDate: isoDia(20),
+    endDate: isoDia(34),
+    daysOfWeek: "0,2,4",
+    startTime: "18:30",
+    endTime: "20:30",
+    minAttendancePct: 80,
+  });
+  const mod3 = await cohorteNueva({
+    courseId: cursoModulo,
+    name: `Mod3 Proyecto ${sello028}`,
+    parentCohortId: camada.id,
+    position: 30,
+    teacherId: profe1.id,
+    startDate: isoDia(40),
+  });
+  const mod1Siguiente = await cohorteNueva({
+    courseId: cursoModulo,
+    name: `Mod1 Revit siguiente ${sello028}`,
+    parentCohortId: camadaSiguiente.id,
+    position: 10,
+    teacherId: profe3.id,
+    startDate: isoDia(60),
+    endDate: isoDia(74),
+    daysOfWeek: "1",
+    startTime: "18:30",
+    endTime: "20:30",
+    minAttendancePct: 80,
+  });
+  const mod3Siguiente = await cohorteNueva({
+    courseId: cursoModulo,
+    name: `Mod3 Proyecto siguiente ${sello028}`,
+    parentCohortId: camadaSiguiente.id,
+    position: 30,
+    teacherId: profe3.id,
+    startDate: isoDia(80),
+  });
+  ok(
+    "DoD-1 — dos camadas con sus módulos colgando",
+    [camada, camadaSiguiente, mod1, mod2, mod3, mod1Siguiente, mod3Siguiente].every(
+      (c) => c.status === 201 && Boolean(c.id)
+    ),
+    JSON.stringify([camada, mod1, mod2, mod3, mod1Siguiente, mod3Siguiente].map((c) => c.status))
+  );
+
+  const genMod1 = await api(`/api/cohorts/${mod1.id}/schedule`, { method: "POST" });
+  const genMod2 = await api(`/api/cohorts/${mod2.id}/schedule`, { method: "POST" });
+  const genMod1Sig = await api(`/api/cohorts/${mod1Siguiente.id}/schedule`, { method: "POST" });
+  ok(
+    "SC-008 — los módulos generan su cronograma",
+    genMod1.res.status === 201 && genMod2.res.status === 201 && genMod1Sig.res.status === 201,
+    `${genMod1.res.status}/${genMod2.res.status}/${genMod1Sig.res.status}`
+  );
+  const genCamada = await api(`/api/cohorts/${camada.id}/schedule`, { method: "POST" });
+  ok(
+    "DV-009 — la camada padre NO genera clases propias (422)",
+    genCamada.res.status === 422 && genCamada.json?.error?.code === "camada_con_modulos",
+    `${genCamada.res.status} ${JSON.stringify(genCamada.json?.error)}`
+  );
+
+  // DoD-4 — el árbol es de un solo nivel, y nadie es su propio padre.
+  const nietaCohorte = await cohorteNueva({
+    courseId: cursoModulo,
+    name: `Sub-módulo ${sello028}`,
+    parentCohortId: mod1.id,
+    startDate: isoDia(20),
+  });
+  ok(
+    "FR-003 — colgar una cohorte de un módulo se rechaza (422)",
+    nietaCohorte.status === 422,
+    `${nietaCohorte.status} ${JSON.stringify(nietaCohorte.json)}`
+  );
+  const padreDeSiMisma = await api(`/api/cohorts/${camada.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ parentCohortId: camada.id }),
+  });
+  ok(
+    "FR-004 — una cohorte no puede ser su propio padre (422)",
+    padreDeSiMisma.res.status === 422,
+    `${padreDeSiMisma.res.status}`
+  );
+
+  const programa0 = (await api(`/api/cohorts/${camada.id}/program`)).json;
+  ok(
+    "US3 — la camada muestra sus módulos en el orden de `position`, no en el de carga",
+    JSON.stringify((programa0?.modules ?? []).map((m) => m.cohortId)) ===
+      JSON.stringify([mod1.id, mod2.id, mod3.id]),
+    JSON.stringify((programa0?.modules ?? []).map((m) => [m.name, m.position]))
+  );
+  ok(
+    "US1 — cada módulo con su profesor",
+    programa0?.modules?.[0]?.teacher?.id === profe1.id &&
+      programa0?.modules?.[1]?.teacher?.id === profe2.id,
+    JSON.stringify((programa0?.modules ?? []).map((m) => m.teacher))
+  );
+  ok(
+    "un módulo sin cronograma se muestra igual, declarándolo",
+    programa0?.modules?.[2]?.clases?.sinCronograma === true,
+    JSON.stringify(programa0?.modules?.[2]?.clases)
+  );
+
+  // ── El recorrido de la persona: madre + hijas ────────────────────────────
+  const correo028 = `especialista-${sello028}@e2e.test`;
+  const madre = await api("/api/enrollments", {
+    method: "POST",
+    body: JSON.stringify({
+      cohortId: camada.id,
+      contact: {
+        firstName: "Especialista",
+        lastName: `E2E ${sello028}`,
+        phone: `5985${String(sello028).slice(-9)}`,
+        email: correo028,
+      },
+      amount: 150000,
+      currency: "UYU",
+    }),
+  });
+  const madreId = madre.json?.enrollment?.id;
+  const contacto028 = madre.json?.enrollment?.contactId;
+  ok("la inscripción madre, con el paquete cerrado", madre.res.status === 201 && Boolean(madreId));
+
+  const inscribirHija = async (cohortId, parentEnrollmentId, extra = {}) => {
+    const r = await api("/api/enrollments", {
+      method: "POST",
+      body: JSON.stringify({ cohortId, contactId: contacto028, parentEnrollmentId, ...extra }),
+    });
+    return { id: r.json?.enrollment?.id, status: r.res.status, json: r.json };
+  };
+
+  const directaAModulo = await inscribirHija(mod1.id, null);
+  ok(
+    "FR-010 — una cohorte de módulo no admite inscripción directa (422)",
+    directaAModulo.status === 422,
+    `${directaAModulo.status} ${JSON.stringify(directaAModulo.json)}`
+  );
+
+  const hija1 = await inscribirHija(mod1.id, madreId);
+  const hija2 = await inscribirHija(mod2.id, madreId);
+  const hija3 = await inscribirHija(mod3.id, madreId);
+  ok(
+    "DoD-1 — una inscripción hija por módulo",
+    hija1.status === 201 && hija2.status === 201 && hija3.status === 201,
+    `${hija1.status}/${hija2.status}/${hija3.status}`
+  );
+
+  const nieta = await inscribirHija(mod1Siguiente.id, hija1.id);
+  ok(
+    "FR-009 — colgar una inscripción de otra hija se rechaza (422)",
+    nieta.status === 422,
+    `${nieta.status} ${JSON.stringify(nieta.json)}`
+  );
+
+  const cohSimple028 = await cohorteNueva({
+    courseId: cursoModulo,
+    name: `Cursada simple ${sello028}`,
+    startDate: isoDia(20),
+    endDate: isoDia(34),
+    daysOfWeek: "1",
+    startTime: "10:00",
+    endTime: "12:00",
+  });
+  const hijaSuelta = await inscribirHija(cohSimple028.id, madreId);
+  ok(
+    "FR-010 — una hija colgada de una cohorte sin padre se rechaza (422)",
+    hijaSuelta.status === 422,
+    `${hijaSuelta.status} ${JSON.stringify(hijaSuelta.json)}`
+  );
+  // DoD-6 — la misma persona con una cursada simple, que tiene que dar lo de siempre.
+  const simple028 = await inscribirHija(cohSimple028.id, null);
+  ok("DoD-6 — y una inscripción simple a una cohorte simple", simple028.status === 201);
+
+  // ── Evaluaciones y asistencia en las hijas ───────────────────────────────
+  const evaluacion = async (cohortId, name) =>
+    (
+      await api(`/api/cohorts/${cohortId}/grading`, {
+        method: "POST",
+        body: JSON.stringify({ name, required: true }),
+      })
+    ).json?.assessment?.id;
+  const corregir = (assessmentId, enrollmentId, passed) =>
+    api(`/api/assessments/${assessmentId}/results`, {
+      method: "PATCH",
+      body: JSON.stringify({ results: [{ enrollmentId, passed }] }),
+    });
+  const estadoEnPlanilla = async (cohortId, enrollmentId) =>
+    ((await api(`/api/cohorts/${cohortId}/grading`)).json?.students ?? []).find(
+      (s) => s.enrollmentId === enrollmentId
+    );
+
+  const evalMod1 = await evaluacion(mod1.id, `Entrega Mod1 ${sello028}`);
+  const evalMod2 = await evaluacion(mod2.id, `Entrega Mod2 ${sello028}`);
+  const evalMod3Sig = await evaluacion(mod3Siguiente.id, `Entrega Mod3 ${sello028}`);
+  const evalMod1Sig = await evaluacion(mod1Siguiente.id, `Entrega Mod1 sig ${sello028}`);
+  await corregir(evalMod1, hija1.id, true);
+  await corregir(evalMod2, hija2.id, true);
+
+  // Módulo 1: una clase presente y el resto ausente → por debajo del 80%.
+  const clasesMod1 = (await api(`/api/cohorts/${mod1.id}/classes`)).json?.classes ?? [];
+  for (const [i, clase] of clasesMod1.entries()) {
+    await api(`/api/class-sessions/${clase.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        attendance: [{ enrollmentId: hija1.id, status: i === 0 ? "presente" : "ausente" }],
+      }),
+    });
+  }
+  const mod1SinDispensa = await estadoEnPlanilla(mod1.id, hija1.id);
+  ok(
+    "DoD-5 — con la asistencia por debajo del mínimo, el módulo queda reprobado",
+    clasesMod1.length >= 4 &&
+      mod1SinDispensa?.state === "reprobado" &&
+      mod1SinDispensa.attendancePct < 80,
+    JSON.stringify(mod1SinDispensa)
+  );
+  const mod2Aprobado = await estadoEnPlanilla(mod2.id, hija2.id);
+  ok(
+    "regla 2 — reprobar el módulo 1 no bloquea: el módulo 2 se aprueba igual",
+    mod2Aprobado?.state === "aprobado",
+    JSON.stringify(mod2Aprobado)
+  );
+
+  // ── Certificados, antes de la dispensa ───────────────────────────────────
+  const emitir = (enrollmentId) =>
+    api(`/api/enrollments/${enrollmentId}/certificate`, { method: "POST", body: "{}" });
+
+  const certMod1Reprobado = await emitir(hija1.id);
+  ok(
+    "no se emite el certificado de un módulo reprobado",
+    certMod1Reprobado.res.status === 422,
+    `${certMod1Reprobado.res.status}`
+  );
+  const generalConReprobada = await emitir(madreId);
+  ok(
+    "DoD-3 — el general NO se emite con una hija reprobada",
+    generalConReprobada.res.status === 422 && generalConReprobada.json?.error?.code === "not_approved",
+    `${generalConReprobada.res.status} ${JSON.stringify(generalConReprobada.json?.error)}`
+  );
+  const certInduccion = await emitir(hija2.id);
+  ok(
+    "FR-019b — la inducción aprobada no emite certificado: su curso no lo otorga",
+    certInduccion.res.status === 422 && certInduccion.json?.error?.code === "curso_sin_certificado",
+    `${certInduccion.res.status} ${JSON.stringify(certInduccion.json?.error)}`
+  );
+
+  // ── La dispensa (US6) ────────────────────────────────────────────────────
+  const dispensaSinMotivo = await api(`/api/enrollments/${hija1.id}/dispensa`, {
+    method: "POST",
+    body: JSON.stringify({ motivo: "" }),
+  });
+  ok(
+    "FR-023 — sin motivo no hay dispensa (422)",
+    dispensaSinMotivo.res.status === 422,
+    `${dispensaSinMotivo.res.status}`
+  );
+
+  const motivoDispensa = `Avisó antes de empezar que viajaba ${sello028}`;
+  const dispensa = await api(`/api/enrollments/${hija1.id}/dispensa`, {
+    method: "POST",
+    body: JSON.stringify({ motivo: motivoDispensa }),
+  });
+  ok(
+    "US6 — la dispensa se otorga con autor, fecha y motivo",
+    dispensa.res.ok &&
+      dispensa.json?.dispensa?.vigente === true &&
+      Boolean(dispensa.json?.dispensa?.otorgadaPor) &&
+      Boolean(dispensa.json?.dispensa?.otorgadaEl) &&
+      dispensa.json?.dispensa?.motivo === motivoDispensa,
+    JSON.stringify(dispensa.json)
+  );
+  const dispensaDoble = await api(`/api/enrollments/${hija1.id}/dispensa`, {
+    method: "POST",
+    body: JSON.stringify({ motivo: motivoDispensa }),
+  });
+  ok(
+    "otorgarla dos veces no pisa el acto original (409)",
+    dispensaDoble.res.status === 409,
+    `${dispensaDoble.res.status}`
+  );
+
+  /**
+   * FR-025 — El motivo viaja en las razones, con quién lo habilitó. Se busca
+   * el motivo que escribió el arnés y el nombre con el que se registró el
+   * operador en el setup: son datos de la corrida, no prosa de pantalla.
+   */
+  const mod1ConDispensa = await estadoEnPlanilla(mod1.id, hija1.id);
+  ok(
+    "DoD-5 — con la dispensa el módulo pasa a aprobado",
+    mod1ConDispensa?.state === "aprobado",
+    JSON.stringify(mod1ConDispensa)
+  );
+  ok(
+    "FR-026 — sin inflar la asistencia: el porcentaje sigue siendo el real",
+    mod1ConDispensa?.attendancePct === mod1SinDispensa?.attendancePct,
+    `${mod1ConDispensa?.attendancePct} vs ${mod1SinDispensa?.attendancePct}`
+  );
+  ok(
+    "FR-025 — y el staff lee el motivo y quién lo habilitó",
+    (mod1ConDispensa?.reasons ?? []).some(
+      (r) => r.includes(motivoDispensa) && r.includes("Operador E2E")
+    ),
+    JSON.stringify(mod1ConDispensa?.reasons)
+  );
+
+  await corregir(evalMod1, hija1.id, false);
+  const dispensaNoSalva = await estadoEnPlanilla(mod1.id, hija1.id);
+  ok(
+    "FR-024 — con la evaluación obligatoria desaprobada, la dispensa NO lo salva",
+    dispensaNoSalva?.state === "reprobado",
+    JSON.stringify(dispensaNoSalva)
+  );
+  await corregir(evalMod1, hija1.id, true);
+
+  // ── El portal del alumno (DoD-1, DoD-5, DoD-6) ───────────────────────────
+  const especialista = await alumnoConPortal(madreId, correo028);
+  ok("la persona de la especialización entra a su portal", especialista.entro, especialista.motivo);
+
+  const panel028 = await especialista.como("/api/portal/me");
+  const cursadas028 = panel028.json?.courses ?? [];
+  const cursadaPrograma = cursadas028.find((c) => c.enrollmentId === madreId);
+  ok(
+    "SC-003 — ve UNA cursada de especialización, no una por módulo",
+    Boolean(cursadaPrograma) &&
+      !cursadas028.some((c) => [hija1.id, hija2.id, hija3.id].includes(c.enrollmentId)),
+    JSON.stringify(cursadas028.map((c) => c.enrollmentId))
+  );
+  ok(
+    "con sus módulos adentro, en el orden del programa",
+    JSON.stringify((cursadaPrograma?.modules ?? []).map((m) => m.cohortId)) ===
+      JSON.stringify([mod1.id, mod2.id, mod3.id]),
+    JSON.stringify((cursadaPrograma?.modules ?? []).map((m) => m.cohortName))
+  );
+  ok(
+    "SC-010 — va por la mitad y la especialización NO figura reprobada",
+    cursadaPrograma?.approval !== "reprobado",
+    JSON.stringify([cursadaPrograma?.approval, cursadaPrograma?.approvalReasons])
+  );
+  const cursadaSimple = cursadas028.find((c) => c.enrollmentId === simple028.id);
+  ok(
+    "DoD-6 / FR-032 — la cursada simple llega con la forma de siempre: sin `modules`",
+    Boolean(cursadaSimple) && !("modules" in cursadaSimple),
+    JSON.stringify(Object.keys(cursadaSimple ?? {}))
+  );
+
+  /**
+   * SC-011 — La mitad de la dispensa que lee la persona. El módulo tiene que
+   * figurarle aprobado y la razón tiene que decirle quién la habilitó: una
+   * aprobación con asistencia insuficiente sin explicación es, según la spec,
+   * un error de cálculo.
+   */
+  const detallePrograma = await especialista.como(`/api/portal/me/cursadas/${madreId}`);
+  const modulo1EnPortal = (detallePrograma.json?.course?.modules ?? []).find(
+    (m) => m.enrollmentId === hija1.id
+  );
+  ok(
+    "DoD-5 / SC-011 — el alumno ve el módulo dispensado como aprobado",
+    modulo1EnPortal?.approval === "aprobado",
+    JSON.stringify([modulo1EnPortal?.approval, modulo1EnPortal?.approvalReasons])
+  );
+  ok(
+    "DoD-5 / FR-025 — y lee en SU pantalla el motivo de la dispensa",
+    (modulo1EnPortal?.approvalReasons ?? []).some((r) => r.includes(motivoDispensa)),
+    JSON.stringify(modulo1EnPortal?.approvalReasons)
+  );
+  ok(
+    "US3 — el recorrido es un hito por módulo",
+    (detallePrograma.json?.milestones ?? []).filter((h) => h.key.startsWith("modulo-")).length === 3,
+    JSON.stringify((detallePrograma.json?.milestones ?? []).map((h) => [h.key, h.state]))
+  );
+
+  // ── DoD-4 / SC-002 — el profesor del módulo 2 ve SOLO su módulo ──────────
+  const cohortesProfe2 = await comoProfesor(profe2.jar, "/api/portal/cohorts");
+  ok(
+    "SC-002 — el profesor del módulo 2 ve UNA cohorte: la suya",
+    JSON.stringify((cohortesProfe2.json?.cohorts ?? []).map((c) => c.id)) ===
+      JSON.stringify([mod2.id]),
+    JSON.stringify((cohortesProfe2.json?.cohorts ?? []).map((c) => c.id))
+  );
+  ok(
+    "FR-029 — y sabe que es un módulo de un programa",
+    Boolean(cohortesProfe2.json?.cohorts?.[0]?.program),
+    JSON.stringify(cohortesProfe2.json?.cohorts?.[0]?.program)
+  );
+  const moduloAjeno = await comoProfesor(profe2.jar, `/api/portal/cohorts/${mod1.id}/classes`);
+  const camadaAjena = await comoProfesor(profe2.jar, `/api/portal/cohorts/${camada.id}/classes`);
+  const cohorteInventada = await comoProfesor(profe2.jar, "/api/portal/cohorts/coh_no_existe/classes");
+  ok(
+    "DoD-4 — pedir el módulo de otro profesor da 404, no 403",
+    moduloAjeno.res.status === 404 &&
+      JSON.stringify(moduloAjeno.json) === JSON.stringify(cohorteInventada.json),
+    `${moduloAjeno.res.status} ${JSON.stringify(moduloAjeno.json)}`
+  );
+  ok(
+    "y la camada padre tampoco es «el contexto de todos»: 404",
+    camadaAjena.res.status === 404 &&
+      JSON.stringify(camadaAjena.json) === JSON.stringify(cohorteInventada.json),
+    `${camadaAjena.res.status}`
+  );
+
+  // ── DoD-2 — baja voluntaria: el módulo 3 se cursa con la camada siguiente ─
+  const aSuelta = await api(`/api/enrollments/${hija3.id}/cohort`, {
+    method: "PUT",
+    body: JSON.stringify({ cohortId: cohSimple028.id }),
+  });
+  ok(
+    "mover una hija a una cohorte que no es módulo se rechaza (422)",
+    aSuelta.res.status === 422,
+    `${aSuelta.res.status} ${JSON.stringify(aSuelta.json)}`
+  );
+  const bajaVoluntaria = await api(`/api/enrollments/${hija3.id}/cohort`, {
+    method: "PUT",
+    body: JSON.stringify({ cohortId: mod3Siguiente.id }),
+  });
+  ok("regla 3 — la hija del módulo 3 pasa a la camada siguiente", bajaVoluntaria.res.ok, `${bajaVoluntaria.res.status}`);
+
+  const detalleTrasBaja = await especialista.como(`/api/portal/me/cursadas/${madreId}`);
+  const modulo3EnPortal = (detalleTrasBaja.json?.course?.modules ?? []).find(
+    (m) => m.enrollmentId === hija3.id
+  );
+  ok(
+    "SC-004 — su recorrido sigue entero, con el módulo 3 diciendo con qué camada lo cursa",
+    (detalleTrasBaja.json?.course?.modules ?? []).length === 3 &&
+      modulo3EnPortal?.cohortId === mod3Siguiente.id &&
+      modulo3EnPortal?.otraCamada === true &&
+      modulo3EnPortal?.camadaName === nombreCamadaSiguiente,
+    JSON.stringify(modulo3EnPortal && {
+      cohortId: modulo3EnPortal.cohortId,
+      otraCamada: modulo3EnPortal.otraCamada,
+      camadaName: modulo3EnPortal.camadaName,
+    })
+  );
+
+  const rosterProfe3 = await comoProfesor(profe3.jar, `/api/portal/cohorts/${mod3Siguiente.id}/grading`);
+  ok(
+    "SC-004 — el profesor de la camada siguiente la ve en su roster, como una alumna más",
+    rosterProfe3.res.ok &&
+      (rosterProfe3.json?.students ?? []).some((s) => s.enrollmentId === hija3.id),
+    `${rosterProfe3.res.status} ${JSON.stringify(rosterProfe3.json?.students)}`
+  );
+  ok(
+    "sin ver nada de la especialización de origen",
+    !JSON.stringify(rosterProfe3.json).includes(nombreCamada) &&
+      !JSON.stringify(rosterProfe3.json).includes(madreId) &&
+      (await comoProfesor(profe3.jar, `/api/portal/cohorts/${camada.id}/classes`)).res.status === 404
+  );
+
+  // Con el módulo 3 sin corregir, el general tampoco sale: hay una hija PENDIENTE.
+  const generalConPendiente = await emitir(madreId);
+  ok(
+    "DoD-3 — el general NO se emite con una hija pendiente",
+    generalConPendiente.res.status === 422,
+    `${generalConPendiente.res.status} ${JSON.stringify(generalConPendiente.json?.error)}`
+  );
+
+  // ── DoD-2 — recursada abonada en la camada siguiente (regla 4) ────────────
+  const recursada = await inscribirHija(mod1Siguiente.id, madreId, {
+    amount: 24680,
+    currency: "UYU",
+  });
+  ok("regla 4 — la recursada es una hija nueva, con su propio monto", recursada.status === 201, JSON.stringify(recursada.json));
+  const planRecursada = await api(`/api/enrollments/${recursada.id}/installments`, {
+    method: "POST",
+    body: JSON.stringify({ count: 2, firstDueDate: isoDia(5) }),
+  });
+  ok(
+    "FR-011 — con su propio plan de cuotas, con la maquinaria de siempre",
+    planRecursada.res.status === 201 &&
+      (planRecursada.json?.installments ?? []).reduce((s, c) => s + c.amount, 0) === 24680,
+    `${planRecursada.res.status} ${JSON.stringify(planRecursada.json)}`
+  );
+  const pagoRecursada = await api(`/api/enrollments/${recursada.id}/payments`, {
+    method: "POST",
+    body: JSON.stringify({ amount: 12340, paidAt: isoDia(0), method: "transferencia" }),
+  });
+  ok("se registra un pago de la recursada", pagoRecursada.res.status === 201, JSON.stringify(pagoRecursada.json));
+
+  const mesActual = isoDia(0).slice(0, 7);
+  const caja028 = (await api(`/api/finanzas/cierre?mes=${mesActual}`)).json?.caja ?? [];
+  ok(
+    "SC-006 — el pago de la recursada entra a la Caja del mes, en su moneda",
+    caja028.some(
+      (b) =>
+        b.currency === "UYU" &&
+        b.filas.some((f) => f.id === pagoRecursada.json?.payment?.id && f.importe === 12340)
+    ),
+    JSON.stringify(caja028.map((b) => [b.currency, b.filas.length]))
+  );
+
+  // La dispensa del módulo 1 no alcanza a otro módulo: la recursada exige la suya.
+  const clasesMod1Sig = (await api(`/api/cohorts/${mod1Siguiente.id}/classes`)).json?.classes ?? [];
+  await api(`/api/class-sessions/${clasesMod1Sig[0]?.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ attendance: [{ enrollmentId: recursada.id, status: "ausente" }] }),
+  });
+  await corregir(evalMod1Sig, recursada.id, true);
+  const recursadaSinAsistencia = await estadoEnPlanilla(mod1Siguiente.id, recursada.id);
+  ok(
+    "US6 — la dispensa vale para ESE módulo: la recursada sigue exigiendo su asistencia",
+    recursadaSinAsistencia?.state === "reprobado",
+    JSON.stringify(recursadaSinAsistencia)
+  );
+
+  // Se completa todo: asistencia plena en la recursada y el módulo 3 corregido.
+  for (const clase of clasesMod1Sig) {
+    await api(`/api/class-sessions/${clase.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ attendance: [{ enrollmentId: recursada.id, status: "presente" }] }),
+    });
+  }
+  await corregir(evalMod3Sig, hija3.id, true);
+  const recursadaAprobada = await estadoEnPlanilla(mod1Siguiente.id, recursada.id);
+  ok(
+    "la recursada, con asistencia y entrega, queda aprobada",
+    recursadaAprobada?.state === "aprobado",
+    JSON.stringify(recursadaAprobada)
+  );
+
+  // ── DoD-3 — los certificados con todo aprobado ───────────────────────────
+  const certMod1 = await emitir(hija1.id);
+  ok(
+    "US5 — el certificado del módulo aprobado se emite",
+    certMod1.res.status === 201 && Boolean(certMod1.json?.certificate?.code),
+    `${certMod1.res.status} ${JSON.stringify(certMod1.json)}`
+  );
+  ok(
+    "SC-012 — congela la asistencia REAL y marca la dispensa al lado",
+    certMod1.json?.certificate?.attendancePct === mod1SinDispensa?.attendancePct &&
+      certMod1.json?.certificate?.dispensada === true,
+    JSON.stringify(certMod1.json?.certificate)
+  );
+  const certMod1Otra = await emitir(hija1.id);
+  ok(
+    "emitirlo otra vez devuelve el MISMO certificado (constitución IV)",
+    certMod1Otra.json?.certificate?.code === certMod1.json?.certificate?.code
+  );
+
+  const general = await emitir(madreId);
+  ok(
+    "DoD-3 — con todas las hijas aprobadas, el general SÍ se emite",
+    general.res.status === 201 && Boolean(general.json?.certificate?.code),
+    `${general.res.status} ${JSON.stringify(general.json)}`
+  );
+  ok(
+    "FR-020 — sin inventar «la asistencia de la especialización»",
+    general.json?.certificate?.attendancePct === null,
+    String(general.json?.certificate?.attendancePct)
+  );
+  const generalOtra = await emitir(madreId);
+  ok(
+    "y una sola vez: la segunda emisión devuelve el mismo",
+    generalOtra.json?.certificate?.code === general.json?.certificate?.code
+  );
+
+  const certsEspecialista = (await especialista.como("/api/portal/me/certificados")).json?.certificates ?? [];
+  const codigos028 = certsEspecialista.map((c) => c.code);
+  ok(
+    "US5 — la persona ve el certificado del módulo y el general en su portal",
+    codigos028.includes(certMod1.json?.certificate?.code) &&
+      codigos028.includes(general.json?.certificate?.code),
+    JSON.stringify(codigos028)
+  );
+
+  // US3, mitad staff — la grilla del programa cuenta la historia entera.
+  const programaFinal = (await api(`/api/cohorts/${camada.id}/program`)).json;
+  const filaEspecialista = (programaFinal?.students ?? []).find((s) => s.enrollmentId === madreId);
+  ok(
+    "US3 — el staff ve a la persona aprobada, con la dispensa y la otra camada marcadas",
+    filaEspecialista?.state === "aprobado" &&
+      filaEspecialista.modules.some((m) => m.enrollmentId === hija1.id && m.dispensada === true) &&
+      filaEspecialista.modules.some((m) => m.enrollmentId === hija3.id && m.otraCamada === true),
+    JSON.stringify(filaEspecialista && {
+      state: filaEspecialista.state,
+      modules: filaEspecialista.modules.map((m) => [m.label, m.state, m.dispensada, m.otraCamada]),
+    })
+  );
 
   console.log(`\n===== ${checks - failures}/${checks} checks OK, ${failures} fallos =====`);
   process.exit(failures > 0 ? 1 : 0);
