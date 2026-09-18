@@ -142,7 +142,7 @@ de construir la función y el permiso al mismo tiempo.
         │    027 Guía por rol ✅
         │    028 Especializaciones multi-módulo ✅
         │            │
-        │    016 Entregas y corrección       (alumno entrega · profesor corrige)
+        │    016 Entregas y corrección ✅   (alumno entrega · profesor corrige)
         │            │
         └──▶ 017 Chat y notificaciones       (sobre el SSE que ya existe)
 ```
@@ -162,7 +162,7 @@ de construir la función y el permiso al mismo tiempo.
 | [026](026-administracion-y-finanzas/spec.md) ✅ | Administración y finanzas | **IMPLEMENTADA (2026-09-08).** Rol `administracion` con 4 de las 17 capacidades, y la pantalla `/finanzas` con Caja y Devengado separadas, nunca sumadas, por moneda y por período. `drizzle/0036` aplicada. Arnés e2e en verde. | 012, 022 |
 | [027](027-guia-por-rol/spec.md) ✅ | Guía por rol | **IMPLEMENTADA (2026-09-08).** La guía se deriva de `CAPABILITIES` + `NAV_GROUPS`: agregar una capacidad sin describirla rompe `pnpm typecheck` — verificado a mano. Arnés e2e en verde. | 012 |
 | [028](028-especializaciones/spec.md) ✅ | Especializaciones multi-módulo | **IMPLEMENTADA (2026-09-09, commits `ad664cb`..`ec7cfd0`).** El 26% de las inscripciones (100 de 384) estaba en programas multi-módulo modelados como texto dentro de `course.name`. Dos auto-referencias: `cohort.parent_cohort_id` (la estructura) y `enrollment.parent_enrollment_id` (el recorrido de la persona). Certificado por módulo, asistencia y aprobación por módulo, recursada en una camada posterior, y dispensa de asistencia nombrada. Arnés e2e con bloque propio; la dispensa llega al portal del alumno desde el 2026-09-15 (ver "Verificación en vivo"). | 013, 023 |
-| [016](016-entregas/spec.md) | Entregas y corrección | El alumno entrega (por enlace) y el profesor registra la corrección. | 014, 015 |
+| [016](016-entregas/spec.md) ✅ | Entregas y corrección | **IMPLEMENTADA (2026-09-17).** El alumno entrega un ENLACE (nunca un archivo: constitución II) y el profesor corrige con devolución escrita, que escribe el resultado de la 010 sin carga doble. Fecha límite del grupo más prórroga individual con autor y motivo; la vigente es la MÁS TARDÍA de las dos y «tardía» se calcula al mostrar. Reentrega sin tope, solo con reapertura del profesor: es un estado, no un contador. `drizzle/0039` aplicada. | 014, 015, 028 |
 | [017](017-chat-y-notificaciones/spec.md) | Chat y notificaciones | Canal por cohorte + privado alumno↔profesor, sobre SSE. Avisos in-app y por correo. **Fuera de alcance por ahora** (decisión del dueño). | 014, 015 |
 | [018](018-zoom-automatico/spec.md) | Zoom automático | *Idea, sin comprometer.* Crear reuniones y adjudicar grabaciones solo. Exigiría una CUARTA dependencia de runtime. **La 023 le sacó la urgencia**: qué aula usa cada clase y si se pisan ya se responde sin la API. | 013, 023 |
 | [019](019-checkout-y-alta-automatica/spec.md) | Checkout y alta automática | *Idea a futuro.* Compra en la web → inscripción → cuenta, sin intervención. Exigiría una TERCERA enmienda constitucional (pasarela de pago). | 012, 015 |
@@ -256,7 +256,7 @@ artefacto concreto que el User Scenario implica.
 |---|---|---|
 | 011 | **Parcial** (la spec lo dice) | US3: `course.list_price`, `src/server/carga-rapida.ts`. US1/US2/US4: sin rastro; `automation_rule` es tabla muerta |
 | 015 | **Implementada** | `src/server/student-portal.ts` (1339 líneas), `src/app/api/portal/me/*`, `tests/unit/student-portal.test.ts` |
-| 016 | **No empezada** (la spec lo dice) | Sin tabla `submission`, sin rutas |
+| 016 | **Implementada** (2026-09-17) | `drizzle/0039` (`submission`, `assessment_extension`, `assessment.due_at`), `src/server/submissions.ts`, seis rutas en las tres puertas, `tests/unit/entregas.test.ts` y el bloque 016 del arnés |
 | 017 | **No empezada** (la spec lo dice) | Sin tablas de chat/notificación; el bus SSE no recibió el arreglo de ruteo por destinatario |
 | 018 | **No empezada** (la spec lo dice) | Sin cliente Zoom. Los "zoom" de `virtual-rooms.ts` son comentarios que dicen lo contrario |
 | 019 | **No empezada** (la spec lo dice) | Sin pasarela de pago |
@@ -321,6 +321,38 @@ día de la corrida.
 
 **4. Una fecha escrita a mano en el arnés es una bomba de tiempo.** Todo lo que
 dependa de "antes o después de hoy" se calcula relativo al día de la corrida.
+
+### La 016 (2026-09-17)
+
+El ciclo entró con su bloque de arnés desde el principio, no después: **37
+checks nuevos, corrida completa en 366/366, 0 fallos**, sobre base efímera
+recreada. Gate técnico: typecheck, lint, build y **1132 tests unitarios** (35
+nuevos en `tests/unit/entregas.test.ts`).
+
+**Lo que enseñó, y conviene no olvidar:**
+
+**5. Un test puede llevar adentro el error que el requisito existe para
+evitar.** El primer check de FR-005c comparaba la fecha cortando el texto ISO:
+la API devolvía las 23:59 de Montevideo ya compuestas como instante UTC
+—`classInstant()` haciendo bien su trabajo— y el test la leía como el día
+siguiente. El producto estaba bien; la falla era del arnés, y era exactamente
+la confusión de zona horaria que el FR-005e prohíbe. Ahora compara instantes
+contra el `dueAt` que devuelve la propia API.
+
+**6. Una migración sin su snapshot vuelve a emitir las tablas.** `0039` quedó
+un rato sin `drizzle/meta/0039_snapshot.json`: el próximo `db:generate`
+habría emitido `submission` y `assessment_extension` como nuevas. Migraciones,
+snapshots y journal van 40/40/40.
+
+**7. Una regla que vive en UNA puerta no vive en las otras.** La revisión
+previa al commit encontró que el profesor no podía cambiar la nota de una
+cohorte finalizada desde la pestaña de Evaluación —`teacher-portal.ts` devuelve
+`cohorte_finalizada`— pero sí desde la de Entregas, que llegaba al mismo
+`assessment_result` por otro camino. Una puerta nueva hacia un dato viejo hay
+que auditarla contra las reglas que ya protegían ese dato, no solo contra su
+propia spec. Hoy el arnés prueba las dos mitades: que el profesor no puede, que
+el resultado no queda a medias, y que coordinación SÍ puede —porque en el panel
+eso ya era así, y la regla nueva no podía inventarle una restricción al staff—.
 
 #### Dos cosas que enseñó esa corrida, y conviene no olvidar
 
