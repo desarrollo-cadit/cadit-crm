@@ -603,6 +603,21 @@ export async function entregasDeCohorte(
  * - **Inserta, no pisa** (FR-008). La reentrega es una fila nueva; la anterior
  *   queda con su fecha y su devolución.
  */
+/**
+ * La misma respuesta para los DOS caminos que terminan en el mismo hecho: la
+ * reentrega sin reapertura (FR-013), y la entrega que pierde la carrera contra
+ * otra simultánea. Para el alumno es una sola cosa —"tu entrega ya está, para
+ * cambiarla pedí que la reabran"—, y dos códigos distintos obligarían a la
+ * pantalla a conocer los dos para decir la misma frase.
+ */
+const ENTREGA_CERRADA = {
+  ok: false,
+  status: 422,
+  code: "entrega_cerrada",
+  message:
+    "Ya entregaste este trabajo. Para volver a entregar, tu profesor tiene que reabrir la entrega.",
+} as const;
+
 export async function estudianteEntregar(
   organizationId: string,
   contactId: string,
@@ -679,15 +694,7 @@ export async function estudianteEntregar(
     .orderBy(desc(schema.submission.submittedAt))
     .limit(1);
 
-  if (!puedeEntregar(previas[0] ?? null)) {
-    return {
-      ok: false,
-      status: 422,
-      code: "entrega_cerrada",
-      message:
-        "Ya entregaste este trabajo. Para volver a entregar, tu profesor tiene que reabrir la entrega.",
-    };
-  }
+  if (!puedeEntregar(previas[0] ?? null)) return ENTREGA_CERRADA;
 
   const prorrogas = await db
     .select({ dueAt: schema.assessmentExtension.dueAt })
@@ -705,6 +712,23 @@ export async function estudianteEntregar(
     .limit(1);
 
   const title = input.title?.trim();
+  /**
+   * **Constitución IV — el permiso lo arbitra la BASE, no el `if` de arriba.**
+   *
+   * Entre aquel `puedeEntregar()` y este insert hay una ventana, y dos POST
+   * rápidos la cruzan los dos: los dos leen "sí, puede" y los dos insertan. Lo
+   * que queda no es una fila de más — es una reentrega que el profesor nunca
+   * habilitó, o sea FR-013 roto por la velocidad del dedo.
+   *
+   * El único PARCIAL `submission_abierta_uq` cubre la entrega ABIERTA —sin
+   * corregir y sin reabrir—, que es la única que el modelo permite tener a la
+   * vez. La reentrega legítima entra igual: para llegar hasta acá la anterior
+   * tuvo que ser reabierta, y una entrega reabierta queda FUERA del índice. El
+   * historial de FR-008 no se toca.
+   *
+   * `on conflict do nothing` y no dejar que la base lance: perder la carrera no
+   * es un error del servidor, es el hecho que ya tiene respuesta escrita.
+   */
   const insertadas = await db
     .insert(schema.submission)
     .values({
@@ -715,9 +739,11 @@ export async function estudianteEntregar(
       url: input.url,
       title: title ? title : null,
     })
+    .onConflictDoNothing()
     .returning();
 
-  const fila = insertadas[0]!;
+  const fila = insertadas[0];
+  if (!fila) return ENTREGA_CERRADA;
 
   return {
     ok: true,

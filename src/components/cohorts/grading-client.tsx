@@ -522,7 +522,7 @@ function PlazosDeEntrega({
         ))}
       </ul>
       <p className="border-t px-3 py-2 text-[11px] text-muted-foreground">
-        Las horas son de {timezone.replace("_", " ")}. La fecha no bloquea:
+        Las horas son de {timezone.replaceAll("_", " ")}. La fecha no bloquea:
         pasada la hora, la entrega se acepta marcada como
         fuera de plazo y decide el profesor. La prórroga de una persona concreta
         se da desde el portal del profesor.

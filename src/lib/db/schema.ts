@@ -1508,8 +1508,10 @@ export const assessmentResult = pgTable(
  * una fila nueva; la anterior queda con su fecha y su devolución. Borrarla
  * perdería la evidencia de qué se corrigió y por qué se pidió de nuevo.
  *
- * Por eso NO hay índice único por evaluación e inscripción: eso es
- * exactamente lo que impediría el historial.
+ * Por eso NO hay índice único PLENO por evaluación e inscripción: eso es
+ * exactamente lo que impediría el historial. Lo que sí hay es uno PARCIAL
+ * sobre la entrega ABIERTA (`submission_abierta_uq`, más abajo), que cierra la
+ * carrera entre dos entregas simultáneas sin prohibir la reentrega.
  */
 export const submission = pgTable(
   "submission",
@@ -1577,6 +1579,30 @@ export const submission = pgTable(
     ),
     // Y por acá, la pantalla del profesor: todas las entregas de su evaluación.
     index("submission_org_assessment_idx").on(t.organizationId, t.assessmentId),
+    /**
+     * **Constitución IV — UNA sola entrega abierta por evaluación e
+     * inscripción.**
+     *
+     * Sin esto, `estudianteEntregar` consultaba "¿puede entregar?" y recién
+     * después insertaba: dos POST simultáneos leían los dos "sí" y entraban los
+     * dos, dejando una reentrega que el profesor nunca habilitó (FR-013).
+     *
+     * Es PARCIAL a propósito. El único PLENO sobre (evaluación, inscripción)
+     * cerraría la misma carrera y de paso prohibiría la reentrega, que es el
+     * historial que FR-008 manda conservar. Éste sólo mira la entrega ABIERTA
+     * —sin corregir y sin reabrir—, la única que el modelo permite tener a la
+     * vez: corregirla o reabrirla la saca del índice y le deja lugar a la
+     * siguiente.
+     */
+    uniqueIndex("submission_abierta_uq")
+      .on(t.assessmentId, t.enrollmentId)
+      /*
+        El predicado va con las columnas SIN calificar, y no es estilo:
+        interpolando `${t.correctedAt}` drizzle escribe `"submission"."corrected_at"`
+        y Postgres rechaza el CREATE INDEX —dentro de un predicado de índice no
+        se puede nombrar la tabla—. Así la migración generada sale ejecutable.
+      */
+      .where(sql`corrected_at is null and reopened_at is null`),
   ]
 );
 

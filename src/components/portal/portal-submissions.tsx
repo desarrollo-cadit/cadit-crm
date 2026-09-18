@@ -86,25 +86,44 @@ function fechaYHora(iso: string, timeZone: string): string {
 
 type Payload = { timezone: string; assessments: Evaluacion[] };
 
-/** Sin evaluaciones no hay ninguna fecha que pintar: la zona no se usa. */
-const SIN_DATOS: Payload = { timezone: "UTC", assessments: [] };
-
 export function PortalSubmissions({ cohortId }: { cohortId: string }) {
   const [datos, setDatos] = useState<Payload | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [fallo, setFallo] = useState(false);
 
   const refetch = useCallback(async () => {
     const res = await fetch(`/api/portal/cohorts/${cohortId}/entregas`).catch(() => null);
-    if (res?.ok) {
-      setDatos((await res.json()) as Payload);
-    } else {
-      setDatos(SIN_DATOS);
+    /*
+      **Un payload vacío es una afirmación, y acá era falsa**: el profesor leía
+      "esta cohorte todavía no tiene evaluaciones cargadas" sobre una cohorte
+      que las tiene, y se iba a reclamarle a coordinación algo que sí está
+      hecho. Lo que falló fue la consulta, y eso es lo que hay que decir.
+    */
+    if (!res?.ok) {
+      setFallo(true);
+      return;
     }
+    setFallo(false);
+    setDatos((await res.json()) as Payload);
   }, [cohortId]);
 
   useEffect(() => {
     void refetch();
   }, [refetch]);
+
+  if (fallo && !datos) {
+    return (
+      <div className="space-y-3 rounded-lg border border-dashed p-6 text-center">
+        <p className="text-sm text-destructive">
+          No se pudieron cargar las entregas. La cohorte puede tener
+          evaluaciones y alumnos: lo que falló es la consulta, no el dato.
+        </p>
+        <Button variant="outline" size="sm" onClick={() => void refetch()}>
+          Reintentar
+        </Button>
+      </div>
+    );
+  }
 
   if (!datos) return <Skeleton className="h-40 w-full" />;
 
@@ -120,6 +139,13 @@ export function PortalSubmissions({ cohortId }: { cohortId: string }) {
   return (
     <div className="space-y-5">
       {error && <p className="text-sm text-destructive">{error}</p>}
+      {/* Falló al refrescar: lo de abajo es real, pero puede estar viejo. */}
+      {fallo && (
+        <p className="text-sm text-destructive">
+          No se pudo actualizar la lista. Lo que ves abajo puede estar
+          desactualizado.
+        </p>
+      )}
       {datos.assessments.map((e) => (
         <EvaluacionBloque
           key={e.assessmentId}
@@ -316,7 +342,18 @@ function AlumnoFila({
               entregar. No borra la corrección: la reentrega va a ser una fila
               nueva y la anterior queda (FR-008).
             */}
-            <Button size="sm" variant="outline" disabled={ocupado} onClick={() => void reabrir()}>
+            {/*
+              Ya reabierta, el botón no hace nada bueno: volver a apretarlo pisa
+              `reopenedAt` con la fecha de hoy y la reapertura real —la que el
+              alumno está esperando— pierde su momento y su autor. Una excepción
+              sin cuándo ni quién es la que después no se puede revisar.
+            */}
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={ocupado || ultima.reopenedAt !== null}
+              onClick={() => void reabrir()}
+            >
               <RotateCcw className="h-4 w-4" />
               {ultima.reopenedAt ? "Reabierta" : "Reabrir"}
             </Button>

@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { EmptyNote, formatDate } from "@/components/portal/student-bits";
+import { EmptyNote, PortalCard, formatDate } from "@/components/portal/student-bits";
 
 /**
  * 016 (US1, US4, US5) — Entregar, ver la devolución y reentregar.
@@ -107,17 +107,27 @@ export function StudentSubmissions({
   academyZone: string;
 }) {
   const [datos, setDatos] = useState<EvaluacionConEntregas[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const refetch = useCallback(async () => {
     const res = await fetch(
       `/api/portal/me/entregas?cursada=${encodeURIComponent(enrollmentId)}`
     ).catch(() => null);
-    if (res?.ok) {
-      const body = (await res.json()) as { assessments: EvaluacionConEntregas[] };
-      setDatos(body.assessments);
-    } else {
-      setDatos([]);
+    /*
+      **"No entregaste" y "no pudimos traer tus entregas" son dos frases
+      distintas**, y la segunda dicha como la primera es una acusación: con la
+      lista vacía el alumno lee "Sin entregar" sobre un trabajo que sí entregó,
+      sin formulario y sin una palabra de por qué. Es el default optimista que
+      el ciclo 013 ya pagó caro en el legajo, esta vez sobre la evidencia de
+      que cumplió.
+    */
+    if (!res?.ok) {
+      setError("No pudimos cargar tus entregas. Probá de nuevo en un momento.");
+      return;
     }
+    const body = (await res.json()) as { assessments: EvaluacionConEntregas[] };
+    setError(null);
+    setDatos(body.assessments);
   }, [enrollmentId]);
 
   useEffect(() => {
@@ -133,20 +143,39 @@ export function StudentSubmissions({
     );
   }
 
+  if (error && !datos) {
+    return (
+      <PortalCard className="space-y-3 border-danger-border bg-danger-soft">
+        <p className="text-sm text-danger">{error}</p>
+        <Button variant="outline" onClick={() => void refetch()}>
+          Reintentar
+        </Button>
+      </PortalCard>
+    );
+  }
+
   if (!datos) return <Skeleton className="h-40 w-full" />;
 
   return (
-    <ul className="space-y-3">
-      {assessments.map((a) => (
-        <EvaluacionItem
-          key={a.id}
-          resumen={a}
-          entregas={datos.find((d) => d.assessmentId === a.id) ?? null}
-          zona={academyZone}
-          onCambio={refetch}
-        />
-      ))}
-    </ul>
+    <div className="space-y-3">
+      {/* Falló al refrescar: lo de abajo es real, pero puede estar viejo. */}
+      {error && (
+        <p className="rounded-md border border-danger-border bg-danger-soft px-3 py-2 text-sm text-danger">
+          {error} Lo que ves abajo puede estar desactualizado.
+        </p>
+      )}
+      <ul className="space-y-3">
+        {assessments.map((a) => (
+          <EvaluacionItem
+            key={a.id}
+            resumen={a}
+            entregas={datos.find((d) => d.assessmentId === a.id) ?? null}
+            zona={academyZone}
+            onCambio={refetch}
+          />
+        ))}
+      </ul>
+    </div>
   );
 }
 

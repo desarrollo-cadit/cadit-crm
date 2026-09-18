@@ -1,0 +1,75 @@
+-- 016 — Una sola entrega ABIERTA por evaluación e inscripción.
+--
+-- Qué agrega: un único PARCIAL sobre `submission`. Nada más: ni tablas, ni
+-- columnas, ni políticas.
+--
+-- ============================================================
+-- QUÉ AGUJERO TAPA
+-- ============================================================
+-- `estudianteEntregar` preguntaba "¿puede entregar?" y RECIÉN DESPUÉS
+-- insertaba, con una ventana abierta en el medio. Dos POST simultáneos —un
+-- doble clic, un reintento del navegador, dos pestañas— la cruzaban los dos:
+-- los dos leían "sí, puede" y los dos insertaban.
+--
+-- Lo que quedaba no era una fila de más y ya. Era una REENTREGA que el
+-- profesor nunca habilitó, que es FR-013 roto por la velocidad del dedo. La
+-- constitución (Principio IV) dice que esto no puede depender del timing.
+--
+-- ============================================================
+-- POR QUÉ PARCIAL Y NO PLENO (y es la parte que importa)
+-- ============================================================
+-- El reflejo sería un único sobre ("assessment_id","enrollment_id"). Cierra la
+-- carrera, sí — y de paso prohíbe la reentrega, que es exactamente el
+-- historial que FR-008 manda conservar. La 0039 lo dice con todas las letras:
+-- hay UNA FILA POR INTENTO y por eso no lleva único.
+--
+-- El predicado mira sólo la entrega ABIERTA: sin corregir y sin reabrir. Es la
+-- única que el modelo permite tener a la vez, porque `puedeEntregar()` deja
+-- entrar una nueva sólo cuando la anterior fue REABIERTA.
+--
+--   * entrega abierta          → corrected_at NULL, reopened_at NULL → ADENTRO
+--   * entrega corregida        → corrected_at NOT NULL              → afuera
+--   * entrega reabierta        → reopened_at  NOT NULL              → afuera
+--
+-- Así la reentrega legítima entra sin pelearse con nadie: para llegar a
+-- insertar, la anterior tuvo que ser reabierta, y una reabierta ya salió del
+-- índice. El historial queda entero.
+--
+-- Las dos columnas y no sólo `reopened_at`: `corregirEntrega` pone
+-- `reopened_at = NULL` al corregir, así que con un predicado de una sola
+-- columna volver a corregir una entrega VIEJA la devolvería al índice y
+-- chocaría contra la abierta. Un UPDATE fallando por un índice es un 500 sobre
+-- una acción legítima del profesor. Con las dos columnas ningún UPDATE puede
+-- violar el índice: sólo un INSERT, que es lo que se quería arbitrar.
+--
+-- ============================================================
+-- RLS: NO HACE FALTA, Y NO ES UN OLVIDO
+-- ============================================================
+-- La política `tenant_isolation` se le pone a las TABLAS de dominio, y acá no
+-- nace ninguna: `submission` ya la tiene desde la 0039. Un índice no se
+-- consulta, no devuelve filas y no esquiva el filtrado.
+--
+-- `organization_id` tampoco va en el índice, por la misma razón que en
+-- `assessment_extension_uq` de la 0039: `assessment_id` ya es único en todo el
+-- sistema y arrastra su organización. Agregarlo AFLOJARÍA la garantía, no la
+-- reforzaría.
+--
+-- ============================================================
+-- RE-EJECUTABLE (constitución IV)
+-- ============================================================
+-- `create unique index if not exists`: correrla dos veces no falla.
+--
+-- ============================================================
+-- SIN REGRESIÓN
+-- ============================================================
+-- Sobre datos existentes el índice entra sin tocar nada. Sólo podría fallar si
+-- YA hubiera dos entregas abiertas de la misma persona en la misma evaluación
+-- — que es justamente el estado corrupto que esto viene a impedir, y que
+-- requiere haber ganado la carrera antes de este parche.
+--
+-- El predicado va con las columnas SIN calificar a propósito: dentro de un
+-- predicado de índice Postgres no acepta `"submission"."corrected_at"`.
+
+create unique index if not exists "submission_abierta_uq"
+  on "submission" using btree ("assessment_id","enrollment_id")
+  where corrected_at is null and reopened_at is null;

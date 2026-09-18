@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -26,6 +26,16 @@ import {
 const selectQueue: unknown[][] = [];
 let insertado: Record<string, unknown> | null = null;
 let actualizado: Record<string, unknown> | null = null;
+
+/**
+ * Si esta entrega GANA la carrera contra otra idéntica y simultánea.
+ *
+ * Con el índice parcial puesto, el segundo POST no inserta nada: el
+ * `on conflict do nothing` devuelve CERO filas. Ese vacío es el único aviso
+ * que le llega al código, y es exactamente lo que este interruptor reproduce
+ * sin levantar una base.
+ */
+let entregaGanaLaCarrera = true;
 
 /**
  * DV-005 de 014 — El alcance del profesor y el estado de la cohorte salen de
@@ -59,17 +69,22 @@ vi.mock("@/lib/db", () => ({
     insert: () => ({
       values: (v: Record<string, unknown>) => {
         insertado = v;
+        const filas = async () =>
+          entregaGanaLaCarrera
+            ? [
+                {
+                  ...v,
+                  submittedAt: new Date("2026-10-05T12:00:00.000Z"),
+                  passed: null,
+                  feedback: null,
+                  correctedAt: null,
+                  reopenedAt: null,
+                },
+              ]
+            : [];
         return {
-          returning: async () => [
-            {
-              ...v,
-              submittedAt: new Date("2026-10-05T12:00:00.000Z"),
-              passed: null,
-              feedback: null,
-              correctedAt: null,
-              reopenedAt: null,
-            },
-          ],
+          returning: filas,
+          onConflictDoNothing: () => ({ returning: filas }),
           onConflictDoUpdate: async () => [],
         };
       },
@@ -103,6 +118,7 @@ beforeEach(() => {
   selectQueue.length = 0;
   insertado = null;
   actualizado = null;
+  entregaGanaLaCarrera = true;
   detalleDeCohorte = { editable: true };
   alcanzaLaCohorte = true;
   resultadoDeEvaluacion = { ok: true, data: { recorded: 1 } };
@@ -549,5 +565,189 @@ describe("FR-005e — la hora del plazo se valida en el esquema, no más adentro
     expect(plazoSchema.safeParse({ fecha: "2026-10-01", hora: "23:59" }).success).toBe(true);
     expect(plazoSchema.safeParse({ fecha: "2026-10-01", hora: "9:05" }).success).toBe(true);
     expect(plazoSchema.safeParse({ fecha: "2026-10-01", hora: "00:00" }).success).toBe(true);
+  });
+});
+
+/* ============================================================
+ * Constitución IV — dos entregas simultáneas no entran las dos
+ * ============================================================
+ * `puedeEntregar()` se consultaba y DESPUÉS se insertaba, con la ventana
+ * abierta en el medio: dos POST rápidos leían los dos "sí, puede" y los dos
+ * insertaban. El resultado no es una fila de más y ya — es una reentrega que
+ * el profesor nunca habilitó, o sea FR-013 roto por la velocidad del dedo.
+ *
+ * **Lo que NO se puede hacer para cerrarlo**: un único por
+ * (`assessment_id`, `enrollment_id`). Ese índice prohíbe la reentrega
+ * legítima, que es el historial que FR-008 exige conservar.
+ *
+ * Lo que sí: un único PARCIAL sobre la entrega ABIERTA — la que todavía no
+ * fue corregida ni reabierta. Es la única que el modelo permite tener a la
+ * vez, y las corregidas y reabiertas quedan fuera del índice, así que el
+ * historial entra sin pelearse con nadie.
+ */
+
+const DRIZZLE = path.join(process.cwd(), "drizzle");
+const MIGRACIONES = readdirSync(DRIZZLE)
+  .filter((f) => f.endsWith(".sql"))
+  .map((f) => readFileSync(path.join(DRIZZLE, f), "utf8"))
+  .join("\n");
+const SCHEMA_DB = readFileSync(
+  path.join(process.cwd(), "src", "lib", "db", "schema.ts"),
+  "utf8"
+);
+
+describe("Constitución IV — la carrera entre dos entregas la arbitra la base", () => {
+  const ORG = "org_1";
+  const CONTACTO = "ct_1";
+
+  /** Evaluación, inscripción, sin entregas previas, sin prórroga. */
+  function colaConLaEntregaPermitida() {
+    selectQueue.push([{ id: "asm_1", cohortId: "coh_1", dueAt: null }]);
+    selectQueue.push([{ id: "enr_1" }]);
+    selectQueue.push([]);
+    selectQueue.push([]);
+  }
+
+  const ENTREGA = {
+    assessmentId: "asm_1",
+    url: "https://drive.example.com/mi-entrega",
+  };
+
+  it("la que llega segunda NO inserta: recibe el mismo 422 que una reentrega sin reapertura", async () => {
+    entregaGanaLaCarrera = false;
+    colaConLaEntregaPermitida();
+
+    const r = await estudianteEntregar(ORG, CONTACTO, ENTREGA);
+
+    /*
+      El MISMO código y el mismo mensaje que la reentrega bloqueada: para el
+      alumno los dos casos son el mismo hecho —"tu entrega ya está, para
+      cambiarla pedí que la reabran"— y dos códigos distintos obligarían a la
+      pantalla a conocer los dos.
+    */
+    expect(r).toMatchObject({ ok: false, status: 422, code: "entrega_cerrada" });
+  });
+
+  it("y la que llega primera entra normalmente", async () => {
+    colaConLaEntregaPermitida();
+
+    const r = await estudianteEntregar(ORG, CONTACTO, ENTREGA);
+
+    expect(r.ok).toBe(true);
+    expect(insertado).toMatchObject({ assessmentId: "asm_1", enrollmentId: "enr_1" });
+  });
+
+  /**
+   * El guard que sostiene la garantía: el insert es CONDICIONAL. Sin esto se
+   * vuelve a un "leo y después escribo" que ninguna lectura previa puede
+   * cerrar, por más cerca del insert que se la ponga.
+   */
+  it("el insert es condicional, no un chequeo previo con los dedos cruzados", () => {
+    expect(sinComentarios).toContain("onConflictDoNothing()");
+  });
+
+  it("la base declara el único PARCIAL sobre la entrega abierta", () => {
+    expect(SCHEMA_DB).toContain('uniqueIndex("submission_abierta_uq")');
+    expect(MIGRACIONES).toContain("submission_abierta_uq");
+    // Parcial de verdad: sin el `where` prohibiría la reentrega (FR-008).
+    expect(MIGRACIONES).toMatch(
+      /create unique index if not exists "submission_abierta_uq"[\s\S]*?where[\s\S]*?corrected_at[\s\S]*?reopened_at/
+    );
+  });
+
+  /**
+   * FR-008 dicho como prohibición: un único PLENO sobre evaluación e
+   * inscripción es exactamente lo que impediría el historial, y es el atajo
+   * que cualquiera escribiría para cerrar esta carrera.
+   */
+  it("y NO un único pleno, que prohibiría la reentrega", () => {
+    expect(MIGRACIONES).not.toMatch(
+      /create unique index[^;]*on "submission"[^;]*\("assessment_id","enrollment_id"\)\s*;/
+    );
+  });
+
+  /**
+   * El snapshot no es burocracia: sin él, el próximo `db:generate` no sabe que
+   * este índice ya existe y vuelve a emitir la migración entera. Pasó con la
+   * 0039.
+   */
+  it("la migración deja su snapshot, o el próximo `db:generate` re-emite todo", () => {
+    const sqls = readdirSync(DRIZZLE).filter((f) => f.endsWith(".sql"));
+    const snapshots = new Set(
+      readdirSync(path.join(DRIZZLE, "meta")).filter((f) => f.endsWith("_snapshot.json"))
+    );
+    for (const sql of sqls) {
+      const idx = sql.slice(0, 4);
+      expect(snapshots.has(`${idx}_snapshot.json`)).toBe(true);
+    }
+  });
+});
+
+/* ============================================================
+ * Lo que encontró la revisión de la 016
+ * ============================================================ */
+
+const COMPONENTES = path.join(process.cwd(), "src", "components");
+const ENTREGAS_ALUMNO = readFileSync(
+  path.join(COMPONENTES, "portal", "student-submissions.tsx"),
+  "utf8"
+);
+const ENTREGAS_PROFE = readFileSync(
+  path.join(COMPONENTES, "portal", "portal-submissions.tsx"),
+  "utf8"
+);
+const PLANILLA = readFileSync(
+  path.join(COMPONENTES, "cohorts", "grading-client.tsx"),
+  "utf8"
+);
+
+/**
+ * **"No hay nada" y "no pude traerlo" son dos frases distintas.**
+ *
+ * Es la regla que el ciclo 013 ya pagó cara en el legajo y que el 020 volvió a
+ * escribir: un default optimista dicho como si fuera un dato. Acá el precio es
+ * peor que una pantalla vacía — el alumno lee "Sin entregar" sobre un trabajo
+ * que entregó, y el profesor lee "esta cohorte no tiene evaluaciones" sobre
+ * una cohorte que las tiene.
+ */
+describe("016 — un fallo de carga no se disfraza de vacío", () => {
+  it("la pantalla del alumno no inventa una lista vacía cuando el fetch falla", () => {
+    expect(ENTREGAS_ALUMNO).not.toContain("setDatos([])");
+    expect(ENTREGAS_ALUMNO).toContain("Reintentar");
+  });
+
+  it("y la del profesor tampoco se cae a un payload vacío", () => {
+    expect(ENTREGAS_PROFE).not.toContain("SIN_DATOS");
+    expect(ENTREGAS_PROFE).toContain("Reintentar");
+  });
+
+  /**
+   * FR-013 — Reabrir es un ESTADO, y volver a apretarlo pisaba `reopenedAt`
+   * con la fecha de hoy: la reapertura de la semana pasada dejaba de tener
+   * autor y momento verificables, que es justo lo que hace revisable una
+   * excepción.
+   */
+  it("«Reabrir» no se puede apretar dos veces sobre una entrega ya abierta", () => {
+    expect(ENTREGAS_PROFE).toContain(
+      "disabled={ocupado || ultima.reopenedAt !== null}"
+    );
+  });
+});
+
+describe("016 — el nombre de la zona se lee entero", () => {
+  /**
+   * `replace` con un string cambia la PRIMERA aparición y nada más:
+   * `America/Port_of_Spain` salía "Port of_Spain" en la planilla. La zona se
+   * muestra para que alguien decida a qué hora cierra un plazo; medio nombre
+   * es medio dato.
+   */
+  it("una zona con más de un guión bajo se muestra completa", () => {
+    expect("America/Port_of_Spain".replace("_", " ")).toBe("America/Port of_Spain");
+    expect("America/Port_of_Spain".replaceAll("_", " ")).toBe("America/Port of Spain");
+  });
+
+  it("y la planilla usa `replaceAll`", () => {
+    expect(PLANILLA).toContain('replaceAll("_", " ")');
+    expect(PLANILLA).not.toMatch(/timezone\.replace\("_"/);
   });
 });

@@ -4035,6 +4035,75 @@ async function main() {
     JSON.stringify(miEvalTrasReentrega?.entregas?.[1]?.feedback)
   );
 
+  /*
+    ── Constitución IV: dos entregas simultáneas no entran las dos ──────────
+
+    El chequeo de "¿puede entregar?" y el insert no eran atómicos: dos POST
+    rápidos —un doble clic, un reintento del navegador— leían los dos "sí,
+    puede" y los dos insertaban. Lo que quedaba no era una fila de más, era
+    una REENTREGA que el profesor nunca habilitó (FR-013).
+
+    Se conduce con la reapertura puesta, que es el único estado en el que la
+    carrera existe de verdad: sin reabrir, las dos se rechazan por la regla de
+    siempre y el test no probaría nada.
+
+    Y se mide sobre las FILAS, no sobre los códigos de estado: lo que la
+    constitución promete es que quede UNA entrega más, no que el servidor
+    conteste lindo.
+  */
+  const reabrirParaLaCarrera = await comoProfesor(
+    profe016.jar,
+    `/api/portal/entregas/${entrega2Id}/reabrir`,
+    { method: "POST", body: "{}" }
+  );
+  const entregasAntesDeLaCarrera = (miEvalTrasReentrega?.entregas ?? []).length;
+
+  const carrera = await Promise.all(
+    [1, 2].map((n) =>
+      alumnoA016.como("/api/portal/me/entregas", {
+        method: "POST",
+        body: JSON.stringify({
+          assessmentId: evalId016,
+          url: `https://drive.example.com/${sello016}/simultanea-${n}`,
+          title: `Simultánea ${n}`,
+        }),
+      })
+    )
+  );
+  const creadas = carrera.filter((r) => r.res.status === 201).length;
+  const rechazadas = carrera.filter(
+    (r) => r.res.status === 422 && r.json?.error?.code === "entrega_cerrada"
+  ).length;
+
+  const trasLaCarrera = await alumnoA016.como(
+    `/api/portal/me/entregas?cursada=${insA016}`
+  );
+  const miEvalTrasCarrera = (trasLaCarrera.json?.assessments ?? []).find(
+    (a) => a.assessmentId === evalId016
+  );
+  const entregasDespues = (miEvalTrasCarrera?.entregas ?? []).length;
+
+  ok(
+    "Constitución IV — dos entregas simultáneas dejan UNA sola fila nueva",
+    reabrirParaLaCarrera.res.ok &&
+      entregasDespues === entregasAntesDeLaCarrera + 1,
+    `reabrir ${reabrirParaLaCarrera.res.status} · antes ${entregasAntesDeLaCarrera} · después ${entregasDespues}`
+  );
+  ok(
+    "y la que pierde la carrera recibe el 422 `entrega_cerrada`, no un error del servidor",
+    creadas === 1 && rechazadas === 1,
+    `201: ${creadas} · 422 entrega_cerrada: ${rechazadas} · ${JSON.stringify(
+      carrera.map((r) => [r.res.status, r.json?.error?.code])
+    )}`
+  );
+  ok(
+    "FR-008 — y la reentrega legítima sigue entrando: el historial no se prohibió",
+    entregasDespues === 3 &&
+      (miEvalTrasCarrera?.entregas ?? []).some((e) => e.url.includes("entrega-1")) &&
+      (miEvalTrasCarrera?.entregas ?? []).some((e) => e.url.includes("entrega-2")),
+    JSON.stringify((miEvalTrasCarrera?.entregas ?? []).map((e) => e.url))
+  );
+
   const correccion2 = await comoProfesor(
     profe016.jar,
     `/api/portal/entregas/${entrega2Id}`,
