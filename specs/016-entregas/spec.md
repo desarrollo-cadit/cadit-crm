@@ -1,6 +1,7 @@
 # 016 — Entregas y corrección
 
-**Estado**: propuesta · **Depende de**: 014, 015 · **Habilita**: —
+**Estado**: decisiones cerradas (2026-09-16), sin implementar · **Depende
+de**: 014, 015, 028 · **Habilita**: —
 
 ## Por qué esta fase existe
 
@@ -88,24 +89,39 @@ historial de lo anterior.
 - **FR-009**: El alumno NO DEBE ver entregas de sus compañeros.
 - **FR-010**: Una entrega corregida NO DEBE poder modificarse por el alumno
   sin que el profesor la reabra.
+- **FR-011**: La devolución DEBE guardarse en un campo PROPIO de la entrega.
+  NO se escribe en `assessment_result.notes`: ese campo hoy lo carga el staff
+  como nota interna, y el FR-007 lo haría visible para el alumno.
+- **FR-012**: En un programa multi-módulo (028) la entrega cuelga de la
+  inscripción del MÓDULO, no de la del programa. La evaluación ya es por
+  cohorte (`assessment.cohort_id`) y la cohorte de módulo es la que tiene
+  profesor, clases y asistencia.
+- **FR-013**: La reentrega NO tiene tope. El alumno solo puede volver a
+  entregar si el profesor REABRE la entrega: el permiso es un estado de la
+  entrega, no un contador.
 
-## Decisiones a verificar
+## Decisiones (cerradas el 2026-09-16 con el dueño)
 
-- **DV-001**: ¿Se puede entregar sin fecha límite definida? *(propuesta: sí —
-  no todas las evaluaciones tienen plazo.)*
-- **DV-002**: ¿La corrección de una entrega marca automáticamente el
-  resultado, o el profesor lo confirma aparte? *(propuesta: automático — el
-  doble paso es la razón por la que hoy los datos no se cargan.)*
-- **DV-003**: ¿Cuántas reentregas se permiten? *(propuesta: sin límite, pero
-  solo cuando el profesor reabre la entrega — sin confirmar.)*
+- **DV-001** ✅ **Sí**: se puede entregar sin fecha límite. No todas las
+  evaluaciones tienen plazo, y sin fecha no hay "tardía" que marcar.
+- **DV-002** ✅ **Automático**: corregir la entrega escribe el resultado en
+  `assessment_result` en el mismo movimiento. El doble paso es la razón por
+  la que hoy los datos no se cargan. El índice único de `assessment_result`
+  hace que corregir SOBRESCRIBA, no que duplique.
+- **DV-003** ✅ **Sin tope, y solo con reapertura del profesor** (FR-013). Un
+  número fijo obliga a adivinar hoy un límite que ningún profesor pidió, y el
+  día que haga falta una entrega más hay que tocar código.
 - **DV-006** ✅ *(2026-09-15, decisión del dueño)*: la fecha límite NO bloquea.
   Pasada la fecha vigente, la entrega se acepta marcada como tardía y el
   profesor decide. Hay fecha del grupo modificable y prórroga individual
   (FR-005b a FR-005e).
-- **DV-004**: ¿El sistema verifica que el enlace sea accesible? *(propuesta:
-  no — no puede autenticarse contra el Drive del alumno, y un chequeo que
-  falla en falso es peor que ninguno.)*
-- **DV-005**: ¿Se avisa al profesor cuando llega una entrega? Depende de 017.
+- **DV-004** ✅ **No se verifica el enlace**. El sistema no puede autenticarse
+  contra el Drive del alumno, y un chequeo que falla en falso es peor que
+  ninguno. Se valida la FORMA con `httpUrl` (`src/lib/url-schema.ts`).
+- **DV-005** ✅ **No se avisa, por ahora**. La 017 está fuera de alcance por
+  decisión del dueño, y no se abre una dependencia nueva para esto: la entrega
+  aparece en el portal del profesor y ahí la ve. Si algún día entra la 017, el
+  aviso se suma sin cambiar el modelo.
 
 ## Success Criteria
 

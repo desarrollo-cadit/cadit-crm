@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PortalAttendanceSheet } from "@/components/portal/portal-attendance-sheet";
+import { PortalSubmissions } from "@/components/portal/portal-submissions";
 
 type Cohort = {
   id: string;
@@ -66,7 +67,7 @@ type ContentPayload = {
   resources: { id: string; title: string; url: string; kind: string }[];
 };
 
-type Tab = "clases" | "evaluacion" | "material";
+type Tab = "clases" | "evaluacion" | "entregas" | "material";
 
 /**
  * 023 — Si esta clase puede recibir una grabación.
@@ -214,6 +215,9 @@ export function PortalCohortClient({ cohortId }: { cohortId: string }) {
           [
             { key: "clases", label: "Clases" },
             { key: "evaluacion", label: "Evaluación" },
+            // 016 — Entregas va ANTES de Material: es trabajo pendiente del
+            // profesor, y Material es consulta. Lo que hay que hacer primero.
+            { key: "entregas", label: "Entregas" },
             { key: "material", label: "Material" },
           ] as const
         ).map((t) => (
@@ -241,6 +245,8 @@ export function PortalCohortClient({ cohortId }: { cohortId: string }) {
         />
       ) : tab === "evaluacion" ? (
         <Evaluacion cohortId={cohortId} />
+      ) : tab === "entregas" ? (
+        <PortalSubmissions cohortId={cohortId} />
       ) : (
         <Material cohortId={cohortId} />
       )}

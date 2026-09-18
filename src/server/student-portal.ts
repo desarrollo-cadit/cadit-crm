@@ -135,6 +135,13 @@ async function scopedEnrollments(
  * ============================================================ */
 
 export type StudentAssessmentDto = {
+  /**
+   * 016 — El id viaja para que la pantalla pueda pedir las ENTREGAS de esta
+   * evaluación (`/api/portal/me/entregas`). Sin él habría que cruzarlas por
+   * nombre, y dos evaluaciones con el mismo nombre en una cohorte —que nada
+   * impide— se mezclarían las entregas entre sí.
+   */
+  id: string;
   name: string;
   required: boolean;
   /**
@@ -551,6 +558,7 @@ function buildCourse(
       (r) => r.assessmentId === a.id && r.enrollmentId === enrollment.id
     );
     return {
+      id: a.id,
       name: a.name,
       required: a.required,
       passed: mio?.passed ?? null,

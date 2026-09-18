@@ -49,6 +49,10 @@ const prefixes = {
   announcement: "anc",
   // 023 — las salas de reunión de la academia (las cuentas de Zoom).
   virtualRoom: "aula",
+  // 016 — la entrega del alumno (un ENLACE, nunca un archivo) y la prórroga
+  // individual que le corre el plazo a UNA persona en UNA evaluación.
+  submission: "sub",
+  assessmentExtension: "ext",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

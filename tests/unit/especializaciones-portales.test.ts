@@ -330,8 +330,10 @@ describe("028 — la cursada de una especialización en el portal del alumno", (
     const m2 = r!.courses[0]!.modules![0]!;
 
     expect(m2.attendancePct).toBe(100);
+    // 016 — `id` viaja desde esta fase: la pantalla lo necesita para pedir las
+    // entregas de ESTA evaluación sin cruzarlas por nombre.
     expect(m2.assessments).toEqual([
-      { name: "Entrega final", required: true, passed: true },
+      { id: "as_1", name: "Entrega final", required: true, passed: true },
     ]);
     expect(m2.approval).toBe("aprobado");
   });

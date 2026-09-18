@@ -25,6 +25,7 @@ import {
 } from "@/components/portal/student-bits";
 import type { ApprovalValue } from "@/components/portal/student-bits";
 import { StudentMilestones, type Milestone } from "@/components/portal/student-milestones";
+import { StudentSubmissions } from "@/components/portal/student-submissions";
 
 /**
  * 015/024 — Una cursada del alumno.
@@ -84,7 +85,12 @@ type Module = {
   completedClasses: number;
   approval: ApprovalValue;
   approvalReasons: string[];
-  assessments: { name: string; required: boolean; passed: boolean | null }[];
+  assessments: {
+    id: string;
+    name: string;
+    required: boolean;
+    passed: boolean | null;
+  }[];
   certificate: { code: string; issuedAt: string; revokedAt: string | null } | null;
 };
 
@@ -107,7 +113,12 @@ type Detail = {
     minAttendancePct: number | null;
     approval: ApprovalValue;
     approvalReasons: string[];
-    assessments: { name: string; required: boolean; passed: boolean | null }[];
+    assessments: {
+      id: string;
+      name: string;
+      required: boolean;
+      passed: boolean | null;
+    }[];
     certificate: { code: string; issuedAt: string; revokedAt: string | null } | null;
     /** 028 (US3) — Ausente en la cursada simple (FR-032). */
     modules?: Module[];
@@ -312,7 +323,18 @@ export function StudentCourseClient({ enrollmentId }: { enrollmentId: string }) 
                 />
               )}
               {activa === "evaluaciones" && (
-                <EvaluacionesTab assessments={course.assessments} />
+                /*
+                  016 — La pestaña pasa a ser "cómo me fue" Y "qué entregué":
+                  son la misma pregunta partida en dos canales, que es el
+                  problema que la fase vino a cerrar. El resultado oficial
+                  sigue saliendo de la evaluación (010); la entrega, la fecha
+                  y la devolución salen de `/api/portal/me/entregas`.
+                */
+                <StudentSubmissions
+                  enrollmentId={course.enrollmentId}
+                  assessments={course.assessments}
+                  academyZone={data.timezone}
+                />
               )}
               {activa === "material" && <MaterialTab resources={data.resources} />}
               {activa === "avisos" && <AvisosTab announcements={data.announcements} />}
@@ -658,58 +680,14 @@ function ClassRowItem({ row, academyZone }: { row: ClassRow; academyZone: string
 }
 
 /* ============================================================
- * Pestaña: evaluaciones
- * ============================================================ */
-
-function EvaluacionesTab({
-  assessments,
-}: {
-  assessments: { name: string; required: boolean; passed: boolean | null }[];
-}) {
-  if (assessments.length === 0) {
-    return (
-      <EmptyNote title="Esta cursada todavía no tiene evaluaciones cargadas">
-        Cuando la academia las cargue vas a ver acá cuáles aprobaste y cuáles
-        faltan corregir.
-      </EmptyNote>
-    );
-  }
-
-  return (
-    <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
-      {assessments.map((a) => (
-        <li key={a.name} className="flex items-center justify-between gap-3 px-4 py-3.5">
-          <span className="min-w-0">
-            <span className="block truncate text-sm font-medium">{a.name}</span>
-            {!a.required && <span className="text-xs text-text-3">No obligatoria</span>}
-          </span>
-          {/*
-            FR-005 — sin corregir se muestra PENDIENTE, jamás desaprobada.
-            Marcar como reprobado a quien todavía no fue evaluado es acusarlo
-            de algo que no pasó.
-          */}
-          {a.passed === null ? (
-            <span className="shrink-0 rounded-full border border-border bg-secondary px-2.5 py-0.5 text-xs font-medium text-text-2">
-              Sin corregir
-            </span>
-          ) : a.passed ? (
-            <span className="shrink-0 rounded-full border border-success-border bg-success-soft px-2.5 py-0.5 text-xs font-medium text-success">
-              Aprobada
-            </span>
-          ) : (
-            <span className="shrink-0 rounded-full border border-danger-border bg-danger-soft px-2.5 py-0.5 text-xs font-medium text-danger">
-              Desaprobada
-            </span>
-          )}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-/* ============================================================
  * Pestaña: material
- * ============================================================ */
+ * ============================================================
+ * 016 — La pestaña de evaluaciones se mudó entera a
+ * `student-submissions.tsx`: dejó de ser una lista de estados y pasó a ser el
+ * lugar donde se entrega, se lee la devolución y se vuelve a entregar. El
+ * badge de aprobada/desaprobada sigue saliendo del resultado de la evaluación
+ * (010) y no de la entrega, porque la academia puede corregir por fuera.
+ */
 
 function MaterialTab({
   resources,

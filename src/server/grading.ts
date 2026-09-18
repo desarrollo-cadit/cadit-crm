@@ -302,6 +302,17 @@ export type AssessmentDto = {
   name: string;
   position: number;
   required: boolean;
+  /**
+   * 016 (FR-005) — La fecha límite del grupo, como instante ISO. `null` = sin
+   * plazo, que es un estado legítimo (DV-001).
+   *
+   * Es OPCIONAL en el tipo y no obligatorio a propósito: `planAssessmentCopy`
+   * es pura y se prueba con objetos armados a mano, y volverla obligatoria
+   * convertiría una columna nueva en una tanda de fixtures rotos que no dicen
+   * nada sobre el producto. El plazo NO se copia entre cohortes: la fecha de
+   * una camada no significa nada en la siguiente.
+   */
+  dueAt?: string | null;
 };
 
 export async function listAssessments(
@@ -324,6 +335,7 @@ export async function listAssessments(
     name: a.name,
     position: a.position,
     required: a.required,
+    dueAt: a.dueAt?.toISOString() ?? null,
   }));
 }
 
@@ -402,7 +414,25 @@ export async function recordResults(
       })
       .onConflictDoUpdate({
         target: [schema.assessmentResult.assessmentId, schema.assessmentResult.enrollmentId],
-        set: { passed: e.passed, notes: e.notes ?? null, updatedAt: now },
+        set: {
+          passed: e.passed,
+          /**
+           * 016 — La nota interna sólo se pisa cuando quien llama la TRAE.
+           *
+           * Antes se escribía `e.notes ?? null` siempre, así que cualquier
+           * llamada que no la mandara la borraba. Mientras el único camino era
+           * la planilla —que manda las dos cosas juntas— no se notaba. Con la
+           * corrección de una entrega (FR-006/DV-002) apareció un segundo
+           * camino que escribe `passed` y NO tiene por qué saber nada de la
+           * nota del staff: sin esto, corregir una entrega vaciaba en silencio
+           * lo que la coordinación había anotado sobre esa persona.
+           *
+           * Mandar `null` explícito sigue borrándola, que es lo que la planilla
+           * necesita para poder dejarla vacía a propósito.
+           */
+          ...(e.notes !== undefined ? { notes: e.notes } : {}),
+          updatedAt: now,
+        },
       });
   }
 
@@ -857,6 +887,12 @@ export async function programGrading(
 export type CohortGradingDto = {
   assessments: AssessmentDto[];
   minAttendancePct: number | null;
+  /**
+   * 016 (FR-005e) — La zona de la academia, para que la fecha límite se pinte
+   * con ella y no con el reloj del navegador. Viaja con la planilla porque es
+   * donde la pantalla del staff muestra el plazo.
+   */
+  timezone: string;
   students: StudentGrading[];
 };
 
@@ -872,9 +908,15 @@ export async function cohortGrading(
       id: schema.cohort.id,
       minAttendancePct: schema.cohort.minAttendancePct,
       courseMinPct: schema.course.minAttendancePct,
+      // 016 (FR-005e) — En la MISMA consulta: la zona no paga un viaje aparte.
+      timezone: schema.organization.timezone,
     })
     .from(schema.cohort)
     .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
+    .innerJoin(
+      schema.organization,
+      eq(schema.cohort.organizationId, schema.organization.id)
+    )
     .where(scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, cohortId)))
     .limit(1);
   const cohort = cohortRows[0];
@@ -981,6 +1023,7 @@ export async function cohortGrading(
   return {
     assessments,
     minAttendancePct: minPct,
+    timezone: cohort.timezone,
     students: enrollments.map((e) => {
       const mine = resultsByEnrollment.get(e.id) ?? new Map<string, boolean | null>();
       const asistencia = attendanceByEnrollment.get(e.id) ?? new Map<string, string>();

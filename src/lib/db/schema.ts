@@ -1435,6 +1435,21 @@ export const assessment = pgTable(
      * que se registran pero no definen si el alumno se recibe.
      */
     required: boolean("required").notNull().default(true),
+    /**
+     * 016 (FR-005, FR-005e) — La fecha límite de TODA la cohorte.
+     *
+     * Es un INSTANTE, no un día con un `"23:59"` colgando: se compone con
+     * `classInstant()` en la zona de la organización, igual que el horario de
+     * una clase. Un "23:59" sin zona cierra el plazo antes de hora para los 87
+     * alumnos que cursan desde fuera de Uruguay.
+     *
+     * NULL = sin plazo, y es un estado legítimo (DV-001): no todas las
+     * evaluaciones tienen fecha, y sin fecha no hay "tardía" que marcar.
+     *
+     * **No bloquea** (DV-006). Pasada la fecha la entrega se acepta marcada
+     * como tardía y decide el profesor.
+     */
+    dueAt: timestamp("due_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -1472,6 +1487,146 @@ export const assessmentResult = pgTable(
     // Un resultado por alumno y evaluación: recargar CORRIGE, no duplica.
     uniqueIndex("assessment_result_uq").on(t.assessmentId, t.enrollmentId),
     index("assessment_result_org_enrollment_idx").on(t.organizationId, t.enrollmentId),
+  ]
+);
+
+/**
+ * 016 (FR-001..FR-004) — La ENTREGA de un alumno en una evaluación.
+ *
+ * Es un **enlace**, nunca un archivo (decisión marco de la fase, constitución
+ * II): adentro queda el registro de qué se entregó, cuándo y con qué
+ * devolución; el archivo vive en el Drive del alumno y el profesor lo abre en
+ * otra pestaña. Lo que se ganó a cambio es no sumar cientos de gigas de
+ * modelos de Revit al VPS ni una cuarta dependencia de runtime.
+ *
+ * **Cuelga de la inscripción, no del contacto** (FR-001, FR-012). En un
+ * programa multi-módulo esa inscripción es la del MÓDULO —la hija—, porque la
+ * evaluación ya es por cohorte (`assessment.cohort_id`) y la cohorte de módulo
+ * es la que tiene profesor, clases y asistencia.
+ *
+ * **Una fila por intento, y ninguna se borra** (FR-008). La reentrega inserta
+ * una fila nueva; la anterior queda con su fecha y su devolución. Borrarla
+ * perdería la evidencia de qué se corrigió y por qué se pidió de nuevo.
+ *
+ * Por eso NO hay índice único por evaluación e inscripción: eso es
+ * exactamente lo que impediría el historial.
+ */
+export const submission = pgTable(
+  "submission",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    assessmentId: text("assessment_id")
+      .notNull()
+      .references(() => assessment.id, { onDelete: "cascade" }),
+    enrollmentId: text("enrollment_id")
+      .notNull()
+      .references(() => enrollment.id, { onDelete: "cascade" }),
+    /** FR-002/FR-003 — el enlace, validado con `httpUrl`. Nunca un archivo. */
+    url: text("url").notNull(),
+    /** FR-002 — opcional: el enlace sin título ya dice dónde está el trabajo. */
+    title: text("title"),
+    /** FR-004 — el instante exacto de la entrega. */
+    submittedAt: timestamp("submitted_at").notNull().defaultNow(),
+    /**
+     * 016 (FR-006) — La corrección. `passed` NULL = todavía sin corregir, y
+     * ese null NO es un desaprobado: es la misma regla de 010/FR-005, que es la
+     * que más veces se rompe sola cuando alguien escribe `passed ? … : …`.
+     */
+    passed: boolean("passed"),
+    /**
+     * **FR-007 + FR-011 — la devolución, en columna PROPIA.**
+     *
+     * No va a `assessment_result.notes` y no es un detalle de prolijidad: ese
+     * campo hoy lo carga el staff como nota INTERNA sobre el alumno, y FR-007
+     * vuelve la devolución visible para él. Escribirla ahí le abriría al alumno
+     * todo lo que la coordinación anotó. Son dos textos con dos audiencias.
+     */
+    feedback: text("feedback"),
+    correctedAt: timestamp("corrected_at"),
+    /** `set null`: que el profesor deje la academia no borra la corrección. */
+    correctedBy: text("corrected_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    /**
+     * 016 (FR-010, FR-013, DV-003) — **La reapertura: un ESTADO, no un
+     * contador.**
+     *
+     * La reentrega no tiene tope. Lo único que la habilita es que el profesor
+     * reabra ESTA entrega. Un número fijo de intentos obligaría a adivinar hoy
+     * un límite que ningún profesor pidió, y el día que hiciera falta una
+     * entrega más habría que tocar código.
+     */
+    reopenedAt: timestamp("reopened_at"),
+    reopenedBy: text("reopened_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    // Por acá se lee el historial de una persona en una evaluación, y de ahí
+    // sale la entrega VIGENTE: la más reciente.
+    index("submission_org_assessment_enrollment_idx").on(
+      t.organizationId,
+      t.assessmentId,
+      t.enrollmentId,
+      t.submittedAt
+    ),
+    // Y por acá, la pantalla del profesor: todas las entregas de su evaluación.
+    index("submission_org_assessment_idx").on(t.organizationId, t.assessmentId),
+  ]
+);
+
+/**
+ * 016 (FR-005b, FR-005c) — La PRÓRROGA individual: el plazo de UNA persona en
+ * UNA evaluación.
+ *
+ * Nunca es una fecha suelta. Registra **quién** la otorgó y **por qué**, con el
+ * mismo criterio que la dispensa de asistencia (028/FR-023) y que la
+ * revocación del certificado (010): sin autor ni motivo, una excepción es
+ * indistinguible de un error de carga, y a los seis meses nadie puede decidir
+ * cuál de las dos cosas fue.
+ *
+ * La fecha vigente del alumno es la **más tardía** entre ésta y la del grupo
+ * (FR-005c): una prórroga sólo puede SUMAR plazo. Si después se corre la fecha
+ * del grupo más allá de ella, el alumno no queda por detrás de sus compañeros.
+ */
+export const assessmentExtension = pgTable(
+  "assessment_extension",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    assessmentId: text("assessment_id")
+      .notNull()
+      .references(() => assessment.id, { onDelete: "cascade" }),
+    enrollmentId: text("enrollment_id")
+      .notNull()
+      .references(() => enrollment.id, { onDelete: "cascade" }),
+    /** El instante, compuesto con `classInstant()` como el del grupo. */
+    dueAt: timestamp("due_at").notNull(),
+    /** FR-005b — sin motivo no hay prórroga. */
+    reason: text("reason").notNull(),
+    grantedBy: text("granted_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    /**
+     * Una prórroga por persona y evaluación: volver a otorgarla la CORRIGE, no
+     * acumula dos fechas distintas sobre la misma entrega (constitución IV).
+     */
+    uniqueIndex("assessment_extension_uq").on(t.assessmentId, t.enrollmentId),
+    index("assessment_extension_org_enrollment_idx").on(
+      t.organizationId,
+      t.enrollmentId
+    ),
   ]
 );
 

@@ -16,7 +16,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-type Assessment = { id: string; name: string; position: number; required: boolean };
+type Assessment = {
+  id: string;
+  name: string;
+  position: number;
+  required: boolean;
+  /** 016 (FR-005) — La fecha límite del grupo. `null` = sin plazo (DV-001). */
+  dueAt?: string | null;
+};
 type State = "aprobado" | "reprobado" | "pendiente";
 
 type Student = {
@@ -32,6 +39,8 @@ type Student = {
 type Sheet = {
   assessments: Assessment[];
   minAttendancePct: number | null;
+  /** 016 (FR-005e) — La zona de la academia, para pintar el plazo con ella. */
+  timezone: string;
   students: Student[];
 };
 
@@ -260,6 +269,16 @@ export function GradingClient({
       {error && <p className="text-xs text-destructive">{error}</p>}
       {aviso && <p className="text-xs text-muted-foreground">{aviso}</p>}
 
+      {sheet.assessments.length > 0 && (
+        <PlazosDeEntrega
+          assessments={sheet.assessments}
+          timezone={sheet.timezone}
+          canEdit={canEdit}
+          onCambio={refetch}
+          onError={setError}
+        />
+      )}
+
       {sheet.assessments.length === 0 ? (
         <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
           {canEdit ? (
@@ -367,6 +386,146 @@ export function GradingClient({
       <p className="text-xs text-muted-foreground">
         Una evaluación sin corregir deja al alumno <strong>pendiente</strong>, nunca
         reprobado. El certificado se emite solo a los aprobados.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * 016 (FR-005b) — La fecha límite de cada evaluación, desde el panel.
+ *
+ * Coordinación tiene que poder ponerla y moverla igual que el profesor
+ * (FR-005b); la corrección y la prórroga individual viven en el portal del
+ * profesor, que es quien las usa. Acá alcanza con el plazo del GRUPO: el resto
+ * sería una segunda pantalla de corrección para mantener, que es exactamente
+ * lo que la fase decidió no construir.
+ *
+ * Se carga un DÍA y una HORA, nunca un instante armado por el navegador: el
+ * servidor lo compone con la zona de la academia (FR-005e). Un "23:59"
+ * interpretado con el reloj de quien lo carga cierra el plazo a una hora
+ * distinta para los 87 alumnos que cursan desde otro país.
+ */
+function PlazosDeEntrega({
+  assessments,
+  timezone,
+  canEdit,
+  onCambio,
+  onError,
+}: {
+  assessments: Assessment[];
+  /** FR-005e — La zona de la ACADEMIA. Sin ella se pinta con la de quien mira. */
+  timezone: string;
+  canEdit: boolean;
+  onCambio: () => void;
+  onError: (m: string | null) => void;
+}) {
+  const [abierta, setAbierta] = useState<string | null>(null);
+  const [fecha, setFecha] = useState("");
+  const [hora, setHora] = useState("23:59");
+  const [guardando, setGuardando] = useState(false);
+
+  async function guardar(assessmentId: string, plazo: { fecha: string; hora: string } | null) {
+    setGuardando(true);
+    const res = await fetch(`/api/assessments/${assessmentId}/plazo`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ plazo }),
+    }).catch(() => null);
+    setGuardando(false);
+
+    if (!res?.ok) {
+      const body = (await res?.json().catch(() => null)) as
+        | { error?: { message?: string } }
+        | null;
+      onError(body?.error?.message ?? "No se pudo guardar el plazo");
+      return;
+    }
+    onError(null);
+    setAbierta(null);
+    setFecha("");
+    onCambio();
+  }
+
+  return (
+    <div className="rounded-lg border">
+      <p className="border-b bg-subtle px-3 py-2 text-xs font-medium">
+        Fechas límite de entrega
+      </p>
+      <ul className="divide-y">
+        {assessments.map((a) => (
+          <li key={a.id} className="space-y-2 px-3 py-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="min-w-0 flex-1 truncate text-xs">
+                {a.name}
+                <span className="ml-2 text-muted-foreground">
+                  {a.dueAt
+                    ? new Intl.DateTimeFormat("es-UY", {
+                        timeZone: timezone,
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        hour12: false,
+                      }).format(new Date(a.dueAt))
+                    : "sin fecha límite"}
+                </span>
+              </span>
+              {canEdit && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setAbierta(abierta === a.id ? null : a.id)}
+                >
+                  {a.dueAt ? "Cambiar" : "Poner fecha"}
+                </Button>
+              )}
+            </div>
+
+            {canEdit && abierta === a.id && (
+              <div className="flex flex-wrap items-end gap-2">
+                <Input
+                  type="date"
+                  aria-label={`Fecha límite de ${a.name}`}
+                  className="h-8 w-40"
+                  value={fecha}
+                  onChange={(e) => setFecha(e.target.value)}
+                />
+                <Input
+                  type="time"
+                  aria-label={`Hora límite de ${a.name}`}
+                  className="h-8 w-28"
+                  value={hora}
+                  onChange={(e) => setHora(e.target.value)}
+                />
+                <Button
+                  size="sm"
+                  disabled={!fecha || guardando}
+                  onClick={() => void guardar(a.id, { fecha, hora })}
+                >
+                  Guardar
+                </Button>
+                {/* Volver a "sin plazo" es legítimo (DV-001), no un descuido. */}
+                {a.dueAt && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={guardando}
+                    onClick={() => void guardar(a.id, null)}
+                  >
+                    Quitar
+                  </Button>
+                )}
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+      <p className="border-t px-3 py-2 text-[11px] text-muted-foreground">
+        Las horas son de {timezone.replace("_", " ")}. La fecha no bloquea:
+        pasada la hora, la entrega se acepta marcada como
+        fuera de plazo y decide el profesor. La prórroga de una persona concreta
+        se da desde el portal del profesor.
       </p>
     </div>
   );

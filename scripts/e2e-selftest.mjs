@@ -3661,6 +3661,533 @@ async function main() {
     })
   );
 
+  // ============================================================
+  // 016 — Entregas y corrección.
+  //
+  // El circuito entero, conducido como lo viven las tres personas: el alumno
+  // entrega un ENLACE, el profesor lo ve sin intermediarios, corrige con
+  // devolución escrita —y eso alimenta la evaluación de 010 sin cargarla dos
+  // veces—, y el alumno lee lo que le dijeron.
+  //
+  // Los dos caminos que más fácil se rompen, y por eso se conducen enteros:
+  //
+  //   * **La fecha vigente se calcula AL MOSTRAR** (FR-005d). La MISMA entrega
+  //     pasa de tardía a a-tiempo cuando alguien otorga una prórroga después.
+  //     Con el dato congelado en una columna al entregar, esto no pasa y
+  //     alguien lo "arregla" a mano.
+  //   * **La reentrega es un ESTADO, no un contador** (FR-013): sin reapertura
+  //     del profesor no entra, y cuando entra NO borra la anterior (FR-008).
+  // ============================================================
+  console.log("\n== 016: entregas y corrección ==");
+
+  const sello016 = Date.now();
+  const curso016 = (
+    await api("/api/courses", {
+      method: "POST",
+      body: JSON.stringify({ name: `Curso Entregas E2E ${sello016}`, published: false }),
+    })
+  ).json?.course?.id;
+
+  const profe016 = await profesorConPortal(
+    `Profe Entregas ${sello016}`,
+    `profe-016-${sello016}@e2e.test`
+  );
+  const coh016 = await cohorteNueva({
+    courseId: curso016,
+    name: `Camada Entregas ${sello016}`,
+    teacherId: profe016.id,
+    startDate: isoDia(-10),
+    endDate: isoDia(20),
+    daysOfWeek: "1",
+    startTime: "18:30",
+    endTime: "20:30",
+  });
+  ok(
+    "016 — curso, cohorte y profesor para las entregas",
+    Boolean(curso016) && coh016.status === 201 && profe016.entro,
+    `${coh016.status} ${profe016.motivo}`
+  );
+
+  const inscribir016 = async (nombre, correo, sufijo) =>
+    (
+      await api("/api/enrollments", {
+        method: "POST",
+        body: JSON.stringify({
+          cohortId: coh016.id,
+          contact: {
+            firstName: nombre,
+            lastName: `E2E ${sello016}`,
+            phone: `5989${sufijo}${String(sello016).slice(-6)}`,
+            email: correo,
+          },
+        }),
+      })
+    ).json?.enrollment?.id;
+
+  const correoA016 = `entrega-a-${sello016}@e2e.test`;
+  const correoB016 = `entrega-b-${sello016}@e2e.test`;
+  const insA016 = await inscribir016("EntregaUno", correoA016, "1");
+  const insB016 = await inscribir016("EntregaDos", correoB016, "2");
+  const alumnoA016 = await alumnoConPortal(insA016, correoA016);
+  const alumnoB016 = await alumnoConPortal(insB016, correoB016);
+  ok(
+    "016 — dos alumnos con acceso al portal (uno entrega, el otro no tiene que ver nada)",
+    Boolean(insA016) && Boolean(insB016) && alumnoA016.entro && alumnoB016.entro,
+    `${alumnoA016.motivo} | ${alumnoB016.motivo}`
+  );
+
+  const evalId016 = (
+    await api(`/api/cohorts/${coh016.id}/grading`, {
+      method: "POST",
+      body: JSON.stringify({ name: `Entrega final ${sello016}`, required: true }),
+    })
+  ).json?.assessment?.id;
+
+  // El plazo se pone VENCIDO a propósito: es la única manera de conducir la
+  // entrega fuera de plazo sin esperar dos días.
+  const plazoGrupo = await api(`/api/assessments/${evalId016}/plazo`, {
+    method: "PUT",
+    body: JSON.stringify({ plazo: { fecha: isoDia(-2), hora: "23:59" } }),
+  });
+  ok(
+    "FR-005 — coordinación fija la fecha límite del grupo, compuesta con zona horaria",
+    plazoGrupo.res.ok && typeof plazoGrupo.json?.dueAt === "string",
+    `${plazoGrupo.res.status} ${JSON.stringify(plazoGrupo.json)}`
+  );
+
+  // ── US1 / SC-001: el alumno entrega ──────────────────────────────────────
+  const enlaceMalo = await alumnoA016.como("/api/portal/me/entregas", {
+    method: "POST",
+    body: JSON.stringify({ assessmentId: evalId016, url: "javascript:alert(1)" }),
+  });
+  ok(
+    "FR-003/DV-004 — un «enlace» que no es http(s) se rechaza (422)",
+    enlaceMalo.res.status === 422,
+    `${enlaceMalo.res.status}`
+  );
+
+  const entrega1 = await alumnoA016.como("/api/portal/me/entregas", {
+    method: "POST",
+    body: JSON.stringify({
+      assessmentId: evalId016,
+      url: `https://drive.example.com/${sello016}/entrega-1`,
+      title: "Primera entrega",
+    }),
+  });
+  const entrega1Id = entrega1.json?.entrega?.id;
+  ok(
+    "US1 — el alumno entrega un enlace y queda registrado con su fecha",
+    entrega1.res.status === 201 && Boolean(entrega1Id),
+    `${entrega1.res.status} ${JSON.stringify(entrega1.json)}`
+  );
+  ok(
+    "DV-006 — pasada la fecha la entrega se ACEPTA, marcada como tardía; no se rechaza",
+    entrega1.json?.entrega?.tardia === true,
+    JSON.stringify(entrega1.json?.entrega)
+  );
+
+  const vistaProfe016 = await comoProfesor(
+    profe016.jar,
+    `/api/portal/cohorts/${coh016.id}/entregas`
+  );
+  const evalDelProfe = (vistaProfe016.json?.assessments ?? []).find(
+    (a) => a.assessmentId === evalId016
+  );
+  const filaA016 = (evalDelProfe?.students ?? []).find(
+    (s) => s.enrollmentId === insA016
+  );
+  ok(
+    "SC-001 — el profesor ve la entrega en SU portal, sin intermediarios",
+    vistaProfe016.res.ok &&
+      filaA016?.entregas?.[0]?.url?.includes(`${sello016}/entrega-1`),
+    `${vistaProfe016.res.status} ${JSON.stringify(filaA016)}`
+  );
+  ok(
+    "SC-003 — y una entrega fuera de plazo se distingue a simple vista",
+    filaA016?.estado === "tardia" && filaA016?.entregas?.[0]?.tardia === true,
+    JSON.stringify(filaA016 && { estado: filaA016.estado, tardia: filaA016.entregas?.[0]?.tardia })
+  );
+
+  // ── FR-005b..FR-005d: la prórroga, y lo que hace con "tardía" ────────────
+  const prorrogaSinMotivo = await api(`/api/assessments/${evalId016}/plazo`, {
+    method: "POST",
+    body: JSON.stringify({
+      enrollmentId: insA016,
+      plazo: { fecha: isoDia(5), hora: "23:59" },
+      motivo: "",
+    }),
+  });
+  ok(
+    "FR-005b — sin motivo no hay prórroga (422)",
+    prorrogaSinMotivo.res.status === 422,
+    `${prorrogaSinMotivo.res.status}`
+  );
+
+  const prorroga016 = await api(`/api/assessments/${evalId016}/plazo`, {
+    method: "POST",
+    body: JSON.stringify({
+      enrollmentId: insA016,
+      plazo: { fecha: isoDia(5), hora: "23:59" },
+      motivo: "Avisó antes del inicio que se iba de viaje",
+    }),
+  });
+  ok(
+    "FR-005b — la prórroga individual registra la nueva fecha y el motivo",
+    prorroga016.res.ok && typeof prorroga016.json?.prorroga?.dueAt === "string",
+    `${prorroga016.res.status} ${JSON.stringify(prorroga016.json)}`
+  );
+
+  const trasProrroga = await comoProfesor(
+    profe016.jar,
+    `/api/portal/cohorts/${coh016.id}/entregas`
+  );
+  const filaTrasProrroga = (
+    (trasProrroga.json?.assessments ?? []).find((a) => a.assessmentId === evalId016)
+      ?.students ?? []
+  ).find((s) => s.enrollmentId === insA016);
+  ok(
+    "FR-005d — la MISMA entrega deja de ser tardía: «fuera de plazo» se calcula al mostrar",
+    filaTrasProrroga?.entregas?.[0]?.tardia === false &&
+      filaTrasProrroga?.estado === "entregada",
+    JSON.stringify(
+      filaTrasProrroga && {
+        estado: filaTrasProrroga.estado,
+        tardia: filaTrasProrroga.entregas?.[0]?.tardia,
+      }
+    )
+  );
+  ok(
+    "FR-005c — con la prórroga por delante, la fecha vigente es la de la prórroga",
+    filaTrasProrroga?.vigenteAt === prorroga016.json?.prorroga?.dueAt,
+    `${filaTrasProrroga?.vigenteAt} vs ${prorroga016.json?.prorroga?.dueAt}`
+  );
+
+  // Y la otra mitad de FR-005c: correr la fecha del GRUPO más allá de la
+  // prórroga no puede dejar al alumno con prórroga por detrás de sus compañeros.
+  const plazoCorrido = await api(`/api/assessments/${evalId016}/plazo`, {
+    method: "PUT",
+    body: JSON.stringify({ plazo: { fecha: isoDia(15), hora: "23:59" } }),
+  });
+  const trasCorrerGrupo = await comoProfesor(
+    profe016.jar,
+    `/api/portal/cohorts/${coh016.id}/entregas`
+  );
+  const filaTrasCorrer = (
+    (trasCorrerGrupo.json?.assessments ?? []).find((a) => a.assessmentId === evalId016)
+      ?.students ?? []
+  ).find((s) => s.enrollmentId === insA016);
+  /**
+   * Se comparan INSTANTES, no los diez primeros caracteres del ISO, y el
+   * primer intento de escribir este check se equivocó justamente ahí.
+   *
+   * `23:59` del 1/10 en Montevideo es `2026-10-02T02:59:00Z`: en UTC cae al día
+   * SIGUIENTE. Recortar el ISO y compararlo contra la fecha de pared daba
+   * "falla" sobre un dato correcto — que es exactamente el error que FR-005e
+   * existe para evitar, cometido en el arnés en vez de en el producto. La
+   * comparación honesta es contra el instante que devolvió la propia API.
+   */
+  ok(
+    "FR-005c — correr la fecha del grupo MÁS ALLÁ de la prórroga la vuelve la vigente",
+    filaTrasCorrer?.vigenteAt === plazoCorrido.json?.dueAt &&
+      new Date(filaTrasCorrer.vigenteAt).getTime() >
+        new Date(prorroga016.json?.prorroga?.dueAt).getTime(),
+    `vigente ${filaTrasCorrer?.vigenteAt} · grupo ${plazoCorrido.json?.dueAt} · prórroga ${prorroga016.json?.prorroga?.dueAt}`
+  );
+
+  // ── SC-004 / FR-009: el alumno no alcanza lo del compañero ───────────────
+  const cursadaAjena016 = await alumnoB016.como(
+    `/api/portal/me/entregas?cursada=${insA016}`
+  );
+  const cursadaInventada016 = await alumnoB016.como(
+    "/api/portal/me/entregas?cursada=enr_no_existe"
+  );
+  ok(
+    "SC-004 — la cursada de otro alumno da 404, no 403",
+    cursadaAjena016.res.status === 404,
+    `${cursadaAjena016.res.status}`
+  );
+  ok(
+    "y responde EXACTAMENTE lo mismo que una inventada: no confirma que existe",
+    JSON.stringify(cursadaAjena016.json) === JSON.stringify(cursadaInventada016.json),
+    `${JSON.stringify(cursadaAjena016.json)} vs ${JSON.stringify(cursadaInventada016.json)}`
+  );
+  const propiaB016 = await alumnoB016.como(
+    `/api/portal/me/entregas?cursada=${insB016}`
+  );
+  ok(
+    "SC-004 — y en su propia cursada no aparece ni el enlace del compañero",
+    propiaB016.res.ok &&
+      !JSON.stringify(propiaB016.json).includes(`${sello016}/entrega-1`),
+    `${propiaB016.res.status}`
+  );
+
+  // ── US3 / SC-002: corregir, y que alimente la evaluación de 010 ──────────
+  const sinDevolucion = await comoProfesor(
+    profe016.jar,
+    `/api/portal/entregas/${entrega1Id}`,
+    { method: "PATCH", body: JSON.stringify({ passed: false, feedback: "" }) }
+  );
+  ok(
+    "FR-007 — no se corrige sin devolución escrita (422): un «no aprobado» solo no sirve",
+    sinDevolucion.res.status === 422,
+    `${sinDevolucion.res.status}`
+  );
+
+  const correccion016 = await comoProfesor(
+    profe016.jar,
+    `/api/portal/entregas/${entrega1Id}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        passed: false,
+        feedback: "Falta la planta baja acotada. Reentregá con las cotas.",
+      }),
+    }
+  );
+  ok(
+    "US3 — el profesor corrige con devolución escrita",
+    correccion016.res.ok,
+    `${correccion016.res.status} ${JSON.stringify(correccion016.json)}`
+  );
+
+  const planilla016 = await estadoEnPlanilla(coh016.id, insA016);
+  ok(
+    "SC-002/DV-002 — corregir la entrega actualizó el resultado de 010, sin carga doble",
+    planilla016?.results?.[evalId016] === false && planilla016?.state === "reprobado",
+    JSON.stringify(planilla016)
+  );
+
+  // ── US4: el alumno lee la devolución ─────────────────────────────────────
+  const misEntregas016 = await alumnoA016.como(
+    `/api/portal/me/entregas?cursada=${insA016}`
+  );
+  const miEval016 = (misEntregas016.json?.assessments ?? []).find(
+    (a) => a.assessmentId === evalId016
+  );
+  ok(
+    "US4 — el alumno lee la devolución del profesor",
+    miEval016?.entregas?.[0]?.feedback?.includes("cotas"),
+    JSON.stringify(miEval016?.entregas?.[0])
+  );
+  ok(
+    "FR-010 — corregida y sin reabrir, NO puede volver a entregar",
+    miEval016?.puedeEntregar === false && miEval016?.estado === "corregida",
+    JSON.stringify(miEval016 && { estado: miEval016.estado, puede: miEval016.puedeEntregar })
+  );
+
+  const reentregaBloqueada = await alumnoA016.como("/api/portal/me/entregas", {
+    method: "POST",
+    body: JSON.stringify({
+      assessmentId: evalId016,
+      url: `https://drive.example.com/${sello016}/colada`,
+    }),
+  });
+  ok(
+    "FR-013 — la reentrega sin reapertura se rechaza (422), y dice qué la destraba",
+    reentregaBloqueada.res.status === 422 &&
+      reentregaBloqueada.json?.error?.code === "entrega_cerrada",
+    `${reentregaBloqueada.res.status} ${JSON.stringify(reentregaBloqueada.json?.error)}`
+  );
+
+  // ── US5: reabrir y reentregar, sin perder el historial ───────────────────
+  const reabrir016 = await comoProfesor(
+    profe016.jar,
+    `/api/portal/entregas/${entrega1Id}/reabrir`,
+    { method: "POST", body: "{}" }
+  );
+  ok(
+    "US5/FR-013 — el profesor REABRE la entrega: el permiso es un estado, no un contador",
+    reabrir016.res.ok,
+    `${reabrir016.res.status}`
+  );
+
+  const entrega2 = await alumnoA016.como("/api/portal/me/entregas", {
+    method: "POST",
+    body: JSON.stringify({
+      assessmentId: evalId016,
+      url: `https://drive.example.com/${sello016}/entrega-2`,
+      title: "Segunda entrega",
+    }),
+  });
+  const entrega2Id = entrega2.json?.entrega?.id;
+  ok(
+    "US5 — reabierta, el alumno vuelve a entregar",
+    entrega2.res.status === 201 && Boolean(entrega2Id),
+    `${entrega2.res.status} ${JSON.stringify(entrega2.json)}`
+  );
+
+  const historial016 = await alumnoA016.como(
+    `/api/portal/me/entregas?cursada=${insA016}`
+  );
+  const miEvalTrasReentrega = (historial016.json?.assessments ?? []).find(
+    (a) => a.assessmentId === evalId016
+  );
+  ok(
+    "FR-008 — la reentrega NO borra la anterior: queda el historial completo",
+    (miEvalTrasReentrega?.entregas ?? []).length === 2 &&
+      miEvalTrasReentrega.entregas[0].url.includes("entrega-2") &&
+      miEvalTrasReentrega.entregas[1].url.includes("entrega-1"),
+    JSON.stringify((miEvalTrasReentrega?.entregas ?? []).map((e) => e.url))
+  );
+  ok(
+    "y la devolución de la corrección anterior sigue ahí, con su entrega",
+    miEvalTrasReentrega?.entregas?.[1]?.feedback?.includes("cotas"),
+    JSON.stringify(miEvalTrasReentrega?.entregas?.[1]?.feedback)
+  );
+
+  const correccion2 = await comoProfesor(
+    profe016.jar,
+    `/api/portal/entregas/${entrega2Id}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ passed: true, feedback: "Ahora sí: las cotas están." }),
+    }
+  );
+  const planillaFinal016 = await estadoEnPlanilla(coh016.id, insA016);
+  ok(
+    "FR-006 — volver a corregir SOBREESCRIBE el resultado, no lo duplica",
+    correccion2.res.ok && planillaFinal016?.results?.[evalId016] === true,
+    JSON.stringify(planillaFinal016)
+  );
+
+  // ── FR-009, la otra mitad: un profesor ajeno tampoco alcanza la entrega ──
+  const profeAjeno016 = await profesorConPortal(
+    `Profe Ajeno ${sello016}`,
+    `profe-ajeno-016-${sello016}@e2e.test`
+  );
+  const ajenaProfe016 = await comoProfesor(
+    profeAjeno016.jar,
+    `/api/portal/entregas/${entrega2Id}`,
+    { method: "PATCH", body: JSON.stringify({ passed: true, feedback: "no debería poder" }) }
+  );
+  const inventadaProfe016 = await comoProfesor(
+    profeAjeno016.jar,
+    "/api/portal/entregas/sub_no_existe",
+    { method: "PATCH", body: JSON.stringify({ passed: true, feedback: "no debería poder" }) }
+  );
+  ok(
+    "FR-009 — un profesor ajeno recibe 404, idéntico al de un id inventado",
+    ajenaProfe016.res.status === 404 &&
+      JSON.stringify(ajenaProfe016.json) === JSON.stringify(inventadaProfe016.json),
+    `${ajenaProfe016.res.status} ${JSON.stringify(ajenaProfe016.json)}`
+  );
+
+  // ── FR-005e: el plazo viaja con la zona, no con el reloj de quien mira ───
+  const conZona016 = await comoProfesor(
+    profe016.jar,
+    `/api/portal/cohorts/${coh016.id}/entregas`
+  );
+  ok(
+    "FR-005e — las entregas viajan con la zona de la academia para pintar el plazo",
+    typeof conZona016.json?.timezone === "string" &&
+      conZona016.json.timezone.includes("/"),
+    JSON.stringify(conZona016.json?.timezone)
+  );
+
+  const horaImposible = await api(`/api/assessments/${evalId016}/plazo`, {
+    method: "PUT",
+    body: JSON.stringify({ plazo: { fecha: isoDia(5), hora: "99:99" } }),
+  });
+  ok(
+    "FR-005e — una hora imposible se rechaza en el esquema (422), no más adentro",
+    horaImposible.res.status === 422,
+    `${horaImposible.res.status} ${JSON.stringify(horaImposible.json?.error)}`
+  );
+
+  // ── DV-005 de 014: la cohorte finalizada se VE, no se corrige ────────────
+  //
+  // Corregir una entrega escribe en `assessment_result` (DV-002). Sin este
+  // corte, la puerta de las entregas cambiaba la nota de una cohorte cerrada
+  // esquivando la regla que la planilla del profesor ya aplicaba: la MISMA
+  // escritura, por otro camino. Se conduce entero porque es un agujero que no
+  // se ve desde la pantalla — el profesor corrige y parece que anduvo.
+  const cierre016 = await api(`/api/cohorts/${coh016.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ endDate: isoDia(-1) }),
+  });
+  ok(
+    "016 — la cohorte se da por finalizada (su fecha de fin queda atrás)",
+    cierre016.res.ok,
+    `${cierre016.res.status} ${JSON.stringify(cierre016.json?.cohort?.endDate)}`
+  );
+
+  const correccionCerrada = await comoProfesor(
+    profe016.jar,
+    `/api/portal/entregas/${entrega2Id}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ passed: false, feedback: "Esto no tendría que entrar." }),
+    }
+  );
+  ok(
+    "DV-005 — con la cohorte finalizada, corregir por la puerta de las entregas da 422 `cohorte_finalizada`",
+    correccionCerrada.res.status === 422 &&
+      correccionCerrada.json?.error?.code === "cohorte_finalizada",
+    `${correccionCerrada.res.status} ${JSON.stringify(correccionCerrada.json?.error)}`
+  );
+
+  const planillaTrasCierre = await estadoEnPlanilla(coh016.id, insA016);
+  ok(
+    "y el resultado de 010 quedó como estaba: la corrección no entró ni a medias",
+    planillaTrasCierre?.results?.[evalId016] === true,
+    JSON.stringify(planillaTrasCierre?.results?.[evalId016])
+  );
+
+  const reabrirCerrada = await comoProfesor(
+    profe016.jar,
+    `/api/portal/entregas/${entrega2Id}/reabrir`,
+    { method: "POST", body: "{}" }
+  );
+  ok(
+    "DV-005 — reabrir tampoco: habilitaría una entrega que ya no puede entrar",
+    reabrirCerrada.res.status === 422 &&
+      reabrirCerrada.json?.error?.code === "cohorte_finalizada",
+    `${reabrirCerrada.res.status} ${JSON.stringify(reabrirCerrada.json?.error)}`
+  );
+
+  const plazoProfeCerrada = await comoProfesor(
+    profe016.jar,
+    `/api/portal/assessments/${evalId016}/plazo`,
+    { method: "PUT", body: JSON.stringify({ plazo: { fecha: isoDia(5), hora: "23:59" } }) }
+  );
+  ok(
+    "DV-005 — y mover el plazo desde el portal del profesor, tampoco",
+    plazoProfeCerrada.res.status === 422 &&
+      plazoProfeCerrada.json?.error?.code === "cohorte_finalizada",
+    `${plazoProfeCerrada.res.status} ${JSON.stringify(plazoProfeCerrada.json?.error)}`
+  );
+
+  /**
+   * La otra mitad, que es la que evita inventar una regla nueva: **coordinación
+   * SIGUE pudiendo.** El staff edita cohortes finalizadas en toda la aplicación
+   * —carga resultados y asistencia sin este corte—, así que la restricción es
+   * del profesor. Cerrarle la puerta al staff acá sería una regla que no existe
+   * en ningún otro lado, y la academia perdería la única forma de corregir a
+   * mano lo que pasó.
+   */
+  const plazoStaffCerrada = await api(`/api/assessments/${evalId016}/plazo`, {
+    method: "PUT",
+    body: JSON.stringify({ plazo: { fecha: isoDia(5), hora: "23:59" } }),
+  });
+  ok(
+    "paridad — coordinación SÍ puede tocar el plazo de una cohorte finalizada, igual que el resto del panel",
+    plazoStaffCerrada.res.ok,
+    `${plazoStaffCerrada.res.status} ${JSON.stringify(plazoStaffCerrada.json)}`
+  );
+
+  // Las pantallas que la fase toca responden con la sesión de cada quien.
+  const pantallaAlumno016 = await fetch(`${BASE}/portal/cursadas/${insA016}`, {
+    headers: { cookie: alumnoA016.jar.cookie },
+  });
+  const pantallaProfe016 = await fetch(`${BASE}/portal/cohortes/${coh016.id}`, {
+    headers: { cookie: profe016.jar.cookie },
+  });
+  ok(
+    "las pantallas de la cursada y de la cohorte responden con las entregas adentro",
+    pantallaAlumno016.status < 400 && pantallaProfe016.status < 400,
+    `${pantallaAlumno016.status}/${pantallaProfe016.status}`
+  );
+
   console.log(`\n===== ${checks - failures}/${checks} checks OK, ${failures} fallos =====`);
   process.exit(failures > 0 ? 1 : 0);
 }
