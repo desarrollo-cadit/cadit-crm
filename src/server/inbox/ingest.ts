@@ -15,6 +15,7 @@ import {
   resolveIdentity,
   type ResolvedIdentity,
 } from "@/server/inbox/identity";
+import { serializeMessage } from "@/server/inbox/message-dto";
 import { applyStatusUpdate } from "@/server/inbox/status";
 import { onLeadActivity } from "@/server/inbox/lead-activity";
 import { maybeRunAgentTurn } from "@/server/ai/trigger";
@@ -486,31 +487,9 @@ function toDate(timestamp: string): Date {
   return new Date();
 }
 
-export function serializeMessage(
-  m: typeof schema.message.$inferSelect,
-  media: typeof schema.mediaAsset.$inferSelect | null = null
-) {
-  return {
-    id: m.id,
-    conversationId: m.conversationId,
-    direction: m.direction,
-    type: m.type,
-    text: m.text,
-    status: m.status,
-    aiGenerated: m.aiGenerated,
-    origin: m.origin,
-    media: media
-      ? {
-          assetId: media.id,
-          kind: media.kind,
-          mimeType: media.mimeType,
-          fileName: media.fileName,
-          fileSize: media.fileSize,
-          caption: media.caption,
-          fetchStatus: media.fetchStatus,
-          payload: media.payload,
-        }
-      : null,
-    createdAt: (m.waTimestamp ?? m.createdAt).toISOString(),
-  };
-}
+/**
+ * El serializador se mudó a `@/server/inbox/message-dto` para cortar el ciclo
+ * con `send.ts`; se reexporta acá porque este sigue siendo el lugar donde el
+ * resto del código lo busca.
+ */
+export { serializeMessage };

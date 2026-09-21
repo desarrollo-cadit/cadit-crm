@@ -3,7 +3,7 @@ import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { markAttendance, type AttendanceStatus } from "@/server/attendance";
 import { listCohortClasses, type ClassRowDto, type CohortClassesDto } from "@/server/classes";
-import { computeCohortStatus } from "@/server/courses";
+import { computeCohortStatus } from "@/lib/cohort-status";
 import { cohortGrading, recordResults, type AssessmentDto } from "@/server/grading";
 import {
   createResource,
@@ -200,7 +200,7 @@ function nombreDelPrograma(
   if (!padreId) return null;
   const padre = padres.find((p) => p.id === padreId);
   if (!padre) return null;
-  return { name: padre.courseName ?? padre.name ?? "", ordinal };
+  return { name: padre.courseName, ordinal };
 }
 
 /** Las cohortes de este profesor, la más reciente primero. */

@@ -2,7 +2,7 @@ import { asc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
-import { computeCohortStatus } from "@/server/courses";
+import { computeCohortStatus } from "@/lib/cohort-status";
 
 /**
  * 005 (T028, DV-004, US4) — pool de licencias por software: disponibles =

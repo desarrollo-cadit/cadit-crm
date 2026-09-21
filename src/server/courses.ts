@@ -6,6 +6,7 @@ import { CURRENCIES, type Currency } from "@/lib/db/schema";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { slugify } from "@/lib/utils";
+import { computeCohortStatus } from "@/lib/cohort-status";
 import { availableLicenses } from "@/server/licenses";
 import {
   writeCourseModules,
@@ -774,14 +775,6 @@ type TeacherRow = typeof schema.teacher.$inferSelect;
 type SoftwareRef = { id: string; name: string };
 
 /**
- * 005 iteración 4 (feedback en vivo: "debería ser automático") — el status
- * de la cohorte ya no se fija a mano: se calcula de `[startDate, endDate]`
- * contra "hoy". `endDate` NULL se trata como "sigue en curso una vez
- * empezada" (mismo criterio que DV-006, choque de horario). La columna
- * `status` sigue existiendo en el schema pero la serialización SIEMPRE
- * devuelve el valor calculado, nunca el guardado.
- */
-/**
  * 011 (US3) — El precio que rige para una cohorte.
  *
  * La cohorte pisa al curso, igual que `resolveMinAttendance`. Es la misma
@@ -806,15 +799,12 @@ export function resolveListPrice(
   return null;
 }
 
-export function computeCohortStatus(
-  startDate: Date,
-  endDate: Date | null,
-  now: Date = new Date()
-): "planificada" | "en_curso" | "finalizada" {
-  if (now < startDate) return "planificada";
-  if (endDate && now > endDate) return "finalizada";
-  return "en_curso";
-}
+/**
+ * La regla se mudó a `@/lib/cohort-status` para cortar el ciclo con
+ * `@/server/licenses`; se reexporta acá porque este sigue siendo el lugar
+ * donde el resto del código la busca.
+ */
+export { computeCohortStatus };
 
 function serializeCohort(
   cohort: CohortRow,
