@@ -133,7 +133,13 @@ export async function assignLicense(
     const updated = await db
       .update(schema.license)
       .set({ softwareId, assigned: true, assignedAt: now })
-      .where(eq(schema.license.id, existing.id))
+      .where(
+        scoped(
+          schema.license.organizationId,
+          organizationId,
+          eq(schema.license.id, existing.id)
+        )
+      )
       .returning();
     return { ok: true, license: serializeLicense(updated[0]!) };
   }

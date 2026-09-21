@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
+import { scoped } from "@/lib/db/tenant";
 import { graphRequest, MetaApiError, normalizeRecipient } from "@/lib/meta/client";
 import { publish } from "@/server/events/bus";
 import {
@@ -64,10 +65,18 @@ async function prepareSend(
       schema.contact,
       eq(schema.conversation.contactId, schema.contact.id)
     )
-    .where(eq(schema.conversation.id, conversationId))
+    .where(
+      // El tenant va en el PREDICADO, no en un `if` posterior: el join a
+      // `contact` se resuelve antes de cualquier comparación en JS.
+      scoped(
+        schema.conversation.organizationId,
+        organizationId,
+        eq(schema.conversation.id, conversationId)
+      )
+    )
     .limit(1);
   const row = rows[0];
-  if (!row || row.conversation.organizationId !== organizationId) {
+  if (!row) {
     throw new SendError("meta_error", "Conversación no encontrada");
   }
 
@@ -147,7 +156,13 @@ async function persistOutbound(input: {
   await db
     .update(schema.conversation)
     .set({ lastMessageAt: new Date(), updatedAt: new Date() })
-    .where(eq(schema.conversation.id, input.conversationId));
+    .where(
+      scoped(
+        schema.conversation.organizationId,
+        input.organizationId,
+        eq(schema.conversation.id, input.conversationId)
+      )
+    );
 
   publish(input.organizationId, {
     type: "message.new",
@@ -241,7 +256,13 @@ export async function sendMediaMessage(input: {
     await db
       .update(schema.mediaAsset)
       .set({ waMediaId, updatedAt: new Date() })
-      .where(eq(schema.mediaAsset.id, assetId));
+      .where(
+        scoped(
+          schema.mediaAsset.organizationId,
+          input.organizationId,
+          eq(schema.mediaAsset.id, assetId)
+        )
+      );
 
     const mediaPayload: Record<string, unknown> = { id: waMediaId };
     if (input.caption && kind !== "audio") mediaPayload.caption = input.caption;

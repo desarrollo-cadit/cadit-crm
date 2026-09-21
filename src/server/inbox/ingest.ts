@@ -1,6 +1,7 @@
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
+import { scoped } from "@/lib/db/tenant";
 import { normalizeMx } from "@/lib/meta/client";
 import { publish } from "@/server/events/bus";
 import { getCredentialsByPhoneNumberId } from "@/server/whatsapp/credentials";
@@ -132,7 +133,13 @@ async function attachMediaAsset(
     await db
       .update(schema.message)
       .set({ mediaAssetId: asset.id })
-      .where(eq(schema.message.id, messageId));
+      .where(
+        scoped(
+          schema.message.organizationId,
+          organizationId,
+          eq(schema.message.id, messageId)
+        )
+      );
     if (asset.fetchStatus === "pending") {
       /**
        * Descarga in-process, sin bloquear la ingesta; on-demand reintenta.
@@ -196,8 +203,9 @@ export async function getOrCreateConversation(
     .select()
     .from(schema.conversation)
     .where(
-      and(
-        eq(schema.conversation.organizationId, organizationId),
+      scoped(
+        schema.conversation.organizationId,
+        organizationId,
         eq(schema.conversation.contactId, contactId),
         eq(schema.conversation.isTest, false)
       )
@@ -369,7 +377,13 @@ async function ingestManualEcho(
   await db
     .update(schema.conversation)
     .set({ lastMessageAt: waTimestamp, updatedAt: new Date() })
-    .where(eq(schema.conversation.id, conversation.id));
+    .where(
+      scoped(
+        schema.conversation.organizationId,
+        organizationId,
+        eq(schema.conversation.id, conversation.id)
+      )
+    );
 
   // Pausa automática de la IA, idempotente y atómica (solo si no hay handoff).
   const paused = await db
@@ -381,7 +395,9 @@ async function ingestManualEcho(
       updatedAt: new Date(),
     })
     .where(
-      and(
+      scoped(
+        schema.conversation.organizationId,
+        organizationId,
         eq(schema.conversation.id, conversation.id),
         sql`${schema.conversation.handoffAt} is null`
       )
@@ -460,7 +476,13 @@ export async function ingestInboundMessage(input: {
       unreadCount: sql`${schema.conversation.unreadCount} + 1`,
       updatedAt: new Date(),
     })
-    .where(eq(schema.conversation.id, conversation.id));
+    .where(
+      scoped(
+        schema.conversation.organizationId,
+        organizationId,
+        eq(schema.conversation.id, conversation.id)
+      )
+    );
 
   await onLeadActivity(organizationId, contact.id, waTimestamp);
 
