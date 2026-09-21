@@ -244,3 +244,22 @@ describe("T004b — el mapa de Tailwind no inventa colores", () => {
     ).toEqual([]);
   });
 });
+
+/**
+ * El plato de la marca, en el tema claro.
+ *
+ * Los dos archivos de marca son transparentes y están dibujados para fondo
+ * claro, así que la garantía de contraste del logo NO sale de medir el logo:
+ * sale de que nunca toque la superficie de la página. Se apoya en
+ * `--brand-plate`, que vale blanco en los DOS temas a propósito.
+ *
+ * Su contraparte oscura la fija `tema-oscuro.test.ts`, que es donde este repo
+ * mira los tokens del bloque `[data-theme="dark"]`. Las dos mitades hacen
+ * falta: si alguien "arregla" el plato oscuro para que acompañe al fondo, el
+ * navy de "IT" cae a 1.16:1 y el logo desaparece sin que falle nada más.
+ */
+describe("T004c — el plato de la marca es blanco", () => {
+  it("--brand-plate es #ffffff en el tema claro", () => {
+    expect(T["brand-plate"]).toBe("#ffffff");
+  });
+});

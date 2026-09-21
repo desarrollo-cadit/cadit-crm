@@ -225,3 +225,23 @@ describe("T015 — el contraste también se cumple en oscuro", () => {
     expect(r, `${r.toFixed(2)}:1`).toBeGreaterThanOrEqual(3);
   });
 });
+
+/**
+ * El plato de la marca NO se oscurece, y esto es lo que lo sostiene.
+ *
+ * Es la única excepción deliberada a "cada token del claro tiene su
+ * contraparte oscura, y la oscura acompaña al fondo": los archivos de marca
+ * son transparentes y están dibujados para fondo claro. Medido con
+ * `contrastRatio()`, el navy de "IT" y "SOLUTION PROVIDER" da 1.16:1 sobre el
+ * `--bg` oscuro y el isotipo azul 2.95:1 —debajo del 3:1 de WCAG 1.4.11—, así
+ * que la marca se apoya siempre en blanco y el tema deja de ser una variable.
+ *
+ * Oscurecer este token acá haría desaparecer el logo sin romper ninguna otra
+ * prueba: el contraste del logo no se mide contra la página, se garantiza con
+ * el plato. La mitad clara la fija `contraste.test.ts`.
+ */
+describe("T013b — el plato de la marca no acompaña al fondo", () => {
+  it("--brand-plate sigue siendo #ffffff en el tema oscuro", () => {
+    expect(OSCURO["brand-plate"]?.trim().toLowerCase()).toBe("#ffffff");
+  });
+});
