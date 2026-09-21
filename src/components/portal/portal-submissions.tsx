@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { wallClockInZone } from "@/lib/schedule-time";
 
 /**
  * 016 (US2, US3, US5) — Las entregas de la cohorte, para el profesor.
@@ -201,7 +202,8 @@ function EvaluacionBloque({
       {editandoPlazo && (
         <PlazoDelGrupo
           assessmentId={evaluacion.assessmentId}
-          tienePlazo={evaluacion.dueAt !== null}
+          dueAt={evaluacion.dueAt}
+          zona={zona}
           onListo={() => {
             setEditandoPlazo(false);
             onCambio();
@@ -453,17 +455,34 @@ function CamposDePlazo({
 
 function PlazoDelGrupo({
   assessmentId,
-  tienePlazo,
+  dueAt,
+  zona,
   onListo,
   onError,
 }: {
   assessmentId: string;
-  tienePlazo: boolean;
+  dueAt: string | null;
+  zona: string;
   onListo: () => void;
   onError: (m: string | null) => void;
 }) {
-  const [fecha, setFecha] = useState("");
-  const [hora, setHora] = useState("23:59");
+  /**
+   * Los campos nacen con el plazo que YA está guardado.
+   *
+   * El lado del staff lo arregló en `abrirPlazo()` de `grading-client.tsx`; acá
+   * no, así que mover una fecha cargada empezaba por escribirla de nuevo de
+   * memoria. La partición va en la zona de la ACADEMIA y no en la del
+   * navegador: desde Asunción, un plazo de las 23:59 de Montevideo vuelve como
+   * las 22:59, y guardar sin tocar nada se lo adelantaría una hora a toda la
+   * cohorte.
+   *
+   * Sembrar en `useState` alcanza porque este componente se monta por
+   * evaluación: no hay estado compartido que arrastre lo tipeado de una fila a
+   * la siguiente, que es lo que obligó al staff a sembrar en el handler.
+   */
+  const actual = dueAt ? wallClockInZone(new Date(dueAt), zona) : null;
+  const [fecha, setFecha] = useState(actual?.fecha ?? "");
+  const [hora, setHora] = useState(actual?.hora ?? "23:59");
   const [guardando, setGuardando] = useState(false);
 
   async function guardar(plazo: { fecha: string; hora: string } | null) {
@@ -510,7 +529,7 @@ function PlazoDelGrupo({
           Guardar plazo
         </Button>
         {/* Sin plazo es un estado legítimo (DV-001), así que se puede volver. */}
-        {tienePlazo && (
+        {dueAt !== null && (
           <Button
             size="sm"
             variant="outline"
