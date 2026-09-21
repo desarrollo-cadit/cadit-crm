@@ -219,3 +219,28 @@ describe("T005 — la escala tiene saltos, no matices", () => {
     }
   });
 });
+
+/**
+ * El mapa de Tailwind, que es el OTRO lugar donde puede nacer un par de
+ * colores — y el único que este archivo no miraba.
+ *
+ * Todo lo de arriba lee los pares DEL CSS. Un par que existe solo como literal
+ * dentro de `tailwind.config.ts` —`destructive.foreground: "#ffffff"` encima de
+ * `var(--danger)`— les resulta invisible: no hay token que leer. Así viajó un
+ * botón destructivo a 3.43:1 en tema oscuro, porque ahí `--danger` se ACLARA
+ * para despegarse del fondo y el blanco encima deja de alcanzar el 4.5.
+ *
+ * El arreglo fue nombrar `--on-state` (5.36:1 en oscuro, 5.54:1 en claro).
+ * Esto es lo que impide que vuelva: en el mapa no se escribe un color, se
+ * nombra un token, y recién ahí los tests de arriba pueden verlo.
+ */
+describe("T004b — el mapa de Tailwind no inventa colores", () => {
+  it("tailwind.config.ts no trae un solo hex escrito a mano", () => {
+    const src = readFileSync(path.join(process.cwd(), "tailwind.config.ts"), "utf8");
+    const hex = src.match(/#[0-9a-fA-F]{3,8}\b/g) ?? [];
+    expect(
+      hex,
+      `hex hardcodeados en tailwind.config.ts: ${hex.join(", ")} — nombrá un token de globals.css`
+    ).toEqual([]);
+  });
+});

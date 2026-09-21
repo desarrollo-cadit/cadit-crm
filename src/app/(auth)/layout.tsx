@@ -1,4 +1,5 @@
 import { CalendarClock, GraduationCap, Wallet } from "lucide-react";
+import { IsotipoCadIT, LogoCadIT } from "@/components/logo-cadit";
 import { DEFAULT_BRANDING } from "@/lib/branding";
 import { getBranding } from "@/server/branding";
 
@@ -37,12 +38,7 @@ export default async function AuthLayout({
       <main className="flex flex-col justify-center px-6 py-10 sm:px-10 lg:px-14">
         <div className="mx-auto w-full max-w-sm">
           <div className="mb-9 flex items-center gap-3">
-            <span
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-brand text-lg font-bold text-on-accent"
-              aria-hidden
-            >
-              {branding.name.charAt(0).toUpperCase()}
-            </span>
+            <IsotipoCadIT className="h-11 w-11 rounded-md" />
             <span className="min-w-0">
               <span className="block truncate text-lg font-semibold leading-tight tracking-tight">
                 {branding.name}
@@ -66,6 +62,13 @@ export default async function AuthLayout({
           se leía como un error de carga, no como una decisión.
         */}
         <div className="relative flex h-full flex-col justify-center p-12 xl:p-16">
+          {/*
+            El logotipo COMPLETO va acá y no en la columna del formulario: es el
+            único lugar de la aplicación con ancho de sobra para que "CAD IT
+            SOLUTION PROVIDER" se lea sin achicarlo a un renglón de 8px.
+          */}
+          <LogoCadIT className="mb-9 w-60 rounded-lg p-5" />
+
           <p className="text-3xl font-semibold leading-tight tracking-tight text-on-accent">
             Tu cursada, en un solo lugar.
           </p>

@@ -9,6 +9,7 @@ import { cn, initials } from "@/lib/utils";
 import { signOut } from "@/lib/auth/client";
 import { ThemeToggle } from "@/components/theme-toggle";
 import type { ThemePreference } from "@/lib/theme";
+import { IsotipoCadIT } from "@/components/logo-cadit";
 import { useEvents } from "@/components/use-events";
 import { ITEM_AJUSTES, ITEM_GUIA, NAV_GROUPS } from "@/lib/nav";
 
@@ -87,12 +88,7 @@ export function AppNav({
   return (
     <aside className="flex w-56 shrink-0 flex-col border-r bg-subtle px-3 pb-3.5 pt-4">
       <Link href="/" className="mb-4 flex items-center gap-2.5 px-2">
-        <span
-          className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-sm bg-brand text-[15px] font-bold text-on-accent"
-          aria-hidden
-        >
-          {branding.name.charAt(0).toUpperCase()}
-        </span>
+        <IsotipoCadIT className="h-[30px] w-[30px] rounded-sm" />
         <span className="min-w-0">
           <span className="block truncate text-[16px] font-[650] leading-tight tracking-tight">
             {branding.name}

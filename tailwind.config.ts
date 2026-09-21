@@ -20,7 +20,9 @@ const config: Config = {
         subtle: "var(--bg-subtle)",
         primary: {
           DEFAULT: "var(--accent)",
-          foreground: "#ffffff",
+          // Mismo valor que el literal que había acá, pero con nombre: el día
+          // que un tema cambie `--on-accent`, esto lo sigue.
+          foreground: "var(--on-accent)",
         },
         secondary: {
           DEFAULT: "var(--bg-panel)",
@@ -28,7 +30,13 @@ const config: Config = {
         },
         destructive: {
           DEFAULT: "var(--danger)",
-          foreground: "#ffffff",
+          /*
+            NO es blanco: en tema oscuro `--danger` se ACLARA para contrastar
+            con el fondo, y el blanco encima cae a 3.43:1. `--on-state` existe
+            justamente para el texto sobre un relleno de estado sólido, y cada
+            tema elige el suyo (ver la nota de globals.css).
+          */
+          foreground: "var(--on-state)",
         },
         muted: {
           DEFAULT: "var(--bg-panel)",
@@ -52,6 +60,8 @@ const config: Config = {
           soft: "var(--accent-soft)",
           tint: "var(--accent-tint)",
           text: "var(--accent-text)",
+          // El plato bajo el logo: constante en los dos temas (ver globals.css).
+          plate: "var(--brand-plate)",
         },
         "text-2": "var(--text-2)",
         "text-3": "var(--text-3)",

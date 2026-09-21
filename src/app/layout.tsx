@@ -20,6 +20,23 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: `${branding.name} — Gestor académico`,
     description: "Gestor académico para academia y centro de formación",
+    /**
+     * El isotipo como favicon. Hasta acá no había ninguno y la pestaña salía
+     * con el ícono por defecto del navegador.
+     *
+     * No va por la convención de archivo de Next (`src/app/icon.*`) porque esa
+     * NO acepta `.webp`, y el archivo de marca es webp. El PNG de 32 —derivado
+     * del mismo webp— va primero porque lo entiende todo el mundo; el webp de
+     * 512 queda detrás para las pantallas densas de los navegadores que lo
+     * soportan.
+     */
+    icons: {
+      icon: [
+        { url: "/favicon-cadit-32.png", type: "image/png", sizes: "32x32" },
+        { url: "/logo-cadit-isotipo.webp", type: "image/webp", sizes: "512x512" },
+      ],
+      apple: { url: "/apple-icon-cadit-180.png", type: "image/png", sizes: "180x180" },
+    },
   };
 }
 

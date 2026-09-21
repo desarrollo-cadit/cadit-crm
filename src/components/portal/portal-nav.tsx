@@ -9,6 +9,7 @@ import { cn, initials } from "@/lib/utils";
 import { signOut } from "@/lib/auth/client";
 import { ThemeToggle } from "@/components/theme-toggle";
 import type { ThemePreference } from "@/lib/theme";
+import { IsotipoCadIT } from "@/components/logo-cadit";
 import {
   ITEM_GUIA_PORTAL,
   ITEMS_ALUMNO,
@@ -132,12 +133,7 @@ export function PortalNav({
         className="mb-5 flex items-center gap-2.5 px-2"
         aria-label={`${branding.name} — inicio del portal`}
       >
-        <span
-          className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-md bg-brand text-[16px] font-bold text-on-accent"
-          aria-hidden
-        >
-          {branding.name.charAt(0).toUpperCase()}
-        </span>
+        <IsotipoCadIT className="h-[34px] w-[34px] rounded-md" />
         <span className="min-w-0">
           <span className="block truncate text-[16px] font-[650] leading-tight tracking-tight">
             {branding.name}
@@ -224,12 +220,7 @@ export function PortalNav({
           <Menu className="h-5 w-5" strokeWidth={1.7} />
         </button>
         <Link href="/portal" className="flex min-w-0 items-center gap-2">
-          <span
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm bg-brand text-[13px] font-bold text-on-accent"
-            aria-hidden
-          >
-            {branding.name.charAt(0).toUpperCase()}
-          </span>
+          <IsotipoCadIT className="h-7 w-7 rounded-sm" />
           <span className="truncate text-sm font-semibold">{branding.name}</span>
         </Link>
         <div className="flex-1" />

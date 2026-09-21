@@ -73,6 +73,16 @@
       un token y no `bg-white`.
     */
     --on-accent: #ffffff;
+    /*
+      El plato de la marca. Vale blanco en los DOS temas, a propósito.
+
+      Los archivos de marca son transparentes y están dibujados para fondo
+      claro: el navy de "IT" y "SOLUTION PROVIDER" mide 15.88:1 sobre blanco y
+      1.16:1 sobre el `--bg` oscuro, y el isotipo azul cae a 2.95:1, debajo del
+      3:1 de WCAG 1.4.11. Apoyar la marca acá la vuelve independiente del tema
+      sin recolorear un archivo que no es nuestro.
+    */
+    --brand-plate: #ffffff;
 
     /* Acento (default: azul acero apagado; white-label lo sobreescribe) */
     --accent: #3f5972;
@@ -225,6 +235,8 @@
     /* La voz del cliente se aclara para seguir separándose del acento. */
     --voice-client: #8fa5bf;
     --on-accent: #ffffff;
+    /* El plato de la marca NO se oscurece: ver la nota del bloque claro. */
+    --brand-plate: #ffffff;
 
     --success: #66947a;
     --warning: #b08b5e;
