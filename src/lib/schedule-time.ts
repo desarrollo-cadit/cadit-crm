@@ -145,6 +145,53 @@ export function monthInZone(instant: Date, timeZone: string): string | null {
   }
 }
 
+/**
+ * 016 — El día y la hora de pared de un instante, en la zona dada: la inversa
+ * de `classInstant()`.
+ *
+ * Existe por la misma razón que sus vecinas. Sembrar los campos de un plazo YA
+ * guardado es partir un instante en "día" y "hora", y partirlo con el reloj de
+ * quien mira devuelve otra hora: desde Asunción, un plazo de las 23:59 de
+ * Montevideo vuelve como las 22:59, y guardar sin tocar nada se lo adelanta
+ * una hora a toda la cohorte.
+ *
+ * `hourCycle: "h23"` y no `hour12: false`: el segundo devuelve `24` en la
+ * medianoche de algunas zonas —de ahí el ajuste que hace `zoneOffsetMs`— y
+ * acá eso no se puede corregir mirando solo la hora, porque el día que viene
+ * al lado del `24` ya no es el que corresponde.
+ *
+ * Zona o fecha inválida → `null`, mismo criterio que `classInstant`.
+ */
+export function wallClockInZone(
+  instant: Date,
+  timeZone: string
+): { fecha: string; hora: string } | null {
+  if (Number.isNaN(instant.getTime())) return null;
+  try {
+    const p: Record<string, string> = {};
+    const partes = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hourCycle: "h23",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).formatToParts(instant);
+    for (const { type, value } of partes) {
+      if (type !== "literal") p[type] = value;
+    }
+    const { year, month, day, hour, minute } = p;
+    if (!year || !month || !day || !hour || !minute) return null;
+    return {
+      fecha: `${year.padStart(4, "0")}-${month}-${day}`,
+      hora: `${hour}:${minute}`,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export type MeetingWindow = { beforeMin: number; afterMin: number };
 
 /**

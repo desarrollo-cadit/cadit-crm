@@ -15,6 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { wallClockInZone } from "@/lib/schedule-time";
 
 type Assessment = {
   id: string;
@@ -424,6 +425,29 @@ function PlazosDeEntrega({
   const [hora, setHora] = useState("23:59");
   const [guardando, setGuardando] = useState(false);
 
+  /**
+   * Abrir una fila SIEMBRA sus campos con el plazo de esa evaluación.
+   *
+   * `fecha` y `hora` describen siempre la fila abierta, que es la única.
+   * Compartidos sin sembrar, lo tipeado en una evaluación se ofrecía tal cual
+   * en la siguiente —el plazo de una entrega, listo para guardarse en otra— y
+   * mover una fecha ya cargada empezaba por escribirla de nuevo de memoria.
+   *
+   * La partición va en la zona de la ACADEMIA (FR-005e), igual que el texto
+   * que se muestra al lado: con la del navegador, abrir y guardar sin tocar
+   * nada correría el plazo.
+   */
+  function abrirPlazo(a: Assessment) {
+    if (abierta === a.id) {
+      setAbierta(null);
+      return;
+    }
+    const actual = a.dueAt ? wallClockInZone(new Date(a.dueAt), timezone) : null;
+    setAbierta(a.id);
+    setFecha(actual?.fecha ?? "");
+    setHora(actual?.hora ?? "23:59");
+  }
+
   async function guardar(assessmentId: string, plazo: { fecha: string; hora: string } | null) {
     setGuardando(true);
     const res = await fetch(`/api/assessments/${assessmentId}/plazo`, {
@@ -475,7 +499,7 @@ function PlazosDeEntrega({
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => setAbierta(abierta === a.id ? null : a.id)}
+                  onClick={() => abrirPlazo(a)}
                 >
                   {a.dueAt ? "Cambiar" : "Poner fecha"}
                 </Button>

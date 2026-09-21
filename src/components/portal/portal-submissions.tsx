@@ -348,15 +348,23 @@ function AlumnoFila({
               alumno está esperando— pierde su momento y su autor. Una excepción
               sin cuándo ni quién es la que después no se puede revisar.
             */}
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={ocupado || ultima.reopenedAt !== null}
-              onClick={() => void reabrir()}
-            >
-              <RotateCcw className="h-4 w-4" />
-              {ultima.reopenedAt ? "Reabierta" : "Reabrir"}
-            </Button>
+            {/*
+              Y antes de la corrección no hay nada que reabrir: la entrega
+              todavía espera devolución. Ofrecerlo ahí invita a "reabrir" lo
+              que nunca se cerró, y deja una excepción registrada sobre un
+              trabajo que el profesor no miró.
+            */}
+            {ultima.correctedAt && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={ocupado || ultima.reopenedAt !== null}
+                onClick={() => void reabrir()}
+              >
+                <RotateCcw className="h-4 w-4" />
+                {ultima.reopenedAt ? "Reabierta" : "Reabrir"}
+              </Button>
+            )}
             <Button size="sm" variant="outline" onClick={() => setProrrogando((v) => !v)}>
               Dar prórroga
             </Button>

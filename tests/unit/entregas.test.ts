@@ -700,6 +700,10 @@ const PLANILLA = readFileSync(
   path.join(COMPONENTES, "cohorts", "grading-client.tsx"),
   "utf8"
 );
+const CLASES = readFileSync(
+  path.join(COMPONENTES, "cohorts", "classes-client.tsx"),
+  "utf8"
+);
 
 /**
  * **"No hay nada" y "no pude traerlo" son dos frases distintas.**
@@ -732,6 +736,23 @@ describe("016 — un fallo de carga no se disfraza de vacío", () => {
       "disabled={ocupado || ultima.reopenedAt !== null}"
     );
   });
+
+  /**
+   * FR-010/FR-013 — Reabrir solo significa algo sobre una entrega YA
+   * corregida: es lo que devuelve el turno DESPUÉS de una devolución. Sobre
+   * una entrega sin corregir no hay nada que reabrir —el profesor todavía no
+   * dijo nada— y apretarlo deja registrada una excepción sobre un trabajo que
+   * nadie miró.
+   */
+  it("y no se ofrece siquiera sobre una entrega sin corregir", () => {
+    const guarda = ENTREGAS_PROFE.indexOf("{ultima.correctedAt && (");
+    expect(guarda).toBeGreaterThan(-1);
+    const bloque = ENTREGAS_PROFE.slice(
+      guarda,
+      ENTREGAS_PROFE.indexOf("Dar prórroga", guarda)
+    );
+    expect(bloque).toContain("void reabrir()");
+  });
 });
 
 describe("016 — el nombre de la zona se lee entero", () => {
@@ -746,8 +767,42 @@ describe("016 — el nombre de la zona se lee entero", () => {
     expect("America/Port_of_Spain".replaceAll("_", " ")).toBe("America/Port of Spain");
   });
 
-  it("y la planilla usa `replaceAll`", () => {
-    expect(PLANILLA).toContain('replaceAll("_", " ")');
-    expect(PLANILLA).not.toMatch(/timezone\.replace\("_"/);
+  /**
+   * La planilla no era el único lugar que pinta el nombre de la zona: la
+   * pantalla de clases decía la misma frase con el mismo `replace`. Por eso el
+   * test recorre las dos y no una — un guard que mira un solo archivo deja
+   * entrar la tercera copia.
+   */
+  it.each([
+    ["la planilla de evaluaciones", () => PLANILLA],
+    ["la pantalla de clases", () => CLASES],
+  ])("y %s la muestra entera", (_nombre, fuente) => {
+    expect(fuente()).toContain('replaceAll("_", " ")');
+    expect(fuente()).not.toMatch(/timezone\.replace\("_"/);
+  });
+});
+
+/**
+ * 016 (FR-005b) — La fecha que se está editando es la de UNA evaluación.
+ *
+ * `fecha` era un único estado compartido por todas las filas: se abría
+ * "Cambiar" en una, se tipeaba una fecha, se abría otra y la fecha tipeada
+ * seguía en el campo, ofrecida como si fuera la de esa evaluación. Guardar sin
+ * mirar dos veces ponía el plazo de una entrega en otra. Además el campo nacía
+ * vacío sobre una evaluación que YA tenía plazo, así que mover una fecha
+ * empezaba por escribirla de nuevo de memoria.
+ */
+describe("016 — el plazo se edita por fila, con su propia fecha", () => {
+  it("abrir una fila siembra los campos con el plazo de ESA evaluación", () => {
+    expect(PLANILLA).toContain("function abrirPlazo(");
+    expect(PLANILLA).toContain("wallClockInZone(");
+  });
+
+  /**
+   * El toggle viejo solo tocaba `abierta`: la fecha tipeada en la fila
+   * anterior sobrevivía al cambio de fila. Si vuelve, vuelve el defecto.
+   */
+  it("y cambiar de fila no arrastra lo tipeado en la anterior", () => {
+    expect(PLANILLA).not.toContain("setAbierta(abierta === a.id ? null : a.id)");
   });
 });

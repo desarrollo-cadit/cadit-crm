@@ -3,6 +3,7 @@ import {
   classInstant,
   meetingLinkVisible,
   formatInZone,
+  wallClockInZone,
 } from "@/lib/schedule-time";
 
 /**
@@ -180,5 +181,51 @@ describe("meetingLinkVisible — la ventana del enlace", () => {
     expect(
       meetingLinkVisible(enMinutos(inicio, 31), inicio, null, ventana, false)
     ).toBe(false);
+  });
+});
+
+/**
+ * 016 — El plazo ya guardado, de vuelta a los campos con los que se cargó.
+ *
+ * La planilla ofrece "Cambiar" sobre una fecha límite que ya existe, y para
+ * sembrar los campos hay que partir ese instante en el día y la hora de la
+ * ACADEMIA. Partirlo con el reloj del navegador es el error de siempre al
+ * revés: desde Asunción, un plazo de las 23:59 de Montevideo vuelve como las
+ * 22:59, y guardar sin tocar nada le adelanta una hora el plazo a los 87
+ * alumnos que cursan desde otro país.
+ */
+describe("wallClockInZone — el instante, de vuelta a día y hora de pared", () => {
+  it("parte el instante en la zona de la academia, no en la de quien mira", () => {
+    expect(
+      wallClockInZone(new Date("2026-10-02T02:59:00.000Z"), "America/Montevideo")
+    ).toEqual({ fecha: "2026-10-01", hora: "23:59" });
+  });
+
+  /**
+   * La comprobación fuerte, y la que no depende de que yo recuerde ningún
+   * offset: es la inversa exacta de `classInstant`. Lo que se compuso con un
+   * día y una hora tiene que volver como ese mismo día y esa misma hora.
+   */
+  it.each([
+    ["America/Montevideo", "2026-10-01", "23:59"],
+    ["America/Asuncion", "2026-03-10", "18:30"],
+    ["America/Santo_Domingo", "2026-07-15", "09:00"],
+    // A los dos lados del cambio de horario europeo.
+    ["Europe/Madrid", "2026-07-15", "18:30"],
+    ["Europe/Madrid", "2026-12-15", "18:30"],
+    // Medianoche: la hora en la que `hour12: false` devuelve 24 en varias zonas.
+    ["Europe/Madrid", "2026-12-15", "00:00"],
+  ])("ida y vuelta con classInstant en %s (%s %s)", (zona, fecha, hora) => {
+    const instante = classInstant(dia(fecha), hora, zona);
+    expect(wallClockInZone(instante!, zona)).toEqual({ fecha, hora });
+  });
+
+  /** Mismo criterio que el resto del módulo: antes nada que un dato inventado. */
+  it("una zona inválida devuelve null en vez de lanzar", () => {
+    expect(wallClockInZone(new Date("2026-10-01T12:00:00.000Z"), "Marte/Olympus")).toBeNull();
+  });
+
+  it("una fecha inválida tampoco inventa un día", () => {
+    expect(wallClockInZone(new Date("no es una fecha"), "America/Montevideo")).toBeNull();
   });
 });

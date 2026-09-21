@@ -331,7 +331,7 @@ export function ClassesClient({
       </ul>
 
       <p className="text-xs text-muted-foreground">
-        Los horarios son de {data.timezone.replace("_", " ")}.
+        Los horarios son de {data.timezone.replaceAll("_", " ")}.
       </p>
     </div>
   );
