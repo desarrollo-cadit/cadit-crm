@@ -1378,6 +1378,60 @@ async function main() {
       ?.status === "tarde"
   );
 
+  /**
+   * Una clase CANCELADA no se dictó: no ofrece enlace ni grabación, y tampoco
+   * asistencia. La planilla ya la marcaba `editable: false`; lo que se conduce
+   * acá es que la ESCRITURA se niegue por esa misma regla y no por rebote de
+   * otra capa.
+   *
+   * Se cancela una clase PASADA distinta de la que viene usando el arnés: la
+   * próxima clase de la cohorte le hace falta intacta al portal del alumno.
+   */
+  const claseParaCancelar = (clasesPortal.json?.classes?.classes ?? []).find(
+    (c) => c.id && !c.projected && c.id !== claseReal?.id
+  );
+  const cancelada = await api(`/api/class-sessions/${claseParaCancelar?.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ cancelReason: "feriado E2E portal" }),
+  });
+  ok(
+    "la coordinación cancela una clase del profesor",
+    cancelada.res.ok,
+    `${cancelada.res.status}`
+  );
+
+  const marcaCancelada = await comoProfesor(
+    jarA,
+    `/api/portal/classes/${claseParaCancelar?.id}/attendance`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        entries: [{ enrollmentId: enrollmentPortal, status: "presente" }],
+      }),
+    }
+  );
+  ok(
+    "y el profesor NO puede tomar asistencia sobre ella (422 session_canceled)",
+    marcaCancelada.res.status === 422 &&
+      marcaCancelada.json?.error?.code === "session_canceled",
+    `${marcaCancelada.res.status} ${JSON.stringify(marcaCancelada.json?.error)}`
+  );
+
+  const planillaCancelada = await comoProfesor(
+    jarA,
+    `/api/portal/classes/${claseParaCancelar?.id}/attendance`
+  );
+  ok(
+    "la planilla cancelada se sigue VIENDO, marcada como no editable",
+    planillaCancelada.res.ok &&
+      planillaCancelada.json?.editable === false &&
+      planillaCancelada.json?.classSession?.canceled === true,
+    JSON.stringify({
+      editable: planillaCancelada.json?.editable,
+      canceled: planillaCancelada.json?.classSession?.canceled,
+    })
+  );
+
   // FR-006/DV-002 — el profesor no crea evaluaciones: la ruta no existe.
   const crearEval = await comoProfesor(jarA, `/api/portal/cohorts/${coh13Id}/grading`, {
     method: "POST",

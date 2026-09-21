@@ -295,4 +295,30 @@ describe("T027 — la cohorte finalizada se ve, no se edita (DV-005)", () => {
     expect(planilla?.classSession.canceled).toBe(true);
     expect(planilla?.editable).toBe(false);
   });
+
+  /**
+   * El caso que justifica la puerta. La planilla YA decía `editable: false`,
+   * pero la escritura miraba solo el estado de la cohorte: que una clase
+   * cancelada no se escribiera dependía de que `markAttendance` repitiera la
+   * regla por su cuenta, allá abajo.
+   *
+   * Acá `markAttendance` está espiado y SIEMPRE dice que sí, así que lo único
+   * que puede hacer fallar este test es que el portal deje de negarse por sí
+   * mismo — que es exactamente la regresión que interesa.
+   */
+  it("marcar una clase cancelada responde 422 y no llega a la escritura", async () => {
+    prepararClase({ cancelada: true });
+    responder("attendance", []);
+
+    const { teacherMarkAttendance } = await import("@/server/teacher-portal");
+    const r = await teacherMarkAttendance(ORG, PROFE, USUARIO, CLASE, [
+      { enrollmentId: "enr_1", status: "presente" },
+    ]);
+
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.status).toBe(422);
+    expect(r.code).toBe("session_canceled");
+    expect(markAttendance).not.toHaveBeenCalled();
+  });
 });

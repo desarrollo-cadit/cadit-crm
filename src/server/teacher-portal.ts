@@ -548,8 +548,14 @@ export type PortalResult<T> =
  * El profesor marca asistencia de SU clase (DV-003), y puede corregir una
  * clase pasada (DV-001) — el sistema no discute con la realidad de un aula.
  *
- * Lo único que NO puede es tocar una cohorte finalizada (DV-005): ahí los
- * porcentajes ya se usaron para decidir quién aprobó.
+ * Lo que NO puede es escribir sobre algo que la planilla ya marcó como no
+ * editable: una cohorte finalizada (DV-005), donde los porcentajes ya se
+ * usaron para decidir quién aprobó, y una clase cancelada, que no se dictó.
+ *
+ * La puerta es el MISMO `editable` que calcula la planilla. Antes la lectura
+ * lo sabía y la escritura no: solo se salvaba porque `markAttendance` repetía
+ * la regla por su cuenta. Dos lugares que tienen que coincidir terminan, con
+ * el tiempo, no coincidiendo.
  */
 export async function teacherMarkAttendance(
   organizationId: string,
@@ -568,6 +574,15 @@ export async function teacherMarkAttendance(
       status: 422,
       code: "cohorte_finalizada",
       message: "La cohorte ya finalizó: la asistencia no se puede cambiar",
+    };
+  }
+  // Descartada la cohorte, lo único que queda no editable es la cancelación.
+  if (!planilla.editable) {
+    return {
+      ok: false,
+      status: 422,
+      code: "session_canceled",
+      message: "La clase está cancelada: no se puede tomar asistencia",
     };
   }
 
