@@ -1,9 +1,10 @@
 import { createHmac } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   isValidSignature,
   isValidWebhookToken,
   safeEqual,
+  warnIfWebhookSignatureDisabled,
 } from "@/server/inbox/webhook";
 
 describe("capa 1: token en la ruta (FR-041/FR-083)", () => {
@@ -49,6 +50,32 @@ describe("capa 2: firma x-hub-signature-256 (FR-042)", () => {
   it("sin secreto configurado la capa está desactivada → pasa", () => {
     expect(isValidSignature(body, null, undefined)).toBe(true);
     expect(isValidSignature(body, "sha256=basura", undefined)).toBe(true);
+  });
+});
+
+describe("aviso de arranque cuando la capa 2 está desactivada", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it("sin secreto configurado avisa UNA vez (no por pedido)", () => {
+    vi.stubEnv("META_APP_SECRET", "");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    warnIfWebhookSignatureDisabled();
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toContain("META_APP_SECRET");
+  });
+
+  it("con secreto configurado no dice nada", () => {
+    vi.stubEnv("META_APP_SECRET", "un-secreto");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    warnIfWebhookSignatureDisabled();
+
+    expect(warn).not.toHaveBeenCalled();
   });
 });
 

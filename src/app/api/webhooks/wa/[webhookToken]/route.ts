@@ -3,6 +3,7 @@ import { getEnv } from "@/lib/env";
 import {
   isValidSignature,
   isValidWebhookToken,
+  parseWebhookPayload,
   type WebhookPayload,
 } from "@/server/inbox/webhook";
 import { processEchoesValue, processMessagesValue } from "@/server/inbox/ingest";
@@ -49,13 +50,11 @@ export async function POST(req: Request, { params }: Params) {
     return new Response(null, { status: 401 });
   }
 
-  let payload: WebhookPayload;
-  try {
-    payload = JSON.parse(rawBody) as WebhookPayload;
-  } catch {
-    // body ilegible: 200 igualmente (Meta reintenta y termina desactivando)
-    return Response.json({ received: true });
-  }
+  // Capa 3: la forma del payload. Body ilegible o sobre que no se entiende →
+  // 200 igualmente (Meta reintenta y termina DESACTIVANDO el webhook, así que
+  // un 4xx acá deja al cliente sin WhatsApp). El detalle ya quedó en el log.
+  const payload = parseWebhookPayload(rawBody);
+  if (!payload) return Response.json({ received: true });
 
   after(async () => {
     try {

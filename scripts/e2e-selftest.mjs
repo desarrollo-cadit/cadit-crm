@@ -29,6 +29,8 @@
  * a declarar "Hecho").
  */
 
+import { createHmac } from "node:crypto";
+
 const BASE = process.env.APP_BASE_URL ?? "http://localhost:3000";
 const BOT_KEY = process.env.BOT_API_KEY;
 
@@ -195,6 +197,108 @@ async function main() {
     (c) => c.contact.name === "Kevin MX"
   );
   ok("el contacto reconciliado conserva su conversación", !!mxConv);
+
+  /**
+   * La ruta pública del webhook, golpeada DIRECTO (no por wa-mock, que solo
+   * genera payloads bien formados). Lo que se prueba es la frontera: Meta
+   * desactiva el webhook tras suficientes respuestas de error, así que un
+   * payload que no se entiende tiene que salir 200 igual, y un lote con un
+   * ítem roto tiene que entrar sin el ítem roto — no perderse entero.
+   */
+  console.log("\n== webhook real: validación del payload en la frontera ==");
+  const tokenWebhook = process.env.META_WEBHOOK_VERIFY_TOKEN ?? "";
+
+  async function postWebhook(rawBody) {
+    const headers = { "content-type": "application/json" };
+    const secreto = process.env.META_APP_SECRET;
+    if (secreto) {
+      headers["x-hub-signature-256"] =
+        "sha256=" +
+        createHmac("sha256", secreto).update(rawBody, "utf8").digest("hex");
+    }
+    return fetch(`${BASE}/api/webhooks/wa/${tokenWebhook}`, {
+      method: "POST",
+      headers,
+      body: rawBody,
+    });
+  }
+
+  const whBasura = await postWebhook("no soy json");
+  ok(
+    "body ilegible → 200 (un 4xx haría que Meta desactive el webhook)",
+    whBasura.status === 200,
+    `status=${whBasura.status}`
+  );
+
+  const whForma = await postWebhook(JSON.stringify({ entry: "no soy un arreglo" }));
+  ok(
+    "payload con forma inesperada → 200",
+    whForma.status === 200,
+    `status=${whForma.status}`
+  );
+
+  const ahoraWh = String(Math.floor(Date.now() / 1000));
+  const whLote = await postWebhook(
+    JSON.stringify({
+      object: "whatsapp_business_account",
+      campo_nuevo_de_meta: { lo: "que sea" },
+      entry: [
+        {
+          id: "WABA-MOCK",
+          changes: [
+            {
+              field: "messages",
+              value: {
+                messaging_product: "whatsapp",
+                metadata: {
+                  display_phone_number: "5215500000000",
+                  phone_number_id: PN,
+                },
+                contacts: [
+                  { profile: { name: "Frontera Webhook" }, wa_id: "5215599887766" },
+                ],
+                messages: [
+                  {
+                    id: 42,
+                    timestamp: ahoraWh,
+                    type: "text",
+                    from: "5215599887766",
+                    text: { body: "roto" },
+                  },
+                  {
+                    id: "wamid.e2e.frontera.1",
+                    timestamp: ahoraWh,
+                    type: "text",
+                    from: "5215599887766",
+                    text: { body: "sobrevivo al hermano roto" },
+                    referral: { source_url: "https://ejemplo.test" },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    })
+  );
+  ok("lote con un mensaje roto → 200", whLote.status === 200, `status=${whLote.status}`);
+  await sleep(1200);
+
+  const convFrontera = (
+    (await api("/api/conversations")).json?.conversations ?? []
+  ).find((c) => c.contact.name === "Frontera Webhook");
+  ok("el hermano sano del lote llegó a una conversación", !!convFrontera);
+
+  const msgsFrontera =
+    (await api(`/api/conversations/${convFrontera?.id}/messages`)).json
+      ?.messages ?? [];
+  const entrantesFrontera = msgsFrontera.filter((m) => m.direction === "in");
+  ok(
+    "solo el mensaje válido entró: se descartó el ítem roto, no el lote",
+    entrantesFrontera.length === 1 &&
+      entrantesFrontera[0]?.text === "sobrevivo al hermano roto",
+    JSON.stringify(entrantesFrontera.map((m) => m.text))
+  );
 
   console.log("\n== us-bot-api: autorización ==");
   const noKey = await api("/api/bot/media/media123");
