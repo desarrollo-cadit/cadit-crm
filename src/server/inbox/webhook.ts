@@ -70,8 +70,9 @@ export function warnIfWebhookSignatureDisabled(): void {
  * Arreglo tolerante: valida ítem por ítem y descarta solo el roto.
  *
  * Meta manda LOTES: si un mensaje viene malformado, los otros nueve tienen que
- * entrar igual. El sobre (payload → entry → change → value) sí es estricto —
- * si no se entiende, no hay nada que rescatar.
+ * entrar igual. Lo único que NO es tolerante es el objeto del payload en sí:
+ * si eso no se entiende, no hay nada que rescatar. Adentro, `entry`, `changes`
+ * y los arrays de mensajes, estados y contactos pasan todos por acá.
  */
 function looseArray<T extends z.ZodTypeAny>(item: T, label: string) {
   return z.array(z.unknown()).transform((items) =>
