@@ -144,7 +144,27 @@ export async function issueCertificate(
    * sigue siendo válido aunque la academia deje de entregar el de ese curso.
    * Lo emitido no se desemite por un cambio de catálogo.
    */
-  if (existing[0]) return { ok: true, data: serialize(existing[0], dispensada) };
+  if (existing[0]) {
+    /**
+     * 024 (SC-004) — Un certificado ANULADO no se re-emite apretando otra vez
+     * el mismo botón.
+     *
+     * `certificate.enrollment_id` es UNIQUE, así que esta fila es la única que
+     * la inscripción puede tener y las otras dos salidas mienten: devolverla
+     * como `ok` le diría a la pantalla "certificado emitido" sobre un papel
+     * sin validez, y limpiar la anulación borraría la evidencia de que alguien
+     * la decidió, con su motivo y su autor. Se dice lo que pasa.
+     */
+    if (existing[0].revokedAt) {
+      return {
+        ok: false,
+        status: 409,
+        code: "certificado_anulado",
+        message: `El certificado de esta inscripción se anuló el ${existing[0].revokedAt.toLocaleDateString("es-UY")}: no se vuelve a emitir sobre la anulación`,
+      };
+    }
+    return { ok: true, data: serialize(existing[0], dispensada) };
+  }
 
   /**
    * La regla del dueño (2026-09-09): sólo se emite si el curso lo otorga.
@@ -306,6 +326,47 @@ export async function revokeCertificate(
     .returning();
 
   return { ok: true, data: serialize(updated[0]!, dispensada) };
+}
+
+/**
+ * 024 (SC-004) — Anula el certificado de una INSCRIPCIÓN.
+ *
+ * Existe porque las pantallas del staff manejan la inscripción, no el id del
+ * certificado: la planilla de la cohorte y el legajo llevan el código y la
+ * fecha, y es a `/api/enrollments/:id/certificate` a donde ya le piden la
+ * emisión. Resolver acá el id evita que cada pantalla tenga que ir a buscarlo.
+ *
+ * La regla de la anulación —quién, por qué, y que la primera no se pise— vive
+ * entera en `revokeCertificate`, una sola vez.
+ */
+export async function revokeEnrollmentCertificate(
+  organizationId: string,
+  enrollmentId: string,
+  input: { reason: string; revokedBy?: string | null }
+): Promise<GradingResult<CertificateDto>> {
+  const rows = await getDb()
+    .select({ id: schema.certificate.id })
+    .from(schema.certificate)
+    .where(
+      scoped(
+        schema.certificate.organizationId,
+        organizationId,
+        eq(schema.certificate.enrollmentId, enrollmentId)
+      )
+    )
+    .limit(1);
+
+  const certificateId = rows[0]?.id;
+  if (!certificateId) {
+    return {
+      ok: false,
+      status: 404,
+      code: "not_found",
+      message: "Esta inscripción no tiene certificado emitido",
+    };
+  }
+
+  return revokeCertificate(organizationId, certificateId, input);
 }
 
 export type PublicCertificate = {

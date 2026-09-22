@@ -2522,6 +2522,9 @@ async function main() {
   const sello023 = Date.now();
   const salaA = `https://zoom.example.com/j/pmi-a-${sello023}`;
   const salaB = `https://zoom.example.com/j/pmi-b-${sello023}`;
+  // La tercera aula existe para la US5: mover UNA clase a un aula distinta de
+  // la de su cohorte, y comprobar que el enlace no se mueve con ella.
+  const salaC = `https://zoom.example.com/j/pmi-c-${sello023}`;
   const nombreAulaA = `Aula E2E A ${sello023}`;
   const nombreAulaB = `Aula E2E B ${sello023}`;
 
@@ -2663,6 +2666,66 @@ async function main() {
   );
 
   /**
+   * US5 — Mover UNA clase a otra aula, sin tocar el resto de la camada.
+   *
+   * `class_session.virtual_room_id` existía desde la 023 y ninguna ruta lo
+   * escribía: la excepción por clase era una columna que nadie podía usar, y
+   * por eso este camino nunca se recorrió. Los choques se resuelven de a uno,
+   * así que lo que se conduce es que mover una sola clase le saque SU choque y
+   * deje a sus hermanas donde estaban.
+   */
+  const choquesAntesDeMoverUna =
+    (await api(`/api/virtual-rooms/clashes?cohortId=${cohX.id}`)).json?.clashes ?? [];
+  const claseXConChoque = clasesX.find((c) =>
+    choquesAntesDeMoverUna.some(
+      (k) => k.classSessionId === c.id || k.otherClassSessionId === c.id
+    )
+  );
+  const moverUna = await api(`/api/class-sessions/${claseXConChoque?.id}/room`, {
+    method: "PATCH",
+    body: JSON.stringify({ virtualRoomId: aulaBId }),
+  });
+  const choquesTrasMoverUna =
+    (await api(`/api/virtual-rooms/clashes?cohortId=${cohX.id}`)).json?.clashes ?? [];
+  ok(
+    "US5 — mover UNA clase a otra aula le saca exactamente ese choque",
+    moverUna.res.ok &&
+      choquesAntesDeMoverUna.length > 0 &&
+      choquesTrasMoverUna.length === choquesAntesDeMoverUna.length - 1 &&
+      !choquesTrasMoverUna.some(
+        (c) =>
+          c.classSessionId === claseXConChoque?.id ||
+          c.otherClassSessionId === claseXConChoque?.id
+      ),
+    `${moverUna.res.status} ${choquesAntesDeMoverUna.length} → ${choquesTrasMoverUna.length}`
+  );
+  const agendaTrasMoverUna =
+    (await api(`/api/virtual-rooms/agenda?desde=${agendaDesde}&hasta=${agendaHasta}`)).json
+      ?.agenda ?? [];
+  const agendaXTrasMoverUna = agendaTrasMoverUna.filter((f) => f.cohortId === cohX.id);
+  ok(
+    "y sus hermanas no se movieron: el resto de la camada sigue en el aula A",
+    agendaXTrasMoverUna.find((f) => f.classSessionId === claseXConChoque?.id)?.roomId ===
+      aulaBId &&
+      agendaXTrasMoverUna
+        .filter((f) => f.classSessionId !== claseXConChoque?.id)
+        .every((f) => f.roomId === aulaAId),
+    JSON.stringify(agendaXTrasMoverUna.map((f) => [f.classSessionId, f.roomId]))
+  );
+  const devolverUna = await api(`/api/class-sessions/${claseXConChoque?.id}/room`, {
+    method: "PATCH",
+    body: JSON.stringify({ virtualRoomId: null }),
+  });
+  const choquesTrasDevolverUna =
+    (await api(`/api/virtual-rooms/clashes?cohortId=${cohX.id}`)).json?.clashes ?? [];
+  ok(
+    "quitar la excepción devuelve la clase a la herencia de su cohorte (FR-002)",
+    devolverUna.res.ok &&
+      choquesTrasDevolverUna.length === choquesAntesDeMoverUna.length,
+    `${devolverUna.res.status} ${choquesAntesDeMoverUna.length} → ${choquesTrasDevolverUna.length}`
+  );
+
+  /**
    * FR-002 — La clase HEREDA el aula de la cohorte, no se la copia. Si se
    * copiara al generar, cambiar el aula de Y dejaría sus clases en A y el
    * choque seguiría ahí. Se comprueba en las dos superficies que lo leen.
@@ -2726,6 +2789,21 @@ async function main() {
     "FR-009 — asignar un aula dada de baja a una cohorte NUEVA se rechaza (422)",
     conAulaDeBaja.status === 422,
     `${conAulaDeBaja.status} ${JSON.stringify(conAulaDeBaja.json)}`
+  );
+
+  /**
+   * La misma regla por la puerta nueva: un camino de escritura que no la
+   * aplique reabre el agujero que esta comprobación cerró para las cohortes.
+   */
+  const claseDeZ = ((await api(`/api/cohorts/${cohZ.id}/classes`)).json?.classes ?? [])[0];
+  const claseConAulaDeBaja = await api(`/api/class-sessions/${claseDeZ?.id}/room`, {
+    method: "PATCH",
+    body: JSON.stringify({ virtualRoomId: aulaAId }),
+  });
+  ok(
+    "FR-009 — y tampoco se le asigna a UNA clase: la puerta nueva aplica la misma regla (422)",
+    claseConAulaDeBaja.res.status === 422,
+    `${claseConAulaDeBaja.res.status} ${JSON.stringify(claseConAulaDeBaja.json)}`
   );
 
   /**
@@ -2821,6 +2899,38 @@ async function main() {
     "el enlace propio de la clase gana sobre el de la cohorte",
     (conEnlaceDeClase.json?.classes ?? []).find((c) => c.id === claseAbierta?.id)?.meetingUrl ===
       enlaceDeClase
+  );
+
+  /**
+   * US5 + 025 (FR-004) — **El aula es el recurso ocupado, nunca una fuente de
+   * URL**, y la ruta nueva de la US5 es justo por donde podría volver el bug
+   * que la 025 vino a arreglar: si asignarle un aula a la clase moviera el
+   * enlace, el alumno entraría a la sala compartida de la cuenta, donde puede
+   * estar dando clase otra cohorte.
+   */
+  const aulaC = await api("/api/virtual-rooms", {
+    method: "POST",
+    body: JSON.stringify({ name: `Aula E2E C ${sello023}`, url: salaC }),
+  });
+  const aulaCId = aulaC.json?.room?.id;
+  const moverClaseDeL = await api(`/api/class-sessions/${claseAbierta?.id}/room`, {
+    method: "PATCH",
+    body: JSON.stringify({ virtualRoomId: aulaCId }),
+  });
+  const trasMoverDeAula = await alumnaAula.como(`/api/portal/me/cursadas/${inscAulaId}`);
+  const claseTrasMoverDeAula = (trasMoverDeAula.json?.classes ?? []).find(
+    (c) => c.id === claseAbierta?.id
+  );
+  ok(
+    "US5 — cambiar el AULA de una clase no cambia el enlace que ve el alumno",
+    moverClaseDeL.res.ok && claseTrasMoverDeAula?.meetingUrl === enlaceDeClase,
+    `${moverClaseDeL.res.status} ${claseTrasMoverDeAula?.meetingUrl}`
+  );
+  ok(
+    "y ninguna sala de cuenta se cuela en la respuesta",
+    !JSON.stringify(trasMoverDeAula.json).includes(salaC) &&
+      !JSON.stringify(trasMoverDeAula.json).includes(salaB),
+    JSON.stringify(claseTrasMoverDeAula)
   );
 
   // FR-010 — el profesor ve el aula como ETIQUETA, sin la sala compartida.
@@ -2990,6 +3100,108 @@ async function main() {
   ok(
     "y la opcional sin corregir sigue pendiente: una no arrastra a la otra",
     hitoPorNombre(hitos3, entregaOpcional)?.state === "pendiente"
+  );
+
+  /**
+   * SC-004 — «Un certificado anulado se ve, y dice que lo está».
+   *
+   * Las tres columnas de la anulación existían desde el ciclo 010 y ninguna
+   * ruta las escribía: el camino completo —anular y ver qué pasa después—
+   * nunca se pudo recorrer. Se emite como HISTÓRICO a propósito: lo que se
+   * prueba acá es la anulación y sus consecuencias, no la compuerta de
+   * aprobación, que ya tiene la suya en el bloque 028.
+   */
+  const certAnular = await api(`/api/enrollments/${inscRId}/certificate`, {
+    method: "POST",
+    body: JSON.stringify({ historical: true }),
+  });
+  const codigoAnulado = certAnular.json?.certificate?.code;
+  ok(
+    "hay un certificado emitido para anular",
+    certAnular.res.status === 201 && Boolean(codigoAnulado),
+    `${certAnular.res.status} ${JSON.stringify(certAnular.json)}`
+  );
+
+  const sinMotivo = await api(`/api/enrollments/${inscRId}/certificate`, {
+    method: "DELETE",
+    body: JSON.stringify({ motivo: "" }),
+  });
+  ok(
+    "una anulación sin motivo no se acepta: sin por qué no se puede revisar",
+    sinMotivo.res.status === 422,
+    `${sinMotivo.res.status} ${JSON.stringify(sinMotivo.json)}`
+  );
+
+  const motivoAnulacion = `Emitido sobre la inscripción equivocada ${sello024}`;
+  const anulacion = await api(`/api/enrollments/${inscRId}/certificate`, {
+    method: "DELETE",
+    body: JSON.stringify({ motivo: motivoAnulacion }),
+  });
+  ok(
+    "SC-004 — el certificado se anula, con motivo y con autor",
+    anulacion.res.ok && Boolean(anulacion.json?.certificate?.revokedAt),
+    `${anulacion.res.status} ${JSON.stringify(anulacion.json)}`
+  );
+
+  const certsDelAlumno = (await alumno024.como("/api/portal/me/certificados")).json
+    ?.certificates ?? [];
+  const certAnuladoEnPortal = certsDelAlumno.find((c) => c.code === codigoAnulado);
+  ok(
+    "SC-004 — en el portal del alumno SIGUE apareciendo, y dice que está anulado",
+    Boolean(certAnuladoEnPortal) && certAnuladoEnPortal?.revokedAt !== null,
+    JSON.stringify(certsDelAlumno)
+  );
+
+  const hitosTrasAnular = await hitosDe(inscRId);
+  ok(
+    "y el recorrido no lo disfraza de logro",
+    hito(hitosTrasAnular, "certificado")?.state === "no_alcanzado" &&
+      String(hito(hitosTrasAnular, "certificado")?.detail).includes("Anulado"),
+    JSON.stringify(hito(hitosTrasAnular, "certificado"))
+  );
+
+  /**
+   * La superficie sin sesión: la abre un empleador con el código impreso en el
+   * papel. Un anulado tiene que APARECER —decir "no existe" sobre algo que sí
+   * se emitió es peor que decir "se anuló"— y al mismo tiempo no puede empezar
+   * a contar nada que hoy no cuente: el motivo se escribe para que la academia
+   * revise su decisión, no para que un tercero lo lea.
+   */
+  const verificacion = await fetch(`${BASE}/api/public/certificates/${codigoAnulado}`);
+  const verificacionJson = await verificacion.json().catch(() => null);
+  ok(
+    "SC-004 — la verificación pública responde 200 y lo marca inválido, no 404",
+    verificacion.status === 200 &&
+      verificacionJson?.certificate?.valid === false &&
+      Boolean(verificacionJson?.certificate?.revokedAt),
+    `${verificacion.status} ${JSON.stringify(verificacionJson)}`
+  );
+  ok(
+    "y no empieza a exponer el motivo ni quién lo anuló",
+    !JSON.stringify(verificacionJson).includes(motivoAnulacion) &&
+      !JSON.stringify(verificacionJson).includes("revokeReason"),
+    JSON.stringify(verificacionJson)
+  );
+
+  const anularOtraVez = await api(`/api/enrollments/${inscRId}/certificate`, {
+    method: "DELETE",
+    body: JSON.stringify({ motivo: "Un motivo distinto" }),
+  });
+  ok(
+    "constitución IV — anular dos veces no escribe una segunda verdad (409)",
+    anularOtraVez.res.status === 409 &&
+      anularOtraVez.json?.error?.code === "already_revoked",
+    `${anularOtraVez.res.status} ${JSON.stringify(anularOtraVez.json)}`
+  );
+  const reemitir = await api(`/api/enrollments/${inscRId}/certificate`, {
+    method: "POST",
+    body: JSON.stringify({ historical: true }),
+  });
+  ok(
+    "y volver a emitir no resucita el anulado: lo dice en vez de mentir (409)",
+    reemitir.res.status === 409 &&
+      reemitir.json?.error?.code === "certificado_anulado",
+    `${reemitir.res.status} ${JSON.stringify(reemitir.json)}`
   );
 
   // FR-006 — una cursada corta no muestra mitad de camino.

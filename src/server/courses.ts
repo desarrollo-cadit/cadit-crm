@@ -13,6 +13,7 @@ import {
   type CourseModuleInput,
 } from "@/server/course-content";
 import { findScheduleConflicts, type ScheduleConflict } from "@/server/teachers";
+import { roomAssignmentError } from "@/server/virtual-rooms";
 import { verificarPadreDeCohorte } from "@/server/program-modules";
 
 
@@ -541,40 +542,34 @@ async function validateCohortForeignKeys(
    * la tenía la conserva. El selector del front la oculta; esto es lo que lo
    * prohíbe cuando el id llega por la API.
    *
-   * "Nuevo" se decide contra la cohorte, no contra el pedido: el formulario de
-   * edición reenvía todos los campos, el aula incluida, y una cohorte que
-   * tenía el aula antes de la baja tiene que poder cambiar su costo sin que el
-   * aula que conserva la bloquee. Por eso la cohorte actual se consulta SOLO
-   * cuando el aula está de baja: es el único caso en que la respuesta cambia.
+   * La regla vive en `roomAssignmentError` (`server/virtual-rooms.ts`) desde
+   * que la 023 US5 abrió la segunda puerta —el aula de UNA clase—: dos copias
+   * de la misma regla divergen, y la que alguien se olvide de actualizar es la
+   * que reabre el agujero.
+   *
+   * La cohorte actual se consulta SOLO cuando el aula está de baja, que es el
+   * único caso en que la respuesta cambia: el formulario de edición reenvía
+   * todos los campos, el aula incluida, y una cohorte que tenía el aula antes
+   * de la baja tiene que poder cambiar su costo sin que el aula la bloquee.
    */
   if (input.virtualRoomId) {
-    const rooms = await db
-      .select({ id: schema.virtualRoom.id, archivedAt: schema.virtualRoom.archivedAt })
-      .from(schema.virtualRoom)
-      .where(
-        scoped(
-          schema.virtualRoom.organizationId,
-          organizationId,
-          eq(schema.virtualRoom.id, input.virtualRoomId)
-        )
-      )
-      .limit(1);
-    const room = rooms[0];
-    if (!room) return "Aula inexistente";
-    if (room.archivedAt) {
-      const actual = cohortId
-        ? await db
-            .select({ virtualRoomId: schema.cohort.virtualRoomId })
-            .from(schema.cohort)
-            .where(
-              scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, cohortId))
-            )
-            .limit(1)
-        : [];
-      if (actual[0]?.virtualRoomId !== input.virtualRoomId) {
-        return "El aula está dada de baja: no se puede asignar";
+    const roomError = await roomAssignmentError(
+      db,
+      organizationId,
+      input.virtualRoomId,
+      async () => {
+        if (!cohortId) return null;
+        const actual = await db
+          .select({ virtualRoomId: schema.cohort.virtualRoomId })
+          .from(schema.cohort)
+          .where(
+            scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, cohortId))
+          )
+          .limit(1);
+        return actual[0]?.virtualRoomId ?? null;
       }
-    }
+    );
+    if (roomError) return roomError;
   }
   return null;
 }

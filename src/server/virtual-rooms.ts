@@ -1,5 +1,5 @@
 import { and, asc, eq, isNull, ne } from "drizzle-orm";
-import { getDb, schema } from "@/lib/db";
+import { getDb, schema, type DbOrTx } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { classInstant } from "@/lib/schedule-time";
@@ -389,6 +389,104 @@ export async function updateVirtualRoom(
     );
 
   return { ok: true, data: null };
+}
+
+/**
+ * 023 (FR-009) — ¿Se puede asignar ESTA aula? La regla, dicha una sola vez.
+ *
+ * Vive acá y no en `courses.ts` porque no es una regla de las cohortes: es del
+ * aula. Hasta la US5 la aplicaba sólo `validateCohortForeignKeys`; con el aula
+ * de UNA clase aparece una segunda puerta, y copiar la regla habría dejado dos
+ * versiones que algún día divergen — la que alguien se olvide de actualizar es
+ * la que reabre el agujero.
+ *
+ * `actual` es perezosa a propósito: la fila que se edita se consulta SÓLO
+ * cuando el aula está de baja, que es el único caso en que la respuesta
+ * cambia. Y "nuevo" se decide contra lo que la fila YA tiene, no contra el
+ * pedido: el formulario de edición reenvía todos los campos, así que lo que ya
+ * usaba el aula antes de la baja la conserva.
+ */
+export async function roomAssignmentError(
+  db: DbOrTx,
+  organizationId: string,
+  virtualRoomId: string,
+  actual: () => Promise<string | null>
+): Promise<string | null> {
+  const rooms = await db
+    .select({ id: schema.virtualRoom.id, archivedAt: schema.virtualRoom.archivedAt })
+    .from(schema.virtualRoom)
+    .where(
+      scoped(
+        schema.virtualRoom.organizationId,
+        organizationId,
+        eq(schema.virtualRoom.id, virtualRoomId)
+      )
+    )
+    .limit(1);
+
+  const room = rooms[0];
+  if (!room) return "Aula inexistente";
+  if (room.archivedAt && (await actual()) !== virtualRoomId) {
+    return "El aula está dada de baja: no se puede asignar";
+  }
+  return null;
+}
+
+/**
+ * 023 US5 (FR-003) — Mueve UNA clase a otra aula, sin tocar la cohorte.
+ *
+ * Los choques se resuelven de a uno: coordinación no mueve las catorce clases
+ * de la camada porque una se pisó con otra. `null` quita la excepción y la
+ * clase vuelve a HEREDAR el aula de su cohorte (FR-002) — herencia, no copia.
+ *
+ * 025 (FR-004) — Lo que acá NO pasa importa tanto como lo que pasa: **el aula
+ * no toca el enlace**. La cadena que ve el alumno sigue siendo clase →
+ * cohorte; el aula es el recurso OCUPADO, nunca una fuente de URL, porque su
+ * sala es la de la cuenta y la comparten todas las cohortes que la usan.
+ */
+export async function assignClassRoom(
+  organizationId: string,
+  classSessionId: string,
+  virtualRoomId: string | null
+): Promise<RoomResult<{ id: string; virtualRoomId: string | null }>> {
+  const db = getDb();
+
+  if (virtualRoomId) {
+    const error = await roomAssignmentError(db, organizationId, virtualRoomId, async () => {
+      const filas = await db
+        .select({ virtualRoomId: schema.classSession.virtualRoomId })
+        .from(schema.classSession)
+        .where(
+          scoped(
+            schema.classSession.organizationId,
+            organizationId,
+            eq(schema.classSession.id, classSessionId)
+          )
+        )
+        .limit(1);
+      return filas[0]?.virtualRoomId ?? null;
+    });
+    if (error) return { ok: false, status: 422, code: "invalid_body", message: error };
+  }
+
+  const updated = await db
+    .update(schema.classSession)
+    .set({ updatedAt: new Date(), virtualRoomId })
+    .where(
+      scoped(
+        schema.classSession.organizationId,
+        organizationId,
+        eq(schema.classSession.id, classSessionId)
+      )
+    )
+    .returning();
+
+  const row = updated[0];
+  if (!row) {
+    return { ok: false, status: 404, code: "not_found", message: "Clase no encontrada" };
+  }
+
+  return { ok: true, data: { id: row.id, virtualRoomId: row.virtualRoomId } };
 }
 
 /* ============================================================

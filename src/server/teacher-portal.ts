@@ -101,8 +101,15 @@ export async function teacherReachesCohort(
     .select({ id: schema.cohort.id })
     .from(schema.cohort)
     .leftJoin(
+      /**
+       * La organización va en el predicado del join y no sólo en el `where`:
+       * la tabla base ya está alcanzada y RLS respalda a las dos, pero ésta es
+       * la única consulta del archivo cuya garantía de inquilino no se lee en
+       * la misma línea que la condición. Decirla acá cuesta una comparación.
+       */
       schema.classSession,
       and(
+        eq(schema.classSession.organizationId, organizationId),
         eq(schema.classSession.cohortId, schema.cohort.id),
         eq(schema.classSession.teacherId, teacherId)
       )
@@ -194,7 +201,7 @@ export type TeacherCohortDto = {
  */
 function nombreDelPrograma(
   padreId: string | null,
-  padres: { id: string; name: string | null; courseName: string }[],
+  padres: { id: string; courseName: string }[],
   ordinal: number | null
 ): { name: string; ordinal: number | null } | null {
   if (!padreId) return null;
@@ -260,7 +267,6 @@ export async function listTeacherCohorts(
     ? await db
         .select({
           id: schema.cohort.id,
-          name: schema.cohort.name,
           courseName: schema.course.name,
           parentCohortId: schema.cohort.parentCohortId,
           position: schema.cohort.position,
