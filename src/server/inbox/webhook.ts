@@ -70,9 +70,13 @@ export function warnIfWebhookSignatureDisabled(): void {
  * Arreglo tolerante: valida ítem por ítem y descarta solo el roto.
  *
  * Meta manda LOTES: si un mensaje viene malformado, los otros nueve tienen que
- * entrar igual. Lo único que NO es tolerante es el objeto del payload en sí:
- * si eso no se entiende, no hay nada que rescatar. Adentro, `entry`, `changes`
- * y los arrays de mensajes, estados y contactos pasan todos por acá.
+ * entrar igual. Lo tolerante son los ÍTEMS: `entry`, `changes` y los arrays de
+ * mensajes, estados y contactos pasan todos por acá, y se descarta solo el que
+ * viene roto.
+ *
+ * Que sean ARREGLOS, en cambio, es estricto: un `{ entry: "no soy un arreglo" }`
+ * se lleva el payload entero. Esa es la diferencia entre perder un mensaje y
+ * perder el lote.
  */
 function looseArray<T extends z.ZodTypeAny>(item: T, label: string) {
   return z.array(z.unknown()).transform((items) =>

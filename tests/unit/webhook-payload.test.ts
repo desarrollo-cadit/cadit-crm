@@ -11,7 +11,9 @@ import { parseWebhookPayload } from "@/server/inbox/webhook";
  *    un campo, un esquema estricto dejaría de ingerir. Todo lo desconocido
  *    pasa de largo intacto.
  *  - Meta manda LOTES. Un mensaje roto no puede llevarse puestos a los otros
- *    nueve: el sobre se valida entero, cada ítem se valida por separado.
+ *    nueve: cada ítem se valida por separado y se descarta solo el roto. Lo
+ *    que sí es estricto es el objeto del payload y que `entry` sea un
+ *    ARREGLO — ahí no hay nada que rescatar y cae el lote entero.
  */
 
 const VERIFY_TOKEN = "token-de-prueba-largo";
