@@ -72,6 +72,7 @@ export default async function CohortPage({
       canEditAttendance={caps.includes("asistencia.editar")}
       canEditGrading={caps.includes("evaluacion.editar")}
       canEditEnrollments={caps.includes("inscripciones.editar")}
+      canIssueCertificates={caps.includes("certificados.emitir")}
       esEspecializacion={modulos.length > 0}
     />
   );

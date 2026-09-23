@@ -21,6 +21,7 @@ export function CohortTabs({
   canEditAttendance,
   canEditGrading,
   canEditEnrollments,
+  canIssueCertificates,
   esEspecializacion,
 }: {
   cohortId: string;
@@ -33,6 +34,8 @@ export function CohortTabs({
   canEditGrading: boolean;
   /** 028 — `inscripciones.editar`: mudar una cursada o armar una recursada. */
   canEditEnrollments: boolean;
+  /** 024 — `certificados.emitir`: emitir y anular son la MISMA capacidad. */
+  canIssueCertificates: boolean;
   /**
    * 028 fase 4 (FR-032/FR-033) — ¿Esta camada tiene módulos colgando?
    *
@@ -101,7 +104,11 @@ export function CohortTabs({
         ) : tab === "attendance" ? (
           <AttendanceClient cohortId={cohortId} />
         ) : tab === "grading" ? (
-          <GradingClient cohortId={cohortId} canEdit={canEditGrading} />
+          <GradingClient
+            cohortId={cohortId}
+            canEdit={canEditGrading}
+            canIssueCertificates={canIssueCertificates}
+          />
         ) : (
           <AnnouncementsClient cohortId={cohortId} canPublish={canEditAcademic} />
         )}

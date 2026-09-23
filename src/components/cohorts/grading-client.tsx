@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Award, Copy, Plus } from "lucide-react";
+import { Award, Ban, Copy, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,7 +34,14 @@ type Student = {
   attendancePct: number | null;
   state: State;
   reasons: string[];
-  certificate: { code: string; issuedAt: string; revokedAt: string | null } | null;
+  certificate: {
+    code: string;
+    issuedAt: string;
+    revokedAt: string | null;
+    /** 024 — Por qué se anuló y de quién fue la decisión. */
+    revokeReason: string | null;
+    revokedByName: string | null;
+  } | null;
 };
 
 type Sheet = {
@@ -68,15 +75,31 @@ const STATE_BADGE: Record<State, { label: string; variant: "success" | "destruct
 export function GradingClient({
   cohortId,
   canEdit,
+  canIssueCertificates,
 }: {
   cohortId: string;
   /** 014 — `evaluacion.editar`. Sin esto la planilla se ve, no se toca. */
   canEdit: boolean;
+  /**
+   * 024 — `certificados.emitir`: la capacidad que exigen las DOS puntas de
+   * `/api/enrollments/:id/certificate`, emitir y anular. Es una sola porque
+   * quien puede poner un título en la mano de alguien es quien tiene que
+   * poder sacarlo.
+   *
+   * El front esconde; el servidor prohíbe: la ruta tiene su propio
+   * `requireCapability` y esto sólo decide qué se dibuja.
+   */
+  canIssueCertificates: boolean;
 }) {
   const [sheet, setSheet] = useState<Sheet | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** Separado de `error`: un guardado que falla no puede tapar la planilla. */
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
+  /** 024 — Sobre qué alumno está abierto el panel de anulación. */
+  const [anulando, setAnulando] = useState<Student | null>(null);
+  const [motivoAnulacion, setMotivoAnulacion] = useState("");
   const [newName, setNewName] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [origenes, setOrigenes] = useState<CohortOption[] | null>(null);
@@ -85,7 +108,19 @@ export function GradingClient({
 
   const refetch = useCallback(async () => {
     const res = await fetch(`/api/cohorts/${cohortId}/grading`).catch(() => null);
-    if (res?.ok) setSheet((await res.json()) as Sheet);
+    if (!res?.ok) {
+      /*
+        016 — "No pude traerla" y "no tiene evaluaciones" son dos frases
+        distintas, y mezclarlas ya costó caro: una cohorte con evaluaciones
+        cargadas se leía como una cohorte vacía, y quien miraba concluía que
+        el trabajo se había perdido. El fallo se dice y se ofrece reintentar.
+      */
+      setLoadError("No se pudo cargar la planilla de evaluación.");
+      setLoading(false);
+      return;
+    }
+    setSheet((await res.json()) as Sheet);
+    setLoadError(null);
     setLoading(false);
   }, [cohortId]);
 
@@ -200,11 +235,67 @@ export function GradingClient({
     void refetch();
   }
 
+  function abrirAnulacion(st: Student) {
+    setAnulando(st);
+    setMotivoAnulacion("");
+    setError(null);
+  }
+
+  /**
+   * 024 (SC-004) — Anula el certificado, con motivo.
+   *
+   * Mismo criterio que la dispensa (028, FR-023): el autor lo pone la sesión y
+   * el motivo lo escribe quien anula, porque una excepción sin las dos mitades
+   * no se puede revisar después. El `disabled` es una cortesía, no la regla:
+   * quien la sostiene es el `z.string().trim().min(3)` del servidor.
+   *
+   * Los dos 409 de esta superficie dicen cosas DISTINTAS y las dos importan,
+   * así que se muestra el mensaje del servidor y no un genérico:
+   * `already_revoked` significa que la primera anulación sigue siendo la que
+   * vale —no se pisa—, y `certificado_anulado`, al emitir, nombra la fecha en
+   * que se anuló.
+   */
+  async function anular() {
+    if (!anulando || motivoAnulacion.trim().length < 3) return;
+    const enrollmentId = anulando.enrollmentId;
+    setBusy(enrollmentId);
+    const res = await fetch(`/api/enrollments/${enrollmentId}/certificate`, {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ motivo: motivoAnulacion.trim() }),
+    }).catch(() => null);
+    setBusy(null);
+
+    if (!res?.ok) {
+      setError(await readError(res, "No se pudo anular el certificado"));
+      return;
+    }
+    setError(null);
+    setAnulando(null);
+    setMotivoAnulacion("");
+    void refetch();
+  }
+
   if (loading) {
     return (
       <div className="space-y-2 p-6">
         <Skeleton className="h-8 w-full" />
         <Skeleton className="h-32 w-full" />
+      </div>
+    );
+  }
+  /*
+    El error se mira PRIMERO, igual que en la especialización: "no pude
+    traerla" no puede terminar dibujado como "esta cohorte no tiene
+    evaluaciones", que es una afirmación falsa sobre el trabajo de un curso.
+  */
+  if (loadError && !sheet) {
+    return (
+      <div className="space-y-3 p-6">
+        <p className="text-sm text-danger">{loadError}</p>
+        <Button variant="outline" onClick={() => void refetch()}>
+          Reintentar
+        </Button>
       </div>
     );
   }
@@ -268,6 +359,9 @@ export function GradingClient({
       </div>
 
       {error && <p className="text-xs text-destructive">{error}</p>}
+      {/* Una recarga que falló con la planilla ya en pantalla: se avisa que lo
+          que se está mirando puede estar viejo, sin borrarlo. */}
+      {loadError && <p className="text-xs text-danger">{loadError}</p>}
       {aviso && <p className="text-xs text-muted-foreground">{aviso}</p>}
 
       {sheet.assessments.length > 0 && (
@@ -354,16 +448,45 @@ export function GradingClient({
                   </TableCell>
                   <TableCell className="text-xs">
                     {st.certificate ? (
-                      <a
-                        href={`/api/enrollments/${st.enrollmentId}/certificate/print`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="underline"
-                        title={st.certificate.code}
-                      >
-                        {st.certificate.revokedAt ? "anulado" : "imprimir"}
-                      </a>
-                    ) : st.state === "aprobado" ? (
+                      <div className="space-y-1">
+                        <a
+                          href={`/api/enrollments/${st.enrollmentId}/certificate/print`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="underline"
+                          title={st.certificate.code}
+                        >
+                          {st.certificate.revokedAt ? "anulado" : "imprimir"}
+                        </a>
+                        {/*
+                          024 — El anulado NO se esconde, y además dice quién lo
+                          decidió, cuándo y por qué. "Anulado" a secas obliga a
+                          preguntarle a alguien que quizá ya no esté.
+                        */}
+                        {st.certificate.revokedAt ? (
+                          <p className="text-[10px] leading-snug text-danger">
+                            Anulado el{" "}
+                            {new Date(st.certificate.revokedAt).toLocaleDateString("es-UY")}
+                            {st.certificate.revokedByName
+                              ? ` por ${st.certificate.revokedByName}`
+                              : ""}
+                            {st.certificate.revokeReason
+                              ? ` · ${st.certificate.revokeReason}`
+                              : ""}
+                          </p>
+                        ) : canIssueCertificates ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={busy === st.enrollmentId}
+                            onClick={() => abrirAnulacion(st)}
+                          >
+                            <Ban className="h-4 w-4" />
+                            Anular
+                          </Button>
+                        ) : null}
+                      </div>
+                    ) : st.state === "aprobado" && canIssueCertificates ? (
                       <Button
                         variant="outline"
                         size="sm"
@@ -381,6 +504,54 @@ export function GradingClient({
               ))}
             </TableBody>
           </Table>
+        </div>
+      )}
+
+      {/*
+        024 — Anular con motivo, en un panel y no en un `confirm()`: lo que se
+        escribe acá es lo que, dentro de seis meses, distingue una decisión de
+        la academia de un error. Mismo formato que la dispensa de la 028.
+      */}
+      {anulando && (
+        <div className="rounded-lg border bg-card p-4">
+          <h4 className="text-sm font-semibold text-foreground">
+            Anular el certificado de {anulando.contactName}
+          </h4>
+          <p className="mt-1 text-xs text-muted-foreground">
+            El certificado deja de ser válido y la verificación pública va a
+            decir que está anulado. No se borra: el alumno que lo tiene impreso
+            y el empleador que entra a verificarlo merecen una explicación, no
+            una página que no encuentra nada. La anulación es definitiva — no se
+            vuelve a emitir sobre ella.
+          </p>
+
+          <div className="mt-3 flex flex-wrap items-end gap-2">
+            <label className="flex min-w-[18rem] flex-1 flex-col gap-1 text-xs text-muted-foreground">
+              Motivo
+              <Input
+                autoFocus
+                value={motivoAnulacion}
+                onChange={(e) => setMotivoAnulacion(e.target.value)}
+                placeholder="Se emitió sobre una cohorte equivocada"
+              />
+            </label>
+            <Button
+              variant="destructive"
+              disabled={motivoAnulacion.trim().length < 3}
+              loading={busy === anulando.enrollmentId}
+              onClick={() => void anular()}
+            >
+              {busy === anulando.enrollmentId ? "Anulando…" : "Anular"}
+            </Button>
+            <Button variant="ghost" onClick={() => setAnulando(null)}>
+              Cancelar
+            </Button>
+          </div>
+
+          <p className="mt-2 text-xs text-muted-foreground">
+            Sin motivo no hay anulación: queda escrito con tu nombre y la fecha,
+            y es lo que se lee al revisarla después.
+          </p>
         </div>
       )}
 

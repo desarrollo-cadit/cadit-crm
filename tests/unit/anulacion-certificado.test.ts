@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
@@ -315,5 +317,70 @@ describe("024 SC-004 — qué dice la verificación PÚBLICA de un anulado", () 
     );
     expect(JSON.stringify(pub)).not.toContain("persona equivocada");
     expect(JSON.stringify(pub)).not.toContain("user_1");
+  });
+});
+
+/* ============================================================
+ * La pantalla que ejerce la anulación
+ * ============================================================ */
+
+const PLANILLA = readFileSync(
+  path.join(process.cwd(), "src/components/cohorts/grading-client.tsx"),
+  "utf8"
+);
+
+const PLANILLA_SIN_COMENTARIOS = PLANILLA.replace(/\/\*[\s\S]*?\*\//g, "").replace(
+  /(^|[^:])\/\/.*$/gm,
+  "$1"
+);
+
+describe("024 — anular desde la planilla de la cohorte", () => {
+  /**
+   * El motivo es la REGLA, no una validación de forma (SC-004): el servidor lo
+   * exige con `z.string().trim().min(3)`. La pantalla no puede ofrecer mandar
+   * una anulación sin él y dejar que el 422 explique después.
+   */
+  it("no deja mandar la anulación sin motivo", () => {
+    expect(PLANILLA).toContain("motivoAnulacion.trim().length < 3");
+  });
+
+  it("anula con DELETE sobre la inscripción, mandando el motivo", () => {
+    expect(PLANILLA).toContain('method: "DELETE"');
+    expect(PLANILLA).toContain("motivo: motivoAnulacion.trim()");
+  });
+
+  /**
+   * Los dos 409 de esta superficie dicen cosas DISTINTAS —`already_revoked`
+   * que la primera anulación es la que vale, y `certificado_anulado` que no se
+   * re-emite sobre una anulación, con su fecha— y un "no se pudo" genérico las
+   * borraría a las dos.
+   */
+  it("muestra el mensaje del servidor, no un genérico", () => {
+    expect(PLANILLA).toContain("body?.error?.message ?? fallback");
+    expect(PLANILLA).toContain('readError(res, "No se pudo anular el certificado")');
+    expect(PLANILLA).toContain('readError(res, "No se pudo emitir el certificado")');
+  });
+
+  /**
+   * FR-008 — El anulado no se esconde, y además se explica: sin el autor y el
+   * motivo, "anulado" obliga a preguntarle a alguien que quizá ya no esté.
+   */
+  it("dice quién lo anuló, cuándo y por qué", () => {
+    expect(PLANILLA).toContain("revokedByName");
+    expect(PLANILLA).toContain("revokeReason");
+    expect(PLANILLA).toContain("Anulado el");
+  });
+
+  /** Emitir y anular son la MISMA capacidad, y nunca un nombre de rol. */
+  it("las dos puntas se dibujan por `certificados.emitir`", () => {
+    expect(PLANILLA).toContain("canIssueCertificates");
+    expect(PLANILLA_SIN_COMENTARIOS).not.toMatch(/role\s*===/);
+  });
+
+  /** 016 — "no pude traerla" no puede leerse como "no tiene evaluaciones". */
+  it("un fallo de carga no se disfraza de planilla vacía", () => {
+    expect(PLANILLA).toContain("loadError");
+    expect(PLANILLA).toContain("Reintentar");
+    expect(PLANILLA).not.toContain("setSheet(null)");
   });
 });

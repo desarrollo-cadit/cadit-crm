@@ -39,7 +39,27 @@ export type StudentGrading = {
    * reconstruirlo mirando dos pantallas (FR-004).
    */
   reasons: string[];
-  certificate: { code: string; issuedAt: string; revokedAt: string | null } | null;
+  /**
+   * 024 (SC-004) — El certificado, y si está anulado, POR QUÉ y de quién fue
+   * la decisión.
+   *
+   * `revokedAt` solo decía que el papel no vale. El motivo y el autor viajan
+   * porque son lo que hace revisable la anulación seis meses después: sin
+   * ellos la planilla afirma que un título se anuló y no puede decir quién lo
+   * decidió — exactamente la excepción silenciosa que la dispensa ya prohíbe
+   * (028, FR-023).
+   *
+   * Viajan a `evaluacion.ver`, la misma puerta por la que esta planilla ya
+   * baja `attendanceWaiverByName`: el autor de una excepción de staff no es un
+   * dato nuevo en este payload.
+   */
+  certificate: {
+    code: string;
+    issuedAt: string;
+    revokedAt: string | null;
+    revokeReason: string | null;
+    revokedByName: string | null;
+  } | null;
 };
 
 /* ============================================================
@@ -995,9 +1015,20 @@ export async function cohortGrading(
           eq(schema.classSession.cohortId, cohortId)
         )
       ),
+    /*
+      024 — El nombre de quien anuló sale del MISMO `select` que ya traía el
+      certificado, con un `leftJoin` sobre `user`. Es `left` y no `inner`
+      porque `revoked_by` es nullable con `on delete set null`: un certificado
+      anulado por una cuenta que después se borró sigue estando anulado, y un
+      `innerJoin` lo haría desaparecer de la planilla entera.
+    */
     db
-      .select()
+      .select({
+        certificate: schema.certificate,
+        revokedByName: schema.user.name,
+      })
       .from(schema.certificate)
+      .leftJoin(schema.user, eq(schema.certificate.revokedBy, schema.user.id))
       .where(scoped(schema.certificate.organizationId, organizationId)),
   ]);
 
@@ -1017,7 +1048,7 @@ export async function cohortGrading(
     attendanceByEnrollment.set(row.enrollmentId, map);
   }
 
-  const certByEnrollment = new Map(certs.map((c) => [c.enrollmentId, c]));
+  const certByEnrollment = new Map(certs.map((c) => [c.certificate.enrollmentId, c]));
   const obligatorias = assessments.filter((a) => a.required);
 
   return {
@@ -1064,9 +1095,11 @@ export async function cohortGrading(
         reasons,
         certificate: cert
           ? {
-              code: cert.code,
-              issuedAt: cert.issuedAt.toISOString(),
-              revokedAt: cert.revokedAt?.toISOString() ?? null,
+              code: cert.certificate.code,
+              issuedAt: cert.certificate.issuedAt.toISOString(),
+              revokedAt: cert.certificate.revokedAt?.toISOString() ?? null,
+              revokeReason: cert.certificate.revokeReason,
+              revokedByName: cert.revokedByName,
             }
           : null,
       };
