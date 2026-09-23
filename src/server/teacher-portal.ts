@@ -422,8 +422,14 @@ export type TeacherClassesDto = {
    * las de editar. El enlace crudo es la carga de coordinación, y hacerlo
    * viajar acá lo pondría fuera de la ventana horaria sin que ninguna
    * pantalla lo pida.
+   *
+   * 023 US5 — Y sin las aulas, por el mismo criterio: el aula es qué cuenta de
+   * Zoom queda OCUPADA, un dato con el que el profesor no hace nada. Un dato
+   * que no se debe ver no se consulta, no se arma y no viaja (FR-008).
    */
-  classes: Omit<CohortClassesDto, "classes"> & { classes: ClassRowDto[] };
+  classes: Omit<CohortClassesDto, "classes" | "cohortVirtualRoomId"> & {
+    classes: ClassRowDto[];
+  };
 };
 
 /** Las clases de una cohorte del profesor, o `null` si no la alcanza. */
@@ -440,12 +446,15 @@ export async function teacherCohortClasses(
   if (!classes) return null;
 
   // No viaja, no se filtra: se descarta acá, no en la pantalla (FR-008).
-  const sinCrudos = classes.classes.map(({ ownMeetingUrl: _crudo, ...fila }) => fila);
+  const sinCrudos = classes.classes.map(
+    ({ ownMeetingUrl: _crudo, virtualRoomId: _aula, ...fila }) => fila
+  );
+  const { cohortVirtualRoomId: _aulaDeLaCohorte, ...resto } = classes;
 
   return {
     cohort: detalle.cohort,
     editable: detalle.editable,
-    classes: { ...classes, classes: sinCrudos },
+    classes: { ...resto, classes: sinCrudos },
   };
 }
 
@@ -804,7 +813,8 @@ export async function teacherOwnHours(
  * alcance lo decide `teacherReachesCohort()` — la misma regla, incluida la
  * suplencia. Nada de capacidades de staff.
  *
- * **No toca el enlace de la reunión.** Ese sale del aula virtual (023) y es
+ * **No toca el enlace de la reunión.** Ese sale de la clase o de la cohorte
+ * (025 — el aula no participa de esa cadena) y es
  * decisión de coordinación: si el profesor pudiera cambiarlo, el alumno
  * entraría a una sala que la academia no eligió y el detector de choques
  * dejaría de significar algo.

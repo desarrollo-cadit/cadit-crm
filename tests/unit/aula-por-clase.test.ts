@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { findClashes, resolveMeetingUrl, toOccupiedSlots } from "@/server/virtual-rooms";
 
@@ -266,5 +268,77 @@ describe("023 US5 — los choques después de mover UNA clase", () => {
     const clashes = findClashes(toOccupiedSlots(clases, "America/Montevideo"));
     expect(clashes).toHaveLength(1);
     expect(clashes[0]!.roomId).toBe("zoom2");
+  });
+});
+
+/* ============================================================
+ * La pantalla que ejerce la US5
+ * ============================================================ */
+
+const CLASES = readFileSync(
+  path.join(process.cwd(), "src/components/cohorts/classes-client.tsx"),
+  "utf8"
+);
+
+/** El código sin comentarios: ahí el enlace se nombra para explicar que NO va. */
+const CLASES_SIN_COMENTARIOS = CLASES.replace(/\/\*[\s\S]*?\*\//g, "").replace(
+  /(^|[^:])\/\/.*$/gm,
+  "$1"
+);
+
+describe("023 US5 — el aula de una clase, desde la pantalla de clases", () => {
+  it("manda el aula a SU ruta, no a la de los enlaces", () => {
+    expect(CLASES).toContain("/room`");
+    expect(CLASES).toContain("JSON.stringify({ virtualRoomId })");
+  });
+
+  /**
+   * FR-002 — Volver a heredar es una DECISIÓN, y se elige. Lograrlo vaciando
+   * un campo la convierte en un descuido indistinguible de un olvido.
+   */
+  it("«vuelve a heredar de la cohorte» es una opción explícita del selector", () => {
+    expect(CLASES).toContain("Hereda de la cohorte");
+    expect(CLASES).toContain("cohortVirtualRoomId");
+  });
+
+  /**
+   * FR-009 — El servidor rechaza un aula de baja, así que ofrecerla sería una
+   * trampa. Pero la clase que YA la tenía asignada no puede quedar en blanco:
+   * es el único rastro de dónde se dictó.
+   */
+  it("no ofrece aulas de baja, y sigue nombrando la que la clase ya tiene", () => {
+    expect(CLASES).toContain("(de baja)");
+    // Se piden TODAS, y el selector ofrece sólo las activas: son dos cosas.
+    expect(CLASES).toContain("includeArchived=1");
+    expect(CLASES).toContain("a.archivedAt === null");
+    expect(CLASES).toContain("aulasActivas.some");
+  });
+
+  /**
+   * 025 (FR-004) — **El bug que la 025 vino a arreglar, cerrado del lado de la
+   * pantalla.** El aula es el recurso OCUPADO, nunca una fuente de URL: el
+   * control que la elige no puede nombrar el enlace ni la grabación.
+   */
+  it("el control del aula no menciona el enlace de la reunión", () => {
+    const i = CLASES_SIN_COMENTARIOS.indexOf("Aula de la clase");
+    expect(i).toBeGreaterThan(-1);
+    const bloque = CLASES_SIN_COMENTARIOS.slice(
+      i,
+      CLASES_SIN_COMENTARIOS.indexOf("</Select>", i)
+    );
+    expect(bloque).not.toMatch(/meetingUrl|recordingUrl/);
+  });
+
+  /** Un fallo de carga no se disfraza de "esta academia no tiene aulas". */
+  it("las aulas que no se pudieron cargar se dicen, con reintento", () => {
+    expect(CLASES).toContain("aulasError");
+    expect(CLASES).toContain("Reintentar");
+    expect(CLASES).not.toContain("setAulas([])");
+  });
+
+  /** El front esconde; el servidor prohíbe — y nunca por nombre de rol. */
+  it("el control se dibuja por capacidad, no por nombre de rol", () => {
+    expect(CLASES).toContain("canEditLinks");
+    expect(CLASES_SIN_COMENTARIOS).not.toMatch(/role\s*===/);
   });
 });

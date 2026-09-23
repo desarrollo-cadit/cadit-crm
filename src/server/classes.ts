@@ -72,6 +72,15 @@ export type ClassRowDto = {
 export type StaffClassRowDto = ClassRowDto & {
   /** Enlace propio de ESTA clase. `null` = hereda el de la cohorte. */
   ownMeetingUrl: string | null;
+  /**
+   * 023 US5 (FR-003) — Aula propia de ESTA clase. `null` = hereda la de la
+   * cohorte.
+   *
+   * El aula es el recurso OCUPADO —qué cuenta de Zoom queda tomada—, NUNCA una
+   * fuente de enlace: la cadena sigue siendo `clase ?? cohorte` y no pasa por
+   * acá (025, FR-004). Por eso viaja el id y el nombre, jamás la URL del aula.
+   */
+  virtualRoomId: string | null;
 };
 
 export type CohortClassesDto = {
@@ -85,6 +94,15 @@ export type CohortClassesDto = {
    */
   cannotGenerateReason: string | null;
   timezone: string;
+  /**
+   * 023 US5 — El aula que la cohorte presta a sus clases, para poder decir de
+   * QUÉ se hereda cuando una clase no tiene excepción propia.
+   *
+   * Viaja el id y no el nombre: la pantalla ya tiene la lista de aulas —la
+   * necesita igual para el selector— y resolverlo allá evita que esta consulta
+   * pague un join por un dato que el cliente ya tiene en la mano.
+   */
+  cohortVirtualRoomId: string | null;
   classes: StaffClassRowDto[];
 };
 
@@ -347,7 +365,6 @@ export async function listCohortClasses(
     )
     .orderBy(asc(schema.classSession.number));
 
-
   const window: MeetingWindow = { beforeMin: org.before, afterMin: org.after };
   const comun = {
     cohortMeetingUrl: cohort.meetingUrl,
@@ -378,7 +395,9 @@ export async function listCohortClasses(
           ...comun,
         }),
         ownMeetingUrl: s.meetingUrl,
+        virtualRoomId: s.virtualRoomId,
       })),
+      cohortVirtualRoomId: cohort.virtualRoomId,
     };
   }
 
@@ -425,9 +444,12 @@ export async function listCohortClasses(
         recordingUrl: null,
         ...comun,
       }),
-      // Una proyección no es una clase: no hay fila a la cual cargarle enlace.
+      // Una proyección no es una clase: no hay fila a la cual cargarle enlace
+      // ni a la cual asignarle un aula.
       ownMeetingUrl: null,
+      virtualRoomId: null,
     })),
+    cohortVirtualRoomId: cohort.virtualRoomId,
   };
 }
 
@@ -548,6 +570,7 @@ export async function listProgramClasses(
               ...comun,
             }),
             ownMeetingUrl: s.meetingUrl,
+            virtualRoomId: s.virtualRoomId,
           })),
         };
       }
@@ -584,6 +607,7 @@ export async function listProgramClasses(
             ...comun,
           }),
           ownMeetingUrl: null,
+          virtualRoomId: null,
         })),
       };
     }),

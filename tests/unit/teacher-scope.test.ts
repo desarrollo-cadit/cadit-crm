@@ -462,6 +462,11 @@ describe("025 — el enlace crudo de la clase no sale del portal", () => {
 
     expect(fila).toBeDefined();
     expect(fila).not.toHaveProperty("ownMeetingUrl");
+    // 023 US5 — El aula es un recurso de coordinación: al profesor no le
+    // sirve y no le corresponde. Mismo criterio y mismo lugar de prueba que
+    // el enlace crudo: sobre el objeto que sale, no sobre la pantalla.
+    expect(fila).not.toHaveProperty("virtualRoomId");
+    expect(fila).not.toHaveProperty("cohortVirtualRoomId");
     // Y el enlace crudo no se coló con otro nombre en ningún campo.
     expect(JSON.stringify(fila)).not.toContain("SOLO-DE-ESTA-CLASE");
   });
