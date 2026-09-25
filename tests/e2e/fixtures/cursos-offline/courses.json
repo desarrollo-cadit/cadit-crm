@@ -17,12 +17,16 @@
             {
               "id": 9301,
               "title": "Tema 1.1 E2E",
-              "content_md": "Texto en **negrita E2E**.\n\n- primer punto\n- segundo punto\n\n[Un enlace](https://example.com/e2e)\n\n<script>alert('e2e-xss')</script>"
+              "content_md": "Texto en **negrita E2E**.\n\n- primer punto\n- segundo punto\n\n[Un enlace](https://example.com/e2e)\n\n<script>alert('e2e-xss')</script>",
+              "video_url": "https://vimeo.com/900000001",
+              "video_shown": "BEFORE"
             },
             {
               "id": 9302,
               "title": "Tema 1.2 E2E",
-              "content_md": "Segundo tema de la lección 1."
+              "content_md": "Segundo tema de la lección 1.",
+              "video_url": null,
+              "video_shown": "AFTER"
             }
           ]
         },
@@ -31,8 +35,8 @@
           "title": "Lección 2 E2E",
           "content_md": "",
           "topics": [
-            { "id": 9303, "title": "Tema 2.1 E2E", "content_md": "Primer tema de la lección 2." },
-            { "id": 9304, "title": "Tema 2.2 E2E", "content_md": "Último tema del curso A." }
+            { "id": 9303, "title": "Tema 2.1 E2E", "content_md": "Primer tema de la lección 2.", "video_url": "https://player.vimeo.com/video/900000003", "video_shown": "AFTER" },
+            { "id": 9304, "title": "Tema 2.2 E2E", "content_md": "Último tema del curso A.", "video_url": "https://vimeo.com/900000004", "video_shown": "after" }
           ]
         }
       ]
@@ -50,7 +54,7 @@
           "title": "Lección única E2E",
           "content_md": "",
           "topics": [
-            { "id": 9305, "title": "Tema B E2E", "content_md": "El único tema del curso B." }
+            { "id": 9305, "title": "Tema B E2E", "content_md": "El único tema del curso B.", "video_url": "https://vimeo.com/900000005", "video_shown": "AFTER" }
           ]
         }
       ]

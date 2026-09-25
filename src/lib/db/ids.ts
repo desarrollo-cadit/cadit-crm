@@ -63,6 +63,7 @@ const prefixes = {
   offlineAnswer: "oans",
   offlineQuizAttempt: "oatt",
   offlineCourseAccess: "oacc",
+  offlineTopicProgress: "otpg",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

@@ -288,7 +288,7 @@ async function run(tx: Tx, orgId: string) {
     "offlineTopic",
     orgId,
     plan.topics.map(({ lessonRef, ...t }) => ({ ...t, lessonId: need(lessonIds, lessonRef) })),
-    ["lessonId", "title", "contentMd", "position"]
+    ["lessonId", "title", "contentMd", "position", "videoUrl", "videoShown"]
   );
 
   const quizIds = await upsert(

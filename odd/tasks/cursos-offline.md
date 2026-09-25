@@ -137,7 +137,54 @@ Slices:
   ✅, lint ✅, unit 1405 ✅; build not re-run after T5's ✅. Gap: portal list is
   client-rendered, so the page check asserts the heading and the list goes via the API.
 
+### Accepted change (owner, 2026-09-25): export v2, Vimeo videos, completion gating
+
+Why: export v1 had no video field; v2 (`C:\Users\Ale\Downloads\cadit-cursos-extraidos\
+package`) brings `topics[].video_url` (Vimeo, 270/270 topics) + `video_shown`
+(BEFORE|AFTER) and keeps only 5 courses (MEP/Estructura/Básico/Arquitectura 2025 + Civil
+3D). Old import deleted from local `vocero` on owner request (9 courses + 8
+`media_asset` rows; no attempts/access existed). `quiz-map.json` was lost with the folder
+replacement → must be regenerated for v2.
+Owner decisions: embedded Vimeo player (requires constitution amendment — Principle II
+closed list); gate progress on video completion.
+Proposed defaults (stated to owner): watched ≥ 90% of real playback (played ranges, not
+the `ended` event); topic N+1 opens only after N is complete, enforced server-side (404);
+topics without video complete on open; staff can mark a topic complete for a student
+(author + date) as fallback; no new npm dependency (Vimeo iframe `postMessage` API);
+client-side tracking is spoofable (acceptable for an academy).
+Owner answer (2026-09-25): quizzes can be taken at any time (not locked). A course is
+**completed** only when every topic is complete AND every quiz of the course is passed
+(derived state; shown to student and staff).
+Consequence: an extra/duplicate quiz would make a course impossible to complete, so the
+v2 map must hold exactly one quiz per course module. Evidence: v2 duplicates are identical
+question sets (overlap 17/17–20/20); 1178 and 418 contain every question twice (40 → 20
+unique); 1144, 397, 1068, 1069 are empty. Proposed v2 map (one per module, newest clean
+copy, else the old one): MEP 2025 → 1133 A, 1112 B, 1091 C, 1070 D; Arquitectura 2025 →
+484 A, 1239 B, 1218 C, 1199 D; Estructura 2025 → 450 A; Básico 2025 → 1281 A, 1260 B
+(ambiguous in export; owner confirmation pending); Civil 3D → none. 11 quizzes.
+
+- [x] T7 Constitution 1.4.0 (Principle II item 4: Vimeo embedded player, browser only)
+  + CLAUDE.md sovereignty bullet. No CSP / X-Frame / frame-src headers anywhere (no
+  middleware, none in next.config / Caddyfile) → nothing blocks the iframe; Vimeo's own
+  domain-restriction setting may still block playback. Route: delegated writer.
+- [x] T8 Migration `0043_cursos_offline_videos` (topic `video_url`, `video_shown`;
+  `offline_topic_progress` per contact with RLS + CHECKs) applied to `vocero` and
+  `vocero_e2e`, re-run idempotent ✅. Pure logic `isVideoComplete` (≥ 0.9 merged played
+  ranges), `topicUnlocked` (sequential across the course), `courseCompletion` (all topics
+  AND all quizzes). RED 21 → GREEN 31. Importer v2 keeps only https vimeo URLs. v2
+  quiz-map written outside the repo (9 confirmed, 2 pending 1281/1260, 13 skip). Dry-run
+  on `vocero`: 5 courses, 6 lessons, 270 topics, 9 quizzes, 181 questions, 404 answers,
+  5 thumbnails. Checks: typecheck ✅, lint ✅, unit 1426 ✅ (parent: 2 stable runs; the
+  worker saw one unexplained 16-failure run, not reproduced). Note: kept quiz 1239 has 19
+  distinct of 20 questions; pending 1281 has 17 of 20.
+- [ ] T9 Portal player + progress reporting + server-side sequential gating + staff
+  override in the roster panel + progress visible to staff/teacher.
+- [ ] T10 E2E extension (fixture with video_url, gating 404, progress, override) +
+  re-import v2 locally after owner confirms quiz map.
+
 ## Progress / evidence
+
+- T6 commit `050c4a3` (GGA passed).
 
 - Exploration done (mapping handoff). Branch created.
 - Proposed quiz map written next to the export (`quiz-map.json`): 16 confirmed, 4 pending

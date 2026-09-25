@@ -38,8 +38,29 @@ function fixture() {
             content_md: "a",
             menu_order: 5,
             topics: [
-              { id: 12, title: "Tema 1", content_md: "t1", menu_order: 9 },
+              {
+                id: 12,
+                title: "Tema 1",
+                content_md: "t1",
+                menu_order: 9,
+                video_url: "https://vimeo.com/123456789",
+                video_shown: "BEFORE",
+              },
               { id: 13, title: "Tema 2", content_md: null, menu_order: 1 },
+              {
+                id: 15,
+                title: "Tema 3",
+                content_md: "t3",
+                video_url: "https://player.vimeo.com/video/987654321?h=abc",
+                video_shown: "after",
+              },
+              {
+                id: 16,
+                title: "Tema 4",
+                content_md: "t4",
+                video_url: "http://www.youtube.com/watch?v=x",
+                video_shown: "sideways",
+              },
             ],
             quizzes: [],
           },
@@ -142,6 +163,8 @@ describe("buildImportPlan", () => {
     expect(plan.topics.map((t) => [t.legacyRef, t.lessonRef, t.position, t.contentMd])).toEqual([
       ["topic:12", "lesson:11", 0, "t1"],
       ["topic:13", "lesson:11", 1, ""],
+      ["topic:15", "lesson:11", 2, "t3"],
+      ["topic:16", "lesson:11", 3, "t4"],
     ]);
     const q101 = plan.questions.filter((x) => x.quizRef === "quiz:101");
     expect(q101.map((x) => [x.legacyRef, x.position, x.answerType])).toEqual([
@@ -212,5 +235,38 @@ describe("buildImportPlan", () => {
     expect(plan.skipped).toEqual(
       expect.arrayContaining([expect.objectContaining({ legacyRef: "quiz:104", status: "unmapped" })])
     );
+  });
+
+  it("reads the Vimeo video of each topic and where it is shown", () => {
+    const plan = buildImportPlan(fixture(), map());
+    const byRef = new Map(plan.topics.map((t) => [t.legacyRef, t]));
+    expect(byRef.get("topic:12")).toMatchObject({
+      videoUrl: "https://vimeo.com/123456789",
+      videoShown: "before",
+    });
+    expect(byRef.get("topic:13")).toMatchObject({ videoUrl: null, videoShown: "after" });
+    expect(byRef.get("topic:15")).toMatchObject({
+      videoUrl: "https://player.vimeo.com/video/987654321?h=abc",
+      videoShown: "after",
+    });
+  });
+
+  it("drops a video that is not an https Vimeo URL, with a warning", () => {
+    const plan = buildImportPlan(fixture(), map());
+    const t16 = plan.topics.find((t) => t.legacyRef === "topic:16");
+    expect(t16).toMatchObject({ videoUrl: null, videoShown: "after" });
+    expect(plan.warnings.some((w) => w.includes("topic:16") && w.includes("video"))).toBe(true);
+    expect(plan.warnings.some((w) => w.includes("topic:12"))).toBe(false);
+  });
+
+  it("rejects look-alike hosts and plain http", () => {
+    const f = fixture();
+    const topics = f.courses[0]!.lessons[0]!.topics as Array<Record<string, unknown>>;
+    topics[0]!.video_url = "https://vimeo.com.evil.example/1";
+    topics[2]!.video_url = "http://vimeo.com/1";
+    const plan = buildImportPlan(f, map());
+    const byRef = new Map(plan.topics.map((t) => [t.legacyRef, t]));
+    expect(byRef.get("topic:12")?.videoUrl).toBeNull();
+    expect(byRef.get("topic:15")?.videoUrl).toBeNull();
   });
 });

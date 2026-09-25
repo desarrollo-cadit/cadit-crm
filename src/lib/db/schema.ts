@@ -2009,6 +2009,14 @@ export type OfflineAnswerType = (typeof OFFLINE_ANSWER_TYPES)[number];
 export const OFFLINE_ACCESS_MODES = ["grant", "revoke"] as const;
 export type OfflineAccessMode = (typeof OFFLINE_ACCESS_MODES)[number];
 
+/** Where the topic video goes relative to the text (LearnDash BEFORE|AFTER). */
+export const OFFLINE_VIDEO_SHOWN = ["before", "after"] as const;
+export type OfflineVideoShown = (typeof OFFLINE_VIDEO_SHOWN)[number];
+
+/** How a topic became complete: watched, had no video, or staff override. */
+export const OFFLINE_COMPLETION_SOURCES = ["video", "no_video", "staff"] as const;
+export type OfflineCompletionSource = (typeof OFFLINE_COMPLETION_SOURCES)[number];
+
 export const offlineCourse = pgTable(
   "offline_course",
   {
@@ -2069,12 +2077,20 @@ export const offlineTopic = pgTable(
     title: text("title").notNull(),
     contentMd: text("content_md").notNull().default(""),
     position: integer("position").notNull().default(0),
+    /**
+     * Vimeo URL the academy already hosts (constitution II, item 4): only the
+     * browser loads the official player. NULL = no video, the topic completes
+     * on open.
+     */
+    videoUrl: text("video_url"),
+    videoShown: text("video_shown", { enum: OFFLINE_VIDEO_SHOWN }).notNull().default("after"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [
     uniqueIndex("offline_topic_org_legacy_uq").on(t.organizationId, t.legacyRef),
     index("offline_topic_org_lesson_idx").on(t.organizationId, t.lessonId, t.position),
+    check("offline_topic_video_shown_valid", sql`${t.videoShown} in ('before', 'after')`),
   ]
 );
 
@@ -2264,6 +2280,57 @@ export const offlineCourseAccess = pgTable(
       "offline_course_access_target_coherent",
       sql`(${t.cohortId} is not null and ${t.enrollmentId} is null and ${t.mode} is null)
        or (${t.enrollmentId} is not null and ${t.cohortId} is null and ${t.mode} is not null)`
+    ),
+  ]
+);
+
+/**
+ * How far a CONTACT got in a topic (per contact, like attempts: progress
+ * follows the person across enrollments). One row per (contact, topic).
+ * `completed_by` is set ONLY for a staff override — who marked it, for review.
+ * Client-side video tracking is spoofable; acceptable for an academy.
+ */
+export const offlineTopicProgress = pgTable(
+  "offline_topic_progress",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    contactId: text("contact_id")
+      .notNull()
+      .references(() => contact.id, { onDelete: "cascade" }),
+    topicId: text("topic_id")
+      .notNull()
+      .references(() => offlineTopic.id, { onDelete: "cascade" }),
+    /** 0..1 share of the video really played (merged ranges). */
+    watchedRatio: numeric("watched_ratio", { precision: 5, scale: 4 }).notNull().default("0"),
+    completedAt: timestamp("completed_at"),
+    completedBy: text("completed_by").references(() => user.id, { onDelete: "set null" }),
+    completionSource: text("completion_source", { enum: OFFLINE_COMPLETION_SOURCES }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("offline_topic_progress_contact_topic_uq").on(t.contactId, t.topicId),
+    index("offline_topic_progress_org_contact_idx").on(t.organizationId, t.contactId),
+    index("offline_topic_progress_org_topic_idx").on(t.organizationId, t.topicId),
+    check(
+      "offline_topic_progress_ratio_range",
+      sql`${t.watchedRatio} >= 0 and ${t.watchedRatio} <= 1`
+    ),
+    check(
+      "offline_topic_progress_completion_coherent",
+      sql`(${t.completedAt} is null) = (${t.completionSource} is null)`
+    ),
+    check(
+      "offline_topic_progress_source_valid",
+      sql`${t.completionSource} is null or ${t.completionSource} in ('video', 'no_video', 'staff')`
+    ),
+    // The author of a completion exists only for a staff override.
+    check(
+      "offline_topic_progress_staff_author",
+      sql`${t.completedBy} is null or ${t.completionSource} = 'staff'`
     ),
   ]
 );

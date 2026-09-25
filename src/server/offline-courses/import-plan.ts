@@ -2,6 +2,7 @@ import { z } from "zod";
 import type {
   OfflineAnswerType,
   OfflineCourseStatus,
+  OfflineVideoShown,
 } from "@/lib/db/schema";
 
 /**
@@ -27,6 +28,10 @@ import type {
  *  - LearnDash repeats `sort` inside a quiz (the 40-question ones); a repeated
  *    sort gets `.<n>` appended from its second occurrence so refs stay unique
  *    and stable across re-imports of the same file.
+ *  - (export v2) a topic video is kept only when it is an https Vimeo URL
+ *    (`vimeo.com` / `player.vimeo.com`): anything else becomes NULL with a
+ *    warning — the portal embeds ONLY the official Vimeo player
+ *    (constitution II, item 4). `video_shown` BEFORE|AFTER, default after.
  */
 
 /* ---------- Tolerant input validation ---------- */
@@ -52,7 +57,13 @@ function intOr<T extends number | null>(fallback: T) {
     });
 }
 
-const topicSchema = z.object({ id: legacyId, title: text, content_md: text });
+const topicSchema = z.object({
+  id: legacyId,
+  title: text,
+  content_md: text,
+  video_url: z.string().nullish(),
+  video_shown: z.string().nullish(),
+});
 
 const lessonSchema = z.object({
   id: legacyId,
@@ -130,6 +141,8 @@ export type PlanTopic = {
   title: string;
   contentMd: string;
   position: number;
+  videoUrl: string | null;
+  videoShown: OfflineVideoShown;
 };
 export type PlanQuiz = {
   legacyRef: string;
@@ -185,6 +198,24 @@ function thumbnailBasename(url: string | null | undefined): string | null {
   }
 }
 
+const VIMEO_HOSTS = new Set(["vimeo.com", "www.vimeo.com", "player.vimeo.com"]);
+
+/** The URL when it is an https Vimeo one; `null` otherwise (never guessed). */
+export function vimeoUrlOrNull(raw: string | null | undefined): string | null {
+  const value = raw?.trim();
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && VIMEO_HOSTS.has(url.hostname) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function videoShown(raw: string | null | undefined): OfflineVideoShown {
+  return raw?.trim().toLowerCase() === "before" ? "before" : "after";
+}
+
 function moduleLetter(title: string): string {
   return /m[oó]dulo\s+([a-z])\b/i.exec(title)?.[1]?.toUpperCase() ?? "~";
 }
@@ -229,12 +260,18 @@ export function buildImportPlan(coursesJson: unknown, quizMapJson: unknown): Imp
         position: li,
       });
       l.topics.forEach((t, ti) => {
+        const videoUrl = vimeoUrlOrNull(t.video_url);
+        if (t.video_url?.trim() && !videoUrl) {
+          plan.warnings.push(`topic:${t.id}: video "${t.video_url}" is not an https Vimeo URL — imported without video`);
+        }
         plan.topics.push({
           legacyRef: `topic:${t.id}`,
           lessonRef,
           title: t.title,
           contentMd: t.content_md,
           position: ti,
+          videoUrl,
+          videoShown: videoShown(t.video_shown),
         });
       });
     });

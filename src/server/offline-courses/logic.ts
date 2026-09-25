@@ -266,3 +266,96 @@ export const validateSubmission = z.object({
 });
 
 export type QuizSubmission = z.infer<typeof validateSubmission>;
+
+/* ============================================================
+ * Progress (export v2: Vimeo videos + sequential topics)
+ * ============================================================ */
+
+/** Share of the video that must really be played for the topic to count. */
+export const VIDEO_COMPLETE_THRESHOLD = 0.9;
+
+export interface PlayedRange {
+  start: number;
+  end: number;
+}
+
+export interface VideoProgress {
+  watchedRatio: number;
+  complete: boolean;
+}
+
+/**
+ * Coverage of the REAL played ranges (Vimeo `played`), merged and clamped to
+ * [0, duration]. Never the `ended` event: seeking to the end is not watching.
+ * A non-positive duration is unknown → 0, not complete.
+ */
+export function isVideoComplete(playedRanges: PlayedRange[], duration: number): VideoProgress {
+  if (!(duration > 0)) return { watchedRatio: 0, complete: false };
+  const ranges = playedRanges
+    .map((r) => ({ start: Math.max(0, r.start), end: Math.min(duration, r.end) }))
+    .filter((r) => r.end > r.start)
+    .sort((a, b) => a.start - b.start);
+
+  let covered = 0;
+  let cursor = 0;
+  for (const r of ranges) {
+    const from = Math.max(cursor, r.start);
+    if (r.end > from) covered += r.end - from;
+    cursor = Math.max(cursor, r.end);
+  }
+  const watchedRatio = Math.min(1, covered / duration);
+  return { watchedRatio, complete: watchedRatio >= VIDEO_COMPLETE_THRESHOLD };
+}
+
+/**
+ * Topics open one after the other across the whole course (lesson → topic
+ * order): the first is always open, topic k needs topic k-1 complete.
+ * A topic outside the course is locked.
+ */
+export function topicUnlocked(
+  orderedTopicIds: string[],
+  completedTopicIds: Iterable<string>,
+  topicId: string
+): boolean {
+  const index = orderedTopicIds.indexOf(topicId);
+  if (index < 0) return false;
+  if (index === 0) return true;
+  return new Set(completedTopicIds).has(orderedTopicIds[index - 1]!);
+}
+
+export interface CourseCompletionInput {
+  topicIds: string[];
+  completedTopicIds: Iterable<string>;
+  quizIds: string[];
+  passedQuizIds: Iterable<string>;
+}
+
+export interface CourseCompletion {
+  topicsDone: number;
+  topicsTotal: number;
+  quizzesPassed: number;
+  quizzesTotal: number;
+  completed: boolean;
+}
+
+/**
+ * Completed = every topic complete AND every quiz passed (a course without
+ * quizzes needs only its topics). An empty course is never "completed": that
+ * would be a claim about a person with nothing behind it.
+ */
+export function courseCompletion(input: CourseCompletionInput): CourseCompletion {
+  const topics = new Set(input.topicIds);
+  const quizzes = new Set(input.quizIds);
+  const done = new Set([...input.completedTopicIds].filter((id) => topics.has(id)));
+  const passed = new Set([...input.passedQuizIds].filter((id) => quizzes.has(id)));
+  const topicsTotal = topics.size;
+  const quizzesTotal = quizzes.size;
+  return {
+    topicsDone: done.size,
+    topicsTotal,
+    quizzesPassed: passed.size,
+    quizzesTotal,
+    completed:
+      topicsTotal + quizzesTotal > 0 && done.size === topicsTotal && passed.size === quizzesTotal,
+  };
+}
