@@ -89,8 +89,16 @@ Slices:
   or zero-point quiz → score 0 not passed; grant beats revoke on same course (OR rule; DB
   unique prevents it); duplicate answer ids count once; question without correct answer
   always wrong; negative retries → 0.
-- [ ] T3 Import script + proposed quiz map; dry-run and apply against the local DB.
-  Route: delegated. Checks: dry-run report, row counts, re-run idempotent.
+- [x] T3 Import script `scripts/import/offline-courses.ts` + pure plan
+  `src/server/offline-courses/import-plan.ts`; `pnpm import:offline-courses -- --file
+  --map [--media] [--org] [--apply]` (dry-run = full transaction rolled back). Route:
+  delegated (writer). RED: module missing → GREEN 10 tests. Applied on local `vocero`:
+  9 courses, 17 lessons, 396 topics, 16 quizzes, 349 questions, 782 answers, 8 thumbnails;
+  pending 1281/1260/587/566 absent ✅ (verified by parent). Re-runs: 0/0/0 ✅.
+  Thumbnails stored via existing `media_asset` + `MEDIA_DIR`; `/api/media/<id>` needs
+  `inbox.ver` → students can't see them: T5 adds a portal thumbnail route gated by
+  effective access. Deviations: duplicate LearnDash `sort` → `.2` suffix; quiz order by
+  module letter then id; unmapped quizzes skipped and reported.
 - [ ] T4 Staff: library pages, cohort tab, roster per-student panel, attempt history,
   APIs. Route: delegated. Checks: typecheck, lint, route-capabilities, tema-oscuro.
 - [ ] T5 Student portal (list, navigation, quiz, history) + teacher history. Route:
@@ -106,6 +114,21 @@ Slices:
   "Módulo X" lesson; 2025 editions course-level.
 - Migrations need the owner role: `DATABASE_URL=postgresql://postgres:…@localhost:5433/vocero`
   (the app's `cadit_app` gets "permission denied for database").
+
+- Commits: T1 `28ea1ea`, T2 `e94a42d` (GGA pre-commit hook PASSED on both). GGA notes
+  accepted as-is: folder `src/server/offline-courses/` will hold queries + importer too;
+  attempts cascade with the enrollment (deleting an enrollment frees its retries —
+  accepted: attempts belong to the enrollment per spec).
+- RDD assess (base `ffbfea5`, committed-only): risk medium, `review_due` true
+  (`slice_budget_reached`; 9276 lines, mostly the generated snapshot). Consent relayed to
+  the owner — granted. Start failed `lens_context_budget_exceeded` (generated 0042
+  snapshot; nothing created). Retried on T2 alone (base `28ea1ea`, 591 lines): owner
+  granted again, lineage `review-66dae319d29c5fbc` created, collect for lens
+  `review-reliability`. BLOCKED: reviewer returned incomplete inspection (not captured) —
+  version skew: installed reviewer agents come from gentle-ai 2.3.0 and expect a
+  `GENTLE_AI_CLAUDE_REVIEW_CONTEXT` block that CLI 3.7.0 no longer emits (it emits
+  `GENTLE_AI_REVIEW_CONTEXT`), because `gentle-ai sync` failed on the locked
+  `~/.claude/settings.json`. T1 remains unreviewable natively (snapshot size).
 
 ## Next step
 
