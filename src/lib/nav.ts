@@ -8,6 +8,7 @@ import {
   Inbox,
   Kanban,
   LayoutDashboard,
+  Library,
   Settings,
   Users,
   Wallet,
@@ -80,6 +81,15 @@ export const NAV_GROUPS = [
     items: [
       { href: "/academico", label: "Académico", icon: GraduationCap, capability: "academico.ver" },
       { href: "/calendar", label: "Calendario", icon: CalendarDays, capability: "academico.ver" },
+      // cursos-offline — The imported LearnDash library. `academico.ver` and
+      // not a capability of its own: it is course content, which is what that
+      // capability already governs (no role data migration).
+      {
+        href: "/cursos-offline",
+        label: "Cursos offline",
+        icon: Library,
+        capability: "academico.ver",
+      },
       /**
        * 026 (FR-008) — El cierre contable del mes.
        *

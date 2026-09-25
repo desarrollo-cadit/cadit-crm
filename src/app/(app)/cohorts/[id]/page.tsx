@@ -81,6 +81,7 @@ export default async function CohortPage({
         <CohortTabs
           cohortId={id}
           canEnroll={fullAccess}
+          canViewAcademic={puedeVerPrograma}
           canEditAcademic={caps.includes("academico.editar")}
           canEditAttendance={caps.includes("asistencia.editar")}
           canEditGrading={caps.includes("evaluacion.editar")}

@@ -73,6 +73,72 @@ export function studentCourseIds(enrollments: EnrollmentAccessInput[]): string[]
 }
 
 /* ============================================================
+ * Staff assignment (the write decisions, kept pure)
+ * ============================================================ */
+
+/**
+ * The cohort multi-check REPLACES the set: insert what is new, delete what
+ * was unchecked, leave the rest alone (its row, author and date survive).
+ */
+export function planCohortCourses(
+  currentIds: string[],
+  desiredIds: string[]
+): { toInsert: string[]; toDelete: string[] } {
+  const current = new Set(currentIds);
+  const desired = new Set(desiredIds);
+  return {
+    toInsert: [...desired].filter((id) => !current.has(id)),
+    toDelete: [...current].filter((id) => !desired.has(id)),
+  };
+}
+
+export type OverrideAction = AccessMode | "clear";
+
+export type OverridePlan =
+  | { kind: "none" }
+  | { kind: "insert"; mode: AccessMode }
+  | { kind: "update"; id: string; mode: AccessMode }
+  | { kind: "delete"; id: string };
+
+/**
+ * One (enrollment, course) row at most — the partial unique index says so.
+ * grant/revoke upsert that row; "clear" removes it, so the enrollment goes
+ * back to whatever the cohort says. Repeating the current mode writes nothing.
+ */
+export function planOverride(
+  existing: { id: string; mode: AccessMode } | null,
+  action: OverrideAction
+): OverridePlan {
+  if (action === "clear") return existing ? { kind: "delete", id: existing.id } : { kind: "none" };
+  if (!existing) return { kind: "insert", mode: action };
+  if (existing.mode === action) return { kind: "none" };
+  return { kind: "update", id: existing.id, mode: action };
+}
+
+export interface CourseState {
+  courseId: string;
+  title: string;
+  state: AccessState;
+  cohortHas: boolean;
+  /** The individual row, if any — the panel offers "Restablecer" only then. */
+  override: AccessMode | null;
+}
+
+/** The per-student panel: one state per library course, in library order. */
+export function courseStatesFor(
+  courses: Array<{ id: string; title: string }>,
+  input: EnrollmentAccessInput
+): CourseState[] {
+  return courses.map((course) => ({
+    courseId: course.id,
+    title: course.title,
+    state: accessState(course.id, input),
+    cohortHas: input.cohortCourseIds.includes(course.id),
+    override: input.overrides.find((o) => o.courseId === course.id)?.mode ?? null,
+  }));
+}
+
+/* ============================================================
  * Grading
  * ============================================================ */
 

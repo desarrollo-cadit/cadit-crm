@@ -99,8 +99,19 @@ Slices:
   `inbox.ver` → students can't see them: T5 adds a portal thumbnail route gated by
   effective access. Deviations: duplicate LearnDash `sort` → `.2` suffix; quiz order by
   module letter then id; unmapped quizzes skipped and reported.
-- [ ] T4 Staff: library pages, cohort tab, roster per-student panel, attempt history,
-  APIs. Route: delegated. Checks: typecheck, lint, route-capabilities, tema-oscuro.
+- [x] T4 Staff: `/cursos-offline` list + read-only detail, cohort tab (multi-check +
+  attempts), roster per-student panel (Heredado / Agregado / Quitado / Sin acceso,
+  Quitar/Agregar/Restablecer), staff APIs (`/api/offline-courses[/id]`,
+  `/api/cohorts/[id]/offline-{courses,attempts}`, `/api/enrollments/[id]/offline-courses`),
+  safe markdown renderer. Route: delegated (writer; ~1300 lines — several screens + APIs,
+  over the advisory heuristic). RED: "courseStatesFor is not a function" / markdown
+  "Cannot find module" → GREEN (11 + 12 tests, incl. XSS cases). Checks: typecheck ✅,
+  lint ✅, full suite 1377 ✅, `NEXT_DIST_DIR=.next-build pnpm build` ✅. Parent fix:
+  cohort attempts route returns 404 for an unknown cohort. Deviation: `vitest.config.ts`
+  gets `esbuild.jsx: "automatic"` to render `.tsx` in tests. Live check deferred to T6
+  (owner's dev server serves stale `.next` chunks → sign-in 500; not touched).
+  Open → T5: thumbnails via `/api/media` need `inbox.ver`; add thumbnail routes for staff
+  (academico.ver) and portal (effective access).
 - [ ] T5 Student portal (list, navigation, quiz, history) + teacher history. Route:
   delegated. Checks: student-portal guard tests, typecheck.
 - [ ] T6 E2E section + full gate (`typecheck && lint && build && test`) + live
@@ -130,6 +141,13 @@ Slices:
   `GENTLE_AI_REVIEW_CONTEXT`), because `gentle-ai sync` failed on the locked
   `~/.claude/settings.json`. T1 remains unreviewable natively (snapshot size).
 
+- T3 commit `de3ff4e`. GGA rejected twice before passing: unscoped update/deletes →
+  all importer queries now go through `scoped()`; runtime column-name check backs the
+  `as never` casts; two WHAT comments removed. Dry-run after fixes: all no-ops ✅.
+- RDD assess T3 (base `e94a42d`): medium, `review_due` true (`slice_budget_reached`,
+  1004 lines). Pending — same reviewer version skew as T2; owner told on 2026-09-25
+  (fix: close Claude Code, `gentle-ai sync --agents claude-code --strict-tdd`).
+
 ## Next step
 
-T3 import script.
+T4 staff UI + APIs (delegated writer running).

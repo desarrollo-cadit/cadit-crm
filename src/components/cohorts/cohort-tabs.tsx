@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { AttendanceClient } from "@/components/cohorts/attendance-client";
 import { AnnouncementsClient } from "@/components/cohorts/announcements-client";
+import { CohortOfflineCoursesClient } from "@/components/offline-courses/cohort-offline-courses-client";
 import { ClassesClient } from "@/components/cohorts/classes-client";
 import { GradingClient } from "@/components/cohorts/grading-client";
 import { ProgramClassesClient } from "@/components/cohorts/program-classes-client";
@@ -19,6 +20,7 @@ import { RosterClient } from "@/components/cohorts/roster-client";
 export function CohortTabs({
   cohortId,
   canEnroll,
+  canViewAcademic,
   canEditAcademic,
   canEditAttendance,
   canEditGrading,
@@ -28,6 +30,12 @@ export function CohortTabs({
 }: {
   cohortId: string;
   canEnroll: boolean;
+  /**
+   * cursos-offline — `academico.ver`: the "Cursos offline" tab and the
+   * per-student panel in the roster. Without it they are not drawn at all
+   * (their fetches would answer 403).
+   */
+  canViewAcademic: boolean;
   /** 013 — `academico.editar`: generar el cronograma. */
   canEditAcademic: boolean;
   /** 013 — `asistencia.editar`: cargar enlaces y grabaciones (DV-001c). */
@@ -51,7 +59,13 @@ export function CohortTabs({
   esEspecializacion: boolean;
 }) {
   const [tab, setTab] = useState<
-    "roster" | "program" | "classes" | "attendance" | "grading" | "announcements"
+    | "roster"
+    | "program"
+    | "classes"
+    | "attendance"
+    | "grading"
+    | "announcements"
+    | "offline"
     // 029 — En una especialización se entra por el Recorrido: es la pantalla
     // que responde "¿cómo va cada uno, módulo por módulo?".
   >(esEspecializacion ? "program" : "roster");
@@ -75,6 +89,11 @@ export function CohortTabs({
             { key: "grading", label: "Evaluación" },
             // 013 — Última: es comunicación, no gestión de la cursada.
             { key: "announcements", label: "Avisos" },
+            // cursos-offline — Library content assigned to the cohort. Last:
+            // it complements the cursada, it does not run it.
+            ...(canViewAcademic
+              ? ([{ key: "offline", label: "Cursos offline" }] as const)
+              : []),
           ] as const
         ).map((t) => (
           <button
@@ -95,7 +114,12 @@ export function CohortTabs({
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {tab === "roster" ? (
-          <RosterClient cohortId={cohortId} canEnroll={canEnroll} />
+          <RosterClient
+            cohortId={cohortId}
+            canEnroll={canEnroll}
+            canViewOfflineCourses={canViewAcademic}
+            canEditOfflineCourses={canEditAcademic}
+          />
         ) : tab === "program" ? (
           <ProgramClient
             cohortId={cohortId}
@@ -121,6 +145,8 @@ export function CohortTabs({
           />
         ) : tab === "attendance" ? (
           <AttendanceClient cohortId={cohortId} />
+        ) : tab === "offline" ? (
+          <CohortOfflineCoursesClient cohortId={cohortId} canEdit={canEditAcademic} />
         ) : tab === "grading" ? (
           <GradingClient
             cohortId={cohortId}
