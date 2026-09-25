@@ -31,6 +31,7 @@
 
 import { createHmac } from "node:crypto";
 import { seccion029 } from "./e2e/navegacion-029.mjs";
+import { seccionCursosOffline } from "./e2e/cursos-offline.mjs";
 
 const BASE = process.env.APP_BASE_URL ?? "http://localhost:3000";
 const BOT_KEY = process.env.BOT_API_KEY;
@@ -4891,6 +4892,9 @@ async function main() {
 
   // 029 — Navegación, material en un pedido y agregados de la especialización.
   await seccion029({ api, ok, BASE, getCookie: () => cookie });
+
+  // cursos-offline — Biblioteca importada de LearnDash, acceso y cuestionarios.
+  await seccionCursosOffline({ api, ok, BASE, getCookie: () => cookie });
 
   console.log(`\n===== ${checks - failures}/${checks} checks OK, ${failures} fallos =====`);
   process.exit(failures > 0 ? 1 : 0);

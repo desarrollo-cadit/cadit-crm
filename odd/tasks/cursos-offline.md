@@ -125,8 +125,17 @@ Slices:
   panel error). Parent: portal copy aligned to voseo. Known limit: an attempt records the
   earliest granting enrollment — a teacher of another cohort of the same student won't
   see it.
-- [ ] T6 E2E section + full gate (`typecheck && lint && build && test`) + live
-  self-test. Route: delegated test worker + inline verification.
+- [x] T6 E2E section `scripts/e2e/cursos-offline.mjs` (+ synthetic fixture
+  `tests/e2e/fixtures/cursos-offline/`, story `tests/e2e/us-cursos-offline.md`). Route:
+  delegated worker. Run on isolated `next dev -p 3005` (`.next-e2e`, `.env.e2e`, fresh
+  `vocero_e2e`): section **38/38 ✅** inside the full harness (import twice idempotent,
+  staff list/detail, cohort + overrides states, student 404 not 403, no `isCorrect` in
+  quiz JSON, attempts 1/2/3 → 409, 422 malformed, teacher 404 for foreign cohort, pages
+  200). Full harness: `454/461 checks OK, 7 fallos` — all 7 in blocks 014 (teacher
+  attendance) and 015 (student next class), modules this branch never touches; likely
+  date-dependent (`cohorte_finalizada`), NOT confirmed against `main`. Checks: typecheck
+  ✅, lint ✅, unit 1405 ✅; build not re-run after T5's ✅. Gap: portal list is
+  client-rendered, so the page check asserts the heading and the list goes via the API.
 
 ## Progress / evidence
 
@@ -159,6 +168,13 @@ Slices:
   1004 lines). Pending — same reviewer version skew as T2; owner told on 2026-09-25
   (fix: close Claude Code, `gentle-ai sync --agents claude-code --strict-tdd`).
 
+- T4 commit `494e27e` (GGA passed). T5 commit `f0c3eb8` (GGA failed once: raw
+  `req.json()` in the attempts route → `parseBody(req, validateSubmission)`, typed
+  `submitAttempt`; usted copy → voseo; then passed).
+- RDD assess T4+T5 (base `de3ff4e`): **high**, `review_due` true (`high_risk`, 4149
+  lines). Pending — same reviewer version skew; a high-risk review needs the canonical
+  4 lenses and will likely need slicing to fit the reviewer context budget.
+
 ## Next step
 
-T4 staff UI + APIs (delegated writer running).
+T6 E2E section + live run on isolated server (delegated worker running).

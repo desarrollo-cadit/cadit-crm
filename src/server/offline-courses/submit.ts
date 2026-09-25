@@ -49,7 +49,6 @@ export async function submitAttempt(
   quizId: string,
   submission: QuizSubmission
 ): Promise<SubmitAttemptResult> {
-
   // Access: the same rule as the reads — a course the person cannot read and
   // a quiz that does not exist answer the same 404.
   const enrollments = await effectiveAccessByEnrollment(orgId, contactId);
@@ -174,7 +173,7 @@ export async function submitAttempt(
       ok: false,
       status: 409,
       code: "attempt_conflict",
-      message: "Se registró otro envío al mismo tiempo. Recargue la página para ver el resultado.",
+      message: "Se registró otro envío al mismo tiempo. Recargá la página para ver el resultado.",
     };
   }
 

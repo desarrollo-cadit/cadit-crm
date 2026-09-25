@@ -247,7 +247,6 @@ export function PortalCohortClient({ cohortId }: { cohortId: string }) {
       ) : tab === "evaluacion" ? (
         <div className="space-y-6">
           <Evaluacion cohortId={cohortId} />
-          {/* cursos-offline (T5) — score + passed per student and quiz. */}
           <PortalOfflineAttempts cohortId={cohortId} />
         </div>
       ) : tab === "entregas" ? (
