@@ -5,7 +5,9 @@ import { AttendanceClient } from "@/components/cohorts/attendance-client";
 import { AnnouncementsClient } from "@/components/cohorts/announcements-client";
 import { ClassesClient } from "@/components/cohorts/classes-client";
 import { GradingClient } from "@/components/cohorts/grading-client";
+import { ProgramClassesClient } from "@/components/cohorts/program-classes-client";
 import { ProgramClient } from "@/components/cohorts/program-client";
+import { ProgramSheetSwitcher } from "@/components/cohorts/program-sheet-switcher";
 import { RosterClient } from "@/components/cohorts/roster-client";
 
 /**
@@ -37,30 +39,35 @@ export function CohortTabs({
   /** 024 — `certificados.emitir`: emitir y anular son la MISMA capacidad. */
   canIssueCertificates: boolean;
   /**
-   * 028 fase 4 (FR-032/FR-033) — ¿Esta camada tiene módulos colgando?
+   * 028 (seguimiento) — ¿Esta cohorte está MARCADA como especialización?
    *
-   * La pestaña se agrega SÓLO cuando los tiene, y la condición es un dato —la
-   * presencia de cohortes hijas—, nunca una bandera ni una heurística sobre el
-   * nombre del curso. Una pestaña de más en las 33 cohortes simples ya es un
-   * cambio de pantalla, y FR-032 es un requisito duro.
+   * La pestaña se agrega SÓLO en ese caso, y la condición es la columna
+   * `cohort.is_specialization` —no contar hijos: una especialización recién
+   * creada no tiene ninguno y es la que más necesita la pestaña para armarse—,
+   * nunca una heurística sobre el nombre del curso. Una pestaña de más en las
+   * 33 cohortes simples ya es un cambio de pantalla, y FR-032 es un requisito
+   * duro.
    */
   esEspecializacion: boolean;
 }) {
   const [tab, setTab] = useState<
     "roster" | "program" | "classes" | "attendance" | "grading" | "announcements"
-  >("roster");
+    // 029 — En una especialización se entra por el Recorrido: es la pantalla
+    // que responde "¿cómo va cada uno, módulo por módulo?".
+  >(esEspecializacion ? "program" : "roster");
 
   return (
     <div className="flex h-full flex-col">
       <div className="flex gap-2 border-b px-6 pt-4">
         {(
           [
-            { key: "roster", label: "Alumnos" },
-            // 028 — Segunda y sólo en una especialización: antes de mirar
-            // clases o notas, lo que hay que ver es de qué está hecha.
+            // 029 — En una especialización, el Recorrido va PRIMERO y es la
+            // pestaña por defecto: antes de mirar clases o notas, lo que hay
+            // que ver es de qué está hecha y cómo va cada alumno.
             ...(esEspecializacion
-              ? ([{ key: "program", label: "Especialización" }] as const)
+              ? ([{ key: "program", label: "Recorrido" }] as const)
               : []),
+            { key: "roster", label: "Alumnos" },
             // 013 — Después de saber QUIÉNES cursan, lo que se mira es CUÁNDO.
             // Asistencia y evaluación vienen después.
             { key: "classes", label: "Clases" },
@@ -92,8 +99,19 @@ export function CohortTabs({
         ) : tab === "program" ? (
           <ProgramClient
             cohortId={cohortId}
+            canEditAcademic={canEditAcademic}
             canEditEnrollments={canEditEnrollments}
             canEditGrading={canEditGrading}
+          />
+        ) : tab === "classes" && esEspecializacion ? (
+          <ProgramClassesClient cohortId={cohortId} canEdit={canEditAcademic} />
+        ) : (tab === "attendance" || tab === "grading") && esEspecializacion ? (
+          <ProgramSheetSwitcher
+            key={tab}
+            cohortId={cohortId}
+            kind={tab}
+            canEditGrading={canEditGrading}
+            canIssueCertificates={canIssueCertificates}
           />
         ) : tab === "classes" ? (
           <ClassesClient

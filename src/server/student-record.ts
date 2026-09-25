@@ -10,11 +10,17 @@ import {
 } from "@/server/attendance";
 import {
   dispensaDeInscripcion,
-  moduleApprovalState,
+  estadoDeModulo,
   programApprovalState,
+  razonDeModulo,
   type ApprovalState,
 } from "@/server/grading";
-import { etiquetaDeModulo } from "@/server/program-modules";
+import {
+  etiquetaDeModulo,
+  lugaresDelPrograma,
+  modulosConOrdinal,
+  ordenarModulosDelPrograma,
+} from "@/server/program-modules";
 
 /**
  * 013 (T026, US6/FR-009) — El legajo: todo el recorrido de una persona en una
@@ -200,9 +206,27 @@ export async function getStudentRecord(
     ),
   ];
 
+  /**
+   * SC-010 — Las camadas madre de las especializaciones de esta persona. De
+   * ellas sale el PROGRAMA, que es de donde sale el ordinal de cada módulo:
+   * contar sobre la lista propia rotularía "Módulo 1" al módulo 2 de quien
+   * nunca cursó el 1, y el legajo diría otra cosa que el Recorrido.
+   */
+  const camadasMadre = [
+    ...new Set(
+      enrollments
+        .filter(
+          (e) =>
+            !e.enrollment.parentEnrollmentId &&
+            enrollments.some((h) => h.enrollment.parentEnrollmentId === e.enrollment.id)
+        )
+        .flatMap((e) => (e.cohort ? [e.cohort.id] : []))
+    ),
+  ];
+
   // Se traen todas las piezas de una vez y se cruzan en memoria: una persona
   // con tres cursadas no debería costar quince consultas.
-  const [asistencias, clases, resultados, evaluaciones, certificados, camadas] =
+  const [asistencias, clases, resultados, evaluaciones, certificados, camadas, modulosDeProgramas] =
     await Promise.all([
       enrollmentIds.length
         ? db
@@ -273,6 +297,24 @@ export async function getStudentRecord(
                 schema.cohort.organizationId,
                 organizationId,
                 inArray(schema.cohort.id, camadasAjenas)
+              )
+            )
+        : [],
+      camadasMadre.length
+        ? db
+            .select({
+              id: schema.cohort.id,
+              position: schema.cohort.position,
+              courseId: schema.cohort.courseId,
+              startDate: schema.cohort.startDate,
+              parentCohortId: schema.cohort.parentCohortId,
+            })
+            .from(schema.cohort)
+            .where(
+              scoped(
+                schema.cohort.organizationId,
+                organizationId,
+                inArray(schema.cohort.parentCohortId, camadasMadre)
               )
             )
         : [],
@@ -370,15 +412,18 @@ export async function getStudentRecord(
       ...enrollment,
       attendanceWaiverByName: waiverAuthor,
     });
-    const { state, reasons } = moduleApprovalState(
+    const { state, reasons } = estadoDeModulo(
       misResultados.filter((r) => r.required).map((r) => r.passed),
       pct,
       minPct,
       dispensa
     );
 
-    // Sin evaluaciones Y sin asistencia registrada no hay nada que afirmar.
-    const sinDatos = misResultados.length === 0 && pct === null;
+    // Sin evaluaciones obligatorias Y sin asistencia registrada no hay nada
+    // que afirmar. 030 — la regla es `estadoDeModulo`, la misma que la
+    // grilla del Recorrido y el certificado general: si cada pantalla
+    // decidiera la suya, dirían cosas distintas de la misma persona.
+    const sinDatos = state === "sin_datos";
 
     const cert = certificados.find((c) => c.enrollmentId === enrollment.id);
 
@@ -432,37 +477,55 @@ export async function getStudentRecord(
       if (hijas.length === 0) return cursada;
 
       const camadaDeLaMadre = fila.cohort?.id ?? null;
-      const modules: RecordModule[] = hijas
-        .map((h) => {
-          const modulo = armarCursada(h);
-          const camadaId = h.cohort?.parentCohortId ?? null;
-          return {
-            ...modulo,
-            position: h.cohort?.position ?? null,
-            camadaId,
-            camadaName: camadaId ? (camadaNombre.get(camadaId) || null) : null,
-            // US4 — el módulo cursado con la camada siguiente, dicho como tal.
-            otraCamada: camadaId !== null && camadaId !== camadaDeLaMadre,
-          };
-        })
-        .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+      /**
+       * SC-010 — el ordinal sale del PROGRAMA de la camada madre, con la misma
+       * regla que `programGrading`: `modulosConOrdinal` para el lugar y
+       * `lugaresDelPrograma` para preguntarlo por cohorte o por curso (el
+       * módulo recursado con otra camada es otra cohorte del mismo curso).
+       */
+      const lugarEnElPrograma = lugaresDelPrograma(
+        modulosConOrdinal(
+          modulosDeProgramas.filter((m) => m.parentCohortId === camadaDeLaMadre)
+        ).map((m) => ({ cohortId: m.id, courseId: m.courseId, ordinal: m.ordinal }))
+      );
+      const ordenadas = ordenarModulosDelPrograma(
+        hijas.map((h) => ({
+          id: h.cohort?.id ?? h.enrollment.id,
+          position: h.cohort?.position ?? null,
+          startDate: h.cohort?.startDate ?? null,
+          fila: h,
+        }))
+      ).map(({ fila: h }, i) => {
+        const modulo = armarCursada(h);
+        const camadaId = h.cohort?.parentCohortId ?? null;
+        const position = h.cohort?.position ?? null;
+        const enElPrograma =
+          (h.cohort ? lugarEnElPrograma.get(`cohorte:${h.cohort.id}`) : undefined) ??
+          (h.cohort ? lugarEnElPrograma.get(`curso:${h.cohort.courseId}`) : undefined);
+        const recordModule: RecordModule = {
+          ...modulo,
+          position,
+          camadaId,
+          camadaName: camadaId ? (camadaNombre.get(camadaId) || null) : null,
+          // US4 — el módulo cursado con la camada siguiente, dicho como tal.
+          otraCamada: camadaId !== null && camadaId !== camadaDeLaMadre,
+        };
+        // Sin lugar en el programa —un módulo que la camada no tiene cargado—
+        // se cae al lugar en la propia lista: el mismo respaldo que la grilla.
+        return {
+          m: recordModule,
+          ordinal: enElPrograma?.ordinal ?? (position === null ? null : i + 1),
+        };
+      });
+      const modules = ordenadas.map(({ m }) => m);
 
       /**
-       * Un módulo en `sin_datos` cuenta como `pendiente`: todavía no hay nada
-       * que afirmar sobre él, y "nada que afirmar" nunca puede empujar una
-       * especialización a `aprobado`.
+       * Un módulo en `sin_datos` deja la especialización en `pendiente`
+       * (030): "nada que afirmar" nunca puede empujarla a `aprobado`.
        */
-      const compuesto = programApprovalState(
-        modules.map((m) => (m.approval === "sin_datos" ? "pendiente" : m.approval))
-      );
-      /**
-       * SC-010 — el módulo que causó la razón, nombrado por su ORDINAL: el
-       * lugar en la lista ya ordenada, nunca la columna `position`. Con
-       * posiciones 10/20/30 —el hueco que se deja para insertar un módulo en
-       * el medio— el número guardado diría "Módulo 30" para el tercero.
-       */
-      const culpables = modules
-        .map((m, i) => ({ m, ordinal: m.position === null ? null : i + 1 }))
+      const compuesto = programApprovalState(modules.map((m) => m.approval));
+      // SC-010 — la razón nombra al módulo que la causó, por su ordinal.
+      const culpables = ordenadas
         .filter(({ m }) =>
           compuesto.state === "reprobado"
             ? m.approval === "reprobado"
@@ -480,7 +543,7 @@ export async function getStudentRecord(
           ...compuesto.reasons,
           // SC-010 — las razones nombran el módulo que las causó.
           ...culpables.map(
-            ({ m, ordinal }) => `${etiquetaDeModulo(ordinal, m.cohortName)}: ${m.approval}`
+            ({ m, ordinal }) => razonDeModulo(etiquetaDeModulo(ordinal, m.cohortName), m.approval)
           ),
         ],
         modules,

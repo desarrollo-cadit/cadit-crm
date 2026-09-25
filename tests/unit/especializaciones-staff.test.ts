@@ -331,6 +331,8 @@ const CAMADA = {
   name: "EBIM 13",
   courseName: "Especialización en Proyectos BIM",
   parentCohortId: null,
+  startDate: new Date("2026-03-02T00:00:00.000Z"),
+  endDate: null,
 };
 
 function modulo(over: Partial<Record<string, unknown>> = {}) {
@@ -434,6 +436,8 @@ describe("camadaDeEspecializacion — la especialización se ve entera", () => {
 
     expect(r).not.toBeNull();
     expect(r!.name).toBe("EBIM 13");
+    expect(r!.startDate).toBe("2026-03-02T00:00:00.000Z");
+    expect(r!.endDate).toBeNull();
     expect(r!.modules.map((m) => m.cohortId)).toEqual(["coh_m1", "coh_m2"]);
     expect(r!.modules.map((m) => m.ordinal)).toEqual([1, 2]);
     expect(r!.modules.map((m) => m.teacher?.name)).toEqual(["Ana", "Bruno"]);
@@ -485,8 +489,14 @@ describe("camadaDeEspecializacion — la especialización se ve entera", () => {
         hija(),
         hija({ id: "enr_hija_m2", cohortId: "coh_m2", position: 2, cohortName: "Revit Estructura" }),
       ],
-      evaluaciones: [{ id: "as_1", cohortId: "coh_m2", required: true }],
-      resultados: [{ assessmentId: "as_1", enrollmentId: "enr_hija_m2", passed: false }],
+      evaluaciones: [
+        { id: "as_0", cohortId: "coh_m1", required: true },
+        { id: "as_1", cohortId: "coh_m2", required: true },
+      ],
+      resultados: [
+        { assessmentId: "as_0", enrollmentId: "enr_hija_m1", passed: true },
+        { assessmentId: "as_1", enrollmentId: "enr_hija_m2", passed: false },
+      ],
     });
 
     const { camadaDeEspecializacion } = await import("@/server/program-staff");
@@ -1122,7 +1132,7 @@ describe("RLS — la pestaña se resuelve DENTRO de la transacción de inquilino
       path.join(process.cwd(), "src/app/(app)/cohorts/[id]/page.tsx"),
       "utf8"
     );
-    expect(src).toContain("listarModulos");
+    expect(src).toContain("cohorteEsEspecializacion");
     expect(src, "lee una tabla de dominio sin declarar `app.current_org`").toContain(
       "withTenantTransaction"
     );
@@ -1166,7 +1176,7 @@ describe("un fetch fallido no se reporta como “no es una especialización”",
      * "no tiene módulos" también aparece en el comentario que explica esta
      * misma distinción, y `indexOf` encontraría la prosa antes que el código.
      */
-    const guard = src.indexOf("Esta camada no tiene módulos");
+    const guard = src.indexOf("Esta especialización todavía no tiene módulos");
     expect(guard).toBeGreaterThan(-1);
     const antes = src.slice(0, guard);
     expect(

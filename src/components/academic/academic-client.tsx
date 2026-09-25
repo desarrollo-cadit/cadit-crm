@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   CalendarDays,
+  ChevronDown,
+  ChevronRight,
   Clock,
   KeyRound,
   MapPin,
@@ -20,6 +22,7 @@ import type {
   TeacherDto,
 } from "@/lib/types";
 import { WEEKDAY_LABELS } from "@/lib/utils";
+import { agruparEspecializaciones } from "@/lib/program-order";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -343,7 +346,22 @@ export function AcademicClient() {
     { mode: "create" } | { mode: "edit"; teacher: TeacherDto } | null
   >(null);
 
-  const visibleCohorts = cohorts.filter((c) => statusFilter.has(c.status));
+  /**
+   * 028 (seguimiento) — Lo que queda después del filtro, con cada módulo
+   * adentro de su especialización (`agruparEspecializaciones`, pura y con
+   * tests). Una madre se muestra si ella o alguno de sus módulos coincide.
+   */
+  const grupos = agruparEspecializaciones(cohorts, statusFilter);
+  /** Qué especializaciones están desplegadas. Arrancan plegadas. */
+  const [desplegadas, setDesplegadas] = useState<Set<string>>(new Set());
+  function alternar(id: string) {
+    setDesplegadas((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   /**
    * Cada recurso se lee por separado y un fallo NO se traga en silencio: si
@@ -388,6 +406,122 @@ export function AcademicClient() {
 
   function courseNameFor(id: string) {
     return courses.find((c) => c.id === id)?.name ?? "—";
+  }
+
+  /**
+   * 028 (seguimiento) — La ficha de una cohorte, la misma para la fila suelta
+   * y para el módulo dentro de su especialización: dos copias de esta tarjeta
+   * se desincronizarían en el primer dato nuevo que alguien le agregue.
+   *
+   * El módulo se titula con su ordinal ("Módulo 1 — …", `etiquetaDeModulo`),
+   * nunca con la `position` guardada.
+   */
+  function ficha(
+    cohort: CohortDto,
+    {
+      titulo,
+      subtitulo,
+      insignia,
+    }: { titulo: string; subtitulo: string | null; insignia: React.ReactNode }
+  ) {
+    return (
+      <div className="flex items-start justify-between gap-4 px-4 py-3.5">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href={`/cohorts/${cohort.id}`}
+              className="text-[15px] font-semibold leading-tight hover:underline"
+            >
+              {titulo}
+            </Link>
+            <Badge variant={STATUS_BADGE[cohort.status].variant}>
+              {STATUS_BADGE[cohort.status].label}
+            </Badge>
+            {insignia}
+          </div>
+          {subtitulo && (
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">{subtitulo}</p>
+          )}
+
+          {/* Piezas, no una oración con puntos medios. */}
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
+            <Dato icono={<CalendarDays className="h-3.5 w-3.5" />}>
+              {formatDate(cohort.startDate)} → {formatDate(cohort.endDate)}
+            </Dato>
+            {(cohort.daysOfWeek || cohort.frequency || cohort.startTime) && (
+              <Dato icono={<Clock className="h-3.5 w-3.5" />}>
+                {formatDaysOfWeek(cohort.daysOfWeek) ?? cohort.frequency}
+                {cohort.startTime && (
+                  <>
+                    {" "}
+                    {cohort.startTime}
+                    {cohort.endTime && `–${cohort.endTime}`}
+                  </>
+                )}
+              </Dato>
+            )}
+            {/*
+              Una especialización no tiene profesor propio: lo tiene cada
+              módulo. Marcarle "sin profesor" como algo que falta sería pedir
+              un dato que ninguna pantalla lee.
+            */}
+            {!cohort.isSpecialization && (
+              <Dato
+                icono={<UserRound className="h-3.5 w-3.5" />}
+                /* Sin profesor no es un dato más: es algo que
+                   falta, y hoy le pasa a 8 de las 41. */
+                alerta={!cohort.teacher}
+              >
+                {cohort.teacher?.name ?? "sin profesor"}
+              </Dato>
+            )}
+            {cohort.classroom && (
+              <Dato icono={<MapPin className="h-3.5 w-3.5" />}>{cohort.classroom}</Dato>
+            )}
+            <Dato icono={<Wallet className="h-3.5 w-3.5" />}>{formatCost(cohort.cost)}</Dato>
+          </div>
+
+          {cohort.software.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {cohort.software.map((s) => (
+                <Badge key={s.id} variant="outline">
+                  {s.name}
+                </Badge>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="flex shrink-0 items-center gap-1.5">
+          <Link href={`/cohorts/${cohort.id}`}>
+            <Button variant="outline" size="sm">
+              Ver cohorte
+            </Button>
+          </Link>
+          <Button variant="ghost" size="sm" onClick={() => setCohortForm({ mode: "edit", cohort })}>
+            Editar
+          </Button>
+          {/*
+            023 — Borrar una cohorte creada por error. El servidor
+            decide: con inscripciones, clases, asistencia,
+            evaluaciones o pagos responde 409 y dice QUÉ la ata.
+            Acá no hay ninguna regla — mostrar el botón solo
+            cuando "parece" borrable sería una segunda regla que
+            se desincroniza con la del servidor.
+          */}
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={`Borrar ${cohort.name ?? cohort.courseName}`}
+            title="Borrar"
+            loading={borrando === cohort.id}
+            onClick={() => void borrarCohorte(cohort)}
+          >
+            <Trash2 className="h-4 w-4" strokeWidth={1.7} />
+          </Button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -491,7 +625,7 @@ export function AcademicClient() {
                 temario, software y profesor.
               </p>
             </div>
-          ) : visibleCohorts.length === 0 ? (
+          ) : grupos.length === 0 ? (
             <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
               Ninguna cohorte coincide con el filtro.
             </p>
@@ -521,12 +655,13 @@ export function AcademicClient() {
              * se hace todos los días. El filtro de arriba sigue estando para
              * esconder grupos; esto ORDENA lo que quedó.
              *
-             * Es estructura, no color: lo que ayuda a recorrer 41 elementos no
-             * es pintarlos, es agruparlos.
+             * 028 (seguimiento) — Y los módulos van DENTRO de su
+             * especialización, plegados: sueltos, una EBIM de cuatro módulos
+             * eran cinco filas sin relación a la vista.
              */
             <div className="space-y-6">
               {(["en_curso", "planificada", "finalizada"] as const).map((estado) => {
-                const grupo = visibleCohorts.filter((c) => c.status === estado);
+                const grupo = grupos.filter((g) => g.seccion === estado);
                 if (grupo.length === 0) return null;
                 return (
                   <section key={estado} className="space-y-2.5">
@@ -534,111 +669,62 @@ export function AcademicClient() {
                       {STATUS_BADGE[estado].label} ({grupo.length})
                     </h3>
                     <ul className="space-y-2.5">
-              {grupo.map((cohort) => (
-                <li
-                  key={cohort.id}
-                  className="rounded-lg border bg-card transition-colors hover:border-brand-soft"
-                >
-                  <div className="flex items-start justify-between gap-4 px-4 py-3.5">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Link
-                          href={`/cohorts/${cohort.id}`}
-                          className="text-[15px] font-semibold leading-tight hover:underline"
-                        >
-                          {cohort.courseName}
-                        </Link>
-                        <Badge variant={STATUS_BADGE[cohort.status].variant}>
-                          {STATUS_BADGE[cohort.status].label}
-                        </Badge>
-                      </div>
-                      {cohort.name && (
-                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                          {cohort.name}
-                        </p>
-                      )}
-
-                      {/* Piezas, no una oración con puntos medios. */}
-                      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
-                        <Dato icono={<CalendarDays className="h-3.5 w-3.5" />}>
-                          {formatDate(cohort.startDate)} → {formatDate(cohort.endDate)}
-                        </Dato>
-                        {(cohort.daysOfWeek || cohort.frequency || cohort.startTime) && (
-                          <Dato icono={<Clock className="h-3.5 w-3.5" />}>
-                            {formatDaysOfWeek(cohort.daysOfWeek) ?? cohort.frequency}
-                            {cohort.startTime && (
-                              <>
-                                {" "}
-                                {cohort.startTime}
-                                {cohort.endTime && `–${cohort.endTime}`}
-                              </>
+                      {grupo.map(({ cohort, modules }) => {
+                        const abierta = desplegadas.has(cohort.id);
+                        return (
+                          <li
+                            key={cohort.id}
+                            className="rounded-lg border bg-card transition-colors hover:border-brand-soft"
+                          >
+                            {ficha(cohort, {
+                              titulo: cohort.courseName,
+                              subtitulo: cohort.name,
+                              insignia: cohort.isSpecialization ? (
+                                <button
+                                  type="button"
+                                  aria-expanded={abierta}
+                                  aria-controls={`modulos-${cohort.id}`}
+                                  onClick={() => alternar(cohort.id)}
+                                  className="inline-flex items-center gap-1 rounded-full border border-brand-soft bg-brand-tint px-2 py-0.5 text-[11px] font-medium text-brand-text transition-colors hover:bg-accent"
+                                >
+                                  {abierta ? (
+                                    <ChevronDown className="h-3 w-3" aria-hidden />
+                                  ) : (
+                                    <ChevronRight className="h-3 w-3" aria-hidden />
+                                  )}
+                                  Especialización · {modules.length}{" "}
+                                  {modules.length === 1 ? "módulo" : "módulos"}
+                                </button>
+                              ) : null,
+                            })}
+                            {cohort.isSpecialization && abierta && (
+                              <ul
+                                id={`modulos-${cohort.id}`}
+                                className="space-y-2 border-t px-4 py-3 pl-8"
+                              >
+                                {modules.length === 0 && (
+                                  <li className="text-xs text-muted-foreground">
+                                    Todavía no tiene módulos. Agregalos desde la
+                                    pestaña Especialización de la cohorte.
+                                  </li>
+                                )}
+                                {modules.map((m) => (
+                                  <li
+                                    key={m.cohort.id}
+                                    className="rounded-md border bg-card"
+                                  >
+                                    {ficha(m.cohort, {
+                                      titulo: m.label,
+                                      subtitulo: m.cohort.courseName,
+                                      insignia: null,
+                                    })}
+                                  </li>
+                                ))}
+                              </ul>
                             )}
-                          </Dato>
-                        )}
-                        <Dato
-                          icono={<UserRound className="h-3.5 w-3.5" />}
-                          /* Sin profesor no es un dato más: es algo que
-                             falta, y hoy le pasa a 8 de las 41. */
-                          alerta={!cohort.teacher}
-                        >
-                          {cohort.teacher?.name ?? "sin profesor"}
-                        </Dato>
-                        {cohort.classroom && (
-                          <Dato icono={<MapPin className="h-3.5 w-3.5" />}>
-                            {cohort.classroom}
-                          </Dato>
-                        )}
-                        <Dato icono={<Wallet className="h-3.5 w-3.5" />}>
-                          {formatCost(cohort.cost)}
-                        </Dato>
-                      </div>
-
-                      {cohort.software.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          {cohort.software.map((s) => (
-                            <Badge key={s.id} variant="outline">
-                              {s.name}
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex shrink-0 items-center gap-1.5">
-                      <Link href={`/cohorts/${cohort.id}`}>
-                        <Button variant="outline" size="sm">
-                          Ver cohorte
-                        </Button>
-                      </Link>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setCohortForm({ mode: "edit", cohort })}
-                      >
-                        Editar
-                      </Button>
-                      {/*
-                        023 — Borrar una cohorte creada por error. El servidor
-                        decide: con inscripciones, clases, asistencia,
-                        evaluaciones o pagos responde 409 y dice QUÉ la ata.
-                        Acá no hay ninguna regla — mostrar el botón solo
-                        cuando "parece" borrable sería una segunda regla que
-                        se desincroniza con la del servidor.
-                      */}
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={`Borrar ${cohort.name ?? cohort.courseName}`}
-                        title="Borrar"
-                        loading={borrando === cohort.id}
-                        onClick={() => void borrarCohorte(cohort)}
-                      >
-                        <Trash2 className="h-4 w-4" strokeWidth={1.7} />
-                      </Button>
-                    </div>
-                  </div>
-                </li>
-              ))}
+                          </li>
+                        );
+                      })}
                     </ul>
                   </section>
                 );

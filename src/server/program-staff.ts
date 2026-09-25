@@ -7,9 +7,11 @@ import { attendanceByModule, resolveMinAttendance } from "@/server/attendance";
 import { listProgramClasses } from "@/server/classes";
 import {
   dispensaDeInscripcion,
-  moduleApprovalState,
+  estadoDeModulo,
   programApprovalState,
+  razonDeModulo,
   type ApprovalState,
+  type ModuleState,
 } from "@/server/grading";
 import {
   etiquetaDeModulo,
@@ -51,8 +53,8 @@ import {
  * serían ~96 consultas para dibujar una sola pantalla.
  *
  * Así que las consultas se hacen en lote y **las reglas se reusan tal cual**:
- * `attendanceByModule` cruza asistencia, `moduleApprovalState` decide cada
- * módulo —dispensa incluida— y `programApprovalState` compone la madre. No se
+ * `attendanceByModule` cruza asistencia, `estadoDeModulo` decide cada
+ * módulo —dispensa y `sin_datos` incluidos— y `programApprovalState` compone la madre. No se
  * reimplementa ninguna: lo único propio de este archivo es el orden en que se
  * piden las filas.
  */
@@ -184,7 +186,8 @@ export type ModuloDelAlumno = {
   position: number | null;
   ordinal: number | null;
   label: string;
-  state: ApprovalState;
+  /** 030 — `sin_datos` cuando nadie cargó evaluaciones ni asistencia. */
+  state: ModuleState;
   reasons: string[];
   /** El porcentaje REAL, nunca inflado por la dispensa (FR-026). */
   attendancePct: number | null;
@@ -209,6 +212,12 @@ export type CamadaDeEspecializacionDto = {
   cohortId: string;
   name: string;
   courseName: string;
+  /**
+   * 028 (seguimiento) — Las fechas de la especialización, para proponerlas
+   * como fechas del módulo nuevo que se agrega desde la pestaña.
+   */
+  startDate: string;
+  endDate: string | null;
   modules: ModuloDeCamada[];
   /**
    * La grilla de aprobación. **Ausente —no vacía— sin `evaluacion.ver`**: el
@@ -244,6 +253,8 @@ export async function camadaDeEspecializacion(
       name: schema.cohort.name,
       courseName: schema.course.name,
       parentCohortId: schema.cohort.parentCohortId,
+      startDate: schema.cohort.startDate,
+      endDate: schema.cohort.endDate,
     })
     .from(schema.cohort)
     .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
@@ -258,6 +269,8 @@ export async function camadaDeEspecializacion(
     cohortId: camada.id,
     name: camada.name ?? camada.courseName,
     courseName: camada.courseName,
+    startDate: camada.startDate.toISOString(),
+    endDate: camada.endDate?.toISOString() ?? null,
   };
 
   const modulos = (await listarModulos(organizationId, cohortId)) as FilaDeModulo[];
@@ -524,7 +537,7 @@ async function grillaDeAlumnos(
       );
 
       const dispensa = dispensaDeInscripcion(h);
-      const { state, reasons } = moduleApprovalState(evaluadas, pct, minPct, dispensa);
+      const { state, reasons } = estadoDeModulo(evaluadas, pct, minPct, dispensa);
       const cohortName = h.cohortName ?? h.courseName ?? "Módulo sin nombre";
       const enElPrograma =
         (h.cohortId ? ordinalDelPrograma.get(`cohorte:${h.cohortId}`) : undefined) ??
@@ -557,14 +570,17 @@ async function grillaDeAlumnos(
     const compuesto = programApprovalState(modules.map((m) => m.state));
     // SC-010 — las razones nombran el módulo que las causó, por su ordinal.
     const culpables = modules.filter((m) =>
-      compuesto.state === "reprobado" ? m.state === "reprobado" : m.state === "pendiente"
+      compuesto.state === "reprobado" ? m.state === "reprobado" : m.state !== "aprobado"
     );
 
     return {
       enrollmentId: madre.id,
       contact: { id: madre.contactId, name: fullName(madre) },
       state: compuesto.state,
-      reasons: [...compuesto.reasons, ...culpables.map((m) => `${m.label}: ${m.state}`)],
+      reasons: [
+        ...compuesto.reasons,
+        ...culpables.map((m) => razonDeModulo(m.label, m.state)),
+      ],
       modules,
     };
   });

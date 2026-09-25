@@ -261,8 +261,10 @@ function hija(over: Record<string, unknown> = {}) {
 /**
  * La cola completa de una emisión sobre la inscripción MADRE.
  *
- * `evaluaciones` y `resultados` son lo que decide el estado de cada hija: sin
- * evaluaciones y sin mínimo de asistencia, una hija queda `aprobado`.
+ * `evaluaciones` y `resultados` son lo que decide el estado de cada hija. Sin
+ * evaluaciones obligatorias NI asistencia una hija queda `sin_datos` (030),
+ * no `aprobado`: por eso la cola "todo aprobado" lleva una entrega aprobada
+ * en cada módulo.
  */
 function colaDeMadre(
   hijas: unknown[],
@@ -280,6 +282,21 @@ function colaDeMadre(
   selectQueue.push([]); // marcas
   selectQueue.push(evaluaciones);
   selectQueue.push(resultados);
+}
+
+/** Dos hijas, cada una con su entrega obligatoria aprobada. */
+function colaDeMadreAprobada() {
+  colaDeMadre(
+    [hija(), hija({ id: "enr_m2", cohortId: "coh_m2" })],
+    [
+      { id: "as_1", cohortId: "coh_m1", required: true },
+      { id: "as_2", cohortId: "coh_m2", required: true },
+    ],
+    [
+      { assessmentId: "as_1", enrollmentId: "enr_m1", passed: true },
+      { assessmentId: "as_2", enrollmentId: "enr_m2", passed: true },
+    ]
+  );
 }
 
 describe("issueCertificate — el certificado general de la especialización (FR-020, FR-038)", () => {
@@ -308,6 +325,30 @@ describe("issueCertificate — el certificado general de la especialización (FR
     expect(inserts).toHaveLength(0);
   });
 
+  /**
+   * 030 — Un módulo sin evaluaciones obligatorias NI asistencia registrada es
+   * `sin_datos`, no `aprobado`. El general no se emite, y el motivo nombra el
+   * módulo al que le falta el dato. La condición vive en el servidor.
+   */
+  it("NO se emite con un módulo sin datos, y el motivo lo nombra", async () => {
+    colaDeMadre(
+      [hija(), hija({ id: "enr_m2", cohortId: "coh_m2", cohortName: "Módulo 2 — MEP" })],
+      [{ id: "as_1", cohortId: "coh_m1", required: true }],
+      [{ assessmentId: "as_1", enrollmentId: "enr_m1", passed: true }]
+    );
+
+    const { issueCertificate } = await import("@/server/certificates");
+    const r = await issueCertificate("org_1", "enr_madre");
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.code).toBe("not_approved");
+      expect(r.message).toContain("Módulo 2 — MEP");
+      expect(r.message).toContain("sin datos");
+    }
+    expect(inserts).toHaveLength(0);
+  });
+
   /** FR-038, segunda mitad — con una hija reprobada tampoco. */
   it("NO se emite con una hija reprobada", async () => {
     colaDeMadre(
@@ -329,7 +370,7 @@ describe("issueCertificate — el certificado general de la especialización (FR
    * responde por la presencia de filas (FR-033). Cae al camino de siempre.
    */
   it("se emite con TODAS las hijas aprobadas", async () => {
-    colaDeMadre([hija(), hija({ id: "enr_m2", cohortId: "coh_m2" })]);
+    colaDeMadreAprobada();
 
     const { issueCertificate } = await import("@/server/certificates");
     const r = await issueCertificate("org_1", "enr_madre");
@@ -374,7 +415,7 @@ describe("issueCertificate — el certificado general de la especialización (FR
    * eso lo prueba el bloque A—, pero el recorrido está completo.
    */
   it("un módulo que no otorga certificado, APROBADO, deja emitir el general", async () => {
-    colaDeMadre([hija(), hija({ id: "enr_m2", cohortId: "coh_m2" })]);
+    colaDeMadreAprobada();
 
     const { issueCertificate } = await import("@/server/certificates");
     const r = await issueCertificate("org_1", "enr_madre");
@@ -747,8 +788,10 @@ describe("guardas estructurales de la fase 5", () => {
    * dicha con la confianza de un dato.
    */
   it("la grilla del programa RENDERIZA el motivo de cada módulo", () => {
-    const src = leer("components/cohorts/program-client.tsx");
-    expect(src).toContain("celda.reasons");
+    // 029 — La grilla se mudó a `recorrido-grid.tsx` (la comparten el
+    // Recorrido y el resumen "Todos"); la guarda la sigue hasta ahí.
+    const src = leer("components/cohorts/recorrido-grid.tsx");
+    expect(src).toContain("vigente.reasons.join");
   });
 
   /**

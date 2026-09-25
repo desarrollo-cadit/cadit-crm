@@ -171,6 +171,10 @@ describe("validarPadreDeCohorte (FR-003, FR-004)", () => {
     padreId: null as string | null,
     padreExiste: false,
     padreYaEsModulo: false,
+
+    padreEsEspecializacion: true,
+
+    cohorteEsEspecializacion: false,
     cohorteYaTieneModulos: false,
     cohorteTieneCursadasDeModulo: false,
   };
@@ -255,6 +259,10 @@ describe("validarPadreDeCohorte (FR-003, FR-004)", () => {
       padreId: "cohort_modulo",
       padreExiste: true,
       padreYaEsModulo: true,
+
+      padreEsEspecializacion: true,
+
+      cohorteEsEspecializacion: false,
     });
     expect(error?.code).toBe("anidamiento_de_dos_niveles");
   });
@@ -283,6 +291,10 @@ describe("validarPadreDeCohorte (FR-003, FR-004)", () => {
         padreId: "B",
         padreExiste: true,
         padreYaEsModulo: false,
+
+        padreEsEspecializacion: true,
+
+        cohorteEsEspecializacion: false,
         cohorteYaTieneModulos: false,
         cohorteTieneCursadasDeModulo: false,
       })
@@ -293,6 +305,10 @@ describe("validarPadreDeCohorte (FR-003, FR-004)", () => {
       padreId: "A",
       padreExiste: true,
       padreYaEsModulo: true,
+
+      padreEsEspecializacion: true,
+
+      cohorteEsEspecializacion: false,
       cohorteYaTieneModulos: true,
       cohorteTieneCursadasDeModulo: false,
     });
@@ -501,6 +517,10 @@ describe("sin regresión: 33 cohortes simples y 284 inscripciones (FR-032)", () 
         padreId: null,
         padreExiste: false,
         padreYaEsModulo: false,
+
+        padreEsEspecializacion: true,
+
+        cohorteEsEspecializacion: false,
         cohorteYaTieneModulos: false,
         cohorteTieneCursadasDeModulo: false,
       })

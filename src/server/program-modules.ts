@@ -62,6 +62,17 @@ export type PadreDeCohorte = {
   padreExiste: boolean;
   /** ¿El candidato ya es módulo de otra camada, o sea tiene padre? */
   padreYaEsModulo: boolean;
+  /**
+   * ¿El candidato está MARCADO como especialización (`cohort.is_specialization`)?
+   *
+   * Reemplaza a la regla anterior de "cualquier cohorte raíz sirve de madre":
+   * con cuarenta cohortes en un selector, colgar un módulo de la camada
+   * equivocada era cuestión de un clic, y la madre quedaba convertida en
+   * especialización sin que nadie lo hubiera decidido.
+   */
+  padreEsEspecializacion: boolean;
+  /** ¿La cohorte que recibe padre está marcada como especialización? */
+  cohorteEsEspecializacion: boolean;
   /** ¿Esta cohorte ya es madre de módulos? */
   cohorteYaTieneModulos: boolean;
   /**
@@ -126,6 +137,19 @@ export function validarPadreDeCohorte(input: PadreDeCohorte): ProgramGuardError 
       code: "anidamiento_de_dos_niveles",
       message:
         "La camada elegida ya es un módulo de otro programa: un módulo no tiene sub-módulos",
+    };
+  }
+  if (!input.padreEsEspecializacion) {
+    return {
+      code: "padre_no_es_especializacion",
+      message:
+        "La camada elegida no es una especialización: marcala como especialización antes de agregarle módulos",
+    };
+  }
+  if (input.cohorteEsEspecializacion) {
+    return {
+      code: "especializacion_no_es_modulo",
+      message: "Esta cohorte es una especialización: no puede ser a la vez módulo de otra",
     };
   }
   if (input.cohorteYaTieneModulos) {
@@ -269,7 +293,13 @@ export async function verificarPadreDeCohorte(
   organizationId: string,
   cohorteId: string,
   padreId: string | null,
-  esAlta = false
+  esAlta = false,
+  /**
+   * Cómo va a quedar la marca de ESTA cohorte, si quien llama la conoce (el
+   * alta, o un PATCH que la trae). Ausente = se lee de la base, y sólo en el
+   * camino con padre, que es el único que la mira.
+   */
+  cohorteEsEspecializacion?: boolean
 ): Promise<ProgramGuardError | null> {
   if (padreId === null) {
     const cursadas = esAlta
@@ -292,13 +322,18 @@ export async function verificarPadreDeCohorte(
       padreId: null,
       padreExiste: false,
       padreYaEsModulo: false,
+      padreEsEspecializacion: false,
+      cohorteEsEspecializacion: false,
       cohorteYaTieneModulos: false,
       cohorteTieneCursadasDeModulo: cursadas.length > 0,
     });
   }
 
   const padre = await db
-    .select({ parentCohortId: schema.cohort.parentCohortId })
+    .select({
+      parentCohortId: schema.cohort.parentCohortId,
+      isSpecialization: schema.cohort.isSpecialization,
+    })
     .from(schema.cohort)
     .where(
       scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, padreId))
@@ -317,15 +352,118 @@ export async function verificarPadreDeCohorte(
     )
     .limit(1);
 
+  const esEspecializacion =
+    cohorteEsEspecializacion ??
+    (esAlta
+      ? false
+      : (
+          await db
+            .select({ isSpecialization: schema.cohort.isSpecialization })
+            .from(schema.cohort)
+            .where(
+              scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, cohorteId))
+            )
+            .limit(1)
+        )[0]?.isSpecialization === true);
+
   return validarPadreDeCohorte({
     cohorteId,
     padreId,
     padreExiste: padre.length > 0,
     padreYaEsModulo: padre[0]?.parentCohortId != null,
+    padreEsEspecializacion: padre[0]?.isSpecialization === true,
+    cohorteEsEspecializacion: esEspecializacion,
     cohorteYaTieneModulos: modulosPropios.length > 0,
     // No se consulta: con padre la cohorte sigue siendo un módulo, así que sus
     // cursadas siguen apuntando a uno y la regla no las mira.
     cohorteTieneCursadasDeModulo: false,
+  });
+}
+
+/* ============================================================
+ * La marca: ¿esta cohorte ES una especialización?
+ * ============================================================ */
+
+export type MarcaDeEspecializacion = {
+  /** Cómo quiere dejarla quien escribe: `true` = especialización. */
+  marcar: boolean;
+  /** ¿La cohorte va a quedar colgando de una madre? */
+  cohorteEsModulo: boolean;
+  /** ¿Tiene módulos colgando HOY? */
+  cohorteTieneModulos: boolean;
+};
+
+/**
+ * La marca `is_specialization` y el árbol tienen que decir lo mismo.
+ *
+ * - **Un módulo no es especialización.** Serían dos niveles por la otra punta:
+ *   una madre que a su vez es hija.
+ * - **Desmarcar con módulos colgando se rechaza.** Dejaría hijos apuntando a
+ *   una cohorte común, que es justo el estado que la regla de "sólo una
+ *   especialización es madre" vino a prohibir. Primero se sacan los módulos.
+ *
+ * Marcar una cohorte suelta, o desmarcar una especialización vacía, no rompe
+ * nada: no hay nadie colgando a quien dejar a mitad de camino.
+ */
+export function validarMarcaDeEspecializacion(
+  input: MarcaDeEspecializacion
+): ProgramGuardError | null {
+  if (input.marcar && input.cohorteEsModulo) {
+    return {
+      code: "modulo_no_es_especializacion",
+      message: "Un módulo no puede ser a la vez una especialización",
+    };
+  }
+  if (!input.marcar && input.cohorteTieneModulos) {
+    return {
+      code: "especializacion_con_modulos",
+      message:
+        "Esta especialización todavía tiene módulos: sacalos o movelos antes de convertirla en una cohorte común",
+    };
+  }
+  return null;
+}
+
+/**
+ * Averigua los hechos y aplica `validarMarcaDeEspecializacion`.
+ *
+ * `padreFinal` es el padre con el que va a quedar la cohorte: el que trae el
+ * pedido si lo trae, o el que ya tenía. Lo resuelve quien llama porque es
+ * quien sabe si el pedido lo toca. Cada camino consulta sólo lo que su regla
+ * mira: marcar no necesita contar módulos, desmarcar no necesita el padre.
+ */
+export async function verificarMarcaDeEspecializacion(
+  db: Db,
+  organizationId: string,
+  cohorteId: string,
+  marcar: boolean,
+  padreFinal: string | null,
+  esAlta = false
+): Promise<ProgramGuardError | null> {
+  if (marcar) {
+    return validarMarcaDeEspecializacion({
+      marcar: true,
+      cohorteEsModulo: padreFinal !== null,
+      cohorteTieneModulos: false,
+    });
+  }
+  const modulos = esAlta
+    ? []
+    : await db
+        .select({ id: schema.cohort.id })
+        .from(schema.cohort)
+        .where(
+          scoped(
+            schema.cohort.organizationId,
+            organizationId,
+            eq(schema.cohort.parentCohortId, cohorteId)
+          )
+        )
+        .limit(1);
+  return validarMarcaDeEspecializacion({
+    marcar: false,
+    cohorteEsModulo: padreFinal !== null,
+    cohorteTieneModulos: modulos.length > 0,
   });
 }
 
@@ -409,76 +547,17 @@ export async function verificarVinculoDeInscripcion(
 }
 
 /**
- * 028 (FR-002) — Cómo se ROTULA un módulo de programa.
- *
- * **`position` es una clave de ORDEN, no una etiqueta**, y la diferencia no es
- * cosmética. Alguien va a cargar 10, 20 y 30 para poder insertar un módulo en
- * el medio sin renumerar los que ya están: es una decisión legítima y es la
- * primera que se le ocurre a cualquiera. Si la pantalla imprimiera el número
- * guardado, ese día la especialización pasaría a tener "Módulo 10, Módulo 20 y
- * Módulo 30" y nadie entendería qué se rompió.
- *
- * Entonces:
- *
- * - se ORDENA por `position`;
- * - se ROTULA con el nombre propio de la cohorte de módulo;
- * - y el ordinal, cuando hace falta, sale del LUGAR en la lista ya ordenada.
- *
- * `ordinal` en `null` es "no hay orden que declarar": se muestra el nombre
- * pelado, porque inventar un número sería afirmar algo que nadie cargó.
+ * 028 (FR-002) — El rótulo y el orden de los módulos viven en `@/lib/program-order`,
+ * porque también los usa la pantalla del staff (un componente cliente no puede
+ * importar este archivo sin arrastrar la base). Se reexportan para que el
+ * servidor los siga encontrando acá.
  */
-export function etiquetaDeModulo(ordinal: number | null, nombre: string): string {
-  return ordinal === null ? nombre : `Módulo ${ordinal} — ${nombre}`;
-}
-
-/** Lo mínimo que hace falta para ubicar un módulo en el orden del programa. */
-export type ModuloOrdenable = {
-  id: string;
-  position: number | null;
-  startDate: Date | null;
-};
-
-/**
- * El orden que decidió la academia, en una sola función.
- *
- * Ordena por `position` y desempata por `start_date`; un módulo SIN `position`
- * cargada es un dato a medias y va al final, no al principio. El id desempata
- * lo que quede, para que dos módulos mal cargados no salgan en orden aleatorio
- * entre una pantalla y otra.
- */
-export function ordenarModulosDelPrograma<T extends ModuloOrdenable>(
-  modulos: readonly T[]
-): T[] {
-  return [...modulos].sort((a, b) => {
-    if (a.position === null && b.position === null) return a.id.localeCompare(b.id);
-    if (a.position === null) return 1;
-    if (b.position === null) return -1;
-    if (a.position !== b.position) return a.position - b.position;
-    const fa = a.startDate?.getTime() ?? 0;
-    const fb = b.startDate?.getTime() ?? 0;
-    return fa - fb || a.id.localeCompare(b.id);
-  });
-}
-
-/**
- * Los módulos del programa, ordenados y con su ORDINAL ya derivado del lugar.
- *
- * El ordinal se calcula acá y en ningún otro lado. Cada pantalla que lo
- * recalcule por su cuenta es una oportunidad de contar sobre la lista
- * equivocada, que es exactamente el defecto que esta función viene a cerrar:
- * el módulo 2 del programa es "Módulo 2" para todo el mundo, también para el
- * alumno que nunca cursó el 1.
- */
-export function modulosConOrdinal<T extends ModuloOrdenable>(
-  modulos: readonly T[]
-): (T & { ordinal: number | null })[] {
-  return ordenarModulosDelPrograma(modulos).map((m, i) => ({
-    ...m,
-    // Sin `position` no hay orden que declarar: inventar un número sería
-    // afirmar algo que nadie cargó.
-    ordinal: m.position === null ? null : i + 1,
-  }));
-}
+export {
+  etiquetaDeModulo,
+  modulosConOrdinal,
+  ordenarModulosDelPrograma,
+  type ModuloOrdenable,
+} from "@/lib/program-order";
 
 /**
  * El LUGAR de cada módulo del programa, para poder preguntárselo por la
@@ -539,6 +618,26 @@ export async function listarModulos(organizationId: string, parentCohortId: stri
       )
     )
     .orderBy(schema.cohort.position, schema.cohort.startDate);
+}
+
+/**
+ * 028 (seguimiento) — ¿Esta cohorte está MARCADA como especialización?
+ *
+ * Es lo que decide la pestaña. Antes se contaban los módulos, y una
+ * especialización recién creada —cero módulos— no tenía dónde armarse.
+ */
+export async function cohorteEsEspecializacion(
+  organizationId: string,
+  cohortId: string
+): Promise<boolean> {
+  const rows = await getDb()
+    .select({ isSpecialization: schema.cohort.isSpecialization })
+    .from(schema.cohort)
+    .where(
+      scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, cohortId))
+    )
+    .limit(1);
+  return rows[0]?.isSpecialization === true;
 }
 
 /**

@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { asc, eq, inArray, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
@@ -26,6 +26,14 @@ import {
  */
 
 export type ApprovalState = "aprobado" | "reprobado" | "pendiente";
+
+/**
+ * 030 — El estado de un MÓDULO de especialización: `ApprovalState` más
+ * `sin_datos`, el mismo nombre que el legajo (013) usa para lo mismo.
+ * `ApprovalState` no se amplía: la planilla de la cohorte sigue con su
+ * default optimista, que ahí está bien. Ver `estadoDeModulo`.
+ */
+export type ModuleState = ApprovalState | "sin_datos";
 
 export type StudentGrading = {
   enrollmentId: string;
@@ -147,7 +155,7 @@ export function approvalState(
  * obligó a inventar `sin_datos`, y que CLAUDE.md deja anotada como ya
  * conocida. Acá se paga con tres líneas y un test.
  */
-export function programApprovalState(childStates: ApprovalState[]): {
+export function programApprovalState(childStates: ModuleState[]): {
   state: ApprovalState;
   reasons: string[];
 } {
@@ -168,21 +176,44 @@ export function programApprovalState(childStates: ApprovalState[]): {
     };
   }
 
+  /**
+   * 030 — Un módulo `sin_datos` deja la especialización en `pendiente`: no
+   * reprueba a nadie —nadie cargó nada que lo acuse—, pero tampoco la deja
+   * certificable. Se dice aparte de "falta aprobar", porque lo que falta no
+   * es que la persona apruebe sino que alguien cargue el dato.
+   */
+  const reasons: string[] = [];
+  const sinDatos = childStates.filter((s) => s === "sin_datos").length;
+  if (sinDatos > 0) {
+    reasons.push(
+      sinDatos === 1
+        ? "Un módulo sin datos: nadie cargó evaluaciones ni asistencia"
+        : `${sinDatos} módulos sin datos: nadie cargó evaluaciones ni asistencia`
+    );
+  }
+
   // FR-017 — un módulo que todavía no empezó deja `pendiente`, jamás
   // `reprobado`. Sobre ocho meses de cursada eso es la norma, no el matiz.
   const pendientes = childStates.filter((s) => s === "pendiente").length;
   if (pendientes > 0) {
-    return {
-      state: "pendiente",
-      reasons: [
-        pendientes === 1
-          ? "Falta aprobar un módulo"
-          : `Faltan aprobar ${pendientes} módulos`,
-      ],
-    };
+    reasons.push(
+      pendientes === 1
+        ? "Falta aprobar un módulo"
+        : `Faltan aprobar ${pendientes} módulos`
+    );
   }
 
+  if (reasons.length > 0) return { state: "pendiente", reasons };
+
   return { state: "aprobado", reasons: [] };
+}
+
+/**
+ * 030 — La razón que nombra el módulo que frena el general (SC-010), con el
+ * estado dicho en palabras: `sin_datos` es un identificador, no una frase.
+ */
+export function razonDeModulo(label: string, state: ModuleState): string {
+  return `${label}: ${state === "sin_datos" ? "sin datos" : state}`;
 }
 
 /* ============================================================
@@ -269,6 +300,39 @@ export function moduleApprovalState(
       motivoDeDispensa(compuerta.reasons[0]!, dispensa),
     ],
   };
+}
+
+/**
+ * 030 — El estado de un módulo cuando lo que se afirma es sobre una PERSONA:
+ * el recorrido, el certificado general, el legajo y el portal.
+ *
+ * `sin_datos` = el módulo no tiene evaluaciones obligatorias que mirar Y no
+ * hay asistencia registrada para esa inscripción. **0% porque nadie pasó
+ * lista no es 0% porque no vino**: `attendanceByModule` y
+ * `attendancePercentage` ya devuelven `null` —no 0— cuando nadie tomó lista,
+ * y eso es lo que se lee acá.
+ *
+ * Con cualquiera de los dos datos, la regla es EXACTAMENTE
+ * `moduleApprovalState`, dispensa incluida. Sin ninguno, la dispensa no lo
+ * salva: perdona faltas, no inventa notas.
+ *
+ * La planilla de la cohorte (`cohortGrading`) NO pasa por acá: ahí el
+ * coordinador sabe que todavía no cargó nada, y el default optimista está
+ * bien (CLAUDE.md, "Cuidado con los defaults optimistas").
+ */
+export function estadoDeModulo(
+  results: (boolean | null)[],
+  attendancePct: number | null,
+  minAttendancePct: number | null,
+  dispensa: DispensaDeAsistencia | null
+): { state: ModuleState; reasons: string[] } {
+  if (results.length === 0 && attendancePct === null) {
+    return {
+      state: "sin_datos",
+      reasons: ["Nadie cargó todavía evaluaciones obligatorias ni asistencia de este módulo"],
+    };
+  }
+  return moduleApprovalState(results, attendancePct, minAttendancePct, dispensa);
 }
 
 /**
@@ -419,23 +483,54 @@ export async function recordResults(
     return { ok: false, status: 404, code: "not_found", message: "Evaluación no encontrada" };
   }
 
-  const now = new Date();
+  /**
+   * 029 — Una sentencia por FORMA de fila, no una por alumno.
+   *
+   * Lo que se pisa depende de si la fila trae nota (ver abajo), y eso no se
+   * puede decidir por fila dentro de un mismo ON CONFLICT: `excluded.notes`
+   * vale `null` tanto para "bórrala" como para "no la toques". Entonces las
+   * filas se parten en dos grupos —con nota y sin nota— y cada grupo es UN
+   * insert multi-fila. A lo sumo dos viajes, sea la planilla del tamaño que sea.
+   *
+   * Una inscripción repetida se compacta antes (Postgres no deja tocar la
+   * misma fila dos veces en un statement), y la compactación reproduce el
+   * bucle de antes: `passed` es el del último, y la nota la del último que
+   * la trajo.
+   */
+  const compactadas = new Map<string, (typeof entries)[number]>();
   for (const e of entries) {
+    const previa = compactadas.get(e.enrollmentId);
+    compactadas.set(
+      e.enrollmentId,
+      e.notes === undefined && previa?.notes !== undefined ? { ...e, notes: previa.notes } : e
+    );
+  }
+  const conNota = [...compactadas.values()].filter((e) => e.notes !== undefined);
+  const sinNota = [...compactadas.values()].filter((e) => e.notes === undefined);
+
+  const now = new Date();
+  for (const [grupo, pisaNota] of [
+    [conNota, true],
+    [sinNota, false],
+  ] as const) {
+    if (grupo.length === 0) continue;
     await db
       .insert(schema.assessmentResult)
-      .values({
-        id: newId("assessmentResult"),
-        organizationId,
-        assessmentId,
-        enrollmentId: e.enrollmentId,
-        passed: e.passed,
-        notes: e.notes ?? null,
-        recordedBy: recordedBy ?? null,
-      })
+      .values(
+        grupo.map((e) => ({
+          id: newId("assessmentResult"),
+          organizationId,
+          assessmentId,
+          enrollmentId: e.enrollmentId,
+          passed: e.passed,
+          notes: e.notes ?? null,
+          recordedBy: recordedBy ?? null,
+        }))
+      )
       .onConflictDoUpdate({
         target: [schema.assessmentResult.assessmentId, schema.assessmentResult.enrollmentId],
         set: {
-          passed: e.passed,
+          passed: sql`excluded.passed`,
           /**
            * 016 — La nota interna sólo se pisa cuando quien llama la TRAE.
            *
@@ -450,7 +545,7 @@ export async function recordResults(
            * Mandar `null` explícito sigue borrándola, que es lo que la planilla
            * necesita para poder dejarla vacía a propósito.
            */
-          ...(e.notes !== undefined ? { notes: e.notes } : {}),
+          ...(pisaNota ? { notes: sql`excluded.notes` } : {}),
           updatedAt: now,
         },
       });
@@ -654,7 +749,8 @@ export type ModuleGrading = {
   /** El porcentaje REAL, nunca inflado por la dispensa (FR-026). */
   attendancePct: number | null;
   minAttendancePct: number | null;
-  state: ApprovalState;
+  /** 030 — `sin_datos` cuando nadie cargó evaluaciones ni asistencia. */
+  state: ModuleState;
   reasons: string[];
   /** `true` cuando este módulo tiene una dispensa vigente (FR-022). */
   dispensada: boolean;
@@ -846,7 +942,7 @@ export async function programGrading(
     );
 
     const dispensa = dispensaDeInscripcion(h);
-    const { state, reasons } = moduleApprovalState(evaluadas, pct, minPct, dispensa);
+    const { state, reasons } = estadoDeModulo(evaluadas, pct, minPct, dispensa);
     const cohortName = h.cohortName ?? h.courseName ?? "Módulo sin nombre";
 
     const enElPrograma =
@@ -889,7 +985,7 @@ export async function programGrading(
    * lista de esta persona renumeraría al que tiene huecos.
    */
   const culpables = modules.filter((m) =>
-    compuesto.state === "reprobado" ? m.state === "reprobado" : m.state === "pendiente"
+    compuesto.state === "reprobado" ? m.state === "reprobado" : m.state !== "aprobado"
   );
 
   return {
@@ -898,7 +994,7 @@ export async function programGrading(
     state: compuesto.state,
     reasons: [
       ...compuesto.reasons,
-      ...culpables.map((m) => `${m.label}: ${m.state}`),
+      ...culpables.map((m) => razonDeModulo(m.label, m.state)),
     ],
     modules,
   };
@@ -987,8 +1083,9 @@ export async function cohortGrading(
         eq(schema.assessmentResult.assessmentId, schema.assessment.id)
       )
       .where(
-        and(
-          eq(schema.assessmentResult.organizationId, organizationId),
+        scoped(
+          schema.assessmentResult.organizationId,
+          organizationId,
           eq(schema.assessment.cohortId, cohortId)
         )
       ),
@@ -1010,8 +1107,9 @@ export async function cohortGrading(
         eq(schema.attendance.classSessionId, schema.classSession.id)
       )
       .where(
-        and(
-          eq(schema.attendance.organizationId, organizationId),
+        scoped(
+          schema.attendance.organizationId,
+          organizationId,
           eq(schema.classSession.cohortId, cohortId)
         )
       ),

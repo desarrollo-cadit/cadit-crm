@@ -541,6 +541,20 @@ export const cohort = pgTable(
      * sin padre no significa nada y no se muestra.
      */
     position: integer("position"),
+    /**
+     * 028 (seguimiento) — La cohorte ES una especialización: la madre de un
+     * programa de módulos.
+     *
+     * Antes era implícito —"es especialización si tiene hijos"— y eso tenía
+     * dos costos: una especialización recién creada no tenía dónde armarse
+     * (sin hijos no había pestaña), y cualquier cohorte raíz servía de madre,
+     * así que colgar un módulo de la camada equivocada la convertía en
+     * especialización sin que nadie lo decidiera. Ahora es una decisión
+     * explícita, y el árbol la respeta: sólo una cohorte marcada puede ser
+     * madre, un módulo no puede estar marcado, y no se desmarca con módulos
+     * colgando (`src/server/program-modules.ts`).
+     */
+    isSpecialization: boolean("is_specialization").notNull().default(false),
     /** 005 iteración 2 — nombre propio de la cohorte; NULL = usar course.name. */
     name: text("name"),
     startDate: timestamp("start_date").notNull(),

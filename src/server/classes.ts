@@ -1,4 +1,4 @@
-import { asc, eq, inArray } from "drizzle-orm";
+import { asc, eq, gte, inArray, lte } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import {
@@ -12,6 +12,7 @@ import {
   hoursFromTimes,
 } from "@/server/attendance";
 import { listarModulos } from "@/server/program-modules";
+import { etiquetaDeModulo, modulosConOrdinal } from "@/lib/program-order";
 import { resolveMeetingUrl } from "@/server/virtual-rooms";
 
 /**
@@ -248,11 +249,30 @@ export async function listCalendarClasses(
        * resultado, sin una lectura más.
        */
       parentCohortId: schema.cohort.parentCohortId,
+      isSpecialization: schema.cohort.isSpecialization,
     })
     .from(schema.cohort)
     .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
     .where(scoped(schema.cohort.organizationId, organizationId));
 
+  /**
+   * 029 — "¿Esta cohorte ya tiene cronograma?" se pregunta SIN rango.
+   *
+   * Las filas de abajo vienen recortadas a la semana, y una cohorte con 30
+   * clases y ninguna esta semana no tiene filas ahí. Deducir de eso que "no
+   * tiene cronograma" le dibujaría proyección encima del real.
+   */
+  const conCronograma = new Set(
+    (
+      await db
+        .selectDistinct({ cohortId: schema.classSession.cohortId })
+        .from(schema.classSession)
+        .where(scoped(schema.classSession.organizationId, organizationId))
+    ).map((r) => r.cohortId)
+  );
+
+  // 029 — El rango va en el WHERE: antes se traía el cronograma entero de la
+  // organización y se filtraba en JavaScript en cada cambio de semana.
   const sessions = await db
     .select({
       cohortId: schema.classSession.cohortId,
@@ -262,7 +282,14 @@ export async function listCalendarClasses(
       canceledAt: schema.classSession.canceledAt,
     })
     .from(schema.classSession)
-    .where(scoped(schema.classSession.organizationId, organizationId));
+    .where(
+      scoped(
+        schema.classSession.organizationId,
+        organizationId,
+        gte(schema.classSession.date, from),
+        lte(schema.classSession.date, to)
+      )
+    );
 
   const porCohorte = new Map<string, typeof sessions>();
   for (const s of sessions) {
@@ -280,9 +307,11 @@ export async function listCalendarClasses(
    * Lo que sí se sigue mostrando son sus clases REALES, si alguna quedó
    * cargada: esconder una fila que existe es peor que mostrarla mal ubicada.
    */
-  const madres = new Set(
-    cohorts.map((c) => c.parentCohortId).filter((id): id is string => id !== null)
-  );
+  const madres = new Set([
+    ...cohorts.map((c) => c.parentCohortId).filter((id): id is string => id !== null),
+    // 028 (seguimiento) — Y las MARCADAS, aunque todavía no tengan módulos.
+    ...cohorts.filter((c) => c.isSpecialization).map((c) => c.id),
+  ]);
 
   const dentro = (d: Date) => d >= from && d <= to;
   const out: CalendarClassDto[] = [];
@@ -291,8 +320,8 @@ export async function listCalendarClasses(
     const reales = porCohorte.get(c.id);
     const comun = { cohortId: c.id, cohortName: c.name ?? c.courseName, courseName: c.courseName };
 
-    if (reales && reales.length > 0) {
-      for (const s of reales) {
+    if (conCronograma.has(c.id)) {
+      for (const s of reales ?? []) {
         if (!dentro(s.date)) continue;
         out.push({
           ...comun,
@@ -414,8 +443,11 @@ export async function listCohortClasses(
   // Sin cronograma: se dibuja uno con la MISMA función que lo generaría de
   // verdad (`buildClassSchedule`, del ciclo 009). Dos algoritmos distintos
   // para el mismo cronograma es garantía de que un día no coincidan.
-  const motivo = cannotGenerateReason({ ...cohort, tieneModulos: modulos.length > 0 });
-  const plan = cohort.endDate && modulos.length === 0
+  // 028 (seguimiento) — La marca cuenta igual que los módulos: una
+  // especialización vacía tampoco dibuja clases propias.
+  const esMadre = cohort.isSpecialization || modulos.length > 0;
+  const motivo = cannotGenerateReason({ ...cohort, tieneModulos: esMadre });
+  const plan = cohort.endDate && !esMadre
     ? buildClassSchedule(
         cohort.startDate,
         cohort.endDate,
@@ -612,4 +644,77 @@ export async function listProgramClasses(
       };
     }),
   };
+}
+
+/* ============================================================
+ * 029 — La pestaña Clases de la MADRE: los módulos, rotulados
+ * ============================================================ */
+
+export type ProgramModuleClassesRotuladoDto = ProgramModuleClassesDto & {
+  ordinal: number | null;
+  /** "Módulo 2 — Revit MEP": el mismo rótulo que la grilla y el listado. */
+  label: string;
+};
+
+export type ProgramClassesRotuladoDto = Omit<ProgramClassesDto, "modules"> & {
+  modules: ProgramModuleClassesRotuladoDto[];
+};
+
+/**
+ * PURA — Pone a cada módulo su rótulo con el ordinal derivado del LUGAR
+ * (`modulosConOrdinal`), nunca de `position`, y los devuelve en ese orden.
+ */
+export function rotularClasesDelPrograma(
+  programa: ProgramClassesDto,
+  filas: readonly {
+    id: string;
+    name: string | null;
+    courseName: string;
+    position: number | null;
+    startDate: Date | null;
+  }[]
+): ProgramClassesRotuladoDto {
+  const porId = new Map(programa.modules.map((m) => [m.cohortId, m]));
+  const modules = modulosConOrdinal(filas).flatMap((f) => {
+    const m = porId.get(f.id);
+    return m
+      ? [{ ...m, ordinal: f.ordinal, label: etiquetaDeModulo(f.ordinal, f.name ?? f.courseName) }]
+      : [];
+  });
+  return { ...programa, modules };
+}
+
+/**
+ * Las clases de todos los módulos de una especialización, con su rótulo. Reusa
+ * `listProgramClasses` tal cual —ahí viven la proyección y el motivo por el
+ * que un módulo no puede generar— y agrega UNA consulta: el nombre del curso
+ * para rotular el módulo sin nombre propio.
+ */
+export async function listProgramClassesRotuladas(
+  organizationId: string,
+  parentCohortId: string,
+  now: Date = new Date()
+): Promise<ProgramClassesRotuladoDto | null> {
+  const programa = await listProgramClasses(organizationId, parentCohortId, now);
+  if (!programa) return null;
+  if (programa.modules.length === 0) return { ...programa, modules: [] };
+
+  const filas = await getDb()
+    .select({
+      id: schema.cohort.id,
+      name: schema.cohort.name,
+      courseName: schema.course.name,
+      position: schema.cohort.position,
+      startDate: schema.cohort.startDate,
+    })
+    .from(schema.cohort)
+    .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
+    .where(
+      scoped(
+        schema.cohort.organizationId,
+        organizationId,
+        eq(schema.cohort.parentCohortId, parentCohortId)
+      )
+    );
+  return rotularClasesDelPrograma(programa, filas);
 }

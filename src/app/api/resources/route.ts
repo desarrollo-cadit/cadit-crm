@@ -1,13 +1,23 @@
 import { z } from "zod";
 import { apiError, parseBody, parseQuery, requireCapability } from "@/lib/api";
 import { RESOURCE_KINDS } from "@/lib/db/schema";
-import { createResource, listResources } from "@/server/resources";
+import {
+  createResource,
+  listClassResourcesOfCohort,
+  listResources,
+} from "@/server/resources";
 
 export const dynamic = "force-dynamic";
 
 const querySchema = z.object({
   courseId: z.string().min(1).optional(),
   classSessionId: z.string().min(1).optional(),
+  /**
+   * 029 — El material de TODAS las clases de una cohorte (y de sus módulos
+   * si es una especialización), repartido por clase. La pestaña Clases lo pide
+   * UNA vez en lugar de una por fila.
+   */
+  classesOfCohortId: z.string().min(1).optional(),
 });
 
 /**
@@ -20,6 +30,14 @@ const querySchema = z.object({
 export const GET = requireCapability("academico.ver", async (session, req: Request) => {
   const query = parseQuery(new URL(req.url), querySchema);
   if (!query.ok) return query.response;
+
+  if (query.data.classesOfCohortId) {
+    const byClass = await listClassResourcesOfCohort(
+      session.organizationId,
+      query.data.classesOfCohortId
+    );
+    return Response.json({ byClass });
+  }
 
   const resources = await listResources(session.organizationId, query.data);
   return Response.json({ resources });
