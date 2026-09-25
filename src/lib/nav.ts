@@ -180,6 +180,7 @@ export const ITEMS_ALUMNO = [
   { href: "/portal", label: "Inicio", icon: LayoutDashboard, exact: true },
   { href: "/portal/cuenta", label: "Mi cuenta", icon: Wallet },
   { href: "/portal/certificados", label: "Certificados", icon: Award },
+  { href: "/portal/cursos-offline", label: "Cursos offline", icon: Library },
 ] as const satisfies readonly NavItem[];
 
 export const ITEMS_PROFESOR = [

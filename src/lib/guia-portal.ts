@@ -32,6 +32,8 @@ export const GUIA_PORTAL_ALUMNO: Record<HrefAlumno, string> = {
     "Tus cuotas: cuánto pagaste, cuánto falta y cuándo vence lo próximo. Si algo no coincide con lo que pagaste, avisá.",
   "/portal/certificados":
     "Los certificados de los cursos que terminaste. Cada uno trae un enlace público de verificación: se lo podés pasar a una empresa sin darle acceso a nada más tuyo.",
+  "/portal/cursos-offline":
+    "Las guías teóricas y los cuestionarios de los cursos asignados. Cada cuestionario se corrige al enviarlo: muestra el puntaje, si quedó aprobado y cuántos intentos quedan.",
 };
 
 export const GUIA_PORTAL_PROFESOR: Record<HrefProfesor, string> = {

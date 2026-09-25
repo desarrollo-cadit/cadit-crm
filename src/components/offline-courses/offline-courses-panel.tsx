@@ -51,6 +51,10 @@ export function OfflineCoursesPanel({
   const [attempts, setAttempts] = useState<OfflineAttemptRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
+  // Two errors, cleared by different events: a failed load goes away when a
+  // reload succeeds; a failed change stays until the next change is tried
+  // (the reload that follows it must not wipe the message).
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refetch = useCallback(async () => {
@@ -59,8 +63,9 @@ export function OfflineCoursesPanel({
       const data = (await res.json()) as { courses: CourseState[]; attempts: OfflineAttemptRow[] };
       setCourses(data.courses);
       setAttempts(data.attempts);
+      setLoadError(null);
     } else {
-      setError("No se pudieron cargar los cursos offline");
+      setLoadError("No se pudieron cargar los cursos offline");
     }
     setLoading(false);
   }, [enrollmentId]);
@@ -99,11 +104,11 @@ export function OfflineCoursesPanel({
   return (
     <div className="space-y-3">
       <p className="text-xs font-medium">Cursos offline</p>
-      {error && (
-        <p role="alert" className="text-xs text-destructive">
-          {error}
+      {[loadError, error].filter(Boolean).map((message) => (
+        <p key={message} role="alert" className="text-xs text-destructive">
+          {message}
         </p>
-      )}
+      ))}
 
       {courses.length === 0 ? (
         <p className="text-xs text-muted-foreground">La biblioteca de cursos offline está vacía.</p>

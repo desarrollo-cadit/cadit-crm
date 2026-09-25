@@ -112,8 +112,19 @@ Slices:
   (owner's dev server serves stale `.next` chunks → sign-in 500; not touched).
   Open → T5: thumbnails via `/api/media` need `inbox.ver`; add thumbnail routes for staff
   (academico.ver) and portal (effective access).
-- [ ] T5 Student portal (list, navigation, quiz, history) + teacher history. Route:
-  delegated. Checks: student-portal guard tests, typecheck.
+- [x] T5 Student portal (`/portal/cursos-offline`, course, topic with prev/next, quiz
+  with result + own history) + teacher history on the cohort Evaluación tab + thumbnail
+  routes (staff `academico.ver`, portal by effective access). Modules `student.ts`
+  (read-only, guard-tested), `submit.ts`, `portal-logic.ts`, `thumbnail.ts`. Route:
+  delegated (writer; ~2120 lines, 28 files — over the advisory heuristic). RED: missing
+  module / ENOENT → GREEN 28 tests. Checks: typecheck ✅, lint ✅, full suite 1405 ✅,
+  `.next-build` build ✅. Decisions: draft courses hidden from students; attempt-number
+  clash via `onConflictDoNothing().returning()` → 409 `attempt_conflict` (a caught DB
+  error would abort the tenant tx); attempt number = max+1, limit = count; empty quiz →
+  422 `quiz_empty`, no attempt used. T4 follow-ups done (concurrent cohort save, stale
+  panel error). Parent: portal copy aligned to voseo. Known limit: an attempt records the
+  earliest granting enrollment — a teacher of another cohort of the same student won't
+  see it.
 - [ ] T6 E2E section + full gate (`typecheck && lint && build && test`) + live
   self-test. Route: delegated test worker + inline verification.
 

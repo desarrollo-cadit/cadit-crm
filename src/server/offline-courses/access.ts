@@ -7,6 +7,7 @@ import {
   courseStatesFor,
   planCohortCourses,
   planOverride,
+  resolveEffectiveAccess,
   studentCourseIds,
   type CourseState,
   type EnrollmentAccessInput,
@@ -129,7 +130,11 @@ export async function setCohortCourses(
         mode: null,
         createdBy: userId,
       }))
-    );
+    )
+      // Two concurrent saves of the same set both plan the same insert; the
+      // (cohort, course) unique index turns the second into a no-op instead
+      // of a 500. With no target it also covers the partial index.
+      .onConflictDoNothing();
   }
 
   return { ok: true, data: { courseIds: desired } };
@@ -271,8 +276,31 @@ export async function effectiveCourseIdsForContact(
   orgId: string,
   contactId: string
 ): Promise<string[]> {
+  return studentCourseIds((await accessInputsForContact(orgId, contactId)).map((e) => e.input));
+}
+
+/**
+ * Per enrollment of the contact, the courses it effectively grants. The
+ * portal needs it per enrollment (not only the union) to decide which
+ * enrollment an attempt is recorded against.
+ */
+export async function effectiveAccessByEnrollment(
+  orgId: string,
+  contactId: string
+): Promise<Array<{ id: string; createdAt: Date; courseIds: string[] }>> {
+  return (await accessInputsForContact(orgId, contactId)).map((e) => ({
+    id: e.id,
+    createdAt: e.createdAt,
+    courseIds: resolveEffectiveAccess(e.input),
+  }));
+}
+
+async function accessInputsForContact(
+  orgId: string,
+  contactId: string
+): Promise<Array<{ id: string; createdAt: Date; input: EnrollmentAccessInput }>> {
   const enrollments = await getDb()
-    .select({ id: enrollment.id, cohortId: enrollment.cohortId })
+    .select({ id: enrollment.id, cohortId: enrollment.cohortId, createdAt: enrollment.createdAt })
     .from(enrollment)
     .where(
       scoped(
@@ -292,11 +320,14 @@ export async function effectiveCourseIdsForContact(
     ),
   ]);
 
-  const inputs: EnrollmentAccessInput[] = enrollments.map((e) => ({
-    cohortCourseIds: cohortRows.filter((r) => r.cohortId === e.cohortId).map((r) => r.courseId),
-    overrides: overrides.flatMap((o) =>
-      o.enrollmentId === e.id && o.mode ? [{ courseId: o.courseId, mode: o.mode }] : []
-    ),
+  return enrollments.map((e) => ({
+    id: e.id,
+    createdAt: e.createdAt,
+    input: {
+      cohortCourseIds: cohortRows.filter((r) => r.cohortId === e.cohortId).map((r) => r.courseId),
+      overrides: overrides.flatMap((o) =>
+        o.enrollmentId === e.id && o.mode ? [{ courseId: o.courseId, mode: o.mode }] : []
+      ),
+    },
   }));
-  return studentCourseIds(inputs);
 }

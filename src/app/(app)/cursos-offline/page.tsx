@@ -5,6 +5,7 @@ import { getSessionOrNull } from "@/lib/auth/session";
 import { sessionCapabilities } from "@/lib/capabilities";
 import { withTenantTransaction } from "@/lib/db/with-tenant";
 import { listCourses } from "@/server/offline-courses/library";
+import { thumbnailAssetId } from "@/server/offline-courses/portal-logic";
 import { OfflineCourseStatusBadge } from "@/components/offline-courses/status-badge";
 
 export const dynamic = "force-dynamic";
@@ -52,10 +53,12 @@ export default async function OfflineCoursesPage() {
                   href={`/cursos-offline/${c.id}`}
                   className="flex h-full flex-col overflow-hidden rounded-lg border bg-card transition-colors hover:bg-accent"
                 >
-                  {c.thumbnailUrl ? (
+                  {thumbnailAssetId(c.thumbnailUrl) ? (
+                    // The stored URL is `/api/media/<id>`, which asks for
+                    // `inbox.ver`; the library's own route asks `academico.ver`.
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      src={c.thumbnailUrl}
+                      src={`/api/offline-courses/${c.id}/thumbnail`}
                       alt={`Portada de ${c.title}`}
                       className="aspect-video w-full object-cover"
                       loading="lazy"

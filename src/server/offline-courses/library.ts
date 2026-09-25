@@ -2,6 +2,7 @@ import { asc, count, eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import type { OfflineAnswerType, OfflineCourseStatus } from "@/lib/db/schema";
+import { thumbnailAssetId } from "./portal-logic";
 
 /**
  * cursos-offline (T4) — The STAFF read side of the library.
@@ -104,6 +105,19 @@ export async function listCourses(orgId: string): Promise<OfflineCourseSummary[]
     topics: topics.get(c.id) ?? 0,
     quizzes: quizzes.get(c.id) ?? 0,
   }));
+}
+
+/** The stored thumbnail's asset id, or `null` (unknown course, no thumbnail). */
+export async function courseThumbnailAssetId(
+  orgId: string,
+  courseId: string
+): Promise<string | null> {
+  const [course] = await getDb()
+    .select({ thumbnailUrl: schema.offlineCourse.thumbnailUrl })
+    .from(schema.offlineCourse)
+    .where(scoped(schema.offlineCourse.organizationId, orgId, eq(schema.offlineCourse.id, courseId)))
+    .limit(1);
+  return thumbnailAssetId(course?.thumbnailUrl ?? null);
 }
 
 /** `null` when the course does not exist in this organization → the route answers 404. */

@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PortalAttendanceSheet } from "@/components/portal/portal-attendance-sheet";
+import { PortalOfflineAttempts } from "@/components/portal/portal-offline-attempts";
 import { PortalSubmissions } from "@/components/portal/portal-submissions";
 
 type Cohort = {
@@ -244,7 +245,11 @@ export function PortalCohortClient({ cohortId }: { cohortId: string }) {
           onGrabacion={(id, actual) => setGrabacion({ classSessionId: id, actual })}
         />
       ) : tab === "evaluacion" ? (
-        <Evaluacion cohortId={cohortId} />
+        <div className="space-y-6">
+          <Evaluacion cohortId={cohortId} />
+          {/* cursos-offline (T5) — score + passed per student and quiz. */}
+          <PortalOfflineAttempts cohortId={cohortId} />
+        </div>
       ) : tab === "entregas" ? (
         <PortalSubmissions cohortId={cohortId} />
       ) : (
