@@ -5,6 +5,7 @@ import type {
   OfflineCourseStatus,
   OfflineVideoShown,
 } from "@/lib/db/schema";
+import { parseVimeoUrl } from "@/lib/vimeo";
 
 /**
  * cursos-offline — The PURE half of the LearnDash import.
@@ -29,8 +30,9 @@ import type {
  *  - LearnDash repeats `sort` inside a quiz (the 40-question ones); a repeated
  *    sort gets `.<n>` appended from its second occurrence so refs stay unique
  *    and stable across re-imports of the same file.
- *  - (export v2) a topic video is kept only when it is an https Vimeo URL
- *    (`vimeo.com` / `player.vimeo.com`): anything else becomes NULL with a
+ *  - (export v2) a topic video is kept only when `parseVimeoUrl` (the rule
+ *    the player and the progress writes use) names one embeddable video: a
+ *    showcase, a user page, another host or plain http becomes NULL with a
  *    warning — the portal embeds ONLY the official Vimeo player
  *    (constitution II, item 4). `video_shown` BEFORE|AFTER, default after.
  */
@@ -208,18 +210,14 @@ export function thumbnailBasename(url: string | null | undefined): string | null
   return name && name !== "." && name !== ".." ? name : null;
 }
 
-const VIMEO_HOSTS = new Set(["vimeo.com", "www.vimeo.com", "player.vimeo.com"]);
-
-/** The URL when it is an https Vimeo one; `null` otherwise (never guessed). */
+/**
+ * The URL when `parseVimeoUrl` accepts it; `null` otherwise (never guessed).
+ * One rule on purpose: a URL the importer kept but the player cannot parse
+ * would be a topic that "has a video" nobody can watch — locked forever.
+ */
 export function vimeoUrlOrNull(raw: string | null | undefined): string | null {
   const value = raw?.trim();
-  if (!value) return null;
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" && VIMEO_HOSTS.has(url.hostname) ? value : null;
-  } catch {
-    return null;
-  }
+  return value && parseVimeoUrl(value) ? value : null;
 }
 
 function videoShown(raw: string | null | undefined): OfflineVideoShown {
@@ -272,7 +270,7 @@ export function buildImportPlan(coursesJson: unknown, quizMapJson: unknown): Imp
       l.topics.forEach((t, ti) => {
         const videoUrl = vimeoUrlOrNull(t.video_url);
         if (t.video_url?.trim() && !videoUrl) {
-          plan.warnings.push(`topic:${t.id}: video "${t.video_url}" is not an https Vimeo URL — imported without video`);
+          plan.warnings.push(`topic:${t.id}: video "${t.video_url}" is not an embeddable Vimeo video URL — imported without video`);
         }
         plan.topics.push({
           legacyRef: `topic:${t.id}`,

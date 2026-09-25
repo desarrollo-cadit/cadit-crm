@@ -2305,6 +2305,13 @@ export const offlineTopicProgress = pgTable(
       .references(() => offlineTopic.id, { onDelete: "cascade" }),
     /** 0..1 share of the video really played (merged ranges). */
     watchedRatio: numeric("watched_ratio", { precision: 5, scale: 4 }).notNull().default("0"),
+    /** Every range ever played, merged (seconds) — the ratio is over their union (T9b). */
+    playedRanges: jsonb("played_ranges")
+      .$type<Array<{ start: number; end: number }>>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    /** Seconds the ratio is computed over; `null` until the first video report. */
+    videoDuration: numeric("video_duration"),
     completedAt: timestamp("completed_at"),
     completedBy: text("completed_by").references(() => user.id, { onDelete: "set null" }),
     completionSource: text("completion_source", { enum: OFFLINE_COMPLETION_SOURCES }),

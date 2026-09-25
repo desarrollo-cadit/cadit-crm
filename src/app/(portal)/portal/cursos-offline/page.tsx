@@ -2,7 +2,6 @@ import { StudentOfflineCoursesClient } from "@/components/portal/student-offline
 
 export const dynamic = "force-dynamic";
 
-/** cursos-offline (T5) — The offline courses this student can read. */
 export default function StudentOfflineCoursesPage() {
   return (
     <div className="space-y-5">

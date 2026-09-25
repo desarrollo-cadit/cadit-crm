@@ -309,6 +309,13 @@
       "when": 1790361535762,
       "tag": "0043_cursos_offline_videos",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1790365349958,
+      "tag": "0044_cursos_offline_rangos",
+      "breakpoints": true
     }
   ]
 }

@@ -269,6 +269,19 @@ describe("buildImportPlan", () => {
     expect(byRef.get("topic:12")?.videoUrl).toBeNull();
     expect(byRef.get("topic:15")?.videoUrl).toBeNull();
   });
+
+  it("keeps a Vimeo URL only when it names ONE embeddable video (same rule as the player)", () => {
+    const f = fixture();
+    const topics = f.courses[0]!.lessons[0]!.topics as Array<Record<string, unknown>>;
+    topics[0]!.video_url = "https://vimeo.com/showcase/1234567";
+    topics[2]!.video_url = "https://vimeo.com/someuser";
+    const plan = buildImportPlan(f, map());
+    const byRef = new Map(plan.topics.map((t) => [t.legacyRef, t]));
+    expect(byRef.get("topic:12")?.videoUrl).toBeNull();
+    expect(byRef.get("topic:15")?.videoUrl).toBeNull();
+    expect(plan.warnings.some((w) => w.includes("topic:12") && w.includes("video"))).toBe(true);
+    expect(plan.warnings.some((w) => w.includes("topic:15") && w.includes("video"))).toBe(true);
+  });
 });
 
 describe("thumbnailBasename", () => {

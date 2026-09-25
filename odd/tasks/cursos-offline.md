@@ -189,8 +189,19 @@ copy, else the old one): MEP 2025 → 1133 A, 1112 B, 1091 C, 1070 D; Arquitectu
   order-gated. Open: teacher portal shows no progress (not in scope yet); player not yet
   checked in a real browser; **watched ratio = max per report, so split viewing never
   sums to 90% → T9b**.
-- [ ] T9b Accumulate playback across sessions: persist merged played ranges per
-  (contact, topic) (migration 0044, jsonb) and compute the ratio over the union.
+- Quiz map decision (owner, 2026-09-25, on evidence): 1281 → Revit Básico 2025
+  (closest course by content, 0.40 vs 0.30; template/units/properties = RB03/RB05/RB14);
+  1260 → skip (all questions about walls; Básico 2025 teaches no walls — it belonged to
+  the old Básico "Herramienta MUROS" lesson removed in v2). Map now: 10 confirmed, 14
+  skip, 0 pending. Básico 2025 completes with 17 topics + 1 quiz.
+- [x] T9b Migration `0044_cursos_offline_rangos` (`played_ranges` jsonb, `video_duration`)
+  applied to `vocero` + `vocero_e2e`, re-run idempotent ✅. `mergePlayedRanges` (≤ 200
+  ranges, drops shortest), `resolveVideoDuration`, `accumulateVideoProgress`: ratio over
+  the union, monotonic. Importer uses `parseVimeoUrl` as the single rule. Review
+  follow-ups done. RED 15 → GREEN (unit 1487 ✅, parent re-ran). E2E section 58/58 ✅
+  (split 0–55% + 50–100% completes). Known race: two simultaneous reports may drop one's
+  new ranges; ratio never drops and the next report resends them. Route: delegated
+  writer (~400 lines).
 - [ ] T10 E2E extension (fixture with video_url, gating 404, progress, override) +
   re-import v2 locally after owner confirms quiz map.
 

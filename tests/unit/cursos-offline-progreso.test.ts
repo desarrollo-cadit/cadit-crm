@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  MAX_STORED_RANGES,
   VIDEO_COMPLETE_THRESHOLD,
+  accumulateVideoProgress,
   courseCompletion,
+  mergePlayedRanges,
+  resolveVideoDuration,
   decideCompletion,
   decideVideoProgress,
   isVideoComplete,
@@ -225,6 +229,153 @@ describe("decideVideoProgress", () => {
   it("clamps a ratio out of [0, 1]", () => {
     expect(decideVideoProgress(null, { watchedRatio: 1.5, complete: true }, now).watchedRatio).toBe(1);
     expect(decideVideoProgress(null, { watchedRatio: -1, complete: false }, now).watchedRatio).toBe(0);
+  });
+});
+
+/* ============================================================
+ * T9b — Playback accumulates across sessions (union of ranges)
+ * ============================================================ */
+
+describe("mergePlayedRanges", () => {
+  it("merges stored and incoming into sorted, disjoint ranges", () => {
+    expect(
+      mergePlayedRanges(
+        [{ start: 0, end: 30 }],
+        [
+          { start: 60, end: 80 },
+          { start: 20, end: 40 },
+        ],
+        100
+      )
+    ).toEqual([
+      { start: 0, end: 40 },
+      { start: 60, end: 80 },
+    ]);
+  });
+
+  it("clamps a bogus huge range to the duration", () => {
+    expect(mergePlayedRanges([], [{ start: -50, end: 1e9 }], 100)).toEqual([{ start: 0, end: 100 }]);
+  });
+
+  it("drops empty and fully out-of-video ranges", () => {
+    expect(
+      mergePlayedRanges(
+        [{ start: 10, end: 10 }],
+        [
+          { start: 150, end: 200 },
+          { start: 5, end: 6 },
+        ],
+        100
+      )
+    ).toEqual([{ start: 5, end: 6 }]);
+  });
+
+  it("does not depend on the order of the reports", () => {
+    const a = [{ start: 0, end: 30 }, { start: 70, end: 90 }];
+    const b = [{ start: 25, end: 50 }, { start: 95, end: 99 }];
+    expect(mergePlayedRanges(a, b, 100)).toEqual(mergePlayedRanges(b, a, 100));
+    expect(mergePlayedRanges([], [...b, ...a], 100)).toEqual(mergePlayedRanges(a, b, 100));
+  });
+
+  it(`caps the stored set at ${MAX_STORED_RANGES} ranges, dropping the shortest (never inventing coverage)`, () => {
+    const many = Array.from({ length: MAX_STORED_RANGES + 50 }, (_, i) => ({
+      start: i * 10,
+      end: i * 10 + (i < 50 ? 1 : 5),
+    }));
+    const merged = mergePlayedRanges([], many, 100_000);
+    expect(merged).toHaveLength(MAX_STORED_RANGES);
+    expect(merged.every((r) => r.end - r.start === 5)).toBe(true);
+    expect(merged.every((r, i) => i === 0 || merged[i - 1]!.end < r.start)).toBe(true);
+  });
+});
+
+describe("resolveVideoDuration", () => {
+  it("first report: takes the reported duration", () => {
+    expect(resolveVideoDuration(null, 120)).toBe(120);
+  });
+
+  it("within 2s of the stored one: keeps the stored duration", () => {
+    expect(resolveVideoDuration(120, 121.5)).toBe(120);
+    expect(resolveVideoDuration(120, 118.5)).toBe(120);
+  });
+
+  it("differs by more than 2s: keeps the larger", () => {
+    expect(resolveVideoDuration(120, 60)).toBe(120);
+    expect(resolveVideoDuration(120, 300)).toBe(300);
+  });
+});
+
+describe("accumulateVideoProgress", () => {
+  const now = new Date("2026-09-25T12:00:00Z");
+  const done = new Date("2026-09-20T10:00:00Z");
+  const fresh = (ranges: Array<{ start: number; end: number }>, duration: number, ratio = 0) => ({
+    watchedRatio: ratio,
+    completedAt: null,
+    completionSource: null,
+    playedRanges: ranges,
+    videoDuration: duration,
+  });
+
+  it("split viewing across two reports reaches completion (0–50%, then 50–100%)", () => {
+    const first = accumulateVideoProgress(null, { playedRanges: [{ start: 0, end: 50 }], duration: 100 }, now);
+    expect(first).toMatchObject({ watchedRatio: 0.5, completedAt: null, videoDuration: 100 });
+    const second = accumulateVideoProgress(
+      fresh(first.playedRanges, first.videoDuration, first.watchedRatio),
+      { playedRanges: [{ start: 50, end: 100 }], duration: 100 },
+      now
+    );
+    expect(second).toMatchObject({
+      watchedRatio: 1,
+      completedAt: now,
+      completionSource: "video",
+      becameComplete: true,
+      playedRanges: [{ start: 0, end: 100 }],
+    });
+  });
+
+  it("overlapping reports do not double count", () => {
+    const r = accumulateVideoProgress(
+      fresh([{ start: 0, end: 50 }], 100, 0.5),
+      { playedRanges: [{ start: 0, end: 50 }, { start: 40, end: 60 }], duration: 100 },
+      now
+    );
+    expect(r.watchedRatio).toBe(0.6);
+    expect(r.completedAt).toBeNull();
+  });
+
+  it("a bogus huge range is clamped to the duration (ratio ≤ 1)", () => {
+    const r = accumulateVideoProgress(null, { playedRanges: [{ start: 0, end: 86_400 }], duration: 100 }, now);
+    expect(r.watchedRatio).toBe(1);
+    expect(r.playedRanges).toEqual([{ start: 0, end: 100 }]);
+  });
+
+  it("never lowers the stored ratio (e.g. ranges from before T9b were not kept)", () => {
+    const r = accumulateVideoProgress(
+      fresh([], 100, 0.7),
+      { playedRanges: [{ start: 0, end: 10 }], duration: 100 },
+      now
+    );
+    expect(r.watchedRatio).toBe(0.7);
+  });
+
+  it("never un-completes", () => {
+    const r = accumulateVideoProgress(
+      { watchedRatio: 0, completedAt: done, completionSource: "staff", playedRanges: [], videoDuration: null },
+      { playedRanges: [{ start: 0, end: 5 }], duration: 100 },
+      now
+    );
+    expect(r).toMatchObject({ completedAt: done, completionSource: "staff", becameComplete: false });
+  });
+
+  it("a shorter reported duration cannot inflate the ratio", () => {
+    const r = accumulateVideoProgress(
+      fresh([{ start: 0, end: 50 }], 100, 0.5),
+      { playedRanges: [{ start: 0, end: 50 }], duration: 50 },
+      now
+    );
+    expect(r.videoDuration).toBe(100);
+    expect(r.watchedRatio).toBe(0.5);
+    expect(r.completedAt).toBeNull();
   });
 });
 

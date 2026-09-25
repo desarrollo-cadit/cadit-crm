@@ -1,17 +1,17 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { parseVimeoUrl } from "@/lib/vimeo";
 import { enrollmentCourseStates } from "./access";
 import {
+  accumulateVideoProgress,
   courseCompletion,
   decideCompletion,
-  decideVideoProgress,
-  isVideoComplete,
   nextUnlockedTopicId,
   topicUnlocked,
   type CompletionSource,
+  type CourseState,
   type CourseCompletion,
   type PlayedRange,
   type StoredProgress,
@@ -33,9 +33,11 @@ import { canReadCourse } from "./student";
  * Outside `student.ts` (read-only by test), like `submit.ts`. Three ways a
  * topic becomes complete, one row per (contact, topic):
  *
- *  - `video`: the student's player reports the played ranges and they cover
- *    ≥ 90% (`isVideoComplete`). Client-side tracking can be spoofed; accepted
- *    for an academy (feature decision).
+ *  - `video`: the student's player reports the played ranges; they are
+ *    merged with every range stored for the topic (T9b) and the UNION must
+ *    cover ≥ 90% (`accumulateVideoProgress`), so viewing split across days
+ *    counts. Client-side tracking can be spoofed; accepted for an academy
+ *    (feature decision).
  *  - `no_video`: a topic without an embeddable video completes on open.
  *  - `staff`: someone with `academico.editar` marks it (author + date) — the
  *    fallback when the player cannot play (domain restriction, a blocker).
@@ -77,6 +79,8 @@ async function upsertProgress(
     completedAt: Date | null;
     completionSource: CompletionSource | null;
     completedBy: string | null;
+    /** Only a video report sends these; the other writes leave them as they are. */
+    playback?: { playedRanges: PlayedRange[]; videoDuration: number };
   }
 ): Promise<{ watchedRatio: number; completed: boolean }> {
   const t = offlineTopicProgress;
@@ -91,6 +95,10 @@ async function upsertProgress(
       completedAt: values.completedAt,
       completionSource: values.completionSource,
       completedBy: values.completedBy,
+      ...(values.playback && {
+        playedRanges: values.playback.playedRanges,
+        videoDuration: String(values.playback.videoDuration),
+      }),
     })
     .onConflictDoUpdate({
       target: [t.contactId, t.topicId],
@@ -101,11 +109,34 @@ async function upsertProgress(
         completedAt: sql`coalesce(${t.completedAt}, excluded.completed_at)`,
         completionSource: sql`case when ${t.completedAt} is null then excluded.completion_source else ${t.completionSource} end`,
         completedBy: sql`case when ${t.completedAt} is null then excluded.completed_by else ${t.completedBy} end`,
+        // The merged ranges were computed from the row read just before: the
+        // union is monotonic by itself. A concurrent report can still win the
+        // race and drop the other's new ranges — the ratio above does not go
+        // down, and the next report (the player sends the whole session) adds
+        // them back.
+        ...(values.playback && {
+          playedRanges: sql`excluded.played_ranges`,
+          videoDuration: sql`excluded.video_duration`,
+        }),
         updatedAt: sql`now()`,
       },
     })
     .returning({ watchedRatio: t.watchedRatio, completedAt: t.completedAt });
   return { watchedRatio: Number(row?.watchedRatio ?? 0), completed: Boolean(row?.completedAt) };
+}
+
+/** What a video report accumulates on: the stored ranges and duration. */
+async function storedPlayback(orgId: string, contactId: string, topicId: string) {
+  const t = offlineTopicProgress;
+  const [row] = await getDb()
+    .select({ playedRanges: t.playedRanges, videoDuration: t.videoDuration })
+    .from(t)
+    .where(scoped(t.organizationId, orgId, and(eq(t.contactId, contactId), eq(t.topicId, topicId))))
+    .limit(1);
+  return {
+    playedRanges: row?.playedRanges ?? [],
+    videoDuration: row?.videoDuration == null ? null : Number(row.videoDuration),
+  };
 }
 
 /* ============================================================
@@ -153,9 +184,10 @@ export async function recordVideoProgress(
     };
   }
 
-  const decision = decideVideoProgress(
-    found.existing,
-    isVideoComplete(report.playedRanges, report.duration),
+  const playback = await storedPlayback(orgId, contactId, topicId);
+  const decision = accumulateVideoProgress(
+    found.existing ? { ...found.existing, ...playback } : null,
+    report,
     new Date()
   );
   const stored = await upsertProgress(orgId, contactId, topicId, {
@@ -163,6 +195,7 @@ export async function recordVideoProgress(
     completedAt: decision.completedAt,
     completionSource: decision.completionSource,
     completedBy: null,
+    playback: { playedRanges: decision.playedRanges, videoDuration: decision.videoDuration },
   });
   return { ok: true, data: answer(found.orderedIds, topicId, stored) };
 }
@@ -210,10 +243,8 @@ async function findEnrollment(orgId: string, enrollmentId: string) {
 }
 
 /** The library courses this enrollment effectively reads (inherited or granted). */
-async function effectiveCoursesOf(orgId: string, enrollmentId: string) {
-  const states = await enrollmentCourseStates(orgId, enrollmentId);
-  return (states ?? []).filter((c) => c.state === "inherited" || c.state === "granted");
-}
+const effectiveCourses = (states: CourseState[]) =>
+  states.filter((c) => c.state === "inherited" || c.state === "granted");
 
 /**
  * Staff marks a topic complete for the enrollment's student. Not gated by
@@ -238,9 +269,9 @@ export async function staffCompleteTopic(
     .innerJoin(offlineLesson, eq(offlineLesson.id, offlineTopic.lessonId))
     .where(scoped(offlineTopic.organizationId, orgId, eq(offlineTopic.id, topicId)))
     .limit(1);
-  if (!topic) return { ok: false, status: 404, code: "not_found", message: "Tema no encontrado" };
+  if (!topic) return NOT_FOUND;
 
-  const courses = await effectiveCoursesOf(orgId, enrollmentId);
+  const courses = effectiveCourses((await enrollmentCourseStates(orgId, enrollmentId)) ?? []);
   if (!courses.some((c) => c.courseId === topic.courseId)) {
     return {
       ok: false,
@@ -283,14 +314,19 @@ export type StaffCourseProgress = {
  * Per course this enrollment reads: the completion and every topic's state.
  * Progress and passed quizzes count per CONTACT, the same way the student
  * sees them. `null` → the enrollment is not in this organization (404).
+ *
+ * `states` are the enrollment's course states the caller already has
+ * (`enrollmentCourseStates`): the route needs them for its own answer, and
+ * computing them twice per request was a second round of the same queries.
  */
 export async function enrollmentCourseProgress(
   orgId: string,
-  enrollmentId: string
+  enrollmentId: string,
+  states: CourseState[]
 ): Promise<StaffCourseProgress[] | null> {
   const found = await findEnrollment(orgId, enrollmentId);
   if (!found) return null;
-  const courseIds = (await effectiveCoursesOf(orgId, enrollmentId)).map((c) => c.courseId);
+  const courseIds = effectiveCourses(states).map((c) => c.courseId);
   if (courseIds.length === 0) return [];
 
   const [outlines, quizzes] = await Promise.all([

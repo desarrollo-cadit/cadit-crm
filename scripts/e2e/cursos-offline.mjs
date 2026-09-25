@@ -15,7 +15,8 @@
  *    the answer key never travelling, grading and the retry limit;
  *  - topic progress (T9): sequential gating (404 for a locked topic), played
  *    ranges vs. the 90% rule, topics without video, the staff override and
- *    course completion (every topic AND every quiz);
+ *    course completion (every topic AND every quiz); viewing split across
+ *    reports accumulates over the union of ranges (T9b);
  *  - teacher portal and staff attempt history, with their 404s;
  *  - the staff and portal pages render.
  *
@@ -480,19 +481,20 @@ export async function seccionCursosOffline({ api, ok, BASE, getCookie }) {
     "progreso: el tema 2 sigue en 404",
     (await al1.como(topicUrl(t2?.id))).res.status === 404
   );
+  // T9b: 0–92 joins the stored 0–50 + 95–100 → the union covers 97%.
   const casi = await progreso(al1.como, t1?.id, { playedRanges: [{ start: 0, end: 92 }], duration: 100 });
   ok(
-    "progreso: ≥ 90% visto → completo y habilita el tema 2",
+    "progreso: la unión ≥ 90% (0–92 + 95–100 = 97%) → completo y habilita el tema 2",
     casi.res.status === 200 &&
       casi.json?.progress?.completed === true &&
-      casi.json?.progress?.watchedRatio === 0.92 &&
+      casi.json?.progress?.watchedRatio === 0.97 &&
       casi.json?.progress?.nextTopicId === t2?.id,
     `${casi.res.status} ${casi.text}`
   );
   const menos = await progreso(al1.como, t1?.id, { playedRanges: [{ start: 0, end: 10 }], duration: 100 });
   ok(
     "progreso: un reporte menor no baja el porcentaje ni descompleta",
-    menos.json?.progress?.completed === true && menos.json?.progress?.watchedRatio === 0.92,
+    menos.json?.progress?.completed === true && menos.json?.progress?.watchedRatio === 0.97,
     menos.text
   );
 
@@ -582,11 +584,18 @@ export async function seccionCursosOffline({ api, ok, BASE, getCookie }) {
       antes?.lessons?.[1]?.topics?.[1]?.unlocked === true,
     JSON.stringify(antes?.completion)
   );
-  const ultimo = await progreso(al1.como, t4?.id, { playedRanges: [{ start: 0, end: 57 }], duration: 60 });
+  // T9b: the last topic is watched in two sittings — 0–55% one day, 50–100%
+  // the next. Before T9b each report was measured alone and this never ended.
+  const primeraVez = await progreso(al1.como, t4?.id, { playedRanges: [{ start: 0, end: 33 }], duration: 60 });
+  const ultimo = await progreso(al1.como, t4?.id, { playedRanges: [{ start: 30, end: 60 }], duration: 60 });
   ok(
-    "progreso: el último tema se completa y no hay siguiente",
-    ultimo.json?.progress?.completed === true && ultimo.json?.progress?.nextTopicId === null,
-    ultimo.text
+    "progreso: ver el último tema en dos veces (0–55% y 50–100%) lo completa; no hay siguiente",
+    primeraVez.json?.progress?.completed === false &&
+      primeraVez.json?.progress?.watchedRatio === 0.55 &&
+      ultimo.json?.progress?.completed === true &&
+      ultimo.json?.progress?.watchedRatio === 1 &&
+      ultimo.json?.progress?.nextTopicId === null,
+    `${primeraVez.text} | ${ultimo.text}`
   );
   const despues = await verCursoA();
   const tarjeta = ((await al1.como("/api/portal/me/offline-courses")).json?.courses ?? []).find((c) => c.id === A.id);

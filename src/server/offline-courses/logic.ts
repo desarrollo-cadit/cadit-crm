@@ -415,6 +415,101 @@ export function decideVideoProgress(
   };
 }
 
+/* ============================================================
+ * T9b — Playback accumulates across sessions
+ * ============================================================ */
+
+/**
+ * The most ranges one (contact, topic) row keeps. A real viewing merges into
+ * a handful; the cap only bounds what a scripted client can make us store.
+ */
+export const MAX_STORED_RANGES = 200;
+
+/** A reported duration this close to the stored one is the same video. */
+const DURATION_TOLERANCE_SECONDS = 2;
+
+/**
+ * Stored ∪ incoming, clamped to [0, duration], sorted, disjoint. Order of the
+ * reports does not matter: the union is the same whichever came first.
+ *
+ * Over the cap, the SHORTEST ranges are dropped rather than the gaps bridged:
+ * bridging would count seconds nobody played, dropping only under-counts
+ * (and the stored ratio never goes down anyway).
+ */
+export function mergePlayedRanges(
+  stored: PlayedRange[],
+  incoming: PlayedRange[],
+  duration: number
+): PlayedRange[] {
+  const max = duration > 0 ? duration : 0;
+  const sorted = [...stored, ...incoming]
+    .map((r) => ({ start: Math.max(0, r.start), end: Math.min(max, r.end) }))
+    .filter((r) => r.end > r.start)
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+
+  const merged: PlayedRange[] = [];
+  for (const r of sorted) {
+    const last = merged[merged.length - 1];
+    if (last && r.start <= last.end) last.end = Math.max(last.end, r.end);
+    else merged.push(r);
+  }
+  if (merged.length <= MAX_STORED_RANGES) return merged;
+
+  const kept = new Set(
+    [...merged]
+      .sort((a, b) => b.end - b.start - (a.end - a.start) || a.start - b.start)
+      .slice(0, MAX_STORED_RANGES)
+  );
+  return merged.filter((r) => kept.has(r));
+}
+
+/**
+ * The duration the ratio is computed over. Within the tolerance the stored
+ * one wins (players report 119.98 one day and 120.02 the next). Beyond it,
+ * the LARGER wins: a smaller figure is usually metadata not loaded yet or a
+ * truncated report, and dividing the stored ranges by it would inflate the
+ * ratio — completing a topic nobody finished. If the video really was
+ * replaced by a shorter one, the student needs a bit more viewing or the
+ * staff override; that errs on the honest side.
+ */
+export function resolveVideoDuration(stored: number | null, reported: number): number {
+  if (stored === null || !(stored > 0)) return reported;
+  if (Math.abs(reported - stored) <= DURATION_TOLERANCE_SECONDS) return stored;
+  return Math.max(stored, reported);
+}
+
+/** The stored row including what T9b keeps to accumulate playback. */
+export interface StoredPlayback extends StoredProgress {
+  playedRanges: PlayedRange[];
+  videoDuration: number | null;
+}
+
+export interface AccumulatedVideoProgress extends VideoProgressDecision {
+  playedRanges: PlayedRange[];
+  videoDuration: number;
+}
+
+/**
+ * One player report against what is stored: the ratio is measured over the
+ * UNION of every range ever reported for this (contact, topic), so watching
+ * 0–50% one day and 50–100% the next completes the topic. Monotonic like
+ * `decideVideoProgress`: the ratio never goes down (a row from before T9b
+ * has a ratio but no ranges) and a completion is never undone.
+ */
+export function accumulateVideoProgress(
+  existing: StoredPlayback | null,
+  report: { playedRanges: PlayedRange[]; duration: number },
+  now: Date
+): AccumulatedVideoProgress {
+  const videoDuration = resolveVideoDuration(existing?.videoDuration ?? null, report.duration);
+  const playedRanges = mergePlayedRanges(existing?.playedRanges ?? [], report.playedRanges, videoDuration);
+  return {
+    ...decideVideoProgress(existing, isVideoComplete(playedRanges, videoDuration), now),
+    playedRanges,
+    videoDuration,
+  };
+}
+
 /**
  * A completion that does not come from the video (a topic without one, or a
  * staff override). `null` = already complete, nothing to write.

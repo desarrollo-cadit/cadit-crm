@@ -12,7 +12,6 @@ import type {
 } from "@/server/offline-courses/logic";
 import type { StaffCourseProgress } from "@/server/offline-courses/progress";
 import { OfflineAttemptsTable } from "@/components/offline-courses/attempts-table";
-import { cn } from "@/lib/utils";
 
 const STATE_LABEL: Record<AccessState, string> = {
   inherited: "Heredado de la cohorte",
@@ -235,7 +234,7 @@ export function OfflineCoursesPanel({
             return (
               <li key={c.courseId} className="flex flex-wrap items-center gap-2 px-3 py-1.5 text-xs">
                 <span className="flex-1 font-medium">{c.title}</span>
-                <span className={cn(STATE_CLASS[c.state])}>{STATE_LABEL[c.state]}</span>
+                <span className={STATE_CLASS[c.state]}>{STATE_LABEL[c.state]}</span>
                 {canEdit && (
                   <span className="flex gap-1">
                     <Button

@@ -26,7 +26,7 @@ export const GET = requireCapability(
     if (!states) return apiError(404, "not_found", "Inscripción no encontrada");
     const [attempts, progress] = await Promise.all([
       attemptsForEnrollment(session.organizationId, id),
-      enrollmentCourseProgress(session.organizationId, id),
+      enrollmentCourseProgress(session.organizationId, id, states),
     ]);
     return Response.json({ courses: states, attempts, progress: progress ?? [] });
   }
