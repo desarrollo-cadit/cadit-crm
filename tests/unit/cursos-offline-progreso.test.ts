@@ -2,8 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   VIDEO_COMPLETE_THRESHOLD,
   courseCompletion,
+  decideCompletion,
+  decideVideoProgress,
   isVideoComplete,
+  nextUnlockedTopicId,
   topicUnlocked,
+  validateProgressReport,
 } from "@/server/offline-courses/logic";
 
 /**
@@ -162,5 +166,130 @@ describe("courseCompletion", () => {
         passedQuizIds: ["q1", "q1", "qX"],
       })
     ).toEqual({ topicsDone: 1, topicsTotal: 1, quizzesPassed: 1, quizzesTotal: 1, completed: true });
+  });
+});
+
+/* ============================================================
+ * T9 — What a progress report may change (monotonic, never un-completes)
+ * ============================================================ */
+
+describe("decideVideoProgress", () => {
+  const now = new Date("2026-09-25T12:00:00Z");
+  const done = new Date("2026-09-20T10:00:00Z");
+
+  it("first report under the threshold: stores the ratio, not complete", () => {
+    expect(decideVideoProgress(null, { watchedRatio: 0.5, complete: false }, now)).toEqual({
+      watchedRatio: 0.5,
+      completedAt: null,
+      completionSource: null,
+      becameComplete: false,
+    });
+  });
+
+  it("reaching the threshold completes it from the video, now", () => {
+    expect(decideVideoProgress(null, { watchedRatio: 0.93, complete: true }, now)).toEqual({
+      watchedRatio: 0.93,
+      completedAt: now,
+      completionSource: "video",
+      becameComplete: true,
+    });
+  });
+
+  it("the stored ratio only goes up", () => {
+    const existing = { watchedRatio: 0.7, completedAt: null, completionSource: null };
+    expect(decideVideoProgress(existing, { watchedRatio: 0.2, complete: false }, now).watchedRatio).toBe(0.7);
+  });
+
+  it("the max of old and new counts toward completion", () => {
+    const existing = { watchedRatio: 0.95, completedAt: null, completionSource: null };
+    const r = decideVideoProgress(existing, { watchedRatio: 0.1, complete: false }, now);
+    expect(r).toMatchObject({ completionSource: "video", becameComplete: true, completedAt: now });
+  });
+
+  it("never un-completes and keeps who completed it and when", () => {
+    const existing = { watchedRatio: 0, completedAt: done, completionSource: "staff" as const };
+    expect(decideVideoProgress(existing, { watchedRatio: 0.3, complete: false }, now)).toEqual({
+      watchedRatio: 0.3,
+      completedAt: done,
+      completionSource: "staff",
+      becameComplete: false,
+    });
+  });
+
+  it("floors the ratio to the 4 decimals the column keeps (0.89996 is not 0.9)", () => {
+    const r = decideVideoProgress(null, { watchedRatio: 0.89996, complete: false }, now);
+    expect(r.watchedRatio).toBe(0.8999);
+    expect(r.completedAt).toBeNull();
+  });
+
+  it("clamps a ratio out of [0, 1]", () => {
+    expect(decideVideoProgress(null, { watchedRatio: 1.5, complete: true }, now).watchedRatio).toBe(1);
+    expect(decideVideoProgress(null, { watchedRatio: -1, complete: false }, now).watchedRatio).toBe(0);
+  });
+});
+
+describe("decideCompletion (topic without video, staff override)", () => {
+  const now = new Date("2026-09-25T12:00:00Z");
+
+  it("completes a topic that was not complete", () => {
+    expect(decideCompletion(null, "no_video", now)).toEqual({ completedAt: now, completionSource: "no_video" });
+    expect(
+      decideCompletion({ watchedRatio: 0.4, completedAt: null, completionSource: null }, "staff", now)
+    ).toEqual({ completedAt: now, completionSource: "staff" });
+  });
+
+  it("an already complete topic stays as it was (null = nothing to write)", () => {
+    const existing = {
+      watchedRatio: 1,
+      completedAt: new Date("2026-09-01T00:00:00Z"),
+      completionSource: "video" as const,
+    };
+    expect(decideCompletion(existing, "staff", now)).toBeNull();
+  });
+});
+
+describe("nextUnlockedTopicId", () => {
+  it("is the next topic in course order once the current one is complete", () => {
+    expect(nextUnlockedTopicId(["a", "b", "c"], "a", true)).toBe("b");
+  });
+
+  it("is null while the current topic is not complete, or at the end", () => {
+    expect(nextUnlockedTopicId(["a", "b"], "a", false)).toBeNull();
+    expect(nextUnlockedTopicId(["a", "b"], "b", true)).toBeNull();
+    expect(nextUnlockedTopicId(["a", "b"], "zz", true)).toBeNull();
+  });
+});
+
+describe("validateProgressReport", () => {
+  it("accepts played ranges with a duration", () => {
+    const r = validateProgressReport.safeParse({ playedRanges: [{ start: 0, end: 10 }], duration: 20 });
+    expect(r.success).toBe(true);
+  });
+
+  it("accepts the no-video completion", () => {
+    expect(validateProgressReport.safeParse({ noVideo: true }).success).toBe(true);
+  });
+
+  it("rejects what should never reach the database", () => {
+    const bad: unknown[] = [
+      {},
+      { noVideo: false },
+      { noVideo: true, playedRanges: [], duration: 1 },
+      { playedRanges: [], duration: -1 },
+      { playedRanges: [], duration: 86_401 },
+      { playedRanges: [{ start: -1, end: 2 }], duration: 10 },
+      { playedRanges: [{ start: 5, end: 2 }], duration: 10 },
+      { playedRanges: [{ start: "0", end: 2 }], duration: 10 },
+      { playedRanges: Array.from({ length: 501 }, () => ({ start: 0, end: 1 })), duration: 10 },
+      { playedRanges: "nope", duration: 10 },
+    ];
+    for (const body of bad) {
+      expect(validateProgressReport.safeParse(body).success, JSON.stringify(body).slice(0, 80)).toBe(false);
+    }
+  });
+
+  it("allows exactly 500 ranges", () => {
+    const body = { playedRanges: Array.from({ length: 500 }, (_, i) => ({ start: i, end: i + 1 })), duration: 600 };
+    expect(validateProgressReport.safeParse(body).success).toBe(true);
   });
 });

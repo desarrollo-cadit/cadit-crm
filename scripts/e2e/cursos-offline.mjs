@@ -13,6 +13,9 @@
  *  - cohort assignment + per-student grant/revoke and the resulting states;
  *  - student portal: who sees what, 404 (never 403) for what they cannot read,
  *    the answer key never travelling, grading and the retry limit;
+ *  - topic progress (T9): sequential gating (404 for a locked topic), played
+ *    ranges vs. the 90% rule, topics without video, the staff override and
+ *    course completion (every topic AND every quiz);
  *  - teacher portal and staff attempt history, with their 404s;
  *  - the staff and portal pages render.
  *
@@ -420,6 +423,180 @@ export async function seccionCursosOffline({ api, ok, BASE, getCookie }) {
     "portal: el alumno ve su propio historial (2 intentos, aprobado)",
     tras?.attempts?.length === 2 && tras?.passed === true && tras?.attemptsRemaining === 0,
     JSON.stringify({ attempts: tras?.attempts, passed: tras?.passed })
+  );
+
+  // ---- 7b. Progress (T9): sequential topics, video ranges, no-video, staff override.
+  //   Course A: 1.1 video (BEFORE) → 1.2 no video → 2.1 video → 2.2 video; both
+  //   quizzes are already passed above, so completion hinges on the topics.
+  const topicsA = (cursoA?.lessons ?? []).flatMap((l) => l.topics);
+  const [t1, t2, t3, t4] = topicsA;
+  const topicUrl = (id, course = A.id) => `/api/portal/me/offline-courses/${course}/topics/${id}`;
+  const progreso = (como, id, body, course = A.id) =>
+    como(`${topicUrl(id, course)}/progress`, {
+      method: "POST",
+      body: typeof body === "string" ? body : JSON.stringify(body),
+    });
+  const verCursoA = async () => (await al1.como(`/api/portal/me/offline-courses/${A.id}`)).json?.course;
+
+  ok(
+    "progreso: el curso marca solo el primer tema como habilitado",
+    topicsA.length === 4 &&
+      t1?.unlocked === true &&
+      [t2, t3, t4].every((t) => t?.unlocked === false && t?.completed === false) &&
+      cursoA?.completion?.completed === false,
+    JSON.stringify({ topics: topicsA, completion: cursoA?.completion })
+  );
+  const t2Bloqueado = await al1.como(topicUrl(t2?.id));
+  ok("progreso: el tema 2 responde 404 antes de completar el 1", t2Bloqueado.res.status === 404, `${t2Bloqueado.res.status}`);
+  const t4Bloqueado = await progreso(al1.como, t4?.id, { noVideo: true });
+  ok("progreso: reportar un tema bloqueado responde 404", t4Bloqueado.res.status === 404, `${t4Bloqueado.res.status}`);
+
+  const t1Datos = (await al1.como(topicUrl(t1?.id))).json?.topic;
+  ok(
+    "progreso: el tema 1 trae su video de Vimeo (antes del texto) y no está completo",
+    t1Datos?.video?.id === "900000001" && t1Datos?.video?.shown === "before" && t1Datos?.progress?.completed === false,
+    JSON.stringify({ video: t1Datos?.video, progress: t1Datos?.progress })
+  );
+
+  const mitad = await progreso(al1.como, t1?.id, { playedRanges: [{ start: 0, end: 50 }], duration: 100 });
+  ok(
+    "progreso: 50% visto → no completo, sin siguiente",
+    mitad.res.status === 200 &&
+      mitad.json?.progress?.completed === false &&
+      mitad.json?.progress?.watchedRatio === 0.5 &&
+      mitad.json?.progress?.nextTopicId === null,
+    `${mitad.res.status} ${mitad.text}`
+  );
+  const salto = await progreso(al1.como, t1?.id, {
+    playedRanges: [{ start: 0, end: 50 }, { start: 95, end: 100 }],
+    duration: 100,
+  });
+  ok(
+    "progreso: saltar al final no cuenta como visto (55%)",
+    salto.json?.progress?.completed === false && salto.json?.progress?.watchedRatio === 0.55,
+    salto.text
+  );
+  ok(
+    "progreso: el tema 2 sigue en 404",
+    (await al1.como(topicUrl(t2?.id))).res.status === 404
+  );
+  const casi = await progreso(al1.como, t1?.id, { playedRanges: [{ start: 0, end: 92 }], duration: 100 });
+  ok(
+    "progreso: ≥ 90% visto → completo y habilita el tema 2",
+    casi.res.status === 200 &&
+      casi.json?.progress?.completed === true &&
+      casi.json?.progress?.watchedRatio === 0.92 &&
+      casi.json?.progress?.nextTopicId === t2?.id,
+    `${casi.res.status} ${casi.text}`
+  );
+  const menos = await progreso(al1.como, t1?.id, { playedRanges: [{ start: 0, end: 10 }], duration: 100 });
+  ok(
+    "progreso: un reporte menor no baja el porcentaje ni descompleta",
+    menos.json?.progress?.completed === true && menos.json?.progress?.watchedRatio === 0.92,
+    menos.text
+  );
+
+  const t2Abierto = await al1.como(topicUrl(t2?.id));
+  ok(
+    "progreso: el tema 2 ahora responde 200 (sin video)",
+    t2Abierto.res.status === 200 && t2Abierto.json?.topic?.video === null,
+    `${t2Abierto.res.status} ${t2Abierto.text.slice(0, 200)}`
+  );
+  const rangosSinVideo = await progreso(al1.como, t2?.id, { playedRanges: [{ start: 0, end: 1 }], duration: 1 });
+  const noVideoConVideo = await progreso(al1.como, t1?.id, { noVideo: true });
+  ok(
+    "progreso: el reporte que no corresponde al tema responde 422",
+    rangosSinVideo.res.status === 422 &&
+      rangosSinVideo.json?.error?.code === "topic_without_video" &&
+      noVideoConVideo.res.status === 422 &&
+      noVideoConVideo.json?.error?.code === "topic_has_video",
+    `${rangosSinVideo.res.status} ${rangosSinVideo.text} | ${noVideoConVideo.res.status} ${noVideoConVideo.text}`
+  );
+  const sinVideo = await progreso(al1.como, t2?.id, { noVideo: true });
+  ok(
+    "progreso: el tema sin video se completa con {noVideo:true} y habilita el 3",
+    sinVideo.res.status === 200 &&
+      sinVideo.json?.progress?.completed === true &&
+      sinVideo.json?.progress?.nextTopicId === t3?.id,
+    `${sinVideo.res.status} ${sinVideo.text}`
+  );
+
+  const malos = [
+    "{",
+    { playedRanges: "nope", duration: 10 },
+    { playedRanges: [{ start: 5, end: 1 }], duration: 10 },
+    { playedRanges: [], duration: 90_000 },
+    { noVideo: true, duration: 1 },
+  ];
+  const estados422 = [];
+  for (const body of malos) estados422.push((await progreso(al1.como, t1?.id, body)).res.status);
+  ok("progreso: un cuerpo inválido responde 422", estados422.every((s) => s === 422), JSON.stringify(estados422));
+
+  const ajenoProgreso = await progreso(al2.como, t1?.id, { noVideo: true });
+  const temaInventado = await progreso(al1.como, "otop_no_existe", { noVideo: true });
+  const temaB = (await al1.como(`/api/portal/me/offline-courses/${B.id}`)).json?.course?.lessons?.[0]?.topics?.[0];
+  const temaDeOtroCurso = await progreso(al1.como, temaB?.id, { noVideo: true });
+  ok(
+    "progreso: curso sin acceso, tema inexistente o de otro curso → 404",
+    ajenoProgreso.res.status === 404 && temaInventado.res.status === 404 && temaDeOtroCurso.res.status === 404,
+    `${ajenoProgreso.res.status}/${temaInventado.res.status}/${temaDeOtroCurso.res.status}`
+  );
+
+  // Staff override on topic 2.1 (the fallback when the player cannot play).
+  const marcar = await api(`/api/enrollments/${e1}/offline-courses/topics/${t3?.id}/complete`, { method: "PUT" });
+  const marcarAjeno = await api(`/api/enrollments/${e2}/offline-courses/topics/${t3?.id}/complete`, { method: "PUT" });
+  const marcarInventada = await api(`/api/enrollments/enr_no_existe/offline-courses/topics/${t3?.id}/complete`, {
+    method: "PUT",
+  });
+  const marcarYaVisto = await api(`/api/enrollments/${e1}/offline-courses/topics/${t1?.id}/complete`, { method: "PUT" });
+  ok(
+    "staff: marca el tema 2.1 como completado; 422 sin acceso al curso; 404 inscripción inexistente",
+    marcar.res.status === 200 &&
+      marcar.json?.completionSource === "staff" &&
+      marcarAjeno.res.status === 422 &&
+      marcarInventada.res.status === 404 &&
+      marcarYaVisto.json?.completionSource === "video",
+    `${marcar.res.status} ${marcar.text} | ${marcarAjeno.res.status} | ${marcarInventada.res.status} | ${marcarYaVisto.text}`
+  );
+  const progresoStaff = async () =>
+    ((await api(`/api/enrollments/${e1}/offline-courses`)).json?.progress ?? []).find((p) => p.courseId === A.id);
+  const pA = await progresoStaff();
+  const fuente = (id) => pA?.topics?.find((t) => t.id === id)?.completionSource;
+  ok(
+    "staff: la inscripción refleja el avance (1.1 video, 1.2 sin video, 2.1 staff; 3/4 temas, 2/2 cuestionarios)",
+    fuente(t1?.id) === "video" &&
+      fuente(t2?.id) === "no_video" &&
+      fuente(t3?.id) === "staff" &&
+      pA?.completion?.topicsDone === 3 &&
+      pA?.completion?.quizzesPassed === 2 &&
+      pA?.completion?.completed === false,
+    JSON.stringify(pA)
+  );
+
+  const antes = await verCursoA();
+  ok(
+    "progreso: con 3/4 temas y los cuestionarios aprobados el curso NO está terminado",
+    antes?.completion?.topicsDone === 3 &&
+      antes?.completion?.quizzesPassed === 2 &&
+      antes?.completion?.completed === false &&
+      antes?.lessons?.[1]?.topics?.[1]?.unlocked === true,
+    JSON.stringify(antes?.completion)
+  );
+  const ultimo = await progreso(al1.como, t4?.id, { playedRanges: [{ start: 0, end: 57 }], duration: 60 });
+  ok(
+    "progreso: el último tema se completa y no hay siguiente",
+    ultimo.json?.progress?.completed === true && ultimo.json?.progress?.nextTopicId === null,
+    ultimo.text
+  );
+  const despues = await verCursoA();
+  const tarjeta = ((await al1.como("/api/portal/me/offline-courses")).json?.courses ?? []).find((c) => c.id === A.id);
+  const pAFinal = await progresoStaff();
+  ok(
+    "progreso: todos los temas + todos los cuestionarios → curso terminado (portal, lista y staff)",
+    despues?.completion?.completed === true &&
+      tarjeta?.completion?.completed === true &&
+      pAFinal?.completion?.completed === true,
+    JSON.stringify({ curso: despues?.completion, tarjeta: tarjeta?.completion, staff: pAFinal?.completion })
   );
 
   // ---- 8. Teacher portal and staff history.

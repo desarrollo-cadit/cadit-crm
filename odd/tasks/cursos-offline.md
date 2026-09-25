@@ -177,8 +177,20 @@ copy, else the old one): MEP 2025 → 1133 A, 1112 B, 1091 C, 1070 D; Arquitectu
   5 thumbnails. Checks: typecheck ✅, lint ✅, unit 1426 ✅ (parent: 2 stable runs; the
   worker saw one unexplained 16-failure run, not reproduced). Note: kept quiz 1239 has 19
   distinct of 20 questions; pending 1281 has 17 of 20.
-- [ ] T9 Portal player + progress reporting + server-side sequential gating + staff
-  override in the roster panel + progress visible to staff/teacher.
+- [x] T9 Single Vimeo component (`vimeo-player.tsx` + `src/lib/vimeo.ts`, iframe
+  postMessage, origin-checked, 10s fallback link), `progress.ts` writes (video / no_video /
+  staff, monotonic), `outline.ts` shared reads, server-side gating in `myTopic` (404),
+  per-topic `{completed, unlocked}` + course completion in portal, staff panel progress +
+  "Marcar como completado"; AGENTS.md → 1.4.0; `thumbnailBasename` basename fix. Route:
+  delegated writer (~2000 lines, over the advisory heuristic). RED 18 + 2 unloadable →
+  GREEN 1472. E2E section on isolated :3005: **58/58 ✅**. Checks: typecheck ✅ lint ✅
+  unit 1472 ✅ (parent re-ran) build ✅. Deviations: `nextTopicId` only once complete;
+  unparseable Vimeo URL = no video; staff override 422 `course_not_assigned`, not
+  order-gated. Open: teacher portal shows no progress (not in scope yet); player not yet
+  checked in a real browser; **watched ratio = max per report, so split viewing never
+  sums to 90% → T9b**.
+- [ ] T9b Accumulate playback across sessions: persist merged played ranges per
+  (contact, topic) (migration 0044, jsonb) and compute the ratio over the union.
 - [ ] T10 E2E extension (fixture with video_url, gating 404, progress, override) +
   re-import v2 locally after owner confirms quiz map.
 

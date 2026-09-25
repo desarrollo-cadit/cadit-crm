@@ -9,7 +9,7 @@ export default function StudentOfflineCoursesPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Cursos offline</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Guías teóricas para leer a su ritmo y cuestionarios que se corrigen al enviarlos.
+          Guías teóricas para leer a tu ritmo y cuestionarios que se corrigen al enviarlos.
         </p>
       </div>
       <StudentOfflineCoursesClient />

@@ -359,3 +359,112 @@ export function courseCompletion(input: CourseCompletionInput): CourseCompletion
       topicsTotal + quizzesTotal > 0 && done.size === topicsTotal && passed.size === quizzesTotal,
   };
 }
+
+/* ============================================================
+ * Progress writes (T9): what a report may change
+ * ============================================================ */
+
+export type CompletionSource = "video" | "no_video" | "staff";
+
+/** The stored `offline_topic_progress` row, as far as the decisions care. */
+export interface StoredProgress {
+  watchedRatio: number;
+  completedAt: Date | null;
+  completionSource: CompletionSource | null;
+}
+
+export interface VideoProgressDecision {
+  watchedRatio: number;
+  completedAt: Date | null;
+  completionSource: CompletionSource | null;
+  /** True only on the report that crosses the threshold. */
+  becameComplete: boolean;
+}
+
+/**
+ * Monotonic on both axes: the ratio only goes up (a second, shorter viewing
+ * must not erase the first one) and a completion is never undone — whoever
+ * completed it (video, no-video, staff) and when stays as it was.
+ *
+ * The ratio is floored to the 4 decimals `numeric(5,4)` keeps: rounding
+ * 0.89996 up would store 0.9000 on a topic that is not complete.
+ */
+export function decideVideoProgress(
+  existing: StoredProgress | null,
+  measured: VideoProgress,
+  now: Date
+): VideoProgressDecision {
+  const clamped = Math.min(1, Math.max(0, measured.watchedRatio));
+  const floored = Math.floor(clamped * 10_000) / 10_000;
+  const watchedRatio = Math.max(existing?.watchedRatio ?? 0, floored);
+
+  if (existing?.completedAt) {
+    return {
+      watchedRatio,
+      completedAt: existing.completedAt,
+      completionSource: existing.completionSource,
+      becameComplete: false,
+    };
+  }
+  const complete = measured.complete || watchedRatio >= VIDEO_COMPLETE_THRESHOLD;
+  return {
+    watchedRatio,
+    completedAt: complete ? now : null,
+    completionSource: complete ? "video" : null,
+    becameComplete: complete,
+  };
+}
+
+/**
+ * A completion that does not come from the video (a topic without one, or a
+ * staff override). `null` = already complete, nothing to write.
+ */
+export function decideCompletion(
+  existing: StoredProgress | null,
+  source: Exclude<CompletionSource, "video">,
+  now: Date
+): { completedAt: Date; completionSource: CompletionSource } | null {
+  if (existing?.completedAt) return null;
+  return { completedAt: now, completionSource: source };
+}
+
+/** The topic the student may open next: only once the current one is complete. */
+export function nextUnlockedTopicId(
+  orderedTopicIds: string[],
+  topicId: string,
+  currentComplete: boolean
+): string | null {
+  if (!currentComplete) return null;
+  const index = orderedTopicIds.indexOf(topicId);
+  if (index < 0) return null;
+  return orderedTopicIds[index + 1] ?? null;
+}
+
+const MAX_RANGES = 500;
+const MAX_VIDEO_SECONDS = 24 * 60 * 60;
+const seconds = z.number().finite().min(0).max(MAX_VIDEO_SECONDS);
+
+/**
+ * The body the topic page POSTs: either the played ranges of its video or
+ * `{ noVideo: true }` for a topic without one. Strict: a body that mixes the
+ * two is a client bug, not something to guess about. Whether the topic HAS a
+ * video is decided by the server, not by which shape arrived.
+ */
+export const validateProgressReport = z.union([
+  z.object({ noVideo: z.literal(true) }).strict(),
+  z
+    .object({
+      playedRanges: z
+        .array(
+          z
+            .object({ start: seconds, end: seconds })
+            .strict()
+            .refine((r) => r.end >= r.start, { message: "end must be ≥ start" })
+        )
+        .max(MAX_RANGES),
+      duration: seconds,
+    })
+    .strict(),
+]);
+
+export type ProgressReport = z.infer<typeof validateProgressReport>;

@@ -1,12 +1,22 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, ChevronRight, FileText, Library, ListChecks } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  CheckCircle2,
+  ChevronRight,
+  FileText,
+  Library,
+  ListChecks,
+  Lock,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Markdown } from "@/components/offline-courses/markdown";
+import { VimeoPlayer, type VimeoProgressReport } from "@/components/offline-courses/vimeo-player";
 import { EmptyNote, PortalCard, SectionTitle } from "@/components/portal/student-bits";
 import type {
   StudentOfflineCourse,
@@ -22,6 +32,12 @@ import type {
  * Everything comes from `/api/portal/me/offline-courses`, which answers only
  * for courses this person can read; a 404 here means "not yours or not
  * there", and the screen says the same for both.
+ *
+ * T9 — Topics open in order: the server answers 404 for a locked topic, and
+ * the course page shows it with a lock instead of a link. A topic completes
+ * when its video is really watched (≥ 90%, reported by the player) or, if it
+ * has no video, when it is opened. A course is finished when every topic is
+ * complete and every quiz passed.
  */
 
 export const OFFLINE_BASE = "/portal/cursos-offline";
@@ -166,23 +182,48 @@ export function StudentOfflineCoursesClient() {
 }
 
 function CourseProgress({ card }: { card: StudentOfflineCourseCard }) {
-  const temas = `${card.topics} ${card.topics === 1 ? "tema" : "temas"}`;
-  if (card.quizzesTotal === 0) {
-    return <p className="mt-auto text-xs text-text-3">{temas} · sin cuestionarios</p>;
-  }
-  const pct = (card.quizzesPassed / card.quizzesTotal) * 100;
+  const { completion } = card;
   return (
     <div className="mt-auto space-y-1.5">
-      <p className="text-xs text-text-3">
-        {temas} · {card.quizzesPassed} de {card.quizzesTotal}{" "}
-        {card.quizzesTotal === 1 ? "cuestionario aprobado" : "cuestionarios aprobados"}
-      </p>
-      <Progress
-        value={pct}
-        tone={card.quizzesPassed === card.quizzesTotal ? "success" : "brand"}
-        label={`Cuestionarios aprobados: ${card.quizzesPassed} de ${card.quizzesTotal}`}
-      />
+      <CompletionLine completion={completion} />
+      <CompletionBar completion={completion} />
     </div>
+  );
+}
+
+type Completion = StudentOfflineCourse["completion"];
+
+/** "3 de 10 temas · 1 de 2 cuestionarios" + the finished badge. */
+function CompletionLine({ completion }: { completion: Completion }) {
+  const temas = `${completion.topicsDone} de ${completion.topicsTotal} ${
+    completion.topicsTotal === 1 ? "tema" : "temas"
+  }`;
+  const cuestionarios =
+    completion.quizzesTotal === 0
+      ? "sin cuestionarios"
+      : `${completion.quizzesPassed} de ${completion.quizzesTotal} ${
+          completion.quizzesTotal === 1 ? "cuestionario aprobado" : "cuestionarios aprobados"
+        }`;
+  return (
+    <p className="flex flex-wrap items-center gap-2 text-xs text-text-3">
+      <span>
+        {temas} · {cuestionarios}
+      </span>
+      {completion.completed && <Badge variant="success">Curso terminado</Badge>}
+    </p>
+  );
+}
+
+/** Topics and quizzes weigh the same: each is one thing left to do. */
+function CompletionBar({ completion }: { completion: Completion }) {
+  const total = completion.topicsTotal + completion.quizzesTotal;
+  const done = completion.topicsDone + completion.quizzesPassed;
+  return (
+    <Progress
+      value={total === 0 ? 0 : (done / total) * 100}
+      tone={completion.completed ? "success" : "brand"}
+      label={`Avance del curso: ${done} de ${total}`}
+    />
   );
 }
 
@@ -216,6 +257,17 @@ function CourseBody({ course }: { course: StudentOfflineCourse }) {
         )}
       </div>
 
+      <PortalCard className="space-y-2">
+        <CompletionLine completion={course.completion} />
+        <CompletionBar completion={course.completion} />
+        {!course.completion.completed && (
+          <p className="text-xs text-text-3">
+            Los temas se abren en orden: cada uno se habilita al terminar el anterior. Los
+            cuestionarios los podés hacer cuando quieras.
+          </p>
+        )}
+      </PortalCard>
+
       <section className="space-y-3">
         <SectionTitle>Contenido</SectionTitle>
         {course.lessons.length === 0 ? (
@@ -230,14 +282,32 @@ function CourseBody({ course }: { course: StudentOfflineCourse }) {
                 <ol className="divide-y divide-border">
                   {lesson.topics.map((t) => (
                     <li key={t.id}>
-                      <Link
-                        href={`${base}/temas/${t.id}`}
-                        className="flex min-h-[44px] items-center gap-2 py-2 text-sm transition-colors hover:text-brand-text"
-                      >
-                        <FileText className="h-4 w-4 shrink-0 text-text-3" strokeWidth={1.7} />
-                        <span className="flex-1">{t.title}</span>
-                        <ChevronRight className="h-4 w-4 shrink-0 text-text-3" />
-                      </Link>
+                      {t.unlocked ? (
+                        <Link
+                          href={`${base}/temas/${t.id}`}
+                          className="flex min-h-[44px] items-center gap-2 py-2 text-sm transition-colors hover:text-brand-text"
+                        >
+                          {t.completed ? (
+                            <CheckCircle2
+                              className="h-4 w-4 shrink-0 text-success"
+                              strokeWidth={1.7}
+                              aria-label="Completado"
+                            />
+                          ) : (
+                            <FileText className="h-4 w-4 shrink-0 text-text-3" strokeWidth={1.7} />
+                          )}
+                          <span className="flex-1">{t.title}</span>
+                          <ChevronRight className="h-4 w-4 shrink-0 text-text-3" />
+                        </Link>
+                      ) : (
+                        <span
+                          className="flex min-h-[44px] items-center gap-2 py-2 text-sm text-text-3"
+                          title="Se habilita al terminar el tema anterior"
+                        >
+                          <Lock className="h-4 w-4 shrink-0" strokeWidth={1.7} aria-label="Bloqueado" />
+                          <span className="flex-1">{t.title}</span>
+                        </span>
+                      )}
                     </li>
                   ))}
                 </ol>
@@ -298,15 +368,73 @@ export function StudentOfflineTopicClient({
       </div>
     );
   }
+  // Keyed by topic: moving to the next topic starts its progress from scratch.
+  return <TopicBody key={topicId} data={load.data.topic} courseId={courseId} />;
+}
 
-  const { course, lessonTitle, topic, prev, next } = load.data.topic;
+type SaveState = "idle" | "saving" | "error";
+
+function TopicBody({ data, courseId }: { data: StudentOfflineTopic; courseId: string }) {
+  const { course, lessonTitle, topic, video, prev, next } = data;
+  const base = `${OFFLINE_BASE}/${courseId}`;
+  const progressUrl = `${API_BASE}/${courseId}/topics/${topic.id}/progress`;
+  const [progress, setProgress] = useState(data.progress);
+  const [save, setSave] = useState<SaveState>("idle");
+
+  const send = useCallback(
+    async (body: VimeoProgressReport | { noVideo: true }) => {
+      setSave("saving");
+      const res = await fetch(progressUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+        // The player also reports while the page is being left.
+        keepalive: true,
+      }).catch(() => null);
+      if (!res?.ok) return setSave("error");
+      const json = (await res.json()) as {
+        progress: { watchedRatio: number; completed: boolean };
+      };
+      setProgress((p) => ({
+        completed: p.completed || json.progress.completed,
+        watchedRatio: Math.max(p.watchedRatio, json.progress.watchedRatio),
+      }));
+      setSave("idle");
+    },
+    [progressUrl]
+  );
+
+  // A topic without a video completes on open — once per visit.
+  const sentNoVideo = useRef(false);
+  useEffect(() => {
+    if (video || progress.completed || sentNoVideo.current) return;
+    sentNoVideo.current = true;
+    void send({ noVideo: true });
+  }, [video, progress.completed, send]);
+
+  const player = video ? (
+    <PortalCard className="space-y-2">
+      <VimeoPlayer video={video} title={`Video: ${topic.title}`} onProgress={(r) => void send(r)} />
+      <p className="text-xs text-text-3">
+        {progress.completed
+          ? "Video completado."
+          : `Visto: ${Math.floor(progress.watchedRatio * 100)}%. El tema se completa al ver al menos el 90%.`}
+      </p>
+    </PortalCard>
+  ) : null;
+
   return (
     <article className="space-y-5">
       <BackLink href={base}>{course.title}</BackLink>
-      <header>
+      <header className="space-y-1">
         {lessonTitle && <p className="text-xs font-medium text-text-3">{lessonTitle}</p>}
-        <h1 className="text-2xl font-semibold tracking-tight">{topic.title}</h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="text-2xl font-semibold tracking-tight">{topic.title}</h1>
+          {progress.completed && <Badge variant="success">Tema completado</Badge>}
+        </div>
       </header>
+
+      {video?.shown === "before" && player}
 
       <PortalCard>
         {topic.contentMd.trim() ? (
@@ -316,7 +444,15 @@ export function StudentOfflineTopicClient({
         )}
       </PortalCard>
 
-      <nav aria-label="Temas" className="flex flex-wrap justify-between gap-3">
+      {video?.shown === "after" && player}
+
+      {save === "error" && (
+        <p role="alert" className="text-sm text-danger">
+          No se pudo registrar tu avance. Revisá tu conexión y recargá la página.
+        </p>
+      )}
+
+      <nav aria-label="Temas" className="flex flex-wrap items-start justify-between gap-3">
         {prev ? (
           <Link
             href={`${base}/temas/${prev.id}`}
@@ -329,13 +465,32 @@ export function StudentOfflineTopicClient({
           <span />
         )}
         {next ? (
-          <Link
-            href={`${base}/temas/${next.id}`}
-            className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-md border border-input px-4 text-sm transition-colors hover:bg-accent"
-          >
-            <span className="truncate">{next.title}</span>
-            <ArrowRight className="h-4 w-4 shrink-0" />
-          </Link>
+          progress.completed ? (
+            <Link
+              href={`${base}/temas/${next.id}`}
+              className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-md border border-input px-4 text-sm transition-colors hover:bg-accent"
+            >
+              <span className="truncate">Siguiente tema: {next.title}</span>
+              <ArrowRight className="h-4 w-4 shrink-0" />
+            </Link>
+          ) : (
+            <div className="flex max-w-full flex-col items-end gap-1">
+              <button
+                type="button"
+                disabled
+                aria-describedby="siguiente-bloqueado"
+                className="inline-flex min-h-[44px] max-w-full cursor-not-allowed items-center gap-2 rounded-md border border-input px-4 text-sm text-text-3"
+              >
+                <Lock className="h-4 w-4 shrink-0" strokeWidth={1.7} />
+                <span className="truncate">Siguiente tema</span>
+              </button>
+              <p id="siguiente-bloqueado" className="text-right text-xs text-text-3">
+                {video
+                  ? "Se habilita cuando veas al menos el 90% del video."
+                  : "Registrando tu avance…"}
+              </p>
+            </div>
+          )
         ) : (
           <Link
             href={base}

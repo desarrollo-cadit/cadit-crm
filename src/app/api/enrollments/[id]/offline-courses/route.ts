@@ -5,6 +5,7 @@ import {
   setEnrollmentOverride,
 } from "@/server/offline-courses/access";
 import { attemptsForEnrollment } from "@/server/offline-courses/attempts";
+import { enrollmentCourseProgress } from "@/server/offline-courses/progress";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,9 @@ type Params = { params: Promise<{ id: string }> };
 /**
  * cursos-offline (T4) — One student's library access (every course with its
  * state: inherited / granted / revoked / none) plus their attempt history.
+ *
+ * T9 — plus, per course the student reads, the completion (topics done,
+ * quizzes passed) and every topic's progress, for the roster panel.
  */
 export const GET = requireCapability(
   "academico.ver",
@@ -20,8 +24,11 @@ export const GET = requireCapability(
     const { id } = await ctx.params;
     const states = await enrollmentCourseStates(session.organizationId, id);
     if (!states) return apiError(404, "not_found", "Inscripción no encontrada");
-    const attempts = await attemptsForEnrollment(session.organizationId, id);
-    return Response.json({ courses: states, attempts });
+    const [attempts, progress] = await Promise.all([
+      attemptsForEnrollment(session.organizationId, id),
+      enrollmentCourseProgress(session.organizationId, id),
+    ]);
+    return Response.json({ courses: states, attempts, progress: progress ?? [] });
   }
 );
 

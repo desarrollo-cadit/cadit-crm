@@ -1,8 +1,23 @@
-import { asc, count, eq, inArray } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { effectiveCourseIdsForContact } from "./access";
-import { attemptsRemaining } from "./logic";
+import type { OfflineVideoShown } from "@/lib/db/schema";
+import { parseVimeoUrl } from "@/lib/vimeo";
+import {
+  attemptsRemaining,
+  courseCompletion,
+  topicUnlocked,
+  type CourseCompletion,
+} from "./logic";
+import {
+  completedIds,
+  courseOutline,
+  courseOutlines,
+  progressRowsFor,
+  quizIdsByCourse,
+  type OutlineTopic,
+} from "./outline";
 import {
   quizStatus,
   thumbnailAssetId,
@@ -30,11 +45,16 @@ import {
  *
  * Drafts stay out: a course marked `draft` is not shown to students even if a
  * cohort points at it.
+ *
+ * T9 — Topics open one after the other (`topicUnlocked`, lesson → topic
+ * order across the whole course, defined once in `outline.ts`). A locked
+ * topic answers `null` exactly like a missing one: the gate lives here, not
+ * in the UI, because a hidden link is still a typed URL away. Quizzes are NOT
+ * gated (owner decision).
  */
 
 const {
   offlineCourse,
-  offlineLesson,
   offlineTopic,
   offlineQuiz,
   offlineQuestion,
@@ -49,6 +69,7 @@ export type StudentOfflineCourseCard = {
   topics: number;
   quizzesTotal: number;
   quizzesPassed: number;
+  completion: CourseCompletion;
 };
 
 export type StudentQuizSummary = {
@@ -68,14 +89,22 @@ export type StudentOfflineCourse = {
   title: string;
   descriptionMd: string;
   hasThumbnail: boolean;
-  lessons: Array<{ id: string; title: string; topics: Array<{ id: string; title: string }> }>;
+  lessons: Array<{
+    id: string;
+    title: string;
+    topics: Array<{ id: string; title: string; completed: boolean; unlocked: boolean }>;
+  }>;
   quizzes: StudentQuizSummary[];
+  completion: CourseCompletion;
 };
 
 export type StudentOfflineTopic = {
   course: { id: string; title: string };
   lessonTitle: string;
   topic: { id: string; title: string; contentMd: string };
+  /** `null` = no embeddable video: the topic completes on open. */
+  video: { id: string; hash: string | null; shown: OfflineVideoShown } | null;
+  progress: { completed: boolean; watchedRatio: number };
   prev: { id: string; title: string } | null;
   next: { id: string; title: string } | null;
 };
@@ -134,6 +163,24 @@ async function readableCourse(orgId: string, contactId: string, courseId: string
     .where(scoped(offlineCourse.organizationId, orgId, eq(offlineCourse.id, courseId)))
     .limit(1);
   return course ?? null;
+}
+
+/**
+ * Whether this person can read the course (effective access AND published).
+ * The progress writes ask the same question through this one definition.
+ */
+export async function canReadCourse(
+  orgId: string,
+  contactId: string,
+  courseId: string
+): Promise<boolean> {
+  return (await readableCourseIds(orgId, contactId)).includes(courseId);
+}
+
+/** The embeddable video of a topic; an unparseable URL counts as no video. */
+function topicVideo(t: OutlineTopic): StudentOfflineTopic["video"] {
+  const ref = parseVimeoUrl(t.videoUrl);
+  return ref ? { ...ref, shown: t.videoShown } : null;
 }
 
 /** This person's attempts at these quizzes, oldest first. */
@@ -212,10 +259,9 @@ export async function myCourses(
 ): Promise<StudentOfflineCourseCard[]> {
   const ids = await readableCourseIds(orgId, contactId);
   if (ids.length === 0) return [];
-  const db = getDb();
 
-  const [courses, topicCounts, quizzes] = await Promise.all([
-    db
+  const [courses, outlines, quizzesByCourse] = await Promise.all([
+    getDb()
       .select({
         id: offlineCourse.id,
         title: offlineCourse.title,
@@ -224,34 +270,35 @@ export async function myCourses(
       .from(offlineCourse)
       .where(scoped(offlineCourse.organizationId, orgId, inArray(offlineCourse.id, ids)))
       .orderBy(asc(offlineCourse.title)),
-    db
-      .select({ courseId: offlineLesson.courseId, n: count() })
-      .from(offlineTopic)
-      .innerJoin(offlineLesson, eq(offlineLesson.id, offlineTopic.lessonId))
-      .where(scoped(offlineTopic.organizationId, orgId, inArray(offlineLesson.courseId, ids)))
-      .groupBy(offlineLesson.courseId),
-    db
-      .select({ id: offlineQuiz.id, courseId: offlineQuiz.courseId })
-      .from(offlineQuiz)
-      .where(scoped(offlineQuiz.organizationId, orgId, inArray(offlineQuiz.courseId, ids))),
+    courseOutlines(orgId, ids),
+    quizIdsByCourse(orgId, ids),
   ]);
 
-  const attempts = await ownAttempts(
-    orgId,
-    contactId,
-    quizzes.map((q) => q.id)
-  );
+  const allTopicIds = [...outlines.values()].flatMap((o) => o.topics.map((t) => t.id));
+  const allQuizIds = [...quizzesByCourse.values()].flat();
+  const [progress, attempts] = await Promise.all([
+    progressRowsFor(orgId, contactId, allTopicIds),
+    ownAttempts(orgId, contactId, allQuizIds),
+  ]);
+  const done = completedIds(progress);
   const passedQuizIds = new Set(attempts.filter((a) => a.passed).map((a) => a.quizId));
 
   return courses.map((c) => {
-    const ofCourse = quizzes.filter((q) => q.courseId === c.id);
+    const topicIds = outlines.get(c.id)?.topics.map((t) => t.id) ?? [];
+    const completion = courseCompletion({
+      topicIds,
+      completedTopicIds: done,
+      quizIds: quizzesByCourse.get(c.id) ?? [],
+      passedQuizIds,
+    });
     return {
       id: c.id,
       title: c.title,
       hasThumbnail: thumbnailAssetId(c.thumbnailUrl) !== null,
-      topics: Number(topicCounts.find((t) => t.courseId === c.id)?.n ?? 0),
-      quizzesTotal: ofCourse.length,
-      quizzesPassed: ofCourse.filter((q) => passedQuizIds.has(q.id)).length,
+      topics: topicIds.length,
+      quizzesTotal: completion.quizzesTotal,
+      quizzesPassed: completion.quizzesPassed,
+      completion,
     };
   });
 }
@@ -264,48 +311,51 @@ export async function myCourse(
 ): Promise<StudentOfflineCourse | null> {
   const course = await readableCourse(orgId, contactId, courseId);
   if (!course) return null;
-  const db = getDb();
 
-  const [lessons, quizzes] = await Promise.all([
-    db
-      .select({ id: offlineLesson.id, title: offlineLesson.title })
-      .from(offlineLesson)
-      .where(scoped(offlineLesson.organizationId, orgId, eq(offlineLesson.courseId, courseId)))
-      .orderBy(asc(offlineLesson.position), asc(offlineLesson.title)),
-    db
+  const [outline, quizzes] = await Promise.all([
+    courseOutline(orgId, courseId),
+    getDb()
       .select(quizColumns)
       .from(offlineQuiz)
       .where(scoped(offlineQuiz.organizationId, orgId, eq(offlineQuiz.courseId, courseId)))
       .orderBy(asc(offlineQuiz.position), asc(offlineQuiz.title)),
   ]);
 
-  const lessonIds = lessons.map((l) => l.id);
-  const [topics, attempts] = await Promise.all([
-    lessonIds.length
-      ? db
-          .select({ id: offlineTopic.id, lessonId: offlineTopic.lessonId, title: offlineTopic.title })
-          .from(offlineTopic)
-          .where(scoped(offlineTopic.organizationId, orgId, inArray(offlineTopic.lessonId, lessonIds)))
-          .orderBy(asc(offlineTopic.position), asc(offlineTopic.title))
-      : Promise.resolve([]),
+  const orderedIds = outline.topics.map((t) => t.id);
+  const [progress, attempts] = await Promise.all([
+    progressRowsFor(orgId, contactId, orderedIds),
     ownAttempts(
       orgId,
       contactId,
       quizzes.map((q) => q.id)
     ),
   ]);
+  const done = completedIds(progress);
 
   return {
     id: course.id,
     title: course.title,
     descriptionMd: course.descriptionMd,
     hasThumbnail: thumbnailAssetId(course.thumbnailUrl) !== null,
-    lessons: lessons.map((l) => ({
+    lessons: outline.lessons.map((l) => ({
       id: l.id,
       title: l.title,
-      topics: topics.filter((t) => t.lessonId === l.id).map((t) => ({ id: t.id, title: t.title })),
+      topics: outline.topics
+        .filter((t) => t.lessonId === l.id)
+        .map((t) => ({
+          id: t.id,
+          title: t.title,
+          completed: done.has(t.id),
+          unlocked: topicUnlocked(orderedIds, done, t.id),
+        })),
     })),
     quizzes: quizzes.map((q) => summarize(q, attempts)),
+    completion: courseCompletion({
+      topicIds: orderedIds,
+      completedTopicIds: done,
+      quizIds: quizzes.map((q) => q.id),
+      passedQuizIds: attempts.filter((a) => a.passed).map((a) => a.quizId),
+    }),
   };
 }
 
@@ -318,41 +368,19 @@ export async function myTopic(
 ): Promise<StudentOfflineTopic | null> {
   const course = await readableCourse(orgId, contactId, courseId);
   if (!course) return null;
-  const db = getDb();
 
-  const lessons = await db
-    .select({ id: offlineLesson.id, title: offlineLesson.title })
-    .from(offlineLesson)
-    .where(scoped(offlineLesson.organizationId, orgId, eq(offlineLesson.courseId, courseId)))
-    .orderBy(asc(offlineLesson.position), asc(offlineLesson.title));
-  if (lessons.length === 0) return null;
-
-  const topics = await db
-    .select({
-      id: offlineTopic.id,
-      lessonId: offlineTopic.lessonId,
-      title: offlineTopic.title,
-    })
-    .from(offlineTopic)
-    .where(
-      scoped(
-        offlineTopic.organizationId,
-        orgId,
-        inArray(
-          offlineTopic.lessonId,
-          lessons.map((l) => l.id)
-        )
-      )
-    )
-    .orderBy(asc(offlineTopic.position), asc(offlineTopic.title));
-
-  // Reading order = lesson order, then topic order inside the lesson.
-  const ordered = lessons.flatMap((l) => topics.filter((t) => t.lessonId === l.id));
-  const current = ordered.find((t) => t.id === topicId);
+  const outline = await courseOutline(orgId, courseId);
+  const current = outline.topics.find((t) => t.id === topicId);
   // A topic of ANOTHER course is "not found", even if that course is readable.
   if (!current) return null;
 
-  const [content] = await db
+  const orderedIds = outline.topics.map((t) => t.id);
+  const progress = await progressRowsFor(orgId, contactId, orderedIds);
+  const done = completedIds(progress);
+  // Locked = not found: the content does not travel before its turn.
+  if (!topicUnlocked(orderedIds, done, current.id)) return null;
+
+  const [content] = await getDb()
     .select({ contentMd: offlineTopic.contentMd })
     .from(offlineTopic)
     .where(scoped(offlineTopic.organizationId, orgId, eq(offlineTopic.id, current.id)))
@@ -360,9 +388,14 @@ export async function myTopic(
 
   return {
     course: { id: course.id, title: course.title },
-    lessonTitle: lessons.find((l) => l.id === current.lessonId)?.title ?? "",
+    lessonTitle: outline.lessons.find((l) => l.id === current.lessonId)?.title ?? "",
     topic: { id: current.id, title: current.title, contentMd: content?.contentMd ?? "" },
-    ...topicNeighbors(ordered, current.id),
+    video: topicVideo(current),
+    progress: {
+      completed: done.has(current.id),
+      watchedRatio: progress.find((p) => p.topicId === current.id)?.watchedRatio ?? 0,
+    },
+    ...topicNeighbors(outline.topics, current.id),
   };
 }
 

@@ -4,7 +4,13 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { OfflineAttemptRow } from "@/server/offline-courses/attempts";
-import type { AccessState, CourseState, OverrideAction } from "@/server/offline-courses/logic";
+import type {
+  AccessState,
+  CompletionSource,
+  CourseState,
+  OverrideAction,
+} from "@/server/offline-courses/logic";
+import type { StaffCourseProgress } from "@/server/offline-courses/progress";
 import { OfflineAttemptsTable } from "@/components/offline-courses/attempts-table";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +40,91 @@ function toggleAction(c: CourseState): { label: string; action: OverrideAction }
   return { label: "Agregar", action: c.cohortHas ? "clear" : "grant" };
 }
 
+const SOURCE_LABEL: Record<CompletionSource, string> = {
+  video: "vio el video",
+  no_video: "tema sin video",
+  staff: "marcado por el equipo",
+};
+
+/** "Completado (vio el video, 25/09/2026)". */
+function completedLabel(t: StaffCourseProgress["topics"][number]): string {
+  const detail = [
+    t.completionSource ? SOURCE_LABEL[t.completionSource] : null,
+    t.completedAt
+      ? new Date(t.completedAt).toLocaleDateString("es-UY", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+        })
+      : null,
+  ].filter(Boolean);
+  return detail.length ? `Completado (${detail.join(", ")})` : "Completado";
+}
+
+/**
+ * T9 — "X/Y temas · A/B cuestionarios · Terminado/En curso", and the topic
+ * list behind a disclosure: 270 topics would bury the roster otherwise.
+ * "Marcar como completado" is the fallback when the player cannot play for
+ * this person; it records who did it.
+ */
+function CourseProgressRow({
+  progress,
+  canEdit,
+  busy,
+  onComplete,
+}: {
+  progress: StaffCourseProgress;
+  canEdit: boolean;
+  busy: boolean;
+  onComplete: (topicId: string) => void;
+}) {
+  const c = progress.completion;
+  return (
+    <details className="w-full text-xs">
+      <summary className="cursor-pointer select-none text-muted-foreground">
+        {c.topicsDone}/{c.topicsTotal} temas · {c.quizzesPassed}/{c.quizzesTotal} cuestionarios ·{" "}
+        <span className={c.completed ? "font-medium text-success" : "text-text-2"}>
+          {c.completed ? "Terminado" : "En curso"}
+        </span>
+      </summary>
+      {progress.topics.length === 0 ? (
+        <p className="mt-1 text-muted-foreground">El curso no tiene temas.</p>
+      ) : (
+        <ol className="mt-1 divide-y rounded-md border">
+          {progress.topics.map((t) => (
+            <li key={t.id} className="flex flex-wrap items-center gap-2 px-2 py-1">
+              <span className="flex-1">
+                <span className="text-muted-foreground">{t.lessonTitle} · </span>
+                {t.title}
+              </span>
+              {t.completed ? (
+                <span className="text-success">{completedLabel(t)}</span>
+              ) : (
+                <>
+                  <span className="text-muted-foreground">
+                    {t.watchedRatio > 0 ? `Visto ${Math.floor(t.watchedRatio * 100)}%` : "Pendiente"}
+                  </span>
+                  {canEdit && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7"
+                      disabled={busy}
+                      onClick={() => onComplete(t.id)}
+                    >
+                      Marcar como completado
+                    </Button>
+                  )}
+                </>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
+    </details>
+  );
+}
+
 /**
  * cursos-offline (T4) — One student's library access inside the roster row:
  * every course with where its access comes from, the exceptions (with
@@ -49,6 +140,7 @@ export function OfflineCoursesPanel({
 }) {
   const [courses, setCourses] = useState<CourseState[]>([]);
   const [attempts, setAttempts] = useState<OfflineAttemptRow[]>([]);
+  const [progress, setProgress] = useState<StaffCourseProgress[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   // Two errors, cleared by different events: a failed load goes away when a
@@ -60,9 +152,14 @@ export function OfflineCoursesPanel({
   const refetch = useCallback(async () => {
     const res = await fetch(`/api/enrollments/${enrollmentId}/offline-courses`).catch(() => null);
     if (res?.ok) {
-      const data = (await res.json()) as { courses: CourseState[]; attempts: OfflineAttemptRow[] };
+      const data = (await res.json()) as {
+        courses: CourseState[];
+        attempts: OfflineAttemptRow[];
+        progress: StaffCourseProgress[];
+      };
       setCourses(data.courses);
       setAttempts(data.attempts);
+      setProgress(data.progress);
       setLoadError(null);
     } else {
       setLoadError("No se pudieron cargar los cursos offline");
@@ -87,6 +184,23 @@ export function OfflineCoursesPanel({
         | { error?: { message?: string } }
         | null;
       setError(body?.error?.message ?? "No se pudo cambiar el acceso");
+    }
+    await refetch();
+    setBusy(null);
+  }
+
+  async function completeTopic(topicId: string) {
+    setBusy(topicId);
+    setError(null);
+    const res = await fetch(
+      `/api/enrollments/${enrollmentId}/offline-courses/topics/${topicId}/complete`,
+      { method: "PUT" }
+    ).catch(() => null);
+    if (!res?.ok) {
+      const body = (await res?.json().catch(() => null)) as
+        | { error?: { message?: string } }
+        | null;
+      setError(body?.error?.message ?? "No se pudo marcar el tema como completado");
     }
     await refetch();
     setBusy(null);
@@ -117,6 +231,7 @@ export function OfflineCoursesPanel({
           {courses.map((c) => {
             const toggle = toggleAction(c);
             const canReset = c.override !== null && toggle.action !== "clear";
+            const courseProgress = progress.find((p) => p.courseId === c.courseId);
             return (
               <li key={c.courseId} className="flex flex-wrap items-center gap-2 px-3 py-1.5 text-xs">
                 <span className="flex-1 font-medium">{c.title}</span>
@@ -145,6 +260,14 @@ export function OfflineCoursesPanel({
                       </Button>
                     )}
                   </span>
+                )}
+                {courseProgress && (
+                  <CourseProgressRow
+                    progress={courseProgress}
+                    canEdit={canEdit}
+                    busy={busy !== null}
+                    onComplete={(topicId) => void completeTopic(topicId)}
+                  />
                 )}
               </li>
             );

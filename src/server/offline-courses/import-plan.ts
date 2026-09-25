@@ -1,3 +1,4 @@
+import path from "node:path";
 import { z } from "zod";
 import type {
   OfflineAnswerType,
@@ -187,15 +188,24 @@ export type ImportPlan = {
   warnings: string[];
 };
 
-function thumbnailBasename(url: string | null | undefined): string | null {
+/**
+ * The file name the importer looks up inside `--media`. The basename is taken
+ * AFTER decoding: `..%2F..%2Fsecret.png` decodes to a path, and joining that
+ * to the media folder would read outside it. `win32.basename` splits on both
+ * `/` and `\`, so the answer does not depend on where the script runs.
+ */
+export function thumbnailBasename(url: string | null | undefined): string | null {
   if (!url) return null;
   const last = url.split(/[?#]/)[0]!.split("/").pop() ?? "";
   if (!last) return null;
+  let decoded = last;
   try {
-    return decodeURIComponent(last);
+    decoded = decodeURIComponent(last);
   } catch {
-    return last;
+    // Malformed escape: keep the raw segment, it still goes through basename.
   }
+  const name = path.win32.basename(decoded);
+  return name && name !== "." && name !== ".." ? name : null;
 }
 
 const VIMEO_HOSTS = new Set(["vimeo.com", "www.vimeo.com", "player.vimeo.com"]);

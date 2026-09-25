@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildImportPlan } from "@/server/offline-courses/import-plan";
+import { buildImportPlan, thumbnailBasename } from "@/server/offline-courses/import-plan";
 
 /**
  * cursos-offline — The pure half of the LearnDash import.
@@ -268,5 +268,22 @@ describe("buildImportPlan", () => {
     const byRef = new Map(plan.topics.map((t) => [t.legacyRef, t]));
     expect(byRef.get("topic:12")?.videoUrl).toBeNull();
     expect(byRef.get("topic:15")?.videoUrl).toBeNull();
+  });
+});
+
+describe("thumbnailBasename", () => {
+  it("keeps only the decoded file name", () => {
+    expect(thumbnailBasename("https://old.example/a/b/Banner%20A.png?x=1#y")).toBe("Banner A.png");
+  });
+
+  it("an encoded path cannot climb out of the media folder", () => {
+    expect(thumbnailBasename("https://old.example/up/..%2F..%2Fsecret.png")).toBe("secret.png");
+    expect(thumbnailBasename("https://old.example/up/..%5C..%5Csecret.png")).toBe("secret.png");
+    expect(thumbnailBasename("https://old.example/up/%2E%2E")).toBeNull();
+  });
+
+  it("nothing to name → null", () => {
+    expect(thumbnailBasename(null)).toBeNull();
+    expect(thumbnailBasename("https://old.example/")).toBeNull();
   });
 });
