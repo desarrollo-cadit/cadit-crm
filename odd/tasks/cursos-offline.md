@@ -273,8 +273,9 @@ completion. Attempts keep score/passed/answers snapshot when a quiz is edited.
   passed, flagged a bug): "Pasar a borrador" ran the delete path `onDone` and navigated
   back to the library → fixed inline (`run(action, after)`: delete → onDone, history →
   onClose). Checked by typecheck + lint + reading; NOT re-driven in a browser.
-- [ ] T10 E2E extension (fixture with video_url, gating 404, progress, override) +
-  re-import v2 locally after owner confirms quiz map.
+- [x] T10 E2E extended across T9/T9b/T10b/T11b (videos, gating 404, split viewing,
+  override, editor flow: section 73/73 ✅); v2 re-imported into local `vocero` after the
+  owner confirmed the quiz map (5 courses, 10 quizzes).
 
 ## Progress / evidence
 
@@ -318,4 +319,11 @@ completion. Attempts keep score/passed/answers snapshot when a quiz is edited.
 
 ## Next step
 
-T6 E2E section + live run on isolated server (delegated worker running).
+1. Full gate before the final merge: full E2E harness on an isolated :3005 +
+   `NEXT_DIST_DIR=.next-build pnpm build`; check whether the 7 known failures (blocks
+   014/015) also fail on `main`.
+2. Browser re-check of "Pasar a borrador" (fixed inline in `2a19e8b`).
+3. RDD reviews T2…T11 blocked by the reviewer version skew: owner closes Claude Code and
+   runs `gentle-ai sync --agents claude-code --strict-tdd`, then resume.
+4. Owner restarts `pnpm dev` on :3000 (stopped and `.next` deleted on request).
+5. Push / PR (feature-branch-chain → one final merge to `main`) is the owner's decision.
