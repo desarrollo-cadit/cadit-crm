@@ -135,7 +135,7 @@ export function PortalNav({
       >
         <IsotipoCadIT className="h-[34px] w-[34px] rounded-md" />
         <span className="min-w-0">
-          <span className="block truncate text-[16px] font-[650] leading-tight tracking-tight">
+          <span className="portal-nav-brand block truncate text-[16px] font-[650] leading-tight tracking-tight">
             {branding.name}
           </span>
           <span className="block text-[11px] text-text-3">Mi portal</span>
@@ -144,20 +144,20 @@ export function PortalNav({
 
       <nav className="flex flex-col gap-4 overflow-y-auto">
         {audience.isStudent && (
-          <Grupo label="Mi cursada" items={ITEMS_ALUMNO} pathname={pathname} />
+          <Grupo label="Mis cursos" items={ITEMS_ALUMNO} pathname={pathname} />
         )}
 
         {audience.isStudent && cursadas.length > 0 && (
-          <ListaCursos titulo="Cursando" cursos={cursadas} pathname={pathname} />
+          <ListaCursos titulo="En curso" cursos={cursadas} pathname={pathname} />
         )}
 
         {audience.isTeacher && (
-          <Grupo label="Doy clase" items={ITEMS_PROFESOR} pathname={pathname} />
+          <Grupo label="Docencia" items={ITEMS_PROFESOR} pathname={pathname} />
         )}
 
         {audience.isStudent && cerradas.length > 0 && (
           <ListaCursos
-            titulo={`Terminadas (${cerradas.length})`}
+            titulo={`Finalizados (${cerradas.length})`}
             cursos={cerradas}
             pathname={pathname}
           />
@@ -221,7 +221,7 @@ export function PortalNav({
         </button>
         <Link href="/portal" className="flex min-w-0 items-center gap-2">
           <IsotipoCadIT className="h-7 w-7 rounded-sm" />
-          <span className="truncate text-sm font-semibold">{branding.name}</span>
+          <span className="portal-nav-brand truncate text-sm font-semibold">{branding.name}</span>
         </Link>
         <div className="flex-1" />
         <ThemeToggle initial={theme} />
@@ -263,7 +263,7 @@ function Grupo({
 }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="px-2.5 pb-1 text-[10.5px] font-semibold uppercase tracking-wide text-text-3">
+      <span className="portal-nav-label px-2.5 pb-1 font-display text-[10.5px] font-semibold uppercase tracking-wide text-text-3">
         {label}
       </span>
       {items.map((item) => {
@@ -276,7 +276,7 @@ function Grupo({
             className={cn(
               // 44px de alto en celular, 38 en escritorio: el pulgar necesita
               // el blanco, el mouse no.
-              "flex min-h-[44px] items-center gap-[11px] rounded-sm px-2.5 py-2 text-sm font-medium transition-colors md:min-h-0",
+              "portal-nav-item flex min-h-[44px] items-center gap-[11px] rounded-sm px-2.5 py-2 text-sm font-medium transition-colors md:min-h-0",
               active
                 ? "bg-brand-tint font-semibold text-brand-text"
                 : "text-text-2 hover:bg-accent"
@@ -305,7 +305,7 @@ function ListaCursos({
 }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="px-2.5 pb-1 text-[10.5px] font-semibold uppercase tracking-wide text-text-3">
+      <span className="portal-nav-label px-2.5 pb-1 font-display text-[10.5px] font-semibold uppercase tracking-wide text-text-3">
         {titulo}
       </span>
       {cursos.map((c) => {
@@ -317,7 +317,7 @@ function ListaCursos({
             href={href}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "flex min-h-[44px] items-center gap-[11px] rounded-sm px-2.5 py-2 text-sm transition-colors md:min-h-0",
+              "portal-nav-item flex min-h-[44px] items-center gap-[11px] rounded-sm px-2.5 py-2 text-sm transition-colors md:min-h-0",
               active
                 ? "bg-brand-tint font-semibold text-brand-text"
                 : "text-text-2 hover:bg-accent"

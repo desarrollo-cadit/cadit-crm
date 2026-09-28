@@ -80,6 +80,20 @@ const config: Config = {
           ])
         ),
         "voice-client": "var(--voice-client)",
+        // La lámina del mundo Cianotipo (portal del alumno). Solo existe bajo
+        // `data-world="cianotipo"`; fuera de él estas clases no pintan nada.
+        sheet: {
+          DEFAULT: "var(--sheet)",
+          deep: "var(--sheet-deep)",
+          ink: "var(--sheet-ink)",
+          "ink-2": "var(--sheet-ink-2)",
+          "ink-3": "var(--sheet-ink-3)",
+          line: "var(--sheet-line)",
+        },
+        revision: {
+          DEFAULT: "var(--revision)",
+          sheet: "var(--revision-on-sheet)",
+        },
         "on-accent": "var(--on-accent)",
         "on-state": "var(--on-state)",
         success: {
@@ -110,6 +124,7 @@ const config: Config = {
       },
       fontFamily: {
         sans: ["var(--font-geist)", "Hanken Grotesk", "-apple-system", "sans-serif"],
+        display: ["var(--font-display)"],
       },
       /**
        * 020 (T005) — Solo los pasos de TITULAR se remapean a la escala nueva.

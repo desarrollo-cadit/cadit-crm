@@ -178,14 +178,14 @@ export type PortalAudience = {
  */
 export const ITEMS_ALUMNO = [
   { href: "/portal", label: "Inicio", icon: LayoutDashboard, exact: true },
-  { href: "/portal/cuenta", label: "Mi cuenta", icon: Wallet },
+  { href: "/portal/cuenta", label: "Estado de cuenta", icon: Wallet },
   { href: "/portal/certificados", label: "Certificados", icon: Award },
   { href: "/portal/cursos-offline", label: "Cursos offline", icon: Library },
 ] as const satisfies readonly NavItem[];
 
 export const ITEMS_PROFESOR = [
   { href: "/portal/dictado", label: "Mis cohortes", icon: Users },
-  { href: "/portal/horas", label: "Mis horas", icon: CalendarClock },
+  { href: "/portal/horas", label: "Horas dictadas", icon: CalendarClock },
 ] as const satisfies readonly NavItem[];
 
 /**
@@ -196,7 +196,7 @@ export const ITEMS_PROFESOR = [
  */
 export const ITEM_GUIA_PORTAL = {
   href: "/portal/guia",
-  label: "Cómo funciona esto",
+  label: "Guía del portal",
   icon: BookOpen,
 } as const satisfies NavItem;
 

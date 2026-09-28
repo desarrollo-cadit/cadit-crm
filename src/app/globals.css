@@ -187,6 +187,12 @@
 
     /* Densidad de filas de conversación */
     --row-py: 11px;
+
+    /*
+      La voz de los rótulos. En Atlas es la misma Geist del cuerpo; el mundo
+      del alumno la cambia por una condensada técnica (ver más abajo).
+    */
+    --font-display: var(--font-geist), "Hanken Grotesk", sans-serif;
   }
 
   /*
@@ -319,6 +325,126 @@
     --portal-gap: 1rem;
     --portal-card-pad: 1.15rem;
   }
+
+  /*
+    Cursos-offline / portal del alumno — El mundo "Cianotipo de obra".
+
+    El alumno deja de ver Atlas. Atlas es la mesa del staff, que la mira ocho
+    horas por día y donde lo apagado es una virtud; el alumno entra unos
+    minutos dos veces por semana y ahí ese mismo silencio se lee como que no
+    pasa nada. Decisión del dueño del producto (2026-09-28): el portal del
+    alumno tiene mundo propio. El panel del staff y el portal del profesor
+    quedan como estaban.
+
+    A diferencia de la intensidad de portal, este bloque SÍ redefine fondos y
+    texto, y por eso tiene su propia prueba de contraste
+    (`tests/unit/mundo-cianotipo.test.ts`), que lee estos valores y exige los
+    mismos umbrales que Atlas en los dos temas.
+
+    La idea: la cursada es un juego de láminas heliográficas. En claro, la
+    hoja es papel diazo frío con tinta azul de Prusia; en oscuro, el
+    escritorio es de noche y la tinta se aclara. La LÁMINA (`--sheet*`) es
+    azul de Prusia con línea blanca en los dos temas, igual que el plato de la
+    marca: es un objeto, no una superficie del tema.
+
+    El acento white-label no aplica acá: el mundo tiene su propio azul, y la
+    marca de CadIT ya es azul.
+  */
+  [data-world="cianotipo"] {
+    --bg: #f6f8fc;
+    --bg-subtle: #eff3fa;
+    --bg-panel: #e9eff8;
+    --bg-hover: #e0e8f5;
+    --text: #0e1f45;
+    --text-2: #2c3f69;
+    --text-3: #475a80;
+    --text-4: #6c7fa3;
+    --border: #d5dfee;
+    --border-strong: #6f82a6;
+
+    --accent: #1f438f;
+    --accent-hover: #17346f;
+    --accent-soft: #d3e0f6;
+    --accent-tint: #e6eefa;
+    --accent-text: #17346f;
+    --on-accent: #ffffff;
+
+    --success: #2d6a4c;
+    --warning: #76571a;
+    --danger: #a3352a;
+    --success-soft: #e2f0e8;
+    --success-border: #b9d9c7;
+    --warning-soft: #f5ecd8;
+    --warning-border: #e2cf9f;
+    --danger-soft: #f8e4df;
+    --danger-border: #ebbdb3;
+    --on-state: #ffffff;
+
+    /* La lámina: constante en los dos temas. */
+    --sheet: #15397c;
+    --sheet-deep: #102d63;
+    --sheet-ink: #ffffff;
+    --sheet-ink-2: #c4d4f0;
+    --sheet-ink-3: #9fb6e0;
+    --sheet-line: #6f8fcb;
+    /* La nube de revisión: lo que pide atención. En la lámina y en la hoja. */
+    --revision: #b8321f;
+    --revision-on-sheet: #ff9a80;
+
+    --radius-sm: 2px;
+    --radius: 3px;
+    --radius-lg: 4px;
+    --shadow-sm: 0 1px 0 rgba(14, 31, 69, 0.06);
+    --shadow-md: 0 8px 24px -10px rgba(14, 31, 69, 0.25);
+    --shadow-pop: 0 18px 40px -12px rgba(14, 31, 69, 0.35);
+
+    --font-display: var(--font-barlow-condensed), "Barlow Condensed", var(--font-geist),
+      sans-serif;
+  }
+
+  :root[data-theme="dark"] [data-world="cianotipo"] {
+    --bg: #0a1833;
+    --bg-subtle: #0d1d3c;
+    --bg-panel: #112346;
+    --bg-hover: #162b54;
+    --text: #eaf1fc;
+    --text-2: #b7c6e3;
+    --text-3: #93a6ca;
+    --text-4: #6d82aa;
+    --border: #1d3461;
+    --border-strong: #6379a4;
+
+    --accent: #7aa5f5;
+    --accent-hover: #9dbdf8;
+    --accent-soft: #1b3566;
+    --accent-tint: #13284f;
+    --accent-text: #b3cbf8;
+    --on-accent: #0a1833;
+
+    --success: #6fcb9d;
+    --warning: #e0b25c;
+    --danger: #f28f7d;
+    --success-soft: #12302a;
+    --success-border: #245443;
+    --warning-soft: #2d2716;
+    --warning-border: #57492a;
+    --danger-soft: #35201f;
+    --danger-border: #663a35;
+    --on-state: #0a1833;
+
+    --sheet: #15397c;
+    --sheet-deep: #102d63;
+    --sheet-ink: #ffffff;
+    --sheet-ink-2: #c4d4f0;
+    --sheet-ink-3: #9fb6e0;
+    --sheet-line: #6f8fcb;
+    --revision: #ff8f73;
+    --revision-on-sheet: #ff9a80;
+
+    --shadow-sm: 0 1px 0 rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 8px 24px -10px rgba(0, 0, 0, 0.6);
+    --shadow-pop: 0 18px 40px -12px rgba(0, 0, 0, 0.75);
+  }
 }
 
 @layer base {
@@ -435,6 +561,105 @@
     border-color: color-mix(in srgb, var(--on-accent) 28%, transparent);
     background-color: color-mix(in srgb, var(--on-accent) 12%, transparent);
   }
+
+  /*
+    La lámina del mundo Cianotipo: azul de Prusia con la retícula blanca de la
+    copia heliográfica. Misma grilla que la pantalla de acceso (28/140 px),
+    pero dibujada con la tinta de la lámina y no con el acento.
+  */
+  .lamina {
+    background-color: var(--sheet);
+    color: var(--sheet-ink);
+    background-image:
+      linear-gradient(
+        to right,
+        color-mix(in srgb, var(--sheet-ink) 13%, transparent) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to bottom,
+        color-mix(in srgb, var(--sheet-ink) 13%, transparent) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to right,
+        color-mix(in srgb, var(--sheet-ink) 5%, transparent) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to bottom,
+        color-mix(in srgb, var(--sheet-ink) 5%, transparent) 1px,
+        transparent 1px
+      );
+    background-size:
+      140px 140px,
+      140px 140px,
+      28px 28px,
+      28px 28px;
+    background-position: -1px -1px;
+  }
+
+  /*
+    El trazado de la cadena de cotas: los tramos ya cursados se dibujan una
+    vez, de izquierda a derecha, como la línea que aparece al revelar la
+    copia. Es el único movimiento de la pantalla. Con movimiento reducido,
+    la regla global de abajo lo deja en su estado final.
+  */
+  .cota-tramo {
+    transform-origin: left center;
+    animation: cota-revelar 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: calc(var(--i, 0) * 40ms + 120ms);
+  }
+  @keyframes cota-revelar {
+    from {
+      transform: scaleX(0);
+    }
+  }
+
+  /*
+    La barra del portal dentro del mundo Cianotipo. La barra es la misma que
+    usa el profesor —un solo componente—, así que el mundo la ajusta desde acá
+    y no desde el `.tsx`: el profesor no ve ninguno de estos cambios.
+    El ítem activo se vuelve un recorte de lámina: azul de Prusia con tinta
+    blanca, el mismo objeto que domina la pantalla.
+  */
+  [data-world="cianotipo"] .portal-nav-label,
+  [data-world="cianotipo"] .portal-vista-label {
+    font-size: 12px;
+    letter-spacing: 0.16em;
+  }
+  [data-world="cianotipo"] .portal-nav-brand {
+    font-family: var(--font-display);
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+  /*
+    El título de cada pantalla del alumno es el título de la lámina: la misma
+    condensada en mayúsculas. Va acá y no pantalla por pantalla para que una
+    pantalla nueva del alumno lo herede sin que nadie se acuerde.
+  */
+  [data-world="cianotipo"] main h1 {
+    font-family: var(--font-display);
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+  [data-world="cianotipo"] .portal-nav-item[aria-current="page"] {
+    background-color: var(--sheet);
+    color: var(--sheet-ink);
+  }
+  [data-world="cianotipo"] .portal-nav-item[aria-current="page"] svg {
+    color: var(--sheet-ink);
+  }
+
+  /* El sello de revisión: tinta que se apoya torcida sobre la hoja. */
+  .sello {
+    transform: rotate(-4deg);
+    border: 2px solid currentColor;
+    outline: 1px solid currentColor;
+    outline-offset: 2px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -443,5 +668,9 @@
   *::after {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
+  }
+  /* El retardo escalonado también se va: si no, el tramo queda oculto un rato. */
+  .cota-tramo {
+    animation: none;
   }
 }
