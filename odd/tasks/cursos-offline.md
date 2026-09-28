@@ -202,6 +202,50 @@ copy, else the old one): MEP 2025 → 1133 A, 1112 B, 1091 C, 1070 D; Arquitectu
   (split 0–55% + 50–100% completes). Known race: two simultaneous reports may drop one's
   new ranges; ratio never drops and the next report resends them. Route: delegated
   writer (~400 lines).
+- T9b commit `701e627` (GGA passed). v2 imported into local `vocero` (5 courses, 6
+  lessons, 270 topics all with video, 10 quizzes, 201 questions, 449 answers; second run
+  all no-ops).
+- Real-browser check (Playwright, real Vimeo 1071179224, isolated :3005): iframe OK, video
+  plays on localhost (not domain-restricted; headless got Vimeo's 401 bot check, not a
+  privacy block). Found 4 bugs → T10b: (1) player posts JSON strings → Vimeo answers
+  with legacy event names → 0 progress POSTs, topics can never complete; (2) live race:
+  slow first report overwrote the second's ranges; (3) v2 has no `status` → every course
+  imports as draft → students see nothing; (4) all v2 lessons/topics come reversed with
+  uniform `menu_order` (Básico starts at RB17). Gating (404 + locks) and themes verified.
+- [x] T10b Fixed the 4 browser-found bugs: object `postMessage` + `normalizePlayerMessage`
+  (both Vimeo dialects) + `createReportQueue` (one report in flight); row lock
+  `lockedPlayback` (insert-if-missing then `FOR UPDATE`); missing status → published;
+  uniform `menu_order` → reverse export order. Route: delegated writer (stalled at the
+  verification step; parent reviewed the diffs and re-ran checks) + delegated verifier.
+  Local `vocero` re-imported: 5 published, each lesson starts at its intro, MEP "Módulo
+  común" first. Checks: typecheck ✅ lint ✅ unit 1498/1498 ✅ (run alone; under load 8
+  unrelated DB-mocked tests time out at 5s and pass in isolation). Real browser, headed
+  Chromium, no shim (headless gets Vimeo's 401 bot check): list shows Básico 2025, RB01
+  first, 16 locked; play 20s + seek 161s → 2 POSTs 200, never overlapping, ratio 0.1394
+  with both ranges `[0.011–19.185],[161.189–166.627]`; full play → ratio 0.9577,
+  `completion_source video`, topic 2 opens (200), topic 3 404. E2E section 58/58 ✅.
+  Staff detail shows "Ver video en Vimeo" → https://vimeo.com/1071180747 (17/17 topics
+  carry videoUrl). Screenshots in the session scratchpad `t10b/`.
+- Staff course detail now shows each topic's Vimeo link + before/after + icon
+  (owner report 2026-09-28: "no veo los enlaces"); `courseDetail` carries
+  videoUrl/videoShown. Uncommitted, goes with T10b.
+- Owner's dev server on :3000 stopped and `.next` deleted on owner request (stale chunks);
+  owner declined the restart — owner runs `pnpm dev` themselves.
+
+### Accepted change (owner, 2026-09-28): full content editing from the staff UI
+
+Why: owner needs to create/edit everything from the panel ("se tendría que poder crear
+editar totalmente todo"); previously out of scope. Defaults stated to the owner:
+full CRUD for courses (incl. thumbnail upload via existing media storage, status),
+lessons, topics (text, Vimeo URL validated by `parseVimeoUrl`, before/after), quizzes
+(passing %, retries), questions + answers; drag & drop ordering (`dnd-kit`);
+`academico.editar`. Importer stops overwriting (insert-only; `--overwrite` flag to force).
+Deleting anything with student history (attempts/progress) is blocked → offer draft;
+without history it deletes. Gating change: a completed topic is always accessible (a
+topic inserted mid-course never locks later completed ones); it still counts for course
+completion. Attempts keep score/passed/answers snapshot when a quiz is edited.
+
+- [ ] T11 Content editing (server + APIs + UI + importer policy + gating tweak + E2E).
 - [ ] T10 E2E extension (fixture with video_url, gating 404, progress, override) +
   re-import v2 locally after owner confirms quiz map.
 

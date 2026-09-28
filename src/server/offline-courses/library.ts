@@ -32,7 +32,13 @@ export type OfflineCourseDetail = {
     id: string;
     title: string;
     contentMd: string;
-    topics: Array<{ id: string; title: string; contentMd: string }>;
+    topics: Array<{
+      id: string;
+      title: string;
+      contentMd: string;
+      videoUrl: string | null;
+      videoShown: "before" | "after";
+    }>;
   }>;
   quizzes: Array<{
     id: string;
@@ -177,6 +183,8 @@ export async function courseDetail(
             lessonId: offlineTopic.lessonId,
             title: offlineTopic.title,
             contentMd: offlineTopic.contentMd,
+            videoUrl: offlineTopic.videoUrl,
+            videoShown: offlineTopic.videoShown,
           })
           .from(offlineTopic)
           .where(scoped(offlineTopic.organizationId, orgId, inArray(offlineTopic.lessonId, lessonIds)))
@@ -221,7 +229,13 @@ export async function courseDetail(
       ...l,
       topics: topics
         .filter((t) => t.lessonId === l.id)
-        .map(({ id, title, contentMd }) => ({ id, title, contentMd })),
+        .map(({ id, title, contentMd, videoUrl, videoShown }) => ({
+          id,
+          title,
+          contentMd,
+          videoUrl,
+          videoShown,
+        })),
     })),
     quizzes: quizzes.map((q) => ({
       ...q,

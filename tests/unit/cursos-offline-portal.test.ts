@@ -109,6 +109,11 @@ describe("cursos-offline — progress write module (T9)", () => {
     expect(wheres).toBe((codigo.match(/scoped\(/g) ?? []).length);
   });
 
+  it("merges played ranges over the row read under a lock (concurrent reports serialize)", () => {
+    expect(codigo).toContain("onConflictDoNothing(");
+    expect(codigo).toContain('.for("update")');
+  });
+
   it("writes through the (contact, topic) upsert, never a blind update", () => {
     expect(codigo).toContain("onConflictDoUpdate(");
     expect(codigo).not.toContain(".update(");

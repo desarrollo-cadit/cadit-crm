@@ -24,7 +24,9 @@ import { parseVimeoUrl } from "@/lib/vimeo";
  *    guessing would attach content to the wrong course.
  *  - a quiz hangs from a lesson only when that lesson belongs to the mapped
  *    course; otherwise it stays course-level with a warning.
- *  - positions follow array order (0-based). Quizzes in a course are ordered by
+ *  - lessons in a course and topics in a lesson are ordered by `orderedByMenu`
+ *    (menu_order, or the export order reversed when LearnDash gave them all
+ *    the same one). Positions are 0-based. Quizzes in a course are ordered by
  *    the module letter in their title ("Módulo A…D"), then by legacy id: the
  *    export lists them in no meaningful order.
  *  - LearnDash repeats `sort` inside a quiz (the 40-question ones); a repeated
@@ -66,12 +68,14 @@ const topicSchema = z.object({
   content_md: text,
   video_url: z.string().nullish(),
   video_shown: z.string().nullish(),
+  menu_order: intOr(null),
 });
 
 const lessonSchema = z.object({
   id: legacyId,
   title: text,
   content_md: text,
+  menu_order: intOr(null),
   topics: z.array(topicSchema).default([]),
 });
 
@@ -79,7 +83,8 @@ const courseSchema = z.object({
   id: legacyId,
   title: text,
   slug: text,
-  status: text,
+  /** v2 exports no status: absent = what the site showed, i.e. published. */
+  status: z.string().nullish(),
   description_md: text,
   thumbnail: z.string().nullish(),
   lessons: z.array(lessonSchema).default([]),
@@ -228,6 +233,36 @@ function moduleLetter(title: string): string {
   return /m[oó]dulo\s+([a-z])\b/i.exec(title)?.[1]?.toUpperCase() ?? "~";
 }
 
+/**
+ * The order a list of lessons (or topics) is shown in.
+ *  - menu_order values that differ → ascending (ties keep export order;
+ *    an item without one goes last).
+ *  - every item has the SAME menu_order → the export order REVERSED. WHY:
+ *    LearnDash exported newest-first — in all five v2 courses menu_order is 0
+ *    everywhere and the arrays end with the introduction (RB01, RA01,
+ *    "Lección 1"; the MEP "Módulo común" comes after "Módulo continuo").
+ *  - no menu_order at all → the export order, as given (no evidence either way).
+ */
+export function orderedByMenu<T extends { menu_order: number | null }>(items: T[]): T[] {
+  const orders = items.map((i) => i.menu_order).filter((o): o is number => o !== null);
+  if (orders.length === 0) return [...items];
+  if (orders.length === items.length && orders.every((o) => o === orders[0])) return [...items].reverse();
+  return items
+    .map((item, index) => ({ item, index }))
+    .sort((a, b) => {
+      const ao = a.item.menu_order ?? Number.POSITIVE_INFINITY;
+      const bo = b.item.menu_order ?? Number.POSITIVE_INFINITY;
+      return ao === bo ? a.index - b.index : ao - bo;
+    })
+    .map((x) => x.item);
+}
+
+/** Only an explicit non-"publish" status (draft, private, pending…) keeps a course hidden. */
+function courseStatus(raw: string | null | undefined): OfflineCourseStatus {
+  const value = raw?.trim();
+  return !value || value === "publish" ? "published" : "draft";
+}
+
 export function buildImportPlan(coursesJson: unknown, quizMapJson: unknown): ImportPlan {
   const input = coursesFileSchema.parse(coursesJson);
   const quizMap = quizMapFileSchema.parse(quizMapJson);
@@ -254,10 +289,10 @@ export function buildImportPlan(coursesJson: unknown, quizMapJson: unknown): Imp
       title: c.title,
       slug: c.slug,
       descriptionMd: c.description_md,
-      status: c.status === "publish" ? "published" : "draft",
+      status: courseStatus(c.status),
       thumbnailFile: thumbnailBasename(c.thumbnail),
     });
-    c.lessons.forEach((l, li) => {
+    orderedByMenu(c.lessons).forEach((l, li) => {
       lessonCourse.set(l.id, c.id);
       const lessonRef = `lesson:${l.id}`;
       plan.lessons.push({
@@ -267,7 +302,7 @@ export function buildImportPlan(coursesJson: unknown, quizMapJson: unknown): Imp
         contentMd: l.content_md,
         position: li,
       });
-      l.topics.forEach((t, ti) => {
+      orderedByMenu(l.topics).forEach((t, ti) => {
         const videoUrl = vimeoUrlOrNull(t.video_url);
         if (t.video_url?.trim() && !videoUrl) {
           plan.warnings.push(`topic:${t.id}: video "${t.video_url}" is not an embeddable Vimeo video URL — imported without video`);

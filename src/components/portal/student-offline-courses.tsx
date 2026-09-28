@@ -414,7 +414,7 @@ function TopicBody({ data, courseId }: { data: StudentOfflineTopic; courseId: st
 
   const player = video ? (
     <PortalCard className="space-y-2">
-      <VimeoPlayer video={video} title={`Video: ${topic.title}`} onProgress={(r) => void send(r)} />
+      <VimeoPlayer video={video} title={`Video: ${topic.title}`} onProgress={send} />
       <p className="text-xs text-text-3">
         {progress.completed
           ? "Video completado."

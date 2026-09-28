@@ -4,7 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { ExternalLink } from "lucide-react";
 import {
   breakRange,
+  createReportQueue,
   emptyTracker,
+  normalizePlayerMessage,
   playedRanges,
   trackTime,
   vimeoEmbedUrl,
@@ -19,7 +21,9 @@ import {
  * the app loads `player.vimeo.com`; the server never talks to Vimeo.
  *
  * It speaks Vimeo's postMessage player API directly (no npm dependency):
- * subscribes to play / pause / timeupdate / seeked / ended, and accepts
+ * subscribes to play / pause / timeupdate / seeked / ended with OBJECT
+ * messages (a string message makes the player answer in its legacy dialect;
+ * `normalizePlayerMessage` reads both anyway), and accepts
  * messages ONLY from the player origin AND from this iframe's window — any
  * other frame on the page could post a fake `timeupdate`.
  *
@@ -35,27 +39,6 @@ const EVENTS = ["play", "pause", "timeupdate", "seeked", "ended"] as const;
 
 export type VimeoProgressReport = { playedRanges: PlayedRange[]; duration: number };
 
-type PlayerMessage = {
-  event?: string;
-  method?: string;
-  value?: unknown;
-  data?: { seconds?: unknown; duration?: unknown };
-};
-
-function readMessage(raw: unknown): PlayerMessage | null {
-  let data = raw;
-  if (typeof data === "string") {
-    try {
-      data = JSON.parse(data);
-    } catch {
-      return null;
-    }
-  }
-  return data && typeof data === "object" ? (data as PlayerMessage) : null;
-}
-
-const asSeconds = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null);
-
 export function VimeoPlayer({
   video,
   title,
@@ -64,7 +47,8 @@ export function VimeoPlayer({
   video: VimeoRef;
   /** The iframe's accessible name. */
   title: string;
-  onProgress: (report: VimeoProgressReport) => void;
+  /** Its promise settling is what lets the next report go (one in flight at a time). */
+  onProgress: (report: VimeoProgressReport) => Promise<unknown> | void;
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const onProgressRef = useRef(onProgress);
@@ -81,16 +65,18 @@ export function VimeoPlayer({
     let playing = false;
     let lastReportAt = 0;
     let lastSent = "";
+    const enqueue = createReportQueue((r: VimeoProgressReport) => Promise.resolve(onProgressRef.current(r)));
 
+    // An object, not JSON.stringify(message): see the header.
     const post = (message: Record<string, unknown>) =>
-      frame.current?.contentWindow?.postMessage(JSON.stringify(message), PLAYER_ORIGIN);
+      frame.current?.contentWindow?.postMessage(message, PLAYER_ORIGIN);
 
     const subscribe = () => {
       for (const value of EVENTS) post({ method: "addEventListener", value });
       post({ method: "getDuration" });
     };
 
-    const report = () => {
+    const report = (leaving = false) => {
       const ranges = playedRanges(tracker);
       if (ranges.length === 0 || !(duration > 0)) return;
       const body = JSON.stringify(ranges);
@@ -99,19 +85,21 @@ export function VimeoPlayer({
       // ready); the same ranges twice is one report.
       if (body === lastSent) return;
       lastSent = body;
-      onProgressRef.current({ playedRanges: ranges, duration });
+      // Leaving the page cannot wait for the queue: the page may be gone
+      // before the report in flight settles. The server serializes the two
+      // under a row lock and merges both, so skipping the queue loses nothing.
+      if (leaving) void onProgressRef.current({ playedRanges: ranges, duration });
+      else enqueue({ playedRanges: ranges, duration });
     };
 
     function onMessage(ev: MessageEvent) {
       if (ev.origin !== PLAYER_ORIGIN) return;
       if (!frame.current || ev.source !== frame.current.contentWindow) return;
-      const msg = readMessage(ev.data);
+      const msg = normalizePlayerMessage(ev.data);
       if (!msg) return;
       setAnswered(true);
 
-      if (msg.method === "getDuration") duration = asSeconds(msg.value) ?? duration;
-      const d = asSeconds(msg.data?.duration);
-      if (d !== null && d > 0) duration = d;
+      if (msg.duration !== null && msg.duration > 0) duration = msg.duration;
 
       switch (msg.event) {
         case "ready":
@@ -122,8 +110,7 @@ export function VimeoPlayer({
           lastReportAt = Date.now();
           break;
         case "timeupdate": {
-          const s = asSeconds(msg.data?.seconds);
-          if (s !== null) tracker = trackTime(tracker, s);
+          if (msg.seconds !== null) tracker = trackTime(tracker, msg.seconds);
           if (playing && Date.now() - lastReportAt >= REPORT_EVERY_MS) report();
           break;
         }
@@ -151,7 +138,7 @@ export function VimeoPlayer({
       window.clearTimeout(timer);
       // Leaving the page mid-video still counts what was watched.
       tracker = breakRange(tracker);
-      report();
+      report(true);
     };
   }, [video.id, video.hash]);
 

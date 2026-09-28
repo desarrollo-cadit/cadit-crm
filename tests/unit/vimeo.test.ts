@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   SEEK_GAP_SECONDS,
   breakRange,
+  createReportQueue,
   emptyTracker,
   mergeRanges,
+  normalizePlayerMessage,
   parseVimeoUrl,
   playedRanges,
   trackTime,
@@ -174,5 +176,106 @@ describe("mergeRanges", () => {
 
   it("drops empty ranges", () => {
     expect(mergeRanges([{ start: 3, end: 3 }])).toEqual([]);
+  });
+});
+
+describe("normalizePlayerMessage (both player dialects)", () => {
+  it("reads the modern dialect, as an object or as a JSON string", () => {
+    const modern = { event: "timeupdate", data: { seconds: 12.5, duration: 120, percent: 0.1 } };
+    expect(normalizePlayerMessage(modern)).toEqual({ event: "timeupdate", seconds: 12.5, duration: 120 });
+    expect(normalizePlayerMessage(JSON.stringify(modern))).toEqual({
+      event: "timeupdate",
+      seconds: 12.5,
+      duration: 120,
+    });
+    expect(normalizePlayerMessage({ event: "seeked", data: { seconds: 100 } })).toMatchObject({ event: "seeked" });
+    expect(normalizePlayerMessage({ event: "ended" })).toMatchObject({ event: "ended" });
+  });
+
+  it("maps the legacy names (what Vimeo answers to string messages) onto the modern ones", () => {
+    const progress = JSON.stringify({
+      event: "playProgress",
+      data: { seconds: "3.2", percent: "0.027", duration: "119.9" },
+    });
+    expect(normalizePlayerMessage(progress)).toEqual({ event: "timeupdate", seconds: 3.2, duration: 119.9 });
+    expect(normalizePlayerMessage({ event: "seek", data: { seconds: 80 } })).toMatchObject({ event: "seeked" });
+    expect(normalizePlayerMessage('{"event":"finish"}')).toMatchObject({ event: "ended" });
+    expect(normalizePlayerMessage({ event: "pause" })).toMatchObject({ event: "pause" });
+    expect(normalizePlayerMessage({ event: "play" })).toMatchObject({ event: "play" });
+    expect(normalizePlayerMessage({ event: "ready" })).toMatchObject({ event: "ready" });
+  });
+
+  it("reads the getDuration answer as a duration", () => {
+    expect(normalizePlayerMessage({ method: "getDuration", value: 95 })).toEqual({
+      event: null,
+      seconds: null,
+      duration: 95,
+    });
+    expect(normalizePlayerMessage('{"method":"getDuration","value":"95.5"}')).toMatchObject({ duration: 95.5 });
+  });
+
+  it("ignores what is not a player message, and bad numbers", () => {
+    expect(normalizePlayerMessage("not json")).toBeNull();
+    expect(normalizePlayerMessage(null)).toBeNull();
+    expect(normalizePlayerMessage(42)).toBeNull();
+    expect(normalizePlayerMessage({ event: "somethingElse" })).toEqual({ event: null, seconds: null, duration: null });
+    expect(normalizePlayerMessage({ event: "timeupdate", data: { seconds: -1, duration: "x" } })).toEqual({
+      event: "timeupdate",
+      seconds: null,
+      duration: null,
+    });
+  });
+});
+
+describe("createReportQueue (never two reports in flight)", () => {
+  function deferredSender() {
+    const calls: Array<{ value: number; resolve: () => void; reject: (e: unknown) => void }> = [];
+    const send = (value: number) =>
+      new Promise<void>((resolve, reject) => {
+        calls.push({ value, resolve, reject });
+      });
+    return { calls, send };
+  }
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+
+  it("sends at once when idle, and only the LATEST report once the previous resolves", async () => {
+    const { calls, send } = deferredSender();
+    const push = createReportQueue(send);
+    push(1);
+    push(2);
+    push(3);
+    expect(calls.map((c) => c.value)).toEqual([1]);
+    calls[0]!.resolve();
+    await tick();
+    expect(calls.map((c) => c.value)).toEqual([1, 3]);
+    calls[1]!.resolve();
+    await tick();
+    expect(calls).toHaveLength(2);
+    push(4);
+    expect(calls.map((c) => c.value)).toEqual([1, 3, 4]);
+  });
+
+  it("a failed report does not block the next one", async () => {
+    const { calls, send } = deferredSender();
+    const push = createReportQueue(send);
+    push(1);
+    push(2);
+    calls[0]!.reject(new Error("network"));
+    await tick();
+    expect(calls.map((c) => c.value)).toEqual([1, 2]);
+  });
+
+  it("a sender that throws synchronously does not wedge the queue", async () => {
+    let n = 0;
+    const push = createReportQueue((v: number) => {
+      n++;
+      if (v === 1) throw new Error("boom");
+      return Promise.resolve();
+    });
+    push(1);
+    await tick();
+    push(2);
+    await tick();
+    expect(n).toBe(2);
   });
 });

@@ -36,17 +36,15 @@ function fixture() {
             id: 11,
             title: "Módulo A",
             content_md: "a",
-            menu_order: 5,
             topics: [
               {
                 id: 12,
                 title: "Tema 1",
                 content_md: "t1",
-                menu_order: 9,
                 video_url: "https://vimeo.com/123456789",
                 video_shown: "BEFORE",
               },
-              { id: 13, title: "Tema 2", content_md: null, menu_order: 1 },
+              { id: 13, title: "Tema 2", content_md: null },
               {
                 id: 15,
                 title: "Tema 3",
@@ -64,7 +62,7 @@ function fixture() {
             ],
             quizzes: [],
           },
-          { id: 14, title: "Módulo B", content_md: "b", menu_order: 0, topics: [], quizzes: [] },
+          { id: 14, title: "Módulo B", content_md: "b", topics: [], quizzes: [] },
         ],
       },
       {
@@ -74,7 +72,7 @@ function fixture() {
         status: "draft",
         description_md: null,
         thumbnail: null,
-        lessons: [{ id: 21, title: "Único", content_md: "", menu_order: 0, topics: [], quizzes: [] }],
+        lessons: [{ id: 21, title: "Único", content_md: "", topics: [], quizzes: [] }],
       },
     ],
     quizzes_all: [
@@ -152,7 +150,7 @@ describe("buildImportPlan", () => {
     expect(plan.questions.some((x) => x.quizRef === "quiz:102")).toBe(false);
   });
 
-  it("keys every row by legacy_ref and takes positions from array order", () => {
+  it("keys every row by legacy_ref and, without menu_order, takes positions from export order", () => {
     const plan = buildImportPlan(fixture(), map());
     expect(plan.courses.map((c) => c.legacyRef)).toEqual(["course:10", "course:20"]);
     expect(plan.lessons.map((l) => [l.legacyRef, l.courseRef, l.position])).toEqual([
@@ -182,6 +180,54 @@ describe("buildImportPlan", () => {
     const plan = buildImportPlan(fixture(), map());
     expect(plan.courses[0]).toMatchObject({ status: "published", thumbnailFile: "Banner A.png" });
     expect(plan.courses[1]).toMatchObject({ status: "draft", thumbnailFile: null, descriptionMd: "" });
+  });
+
+  it("a course without status is published; an explicit non-publish status stays draft", () => {
+    const f = fixture();
+    const courses = f.courses as Array<Record<string, unknown>>;
+    delete courses[0]!.status;
+    courses[1]!.status = "private";
+    const plan = buildImportPlan(f, map());
+    expect(plan.courses.map((c) => c.status)).toEqual(["published", "draft"]);
+  });
+
+  it("orders lessons and topics by menu_order ascending when the values differ", () => {
+    const f = fixture();
+    const lessons = f.courses[0]!.lessons as Array<Record<string, unknown>>;
+    lessons[0]!.menu_order = 5;
+    lessons[1]!.menu_order = 1;
+    const topics = f.courses[0]!.lessons[0]!.topics as Array<Record<string, unknown>>;
+    [30, 10, 20, 40].forEach((mo, i) => (topics[i]!.menu_order = mo));
+    const plan = buildImportPlan(f, map());
+    expect(plan.lessons.filter((l) => l.courseRef === "course:10").map((l) => [l.legacyRef, l.position])).toEqual([
+      ["lesson:14", 0],
+      ["lesson:11", 1],
+    ]);
+    expect(plan.topics.map((t) => [t.legacyRef, t.position])).toEqual([
+      ["topic:13", 0],
+      ["topic:15", 1],
+      ["topic:12", 2],
+      ["topic:16", 3],
+    ]);
+  });
+
+  it("reverses the export order when every menu_order in a list is equal (LearnDash exported newest-first)", () => {
+    const f = fixture();
+    const lessons = f.courses[0]!.lessons as Array<Record<string, unknown>>;
+    lessons.forEach((l) => (l.menu_order = 0));
+    const topics = f.courses[0]!.lessons[0]!.topics as Array<Record<string, unknown>>;
+    topics.forEach((t) => (t.menu_order = "0"));
+    const plan = buildImportPlan(f, map());
+    expect(plan.lessons.filter((l) => l.courseRef === "course:10").map((l) => [l.legacyRef, l.position])).toEqual([
+      ["lesson:14", 0],
+      ["lesson:11", 1],
+    ]);
+    expect(plan.topics.map((t) => [t.legacyRef, t.position])).toEqual([
+      ["topic:16", 0],
+      ["topic:15", 1],
+      ["topic:13", 2],
+      ["topic:12", 3],
+    ]);
   });
 
   it("orders quizzes within a course by module letter", () => {

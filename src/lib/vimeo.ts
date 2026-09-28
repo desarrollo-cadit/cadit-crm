@@ -122,3 +122,95 @@ export function mergeRanges(ranges: PlayedRange[]): PlayedRange[] {
 export function playedRanges(t: RangeTracker): PlayedRange[] {
   return mergeRanges(closeCurrent(t));
 }
+
+/* ============================================================
+ * Player messages
+ * ============================================================ */
+
+export type PlayerEvent = "ready" | "play" | "pause" | "timeupdate" | "seeked" | "ended";
+
+export interface PlayerMessage {
+  /** Modern name, whichever dialect the player spoke; `null` = not one we use. */
+  event: PlayerEvent | null;
+  seconds: number | null;
+  duration: number | null;
+}
+
+/**
+ * The player answers in the dialect it was spoken to: a JSON STRING gets the
+ * legacy (froogaloop) names — `playProgress`, `seek`, `finish` — with numbers
+ * as strings; an object gets the modern ones. Measured on a real video: posting
+ * strings gave 19 × playProgress and 0 × timeupdate, so a handler that knew
+ * only the modern names recorded nothing. Both dialects map onto one shape.
+ */
+const EVENT_NAMES: Record<string, PlayerEvent> = {
+  ready: "ready",
+  play: "play",
+  pause: "pause",
+  timeupdate: "timeupdate",
+  playProgress: "timeupdate",
+  seeked: "seeked",
+  seek: "seeked",
+  ended: "ended",
+  finish: "ended",
+};
+
+const seconds = (v: unknown): number | null => {
+  const n = typeof v === "string" && v.trim() !== "" ? Number(v) : v;
+  return typeof n === "number" && Number.isFinite(n) && n >= 0 ? n : null;
+};
+
+export function normalizePlayerMessage(raw: unknown): PlayerMessage | null {
+  let data = raw;
+  if (typeof data === "string") {
+    try {
+      data = JSON.parse(data);
+    } catch {
+      return null;
+    }
+  }
+  if (!data || typeof data !== "object") return null;
+  const msg = data as { event?: unknown; method?: unknown; value?: unknown; data?: unknown };
+  const payload = (msg.data && typeof msg.data === "object" ? msg.data : {}) as {
+    seconds?: unknown;
+    duration?: unknown;
+  };
+  const event = typeof msg.event === "string" ? (EVENT_NAMES[msg.event] ?? null) : null;
+  const duration = msg.method === "getDuration" ? seconds(msg.value) : seconds(payload.duration);
+  return { event, seconds: seconds(payload.seconds), duration };
+}
+
+/**
+ * At most one report in flight. While one is out, newer reports replace each
+ * other and only the LATEST goes when it settles (success or failure): every
+ * report carries the whole cumulative session, so the older ones add nothing.
+ * Two in flight is how a slow first POST finished last and overwrote the
+ * second's ranges.
+ */
+export function createReportQueue<T>(send: (report: T) => Promise<unknown>): (report: T) => void {
+  let inFlight = false;
+  let pending: { report: T } | null = null;
+
+  const start = (report: T) => {
+    inFlight = true;
+    let sent: Promise<unknown>;
+    try {
+      sent = send(report);
+    } catch (e) {
+      sent = Promise.reject(e);
+    }
+    void sent
+      .catch(() => undefined)
+      .then(() => {
+        inFlight = false;
+        const next = pending;
+        pending = null;
+        if (next) start(next.report);
+      });
+  };
+
+  return (report: T) => {
+    if (inFlight) pending = { report };
+    else start(report);
+  };
+}

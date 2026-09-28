@@ -14,6 +14,7 @@ import {
   type CourseState,
   type CourseCompletion,
   type PlayedRange,
+  type StoredPlayback,
   type StoredProgress,
 } from "./logic";
 import {
@@ -44,8 +45,10 @@ import { canReadCourse } from "./student";
  *
  * Everything is validated BEFORE the write: an error Response does not roll
  * back the tenant transaction. The write is an upsert whose SET is monotonic
- * in SQL too (`greatest`, `coalesce`): two concurrent reports can race, and
- * neither may lower the ratio or undo a completion.
+ * in SQL too (`greatest`, `coalesce`): neither of two concurrent writes may
+ * lower the ratio or undo a completion. A video report additionally reads
+ * the row it merges into under a row lock (`lockedPlayback`), so two reports
+ * of the same topic serialize instead of one overwriting the other's ranges.
  *
  * Status codes: 404 for anything the student cannot see (course, topic,
  * locked topic — a 403 would confirm it exists), 422 for a report that does
@@ -109,11 +112,8 @@ async function upsertProgress(
         completedAt: sql`coalesce(${t.completedAt}, excluded.completed_at)`,
         completionSource: sql`case when ${t.completedAt} is null then excluded.completion_source else ${t.completionSource} end`,
         completedBy: sql`case when ${t.completedAt} is null then excluded.completed_by else ${t.completedBy} end`,
-        // The merged ranges were computed from the row read just before: the
-        // union is monotonic by itself. A concurrent report can still win the
-        // race and drop the other's new ranges — the ratio above does not go
-        // down, and the next report (the player sends the whole session) adds
-        // them back.
+        // The merged ranges were computed from the row read under lock just
+        // before (`lockedPlayback`), so no concurrent report slipped in between.
         ...(values.playback && {
           playedRanges: sql`excluded.played_ranges`,
           videoDuration: sql`excluded.video_duration`,
@@ -125,15 +125,43 @@ async function upsertProgress(
   return { watchedRatio: Number(row?.watchedRatio ?? 0), completed: Boolean(row?.completedAt) };
 }
 
-/** What a video report accumulates on: the stored ranges and duration. */
-async function storedPlayback(orgId: string, contactId: string, topicId: string) {
+/**
+ * The row a video report merges into, read with `FOR UPDATE` inside the
+ * request's tenant transaction. WHY insert-then-lock: a lock needs a row, and
+ * the first two reports of a topic find none — both would read "nothing
+ * stored" and the later upsert would keep only one of their ranges (merging
+ * jsonb ranges inside ON CONFLICT is not something SQL does well). So the
+ * row is created empty first (`DO NOTHING` waits for a concurrent insert of
+ * the same key to commit), then locked and read: the second report blocks
+ * here until the first commits, and then merges on top of it.
+ */
+async function lockedPlayback(
+  orgId: string,
+  contactId: string,
+  topicId: string
+): Promise<StoredPlayback> {
   const t = offlineTopicProgress;
-  const [row] = await getDb()
-    .select({ playedRanges: t.playedRanges, videoDuration: t.videoDuration })
+  const db = getDb();
+  await db
+    .insert(t)
+    .values({ id: newId("offlineTopicProgress"), organizationId: orgId, contactId, topicId })
+    .onConflictDoNothing({ target: [t.contactId, t.topicId] });
+  const [row] = await db
+    .select({
+      watchedRatio: t.watchedRatio,
+      completedAt: t.completedAt,
+      completionSource: t.completionSource,
+      playedRanges: t.playedRanges,
+      videoDuration: t.videoDuration,
+    })
     .from(t)
     .where(scoped(t.organizationId, orgId, and(eq(t.contactId, contactId), eq(t.topicId, topicId))))
-    .limit(1);
+    .limit(1)
+    .for("update");
   return {
+    watchedRatio: Number(row?.watchedRatio ?? 0),
+    completedAt: row?.completedAt ?? null,
+    completionSource: row?.completionSource ?? null,
     playedRanges: row?.playedRanges ?? [],
     videoDuration: row?.videoDuration == null ? null : Number(row.videoDuration),
   };
@@ -184,9 +212,9 @@ export async function recordVideoProgress(
     };
   }
 
-  const playback = await storedPlayback(orgId, contactId, topicId);
+  // The locked row, not `found.existing`: that one was read before the lock.
   const decision = accumulateVideoProgress(
-    found.existing ? { ...found.existing, ...playback } : null,
+    await lockedPlayback(orgId, contactId, topicId),
     report,
     new Date()
   );
