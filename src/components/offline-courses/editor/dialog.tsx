@@ -89,13 +89,15 @@ export function ConfirmDeleteDialog({
   const [error, setError] = useState<string | null>(null);
   const [hasHistory, setHasHistory] = useState(false);
 
-  async function run(action: () => Promise<ApiResult<unknown>>) {
+  // `after` differs per path: only a real delete runs `onDone` (which may
+  // navigate away); the history way out keeps the user where they are.
+  async function run(action: () => Promise<ApiResult<unknown>>, after: () => void) {
     setBusy(true);
     setError(null);
     const result = await action();
     setBusy(false);
     if (result.ok) {
-      onDone();
+      after();
       return;
     }
     setError(result.message);
@@ -113,11 +115,11 @@ export function ConfirmDeleteDialog({
             Cancelar
           </Button>
           {hasHistory && onHistory ? (
-            <Button loading={busy} onClick={() => void run(onHistory.run)}>
+            <Button loading={busy} onClick={() => void run(onHistory.run, onClose)}>
               {onHistory.label}
             </Button>
           ) : (
-            <Button variant="destructive" loading={busy} disabled={hasHistory} onClick={() => void run(onConfirm)}>
+            <Button variant="destructive" loading={busy} disabled={hasHistory} onClick={() => void run(onConfirm, onDone)}>
               Eliminar
             </Button>
           )}

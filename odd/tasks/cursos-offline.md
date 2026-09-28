@@ -269,7 +269,10 @@ completion. Attempts keep score/passed/answers snapshot when a quiz is edited.
   dark): full create flow, drag + keyboard reorder (PUT 200), no console/hydration
   errors; parent reviewed screenshots `t11b/04-editor-light.png`,
   `06-topic-dialog-dark.png`. Checks: typecheck ✅ lint ✅ unit 1549 ✅ (parent re-ran)
-  build ✅. Route: delegated writer (~2400 lines, mostly UI).
+  build ✅. Route: delegated writer (~2400 lines, mostly UI). Commit `22330ea` (GGA
+  passed, flagged a bug): "Pasar a borrador" ran the delete path `onDone` and navigated
+  back to the library → fixed inline (`run(action, after)`: delete → onDone, history →
+  onClose). Checked by typecheck + lint + reading; NOT re-driven in a browser.
 - [ ] T10 E2E extension (fixture with video_url, gating 404, progress, override) +
   re-import v2 locally after owner confirms quiz map.
 
