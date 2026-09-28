@@ -245,7 +245,19 @@ without history it deletes. Gating change: a completed topic is always accessibl
 topic inserted mid-course never locks later completed ones); it still counts for course
 completion. Attempts keep score/passed/answers snapshot when a quiz is edited.
 
-- [ ] T11 Content editing (server + APIs + UI + importer policy + gating tweak + E2E).
+- [x] T11a Editing server side: `editor.ts` + pure `editor-logic.ts` (CRUD + reorder for
+  courses/lessons/topics/quizzes/questions, answer-set rules, slug `-2`, 409
+  `has_history` guards, thumbnail PUT/DELETE via existing media storage), ~20 staff routes
+  under `/api/offline-courses/**` (writes `academico.editar`, reads `academico.ver`,
+  structural guard test). Migration `0045_cursos_offline_editor` (legacy_ref nullable on 6
+  tables) applied to `vocero` + `vocero_e2e`, re-run idempotent ✅. Importer insert-only
+  (`kept` column), `--overwrite` restores updates + stale deletion. Gating: a completed
+  topic is always open. RED→GREEN on each (gating 2, importer, editor 23, route guard).
+  Checks: typecheck ✅ lint ✅ unit 1534 ✅ (parent re-ran alone). Route: delegated
+  writer (~1840 lines). Deviations: no userId arg (no author column; `app.current_actor`
+  records the actor); replaced thumbnails leave the old media_asset row; slug fixed at
+  creation.
+- [ ] T11b Editing UI (+ E2E + live browser check).
 - [ ] T10 E2E extension (fixture with video_url, gating 404, progress, override) +
   re-import v2 locally after owner confirms quiz map.
 

@@ -316,6 +316,13 @@
       "when": 1790365349958,
       "tag": "0044_cursos_offline_rangos",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1790599758057,
+      "tag": "0045_cursos_offline_editor",
+      "breakpoints": true
     }
   ]
 }

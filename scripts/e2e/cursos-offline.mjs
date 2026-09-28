@@ -60,12 +60,12 @@ function conJar(BASE, jar) {
   };
 }
 
-/** Per-table insert/update counts from the importer's report table. */
+/** Per-table counts from the importer's report table (insert update kept no-op delete). */
 function parseCounts(stdout) {
   const out = {};
   for (const line of stdout.split(/\r?\n/)) {
-    const m = /^\s+(offline_\w+|media_asset)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*$/.exec(line);
-    if (m) out[m[1]] = { insert: +m[2], update: +m[3], noop: +m[4], delete: +m[5] };
+    const m = /^\s+(offline_\w+|media_asset)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*$/.exec(line);
+    if (m) out[m[1]] = { insert: +m[2], update: +m[3], kept: +m[4], noop: +m[5], delete: +m[6] };
   }
   return out;
 }

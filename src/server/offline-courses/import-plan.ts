@@ -427,3 +427,35 @@ export function buildImportPlan(coursesJson: unknown, quizMapJson: unknown): Imp
 
   return plan;
 }
+
+/* ============================================================
+ * T11 — Re-import policy: the staff UI owns the content
+ * ============================================================ */
+
+export type UpsertDecision =
+  | { kind: "insert" }
+  /** Already in the database; left exactly as it is (default mode). */
+  | { kind: "kept" }
+  | { kind: "noop" }
+  | { kind: "update"; changed: string[] };
+
+/**
+ * What the importer does with one planned row, given the stored row with the
+ * same `legacy_ref` (if any).
+ *
+ * Since T11 the content is edited from the panel, so by default an existing
+ * row is KEPT: re-running the import must not undo what staff changed. Only
+ * `--overwrite` brings back "the export wins", and then only the differing
+ * fields are written. `undefined` in the incoming row = "leave as it is".
+ */
+export function decideUpsert(
+  old: Record<string, unknown> | undefined,
+  row: Record<string, unknown>,
+  fields: string[],
+  overwrite: boolean
+): UpsertDecision {
+  if (!old) return { kind: "insert" };
+  if (!overwrite) return { kind: "kept" };
+  const changed = fields.filter((f) => row[f] !== undefined && old[f] !== row[f]);
+  return changed.length === 0 ? { kind: "noop" } : { kind: "update", changed };
+}

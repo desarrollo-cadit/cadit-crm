@@ -22,9 +22,15 @@ export type OfflineCourseSummary = {
   quizzes: number;
 };
 
+/**
+ * T11 — Also what the editor needs: the slug, every position (the UI sends
+ * back full ordered id lists), each quiz's lesson and every answer id (the
+ * question editor replaces the answer set by id).
+ */
 export type OfflineCourseDetail = {
   id: string;
   title: string;
+  slug: string;
   status: OfflineCourseStatus;
   descriptionMd: string;
   thumbnailUrl: string | null;
@@ -32,10 +38,12 @@ export type OfflineCourseDetail = {
     id: string;
     title: string;
     contentMd: string;
+    position: number;
     topics: Array<{
       id: string;
       title: string;
       contentMd: string;
+      position: number;
       videoUrl: string | null;
       videoShown: "before" | "after";
     }>;
@@ -47,12 +55,14 @@ export type OfflineCourseDetail = {
     lessonId: string | null;
     passingPercentage: number;
     retriesAllowed: number | null;
+    position: number;
     questions: Array<{
       id: string;
       questionMd: string;
       answerType: OfflineAnswerType;
       points: number;
-      answers: Array<{ id: string; text: string; isCorrect: boolean }>;
+      position: number;
+      answers: Array<{ id: string; text: string; isCorrect: boolean; position: number }>;
     }>;
   }>;
 };
@@ -139,6 +149,7 @@ export async function courseDetail(
     .select({
       id: offlineCourse.id,
       title: offlineCourse.title,
+      slug: offlineCourse.slug,
       status: offlineCourse.status,
       descriptionMd: offlineCourse.descriptionMd,
       thumbnailUrl: offlineCourse.thumbnailUrl,
@@ -154,6 +165,7 @@ export async function courseDetail(
         id: offlineLesson.id,
         title: offlineLesson.title,
         contentMd: offlineLesson.contentMd,
+        position: offlineLesson.position,
       })
       .from(offlineLesson)
       .where(scoped(offlineLesson.organizationId, orgId, eq(offlineLesson.courseId, courseId)))
@@ -166,6 +178,7 @@ export async function courseDetail(
         lessonId: offlineQuiz.lessonId,
         passingPercentage: offlineQuiz.passingPercentage,
         retriesAllowed: offlineQuiz.retriesAllowed,
+        position: offlineQuiz.position,
       })
       .from(offlineQuiz)
       .where(scoped(offlineQuiz.organizationId, orgId, eq(offlineQuiz.courseId, courseId)))
@@ -185,6 +198,7 @@ export async function courseDetail(
             contentMd: offlineTopic.contentMd,
             videoUrl: offlineTopic.videoUrl,
             videoShown: offlineTopic.videoShown,
+            position: offlineTopic.position,
           })
           .from(offlineTopic)
           .where(scoped(offlineTopic.organizationId, orgId, inArray(offlineTopic.lessonId, lessonIds)))
@@ -198,6 +212,7 @@ export async function courseDetail(
             questionMd: offlineQuestion.questionMd,
             answerType: offlineQuestion.answerType,
             points: offlineQuestion.points,
+            position: offlineQuestion.position,
           })
           .from(offlineQuestion)
           .where(
@@ -215,6 +230,7 @@ export async function courseDetail(
           questionId: offlineAnswer.questionId,
           text: offlineAnswer.text,
           isCorrect: offlineAnswer.isCorrect,
+          position: offlineAnswer.position,
         })
         .from(offlineAnswer)
         .where(
@@ -229,26 +245,33 @@ export async function courseDetail(
       ...l,
       topics: topics
         .filter((t) => t.lessonId === l.id)
-        .map(({ id, title, contentMd, videoUrl, videoShown }) => ({
+        .map(({ id, title, contentMd, videoUrl, videoShown, position }) => ({
           id,
           title,
           contentMd,
           videoUrl,
           videoShown,
+          position,
         })),
     })),
     quizzes: quizzes.map((q) => ({
       ...q,
       questions: questions
         .filter((qs) => qs.quizId === q.id)
-        .map(({ id, questionMd, answerType, points }) => ({
+        .map(({ id, questionMd, answerType, points, position }) => ({
           id,
           questionMd,
           answerType,
           points,
+          position,
           answers: answers
             .filter((a) => a.questionId === id)
-            .map(({ id: answerId, text, isCorrect }) => ({ id: answerId, text, isCorrect })),
+            .map(({ id: answerId, text, isCorrect, position: answerPosition }) => ({
+              id: answerId,
+              text,
+              isCorrect,
+              position: answerPosition,
+            })),
         })),
     })),
   };

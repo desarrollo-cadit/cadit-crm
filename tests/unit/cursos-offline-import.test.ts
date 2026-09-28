@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildImportPlan, thumbnailBasename } from "@/server/offline-courses/import-plan";
+import { buildImportPlan, decideUpsert, thumbnailBasename } from "@/server/offline-courses/import-plan";
 
 /**
  * cursos-offline — The pure half of the LearnDash import.
@@ -344,5 +344,40 @@ describe("thumbnailBasename", () => {
   it("nothing to name → null", () => {
     expect(thumbnailBasename(null)).toBeNull();
     expect(thumbnailBasename("https://old.example/")).toBeNull();
+  });
+});
+
+/**
+ * T11 — Content is edited from the staff UI, so a re-import must not undo
+ * those edits: by default existing rows are KEPT as they are; `--overwrite`
+ * brings back the old "the export wins" behaviour.
+ */
+describe("decideUpsert (importer policy)", () => {
+  const fields = ["title", "position"];
+  const row = { legacyRef: "topic:1", title: "Export title", position: 1 };
+
+  it("a row not in the database is inserted in both modes", () => {
+    expect(decideUpsert(undefined, row, fields, false)).toEqual({ kind: "insert" });
+    expect(decideUpsert(undefined, row, fields, true)).toEqual({ kind: "insert" });
+  });
+
+  it("without --overwrite an existing row is kept, even if it differs", () => {
+    const edited = { legacyRef: "topic:1", title: "Edited from the UI", position: 7 };
+    expect(decideUpsert(edited, row, fields, false)).toEqual({ kind: "kept" });
+    expect(decideUpsert({ ...row }, row, fields, false)).toEqual({ kind: "kept" });
+  });
+
+  it("with --overwrite only the differing fields are updated", () => {
+    const edited = { legacyRef: "topic:1", title: "Edited", position: 1 };
+    expect(decideUpsert(edited, row, fields, true)).toEqual({ kind: "update", changed: ["title"] });
+  });
+
+  it("with --overwrite an identical row is a no-op", () => {
+    expect(decideUpsert({ ...row }, row, fields, true)).toEqual({ kind: "noop" });
+  });
+
+  it("an undefined incoming value means 'leave it as it is'", () => {
+    const old = { legacyRef: "topic:1", title: "Export title", position: 1 };
+    expect(decideUpsert(old, { ...row, position: undefined }, fields, true)).toEqual({ kind: "noop" });
   });
 });

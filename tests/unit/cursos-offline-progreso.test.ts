@@ -116,6 +116,31 @@ describe("topicUnlocked", () => {
     expect(topicUnlocked(order, ["t1", "t2", "t3"], "zz")).toBe(false);
     expect(topicUnlocked([], [], "t1")).toBe(false);
   });
+
+  it("a completed topic is always open, whatever precedes it", () => {
+    // t3 was completed by a staff override while t2 is still pending.
+    expect(topicUnlocked(order, ["t3"], "t3")).toBe(true);
+  });
+
+  it("a topic inserted mid-course never locks the completed ones after it", () => {
+    // The student finished t1..t3; staff then inserts `new` between t1 and t2.
+    const edited = ["t1", "new", "t2", "t3"];
+    const done = ["t1", "t2", "t3"];
+    expect(topicUnlocked(edited, done, "t2")).toBe(true);
+    expect(topicUnlocked(edited, done, "t3")).toBe(true);
+    // …and the new one is reachable because its predecessor is complete.
+    expect(topicUnlocked(edited, done, "new")).toBe(true);
+  });
+
+  it("a topic inserted at the very start is reachable (it is the first)", () => {
+    expect(topicUnlocked(["new", "t1", "t2"], ["t1", "t2"], "new")).toBe(true);
+  });
+
+  it("a completed topic does not open a pending successor on its own", () => {
+    // `new` inserted before t2: t2 is open (completed) but nothing past a
+    // pending topic opens unless its predecessor is complete.
+    expect(topicUnlocked(["t1", "new", "x"], ["t1"], "x")).toBe(false);
+  });
 });
 
 describe("courseCompletion", () => {

@@ -310,7 +310,9 @@ export function isVideoComplete(playedRanges: PlayedRange[], duration: number): 
 /**
  * Topics open one after the other across the whole course (lesson → topic
  * order): the first is always open, topic k needs topic k-1 complete.
- * A topic outside the course is locked.
+ * A topic the student already completed is ALWAYS open (T11): staff may
+ * insert a topic mid-course, and that must never lock what was finished
+ * after it. A topic outside the course is locked.
  */
 export function topicUnlocked(
   orderedTopicIds: string[],
@@ -320,7 +322,8 @@ export function topicUnlocked(
   const index = orderedTopicIds.indexOf(topicId);
   if (index < 0) return false;
   if (index === 0) return true;
-  return new Set(completedTopicIds).has(orderedTopicIds[index - 1]!);
+  const completed = new Set(completedTopicIds);
+  return completed.has(topicId) || completed.has(orderedTopicIds[index - 1]!);
 }
 
 export interface CourseCompletionInput {

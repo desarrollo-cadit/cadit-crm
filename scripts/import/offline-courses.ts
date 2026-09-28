@@ -4,20 +4,26 @@
  *
  * Usage:
  *   pnpm import:offline-courses -- --file <courses.json> --map <quiz-map.json>
- *        [--media <dir>] [--org <organizationId>] [--apply]
+ *        [--media <dir>] [--org <organizationId>] [--overwrite] [--apply]
  *
- *   Without --apply it is a DRY-RUN: the whole upsert runs inside a
- *   transaction that is rolled back, so the report (insert / update / no-op /
- *   delete per table) is exact and the database is left untouched.
+ *   Without --apply it is a DRY-RUN: the whole import runs inside a
+ *   transaction that is rolled back, so the report (insert / update / kept /
+ *   no-op / delete per table) is exact and the database is left untouched.
  *
  * The client content never enters the repository (CadIT is MIT): both files
  * live next to the export and are passed by path.
  *
- * Idempotent (constitution IV): every row is upserted by
+ * Idempotent (constitution IV): every row is matched by
  * (organization_id, legacy_ref); existing ids are preserved, so attempts and
- * access rows keep pointing at the same content. Only questions/answers of a
- * RE-IMPORTED quiz that disappeared from the export are deleted — attempts keep
- * a text snapshot (`answers_given`), and attempts/access rows are never touched.
+ * access rows keep pointing at the same content.
+ *
+ * Policy since T11 (the content is edited from the staff UI): INSERT-ONLY by
+ * default. A row whose legacy_ref already exists is left untouched and
+ * reported as "kept" — edited from the UI or already imported, the import
+ * cannot tell and must not undo an edit. `--overwrite` restores "the export
+ * wins": differing fields are updated, and questions/answers of a re-imported
+ * quiz that disappeared from the export are deleted (attempts keep a text
+ * snapshot in `answers_given`). Attempts/access rows are never touched.
  *
  * Thumbnails: never hot-linked to the retired WordPress domain. With
  * `--media <dir>` each course thumbnail (file name = basename of the old URL)
@@ -40,7 +46,7 @@ import { eq, inArray, sql } from "drizzle-orm";
 import * as schema from "@/lib/db/schema";
 import { newId, type IdKind } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
-import { buildImportPlan, type ImportPlan } from "@/server/offline-courses/import-plan";
+import { buildImportPlan, decideUpsert, type ImportPlan } from "@/server/offline-courses/import-plan";
 
 /* ---------- CLI ---------- */
 
@@ -54,10 +60,11 @@ const mapFile = arg("map");
 const mediaDir = arg("media");
 const orgArg = arg("org");
 const apply = process.argv.includes("--apply");
+const overwrite = process.argv.includes("--overwrite");
 
 if (!file || !mapFile) {
   console.error(
-    "Usage: --file <courses.json> --map <quiz-map.json> [--media <dir>] [--org <organizationId>] [--apply]"
+    "Usage: --file <courses.json> --map <quiz-map.json> [--media <dir>] [--org <organizationId>] [--overwrite] [--apply]"
   );
   process.exit(1);
 }
@@ -74,7 +81,9 @@ const plan: ImportPlan = buildImportPlan(
 
 /* ---------- Plan report ---------- */
 
-console.log(`\n[offline-courses] ${apply ? "APPLY" : "DRY-RUN"} — plan from ${path.basename(file)}`);
+console.log(
+  `\n[offline-courses] ${apply ? "APPLY" : "DRY-RUN"} · ${overwrite ? "OVERWRITE (the export wins)" : "insert-only"} — plan from ${path.basename(file)}`
+);
 console.log(
   `  courses ${plan.courses.length} · lessons ${plan.lessons.length} · topics ${plan.topics.length}` +
     ` · quizzes ${plan.quizzes.length} · questions ${plan.questions.length} · answers ${plan.answers.length}`
@@ -91,10 +100,10 @@ for (const w of plan.warnings) console.log(`  warning: ${w}`);
 
 /* ---------- Upsert machinery ---------- */
 
-type Counts = { insert: number; update: number; noop: number; delete: number };
+type Counts = { insert: number; update: number; kept: number; noop: number; delete: number };
 const counts: Record<string, Counts> = {};
 const count = (table: string): Counts =>
-  (counts[table] ??= { insert: 0, update: 0, noop: 0, delete: 0 });
+  (counts[table] ??= { insert: 0, update: 0, kept: 0, noop: 0, delete: 0 });
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -108,9 +117,10 @@ type ContentTable =
   | typeof schema.offlineAnswer;
 
 /**
- * Upsert `rows` (already carrying resolved FK ids) by legacy_ref and return
- * legacy_ref → id for everything the plan contains. Only the listed `fields`
- * are compared, so a second run of the same file is all no-ops.
+ * Insert (or, with --overwrite, upsert) `rows` (already carrying resolved FK
+ * ids) by legacy_ref and return legacy_ref → id for everything the plan
+ * contains. What happens to an existing row is `decideUpsert`'s call; only the
+ * listed `fields` are compared, so a second --overwrite run is all no-ops.
  * `set as never` / `values as never`: one helper for six tables whose row
  * types drizzle cannot unify; the rows are built from the typed plan. Since the
  * compiler cannot check the column names there, the helper checks them at
@@ -134,13 +144,16 @@ async function upsert(
     .select()
     .from(table)
     .where(scoped(table.organizationId, orgId))) as Array<Record<string, unknown>>;
-  for (const r of current) existing.set(r.legacyRef as string, r);
+  // Rows created from the UI have no legacy_ref: nothing in the export matches them.
+  for (const r of current) if (typeof r.legacyRef === "string") existing.set(r.legacyRef, r);
 
   const ids = new Map<string, string>();
   const inserts: Array<Record<string, unknown>> = [];
   for (const row of rows) {
     const old = existing.get(row.legacyRef);
-    if (!old) {
+    // `undefined` in `row` = "leave as it is" (a course whose thumbnail was not resolved).
+    const decision = decideUpsert(old, row, fields, overwrite);
+    if (!old || decision.kind === "insert") {
       const id = newId(kind);
       ids.set(row.legacyRef, id);
       inserts.push({ ...row, id, organizationId: orgId });
@@ -148,14 +161,16 @@ async function upsert(
     }
     const id = old.id as string;
     ids.set(row.legacyRef, id);
-    // `undefined` = "leave as it is" (a course whose thumbnail was not resolved).
-    const changed = fields.filter((f) => row[f] !== undefined && old[f] !== row[f]);
-    if (changed.length === 0) {
+    if (decision.kind === "kept") {
+      c.kept++;
+      continue;
+    }
+    if (decision.kind === "noop") {
       c.noop++;
       continue;
     }
     const set: Record<string, unknown> = { updatedAt: new Date() };
-    for (const f of changed) set[f] = row[f];
+    for (const f of decision.changed) set[f] = row[f];
     await tx
       .update(table)
       .set(set as never)
@@ -201,6 +216,8 @@ async function resolveThumbnails(tx: Tx, orgId: string): Promise<Map<string, str
 
   for (const course of plan.courses) {
     if (!course.thumbnailFile) continue;
+    // Insert-only: an existing course keeps its thumbnail (maybe uploaded from the UI).
+    if (!overwrite && currentUrl.has(course.legacyRef)) continue;
     const source = path.join(mediaDir, course.thumbnailFile);
     const mimeType = MIME[path.extname(source).toLowerCase()];
     if (!existsSync(source) || !mimeType) {
@@ -325,8 +342,10 @@ async function run(tx: Tx, orgId: string) {
     ["questionId", "text", "isCorrect", "position"]
   );
 
-  // Stale questions/answers — ONLY inside the quizzes this run re-imported.
-  const reimported = [...quizIds.values()];
+  // Stale questions/answers — ONLY with --overwrite, and ONLY inside the
+  // quizzes this run re-imported. Without it, a question added or edited from
+  // the UI would be deleted by the next import.
+  const reimported = overwrite ? [...quizIds.values()] : [];
   if (reimported.length > 0) {
     const keepQuestions = new Set(questionIds.values());
     const keepAnswers = new Set(answerIds.values());
@@ -392,10 +411,15 @@ try {
     if (!(e instanceof DryRunRollback)) throw e;
   }
 
-  console.log(`\n  ${"table".padEnd(18)} insert  update  no-op  delete`);
+  console.log(`\n  ${"table".padEnd(18)} insert  update    kept  no-op  delete`);
   for (const [table, c] of Object.entries(counts)) {
     console.log(
-      `  ${table.padEnd(18)} ${String(c.insert).padStart(6)}  ${String(c.update).padStart(6)}  ${String(c.noop).padStart(5)}  ${String(c.delete).padStart(6)}`
+      `  ${table.padEnd(18)} ${String(c.insert).padStart(6)}  ${String(c.update).padStart(6)}  ${String(c.kept).padStart(6)}  ${String(c.noop).padStart(5)}  ${String(c.delete).padStart(6)}`
+    );
+  }
+  if (!overwrite) {
+    console.log(
+      "  kept = already in the database (edited from the UI or already imported), left untouched; --overwrite forces the export."
     );
   }
   console.log(

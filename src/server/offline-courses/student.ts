@@ -50,7 +50,8 @@ import {
  * order across the whole course, defined once in `outline.ts`). A locked
  * topic answers `null` exactly like a missing one: the gate lives here, not
  * in the UI, because a hidden link is still a typed URL away. Quizzes are NOT
- * gated (owner decision).
+ * gated (owner decision). T11: a topic the student already completed stays
+ * open even if staff later inserts a new topic before it.
  */
 
 const {

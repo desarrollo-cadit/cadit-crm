@@ -1995,9 +1995,11 @@ export const virtualRoom = pgTable(
  * quizzes. It never touches `course`/`cohort`/`enrollment`: a cohort only
  * POINTS at library courses through `offline_course_access`.
  *
- * Every content row carries `legacy_ref` (the LearnDash id, e.g. `quiz:1281`)
- * unique per organization, so re-running the import UPSERTS instead of
- * duplicating (constitution IV).
+ * Every IMPORTED content row carries `legacy_ref` (the LearnDash id, e.g.
+ * `quiz:1281`) unique per organization, so re-running the import finds its
+ * rows instead of duplicating them (constitution IV). Rows created from the
+ * staff editor (T11) have `legacy_ref` NULL (migration 0045); two NULLs never
+ * collide on the unique index, and the importer never matches them.
  */
 
 export const OFFLINE_COURSE_STATUSES = ["published", "draft"] as const;
@@ -2024,7 +2026,7 @@ export const offlineCourse = pgTable(
     organizationId: text("organization_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    legacyRef: text("legacy_ref").notNull(),
+    legacyRef: text("legacy_ref"),
     title: text("title").notNull(),
     slug: text("slug").notNull(),
     descriptionMd: text("description_md").notNull().default(""),
@@ -2050,7 +2052,7 @@ export const offlineLesson = pgTable(
     courseId: text("course_id")
       .notNull()
       .references(() => offlineCourse.id, { onDelete: "cascade" }),
-    legacyRef: text("legacy_ref").notNull(),
+    legacyRef: text("legacy_ref"),
     title: text("title").notNull(),
     contentMd: text("content_md").notNull().default(""),
     position: integer("position").notNull().default(0),
@@ -2073,7 +2075,7 @@ export const offlineTopic = pgTable(
     lessonId: text("lesson_id")
       .notNull()
       .references(() => offlineLesson.id, { onDelete: "cascade" }),
-    legacyRef: text("legacy_ref").notNull(),
+    legacyRef: text("legacy_ref"),
     title: text("title").notNull(),
     contentMd: text("content_md").notNull().default(""),
     position: integer("position").notNull().default(0),
@@ -2110,7 +2112,7 @@ export const offlineQuiz = pgTable(
       .notNull()
       .references(() => offlineCourse.id, { onDelete: "cascade" }),
     lessonId: text("lesson_id").references(() => offlineLesson.id, { onDelete: "set null" }),
-    legacyRef: text("legacy_ref").notNull(),
+    legacyRef: text("legacy_ref"),
     title: text("title").notNull(),
     descriptionMd: text("description_md").notNull().default(""),
     /** Passed = score >= this. 80 when LearnDash did not say. */
@@ -2142,7 +2144,7 @@ export const offlineQuestion = pgTable(
     quizId: text("quiz_id")
       .notNull()
       .references(() => offlineQuiz.id, { onDelete: "cascade" }),
-    legacyRef: text("legacy_ref").notNull(),
+    legacyRef: text("legacy_ref"),
     questionMd: text("question_md").notNull(),
     answerType: text("answer_type", { enum: OFFLINE_ANSWER_TYPES }).notNull(),
     points: integer("points").notNull().default(1),
@@ -2168,7 +2170,7 @@ export const offlineAnswer = pgTable(
     questionId: text("question_id")
       .notNull()
       .references(() => offlineQuestion.id, { onDelete: "cascade" }),
-    legacyRef: text("legacy_ref").notNull(),
+    legacyRef: text("legacy_ref"),
     text: text("text").notNull(),
     isCorrect: boolean("is_correct").notNull().default(false),
     position: integer("position").notNull().default(0),
