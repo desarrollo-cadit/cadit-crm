@@ -18,7 +18,9 @@
  *    course completion (every topic AND every quiz); viewing split across
  *    reports accumulates over the union of ranges (T9b);
  *  - teacher portal and staff attempt history, with their 404s;
- *  - the staff and portal pages render.
+ *  - the staff and portal pages render;
+ *  - T11 editor: a course built through the staff editing API (validation,
+ *    reorder, publish, 409 on deletes with history, 403 without academico.editar).
  *
  * The importer writes straight to DATABASE_URL, so the section refuses to run
  * unless that URL is the ephemeral `vocero_e2e` database.
@@ -671,4 +673,264 @@ export async function seccionCursosOffline({ api, ok, BASE, getCookie }) {
   );
   const portalCurso = await al1.como(`/portal/cursos-offline/${A.id}`);
   ok("UI portal: la página del curso responde 200", portalCurso.res.status === 200, `${portalCurso.res.status}`);
+
+  // ---- 10. Editor (T11): the whole course built from the staff API.
+  await seccionEditor({ api, ok, BASE, getCookie, cohId, A, alumno: al1, otraIp, sello });
+}
+
+/**
+ * cursos-offline T11 — Staff builds a course through the editing API: course,
+ * lessons, topics (Vimeo URL validated), reorder, quiz and questions (answer
+ * sets validated), thumbnail, publish, assign; the student sees it and its
+ * edits; a delete with student history is refused (409); a role without
+ * `academico.editar` reads but gets 403 on a write.
+ */
+async function seccionEditor({ api, ok, BASE, getCookie, cohId, A, alumno, otraIp, sello }) {
+  console.log("\n== cursos-offline T11: editor de contenido ==");
+  const base = "/api/offline-courses";
+  const send = (p, method, body) => api(p, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+
+  // Course: created as draft; a second one with the same title gets "-2".
+  const titulo = `Curso editor E2E ${sello}`;
+  const curso = await send(base, "POST", { title: titulo, descriptionMd: "Descripción **E2E**" });
+  const gemelo = await send(base, "POST", { title: titulo });
+  const C = curso.json?.id;
+  ok(
+    "editor: crear curso → 201 {id, slug}; el mismo título recibe slug -2",
+    curso.res.status === 201 && C && gemelo.res.status === 201 && gemelo.json?.slug === `${curso.json?.slug}-2`,
+    `${curso.res.status} ${JSON.stringify(curso.json)} | ${gemelo.res.status} ${JSON.stringify(gemelo.json)}`
+  );
+  if (!C) return;
+  const borrarGemelo = await send(`${base}/${gemelo.json?.id}`, "DELETE");
+  ok("editor: borrar un curso sin historial → 200", borrarGemelo.res.status === 200, `${borrarGemelo.res.status}`);
+  const cBase = `${base}/${C}`;
+
+  const l1 = await send(`${cBase}/lessons`, "POST", { title: "Lección editor 1" });
+  const l2 = await send(`${cBase}/lessons`, "POST", { title: "Lección editor 2", contentMd: "Intro" });
+  const L1 = l1.json?.id;
+  const L2 = l2.json?.id;
+  ok(
+    "editor: dos lecciones en posiciones 0 y 1",
+    l1.res.status === 201 && l2.res.status === 201 && l1.json?.position === 0 && l2.json?.position === 1,
+    `${l1.res.status} ${JSON.stringify(l1.json)} | ${l2.res.status} ${JSON.stringify(l2.json)}`
+  );
+
+  const conVideo = await send(`${cBase}/lessons/${L1}/topics`, "POST", {
+    title: "Tema con video E2E",
+    contentMd: "Mirá el video.",
+    videoUrl: "https://vimeo.com/900000123",
+    videoShown: "before",
+  });
+  const sinVideo = await send(`${cBase}/lessons/${L1}/topics`, "POST", {
+    title: "Tema sin video E2E",
+    contentMd: "Solo **texto** editado.",
+    videoUrl: "",
+  });
+  const malaUrl = await send(`${cBase}/lessons/${L1}/topics`, "POST", {
+    title: "Tema URL inválida",
+    videoUrl: "https://www.youtube.com/watch?v=abc",
+  });
+  const T1 = conVideo.json?.id;
+  const T2 = sinVideo.json?.id;
+  ok(
+    "editor: dos temas (uno con Vimeo); una URL que no es de Vimeo → 422 invalid_video_url",
+    conVideo.res.status === 201 &&
+      sinVideo.res.status === 201 &&
+      malaUrl.res.status === 422 &&
+      malaUrl.json?.error?.code === "invalid_video_url",
+    `${conVideo.res.status} ${sinVideo.res.status} ${malaUrl.res.status} ${JSON.stringify(malaUrl.json)}`
+  );
+
+  const orden = await send(`${cBase}/lessons/${L1}/topics/order`, "PUT", { ids: [T2, T1] });
+  const ordenMalo = await send(`${cBase}/lessons/${L1}/topics/order`, "PUT", { ids: [T1] });
+  const tras = (await api(cBase)).json?.course;
+  const idsL1 = tras?.lessons?.find((l) => l.id === L1)?.topics?.map((t) => t.id);
+  ok(
+    "editor: reordenar temas → el orden nuevo queda; una lista incompleta → 422 invalid_order",
+    orden.res.ok &&
+      JSON.stringify(idsL1) === JSON.stringify([T2, T1]) &&
+      ordenMalo.res.status === 422 &&
+      ordenMalo.json?.error?.code === "invalid_order",
+    `${orden.res.status} ${JSON.stringify(idsL1)} | ${ordenMalo.res.status}`
+  );
+
+  // A third topic, moved to lesson 2: it is the one deleted without history below.
+  const T3 = (await send(`${cBase}/lessons/${L1}/topics`, "POST", { title: "Tema a mover E2E" })).json?.id;
+  const mover = await send(`${cBase}/topics/${T3}`, "PATCH", { lessonId: L2 });
+  ok(
+    "editor: mover un tema a otra lección del curso",
+    mover.res.ok && mover.json?.lessonId === L2,
+    `${mover.res.status} ${JSON.stringify(mover.json)}`
+  );
+
+  const quiz = await send(`${cBase}/quizzes`, "POST", {
+    title: "Cuestionario editor E2E",
+    passingPercentage: 50,
+    retriesAllowed: 2,
+    lessonId: L1,
+  });
+  const Q = quiz.json?.id;
+  const qBase = `${cBase}/quizzes/${Q}/questions`;
+  const unica = await send(qBase, "POST", {
+    questionMd: "¿Cuánto es 1 + 1?",
+    answerType: "single",
+    answers: [
+      { text: "2", isCorrect: true },
+      { text: "3", isCorrect: false },
+    ],
+  });
+  const multiple = await send(qBase, "POST", {
+    questionMd: "¿Cuáles son pares?",
+    answerType: "multiple",
+    points: 2,
+    answers: [
+      { text: "2", isCorrect: true },
+      { text: "3", isCorrect: false },
+      { text: "4", isCorrect: true },
+    ],
+  });
+  const invalidos = [
+    { answerType: "single", answers: [{ text: "a", isCorrect: true }, { text: "b", isCorrect: true }] },
+    { answerType: "multiple", answers: [{ text: "a", isCorrect: false }, { text: "b", isCorrect: false }] },
+    { answerType: "single", answers: [{ text: "a", isCorrect: true }] },
+  ];
+  const codigos = [];
+  for (const body of invalidos) {
+    const r = await send(qBase, "POST", { questionMd: "Inválida", ...body });
+    codigos.push(`${r.res.status}:${r.json?.error?.code}`);
+  }
+  ok(
+    "editor: cuestionario con una pregunta única y una múltiple; conjuntos inválidos → 422 invalid_answers",
+    quiz.res.status === 201 &&
+      unica.res.status === 201 &&
+      multiple.res.status === 201 &&
+      codigos.every((c) => c === "422:invalid_answers"),
+    `${quiz.res.status} ${unica.res.status} ${multiple.res.status} ${JSON.stringify(codigos)}`
+  );
+  const noEncontrada = await send(`${cBase}/lessons/ole_no_existe`, "DELETE");
+  ok(
+    "editor: 404 con el género correcto («Lección no encontrada»)",
+    noEncontrada.res.status === 404 && noEncontrada.json?.error?.message === "Lección no encontrada",
+    `${noEncontrada.res.status} ${JSON.stringify(noEncontrada.json)}`
+  );
+
+  // Thumbnail: a 1×1 PNG goes in; a text file does not.
+  const PNG = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+    "base64"
+  );
+  const subir = async (blob, name) => {
+    const form = new FormData();
+    form.append("file", blob, name);
+    const res = await fetch(`${BASE}${cBase}/thumbnail`, {
+      method: "PUT",
+      headers: { cookie: getCookie(), origin: BASE },
+      body: form,
+    });
+    return { status: res.status, json: await res.json().catch(() => null) };
+  };
+  const png = await subir(new Blob([PNG], { type: "image/png" }), "portada.png");
+  const txt = await subir(new Blob(["hola"], { type: "text/plain" }), "portada.txt");
+  const verMiniatura = await api(`${cBase}/thumbnail`);
+  ok(
+    "editor: portada PNG → {thumbnailUrl} y se sirve; un .txt → 422 invalid_image",
+    png.status === 200 &&
+      /^\/api\/media\//.test(png.json?.thumbnailUrl ?? "") &&
+      verMiniatura.res.status === 200 &&
+      txt.status === 422 &&
+      txt.json?.error?.code === "invalid_image",
+    `${png.status} ${JSON.stringify(png.json)} | ${verMiniatura.res.status} | ${txt.status} ${JSON.stringify(txt.json)}`
+  );
+
+  // Publish + assign to the cohort (next to A, which it already had).
+  const publicar = await send(cBase, "PATCH", { status: "published" });
+  const asignar = await send(`/api/cohorts/${cohId}/offline-courses`, "PUT", { courseIds: [A.id, C] });
+  ok(
+    "editor: publicar y asignar a la cohorte",
+    publicar.res.ok && asignar.res.ok,
+    `${publicar.res.status} ${asignar.res.status} ${JSON.stringify(asignar.json)}`
+  );
+
+  // The student sees it, in the edited order, with its content.
+  const lista = (await alumno.como("/api/portal/me/offline-courses")).json?.courses ?? [];
+  const cursoC = (await alumno.como(`/api/portal/me/offline-courses/${C}`)).json?.course;
+  const temasL1 = cursoC?.lessons?.[0]?.topics?.map((t) => t.id);
+  const temaUrl = (id) => `/api/portal/me/offline-courses/${C}/topics/${id}`;
+  const leer = await alumno.como(temaUrl(T2));
+  const quizPortal = await alumno.como(`/api/portal/me/offline-courses/${C}/quizzes/${Q}`);
+  ok(
+    "portal: el alumno ve el curso nuevo, los temas en el orden editado y su contenido",
+    lista.some((c) => c.id === C) &&
+      JSON.stringify(temasL1) === JSON.stringify([T2, T1]) &&
+      leer.res.ok &&
+      leer.json?.topic?.topic?.contentMd === "Solo **texto** editado." &&
+      quizPortal.res.ok &&
+      (quizPortal.json?.quiz?.questions ?? []).length === 2 &&
+      !/is_?correct/i.test(quizPortal.text),
+    `${JSON.stringify(lista.map((c) => c.title))} ${JSON.stringify(temasL1)} ${leer.res.status} ${leer.text.slice(0, 200)} ${quizPortal.res.status}`
+  );
+
+  const renombrar = await send(`${cBase}/topics/${T2}`, "PATCH", { title: "Tema sin video E2E (editado)" });
+  const releer = await alumno.como(temaUrl(T2));
+  ok(
+    "portal: editar el título de un tema se ve en el portal",
+    renombrar.res.ok && releer.json?.topic?.topic?.title === "Tema sin video E2E (editado)",
+    `${renombrar.res.status} ${releer.text.slice(0, 200)}`
+  );
+
+  // History guards: the student completes T2; T3 has nobody.
+  const completar = await alumno.como(`${temaUrl(T2)}/progress`, {
+    method: "POST",
+    body: JSON.stringify({ noVideo: true }),
+  });
+  const borrarConHistoria = await send(`${cBase}/topics/${T2}`, "DELETE");
+  const borrarCurso = await send(cBase, "DELETE");
+  const borrarSinHistoria = await send(`${cBase}/topics/${T3}`, "DELETE");
+  ok(
+    "editor: borrar un tema (o el curso) con progreso → 409 has_history; uno sin progreso → 200",
+    completar.res.ok &&
+      borrarConHistoria.res.status === 409 &&
+      borrarConHistoria.json?.error?.code === "has_history" &&
+      borrarCurso.res.status === 409 &&
+      borrarSinHistoria.res.status === 200 &&
+      borrarSinHistoria.json?.id === T3,
+    `${completar.res.status} ${completar.text?.slice(0, 200)} | ${borrarConHistoria.res.status} ${JSON.stringify(borrarConHistoria.json)} | ${borrarCurso.res.status} | ${borrarSinHistoria.res.status}`
+  );
+
+  // The staff page is the editor for whoever can edit.
+  const pagina = await fetch(`${BASE}/cursos-offline/${C}`, { redirect: "manual", headers: { cookie: getCookie() } });
+  const html = await pagina.text();
+  ok(
+    "UI staff: con academico.editar la página del curso es el editor",
+    pagina.status === 200 && html.includes("Agregar lección") && html.includes("Agregar cuestionario"),
+    `${pagina.status}`
+  );
+
+  // A role with academico.ver but not academico.editar: reads, cannot write.
+  const email = `e2e.admin-offline-${sello}@vocero.test`;
+  const password = "password-admin-offline";
+  const alta = await api("/api/settings/team", {
+    method: "POST",
+    body: JSON.stringify({ name: "Administración Offline E2E", email, password, roleKey: "administracion" }),
+  });
+  const como = conJar(BASE, { cookie: "" });
+  const login = await como("/api/auth/sign-in/email", {
+    method: "POST",
+    headers: otraIp(),
+    body: JSON.stringify({ email, password }),
+  });
+  const leeBiblioteca = await como(base);
+  const escribe = await como(`${cBase}/lessons`, { method: "POST", body: JSON.stringify({ title: "No debería" }) });
+  const paginaLectura = await como(`/cursos-offline/${C}`);
+  ok(
+    "sin academico.editar: lee la biblioteca (200), escribir → 403, la página queda de solo lectura",
+    (alta.res.status === 201 || alta.res.status === 409) &&
+      login.res.ok &&
+      leeBiblioteca.res.status === 200 &&
+      escribe.res.status === 403 &&
+      paginaLectura.res.status === 200 &&
+      paginaLectura.text.includes("Tema con video E2E") &&
+      !paginaLectura.text.includes("Agregar lección"),
+    `${alta.res.status} ${JSON.stringify(alta.json)} ${login.res.status} ${leeBiblioteca.res.status} ${escribe.res.status} ${paginaLectura.res.status}`
+  );
 }

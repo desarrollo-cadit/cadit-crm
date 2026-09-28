@@ -55,12 +55,8 @@ export function editorResponse<T extends object>(result: EditorResult<T>, succes
   return Response.json(result.data, { status: successStatus });
 }
 
-const notFound = (what: string): EditorError => ({
-  ok: false,
-  status: 404,
-  code: "not_found",
-  message: `${what} no encontrado`,
-});
+/** The full phrase, not a noun: Spanish agrees in gender ("Lección no encontrada"). */
+const notFound = (message: string): EditorError => ({ ok: false, status: 404, code: "not_found", message });
 const invalid = (code: string, message: string): EditorError => ({ ok: false, status: 422, code, message });
 const ok = <T>(data: T): EditorResult<T> => ({ ok: true, data });
 const now = () => new Date();
@@ -242,7 +238,7 @@ export async function updateCourse(
   courseId: string,
   patch: CoursePatch
 ): Promise<EditorResult<{ id: string }>> {
-  if (!(await courseExists(orgId, courseId))) return notFound("Curso");
+  if (!(await courseExists(orgId, courseId))) return notFound("Curso no encontrado");
   await getDb()
     .update(offlineCourse)
     .set({ ...patch, updatedAt: now() })
@@ -252,7 +248,7 @@ export async function updateCourse(
 
 /** Blocked (409) with any attempt or progress below it; otherwise everything cascades. */
 export async function deleteCourse(orgId: string, courseId: string): Promise<EditorResult<{ id: string }>> {
-  if (!(await courseExists(orgId, courseId))) return notFound("Curso");
+  if (!(await courseExists(orgId, courseId))) return notFound("Curso no encontrado");
   const blocked = deleteGuard("course", {
     attempts: await attemptsWhere(orgId, eq(offlineQuiz.courseId, courseId)),
     progress: await progressWhere(orgId, eq(offlineLesson.courseId, courseId)),
@@ -279,7 +275,7 @@ export async function setCourseThumbnail(
   if (!limit.mimes.test(file.mimeType) || file.sizeBytes > limit.maxBytes || file.sizeBytes === 0) {
     return invalid("invalid_image", `Se espera una ${limit.label}.`);
   }
-  if (!(await courseExists(orgId, courseId))) return notFound("Curso");
+  if (!(await courseExists(orgId, courseId))) return notFound("Curso no encontrado");
 
   const assetId = newId("mediaAsset");
   const storagePath = await saveMediaFile(orgId, assetId, file.data);
@@ -303,7 +299,7 @@ export async function setCourseThumbnail(
 }
 
 export async function clearCourseThumbnail(orgId: string, courseId: string): Promise<EditorResult<{ id: string }>> {
-  if (!(await courseExists(orgId, courseId))) return notFound("Curso");
+  if (!(await courseExists(orgId, courseId))) return notFound("Curso no encontrado");
   await getDb()
     .update(offlineCourse)
     .set({ thumbnailUrl: null, updatedAt: now() })
@@ -320,7 +316,7 @@ export async function createLesson(
   courseId: string,
   body: LessonBody
 ): Promise<EditorResult<{ id: string; position: number }>> {
-  if (!(await courseExists(orgId, courseId))) return notFound("Curso");
+  if (!(await courseExists(orgId, courseId))) return notFound("Curso no encontrado");
   const id = newId("offlineLesson");
   const position = await nextPosition(
     offlineLesson,
@@ -344,7 +340,7 @@ export async function updateLesson(
   lessonId: string,
   patch: LessonPatch
 ): Promise<EditorResult<{ id: string }>> {
-  if (!(await lessonOf(orgId, courseId, lessonId))) return notFound("Lección");
+  if (!(await lessonOf(orgId, courseId, lessonId))) return notFound("Lección no encontrada");
   await getDb()
     .update(offlineLesson)
     .set({ ...patch, updatedAt: now() })
@@ -358,7 +354,7 @@ export async function deleteLesson(
   courseId: string,
   lessonId: string
 ): Promise<EditorResult<{ id: string }>> {
-  if (!(await lessonOf(orgId, courseId, lessonId))) return notFound("Lección");
+  if (!(await lessonOf(orgId, courseId, lessonId))) return notFound("Lección no encontrada");
   const blocked = deleteGuard("lesson", {
     ...noHistory,
     progress: await progressWhere(orgId, eq(offlineLesson.id, lessonId)),
@@ -369,7 +365,7 @@ export async function deleteLesson(
 }
 
 export async function reorderLessons(orgId: string, courseId: string, ids: string[]) {
-  if (!(await courseExists(orgId, courseId))) return notFound("Curso");
+  if (!(await courseExists(orgId, courseId))) return notFound("Curso no encontrado");
   return reorder(orgId, offlineLesson, offlineLesson.courseId, courseId, ids);
 }
 
@@ -383,7 +379,7 @@ export async function createTopic(
   lessonId: string,
   body: TopicBody
 ): Promise<EditorResult<{ id: string; position: number }>> {
-  if (!(await lessonOf(orgId, courseId, lessonId))) return notFound("Lección");
+  if (!(await lessonOf(orgId, courseId, lessonId))) return notFound("Lección no encontrada");
   const video = normalizeVideoUrl(body.videoUrl);
   if (!video.ok) return video;
   const id = newId("offlineTopic");
@@ -417,7 +413,7 @@ export async function updateTopic(
   patch: TopicPatch
 ): Promise<EditorResult<{ id: string; lessonId: string }>> {
   const topic = await topicOf(orgId, courseId, topicId);
-  if (!topic) return notFound("Tema");
+  if (!topic) return notFound("Tema no encontrado");
 
   const { lessonId: targetLessonId, videoUrl, ...fields } = patch;
   const set: Partial<typeof offlineTopic.$inferInsert> = { ...fields };
@@ -445,7 +441,7 @@ export async function updateTopic(
 }
 
 export async function deleteTopic(orgId: string, courseId: string, topicId: string): Promise<EditorResult<{ id: string }>> {
-  if (!(await topicOf(orgId, courseId, topicId))) return notFound("Tema");
+  if (!(await topicOf(orgId, courseId, topicId))) return notFound("Tema no encontrado");
   const blocked = deleteGuard("topic", {
     ...noHistory,
     progress: await progressWhere(orgId, eq(offlineTopic.id, topicId)),
@@ -456,7 +452,7 @@ export async function deleteTopic(orgId: string, courseId: string, topicId: stri
 }
 
 export async function reorderTopics(orgId: string, courseId: string, lessonId: string, ids: string[]) {
-  if (!(await lessonOf(orgId, courseId, lessonId))) return notFound("Lección");
+  if (!(await lessonOf(orgId, courseId, lessonId))) return notFound("Lección no encontrada");
   return reorder(orgId, offlineTopic, offlineTopic.lessonId, lessonId, ids);
 }
 
@@ -477,7 +473,7 @@ export async function createQuiz(
   courseId: string,
   body: QuizBody
 ): Promise<EditorResult<{ id: string; position: number }>> {
-  if (!(await courseExists(orgId, courseId))) return notFound("Curso");
+  if (!(await courseExists(orgId, courseId))) return notFound("Curso no encontrado");
   const lessonError = await checkQuizLesson(orgId, courseId, body.lessonId);
   if (lessonError) return lessonError;
   const id = newId("offlineQuiz");
@@ -507,7 +503,7 @@ export async function updateQuiz(
   quizId: string,
   patch: QuizPatch
 ): Promise<EditorResult<{ id: string }>> {
-  if (!(await quizOf(orgId, courseId, quizId))) return notFound("Cuestionario");
+  if (!(await quizOf(orgId, courseId, quizId))) return notFound("Cuestionario no encontrado");
   const lessonError = await checkQuizLesson(orgId, courseId, patch.lessonId);
   if (lessonError) return lessonError;
   await getDb()
@@ -518,7 +514,7 @@ export async function updateQuiz(
 }
 
 export async function deleteQuiz(orgId: string, courseId: string, quizId: string): Promise<EditorResult<{ id: string }>> {
-  if (!(await quizOf(orgId, courseId, quizId))) return notFound("Cuestionario");
+  if (!(await quizOf(orgId, courseId, quizId))) return notFound("Cuestionario no encontrado");
   const blocked = deleteGuard("quiz", {
     ...noHistory,
     attempts: await attemptsWhere(orgId, eq(offlineQuiz.id, quizId)),
@@ -529,7 +525,7 @@ export async function deleteQuiz(orgId: string, courseId: string, quizId: string
 }
 
 export async function reorderQuizzes(orgId: string, courseId: string, ids: string[]) {
-  if (!(await courseExists(orgId, courseId))) return notFound("Curso");
+  if (!(await courseExists(orgId, courseId))) return notFound("Curso no encontrado");
   return reorder(orgId, offlineQuiz, offlineQuiz.courseId, courseId, ids);
 }
 
@@ -551,7 +547,7 @@ export async function createQuestion(
   quizId: string,
   body: QuestionBody
 ): Promise<EditorResult<{ id: string; position: number }>> {
-  if (!(await quizOf(orgId, courseId, quizId))) return notFound("Cuestionario");
+  if (!(await quizOf(orgId, courseId, quizId))) return notFound("Cuestionario no encontrado");
   const answersError = validateAnswerSet(body.answerType, body.answers);
   if (answersError) return answersError;
   if (body.answers.some((a) => a.id !== undefined)) {
@@ -601,9 +597,9 @@ export async function updateQuestion(
   questionId: string,
   patch: QuestionPatch
 ): Promise<EditorResult<{ id: string }>> {
-  if (!(await quizOf(orgId, courseId, quizId))) return notFound("Cuestionario");
+  if (!(await quizOf(orgId, courseId, quizId))) return notFound("Cuestionario no encontrado");
   const question = await questionOf(orgId, quizId, questionId);
-  if (!question) return notFound("Pregunta");
+  if (!question) return notFound("Pregunta no encontrada");
 
   const existing = await answersOf(orgId, questionId);
   const finalType = patch.answerType ?? question.answerType;
@@ -624,7 +620,7 @@ export async function updateQuestion(
     .set({ ...fields, updatedAt: now() })
     .where(scoped(offlineQuestion.organizationId, orgId, eq(offlineQuestion.id, questionId)));
 
-  if (plan?.ok) {
+  if (plan) {
     const { update, insert, remove } = plan.data;
     if (remove.length > 0) {
       await db
@@ -661,8 +657,8 @@ export async function deleteQuestion(
   quizId: string,
   questionId: string
 ): Promise<EditorResult<{ id: string }>> {
-  if (!(await quizOf(orgId, courseId, quizId))) return notFound("Cuestionario");
-  if (!(await questionOf(orgId, quizId, questionId))) return notFound("Pregunta");
+  if (!(await quizOf(orgId, courseId, quizId))) return notFound("Cuestionario no encontrado");
+  if (!(await questionOf(orgId, quizId, questionId))) return notFound("Pregunta no encontrada");
   await getDb()
     .delete(offlineQuestion)
     .where(scoped(offlineQuestion.organizationId, orgId, eq(offlineQuestion.id, questionId)));
@@ -670,6 +666,6 @@ export async function deleteQuestion(
 }
 
 export async function reorderQuestions(orgId: string, courseId: string, quizId: string, ids: string[]) {
-  if (!(await quizOf(orgId, courseId, quizId))) return notFound("Cuestionario");
+  if (!(await quizOf(orgId, courseId, quizId))) return notFound("Cuestionario no encontrado");
   return reorder(orgId, offlineQuestion, offlineQuestion.quizId, quizId, ids);
 }

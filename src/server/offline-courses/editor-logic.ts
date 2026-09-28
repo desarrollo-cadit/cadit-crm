@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { parseVimeoUrl } from "@/lib/vimeo";
+import { answerSetProblem, MAX_ANSWERS, MIN_ANSWERS } from "@/lib/offline-course-editor";
 import { slugify } from "@/lib/utils";
 import {
   OFFLINE_ANSWER_TYPES,
@@ -66,29 +67,18 @@ export function uniqueSlug(title: string, taken: Iterable<string>): string {
  * Answers
  * ============================================================ */
 
-export const MIN_ANSWERS = 2;
-export const MAX_ANSWERS = 20;
+export { MAX_ANSWERS, MIN_ANSWERS };
 
 /**
- * A question the grader can answer: at least two options; single choice with
- * exactly ONE correct answer (two would make the right choice ambiguous),
- * multiple choice with at least one (none = nobody can ever get it right).
+ * A question the grader can answer. The rule and its messages live in
+ * `answerSetProblem` (client-safe), so the staff form checks exactly this.
  */
 export function validateAnswerSet(
   answerType: OfflineAnswerType,
   answers: Array<{ isCorrect: boolean }>
 ): EditorError | null {
-  if (answers.length < MIN_ANSWERS) {
-    return fail(422, "invalid_answers", `Una pregunta necesita al menos ${MIN_ANSWERS} respuestas.`);
-  }
-  const correct = answers.filter((a) => a.isCorrect).length;
-  if (answerType === "single" && correct !== 1) {
-    return fail(422, "invalid_answers", "Una pregunta de opción única necesita exactamente una respuesta correcta.");
-  }
-  if (answerType === "multiple" && correct < 1) {
-    return fail(422, "invalid_answers", "Una pregunta de opción múltiple necesita al menos una respuesta correcta.");
-  }
-  return null;
+  const problem = answerSetProblem(answerType, answers);
+  return problem ? fail(422, "invalid_answers", problem) : null;
 }
 
 export type AnswerInput = { id?: string; text: string; isCorrect: boolean };

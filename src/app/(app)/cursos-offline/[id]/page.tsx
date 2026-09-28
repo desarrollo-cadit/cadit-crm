@@ -1,19 +1,23 @@
 import { notFound, redirect } from "next/navigation";
-import { Check, Circle, ExternalLink, Video } from "lucide-react";
+import { Check, Circle, Video } from "lucide-react";
 import { getSessionOrNull } from "@/lib/auth/session";
 import { sessionCapabilities } from "@/lib/capabilities";
 import { withTenantTransaction } from "@/lib/db/with-tenant";
 import { courseDetail } from "@/server/offline-courses/library";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { Markdown } from "@/components/offline-courses/markdown";
-import { parseVimeoUrl, vimeoPageUrl } from "@/lib/vimeo";
 import { OfflineCourseStatusBadge } from "@/components/offline-courses/status-badge";
+import { TopicVideoLink } from "@/components/offline-courses/topic-video-link";
+import { CourseEditor } from "@/components/offline-courses/editor/course-editor";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
 /**
  * cursos-offline (T4) — One library course, read-only.
+ *
+ * T11b: with `academico.editar` the same page is the course editor; with
+ * only `academico.ver` it stays exactly this read-only view.
  *
  * Staff view: the quizzes show which answers are correct. That is exactly
  * what the student portal must never show, so this page and its query are
@@ -30,12 +34,32 @@ export default async function OfflineCoursePage({
   const { id } = await params;
   const session = await getSessionOrNull();
   if (!session) redirect("/login");
-  if (!sessionCapabilities(session).includes("academico.ver")) redirect("/");
+  const capabilities = sessionCapabilities(session);
+  if (!capabilities.includes("academico.ver")) redirect("/");
 
   const course = await withTenantTransaction(session, () =>
     courseDetail(session.organizationId, id)
   );
   if (!course) notFound();
+
+  if (capabilities.includes("academico.editar")) {
+    return (
+      <div className="h-full overflow-y-auto">
+        <div className="mx-auto max-w-4xl space-y-6 p-6">
+          <header className="space-y-2">
+            <Breadcrumb
+              items={[
+                { label: "Cursos offline", href: "/cursos-offline" },
+                { label: course.title, href: null },
+              ]}
+            />
+            <h2 className="text-lg font-semibold">{course.title}</h2>
+          </header>
+          <CourseEditor course={course} />
+        </div>
+      </div>
+    );
+  }
 
   const lessonTitle = new Map(course.lessons.map((l) => [l.id, l.title]));
 
@@ -183,32 +207,3 @@ function plural(n: number, one: string, many: string) {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-/**
- * Staff sees the link, not the player: this screen is for checking what was
- * imported, and the one embedded player (constitution 1.4.0) lives in the
- * student portal. The same parser decides "has a video" here and there, so a
-URL the portal would treat as "no video" says so here too.
- */
-function TopicVideoLink({ url, shown }: { url: string | null; shown: "before" | "after" }) {
-  const ref = parseVimeoUrl(url);
-  if (!ref) {
-    return <p className="text-xs text-muted-foreground">Sin video.</p>;
-  }
-  return (
-    <p className="flex flex-wrap items-center gap-x-2 text-xs">
-      <a
-        href={vimeoPageUrl(ref)}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex items-center gap-1 font-medium text-brand-text underline-offset-2 hover:underline"
-      >
-        <Video className="h-3.5 w-3.5" aria-hidden />
-        Ver video en Vimeo
-        <ExternalLink className="h-3 w-3" aria-hidden />
-      </a>
-      <span className="text-muted-foreground">
-        · se muestra {shown === "before" ? "antes" : "después"} del texto
-      </span>
-    </p>
-  );
-}

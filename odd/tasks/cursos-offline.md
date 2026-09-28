@@ -257,7 +257,19 @@ completion. Attempts keep score/passed/answers snapshot when a quiz is edited.
   writer (~1840 lines). Deviations: no userId arg (no author column; `app.current_actor`
   records the actor); replaced thumbnails leave the old media_asset row; slug fixed at
   creation.
-- [ ] T11b Editing UI (+ E2E + live browser check).
+- T11a commit `bc0c31b` (GGA passed).
+- [x] T11b Editing UI: "Nuevo curso"; course editor (title, description with preview,
+  Publicado/Borrador, cover upload/replace/remove, delete with 409 → "Pasar a
+  borrador"); lessons/topics/quizzes/questions sortable (drag, keyboard, Subir/Bajar;
+  server refusal reverts); topic dialog with live Vimeo validation; question dialog with
+  radio/checkbox answers sharing one rule with the server (`src/lib/offline-course-editor.ts`).
+  Read-only view kept for `academico.ver` only. Review fixes: gendered "no encontrada",
+  `if (plan)`. RED→GREEN on the UI helper. E2E section **73/73 ✅** (creates an
+  "Administración" user: reads OK, 403 on write). Browser (Playwright, staff, light +
+  dark): full create flow, drag + keyboard reorder (PUT 200), no console/hydration
+  errors; parent reviewed screenshots `t11b/04-editor-light.png`,
+  `06-topic-dialog-dark.png`. Checks: typecheck ✅ lint ✅ unit 1549 ✅ (parent re-ran)
+  build ✅. Route: delegated writer (~2400 lines, mostly UI).
 - [ ] T10 E2E extension (fixture with video_url, gating 404, progress, override) +
   re-import v2 locally after owner confirms quiz map.
 

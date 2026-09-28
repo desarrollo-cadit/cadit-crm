@@ -7,11 +7,13 @@ import { withTenantTransaction } from "@/lib/db/with-tenant";
 import { listCourses } from "@/server/offline-courses/library";
 import { thumbnailAssetId } from "@/server/offline-courses/portal-logic";
 import { OfflineCourseStatusBadge } from "@/components/offline-courses/status-badge";
+import { NewCourseButton } from "@/components/offline-courses/editor/new-course-button";
 
 export const dynamic = "force-dynamic";
 
 /**
  * cursos-offline (T4) — The library imported from LearnDash, for staff.
+ * T11b: with `academico.editar`, "Nuevo curso" creates one and opens its editor.
  *
  * Gated here and not only in the menu: hiding the link does not protect a URL
  * that can be typed. The read runs inside `withTenantTransaction` because a
@@ -21,7 +23,9 @@ export const dynamic = "force-dynamic";
 export default async function OfflineCoursesPage() {
   const session = await getSessionOrNull();
   if (!session) redirect("/login");
-  if (!sessionCapabilities(session).includes("academico.ver")) redirect("/");
+  const capabilities = sessionCapabilities(session);
+  if (!capabilities.includes("academico.ver")) redirect("/");
+  const canEdit = capabilities.includes("academico.editar");
 
   const courses = await withTenantTransaction(session, () =>
     listCourses(session.organizationId)
@@ -30,20 +34,25 @@ export default async function OfflineCoursesPage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="space-y-4 p-6">
-        <header>
-          <h2 className="flex items-center gap-2 font-semibold">
-            <Library className="h-5 w-5" aria-hidden />
-            Cursos offline
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Guías teóricas y cuestionarios importados de la academia anterior. Se asignan
-            desde cada cohorte, en la pestaña «Cursos offline».
-          </p>
+        <header className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="flex items-center gap-2 font-semibold">
+              <Library className="h-5 w-5" aria-hidden />
+              Cursos offline
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Guías teóricas y cuestionarios importados de la academia anterior.
+              Se asignan desde cada cohorte, en la pestaña «Cursos offline».
+            </p>
+          </div>
+          {canEdit && <NewCourseButton />}
         </header>
 
         {courses.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            La biblioteca está vacía. Los cursos se cargan con el script de importación.
+            {canEdit
+              ? "La biblioteca está vacía. Creá un curso con «Nuevo curso» o cargalos con el script de importación."
+              : "La biblioteca está vacía. Los cursos se cargan con el script de importación."}
           </p>
         ) : (
           <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
