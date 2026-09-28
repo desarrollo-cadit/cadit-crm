@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 
-type Resource = {
+export type Resource = {
   id: string;
   title: string;
   url: string;
@@ -29,19 +29,28 @@ const KIND_LABELS: Record<Resource["kind"], string> = {
  * carga; lo único que cambia es de qué cuelga.
  *
  * El sistema no almacena archivos: guarda dónde están (decisión marco).
+ *
+ * 029 — Con `initialItems` el panel NO pide nada: quien lo monta ya trajo el
+ * material de todas las clases en un solo pedido (la pestaña Clases). Alta y
+ * baja actualizan solo la lista de ESTE panel, sin volver a pedir. Sin
+ * `initialItems` funciona suelto, como siempre.
  */
 export function ResourcesPanel({
   courseId,
   classSessionId,
   canEdit,
+  initialItems,
 }: {
   courseId?: string;
   classSessionId?: string;
+  /** 029 — El material ya traído por quien monta el panel. */
+  initialItems?: Resource[];
   /** `academico.editar`. */
   canEdit: boolean;
 }) {
-  const [items, setItems] = useState<Resource[]>([]);
-  const [loading, setLoading] = useState(true);
+  const precargado = initialItems !== undefined;
+  const [items, setItems] = useState<Resource[]>(initialItems ?? []);
+  const [loading, setLoading] = useState(!precargado);
   const [error, setError] = useState<string | null>(null);
   const [abierto, setAbierto] = useState(false);
   const [title, setTitle] = useState("");
@@ -65,8 +74,9 @@ export function ResourcesPanel({
   }, [query]);
 
   useEffect(() => {
+    if (precargado) return;
     void refetch();
-  }, [refetch]);
+  }, [refetch, precargado]);
 
   async function agregar() {
     const res = await fetch("/api/resources", {
@@ -93,11 +103,26 @@ export function ResourcesPanel({
     setTitle("");
     setUrl("");
     setAbierto(false);
+    if (precargado) {
+      // Se suma lo que devolvió el servidor, no lo tipeado: así la fila lleva
+      // su id y se puede quitar sin volver a pedir la lista.
+      const creado = (await res.json().catch(() => null)) as { resource?: Resource } | null;
+      const nuevo = creado?.resource;
+      if (nuevo) {
+        setItems((prev) => [...prev, nuevo]);
+        return;
+      }
+    }
     void refetch();
   }
 
   async function quitar(id: string) {
-    await fetch(`/api/resources/${id}`, { method: "DELETE" }).catch(() => null);
+    const res = await fetch(`/api/resources/${id}`, { method: "DELETE" }).catch(() => null);
+    if (precargado) {
+      if (res?.ok) setItems((prev) => prev.filter((r) => r.id !== id));
+      else setError("No se pudo quitar el material");
+      return;
+    }
     void refetch();
   }
 
@@ -185,4 +210,43 @@ export function ResourcesPanel({
         ))}
     </div>
   );
+}
+
+/**
+ * 029 — El material de TODAS las clases de una cohorte, en UN pedido.
+ *
+ * `porClase` en `null` es "todavía no llegó" o "no se pudo traer" — nunca
+ * "no hay material": para eso está el objeto vacío. La pantalla no monta los
+ * paneles mientras sea `null`, porque un panel vacío afirmaría que la clase
+ * no tiene nada y ofrecería cargar lo que ya está.
+ */
+export function useClassMaterial(cohortId: string) {
+  const [porClase, setPorClase] = useState<Record<string, Resource[]> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const cargar = useCallback(
+    async (signal?: AbortSignal) => {
+      const res = await fetch(
+        `/api/resources?classesOfCohortId=${encodeURIComponent(cohortId)}`,
+        { signal }
+      ).catch(() => null);
+      // Un pedido cancelado (la pantalla se desmontó) no es un error que mostrar.
+      if (signal?.aborted) return;
+      if (!res?.ok) {
+        setError("No se pudo cargar el material de las clases");
+        return;
+      }
+      setPorClase(((await res.json()) as { byClass: Record<string, Resource[]> }).byClass);
+      setError(null);
+    },
+    [cohortId]
+  );
+
+  useEffect(() => {
+    const control = new AbortController();
+    void cargar(control.signal);
+    return () => control.abort();
+  }, [cargar]);
+
+  return { porClase, error, reintentar: cargar };
 }

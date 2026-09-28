@@ -561,15 +561,48 @@ describe("programGrading — el estado de la madre, compuesto sobre sus hijas (F
   it("aprobado sólo con TODAS las hijas aprobadas", async () => {
     colaDePrograma(
       [hija(), hija({ id: "enr_m2", cohortId: "coh_m2", position: 2 })],
-      [[], [], [], []]
+      [
+        [],
+        [],
+        [
+          { id: "as_1", cohortId: "coh_m1", name: "Entrega", required: true, position: 0 },
+          { id: "as_2", cohortId: "coh_m2", name: "Entrega", required: true, position: 0 },
+        ],
+        [
+          { assessmentId: "as_1", enrollmentId: "enr_m1", passed: true },
+          { assessmentId: "as_2", enrollmentId: "enr_m2", passed: true },
+        ],
+      ]
     );
     const { programGrading } = await import("@/server/grading");
     const r = await programGrading("org_1", "enr_madre");
 
-    // Sin evaluaciones cargadas y sin mínimo de asistencia, cada módulo
-    // aprueba por el default de `approvalState` — la planilla de cohorte.
     expect(r!.modules.map((m) => m.state)).toEqual(["aprobado", "aprobado"]);
     expect(r!.state).toBe("aprobado");
+  });
+
+  /**
+   * 030 — Sin evaluaciones obligatorias NI asistencia, el módulo es
+   * `sin_datos`: el default optimista de la planilla de cohorte no llega al
+   * recorrido de una persona, y la razón nombra el módulo.
+   */
+  it("un módulo sin datos no es aprobado y deja la especialización pendiente", async () => {
+    colaDePrograma(
+      [hija(), hija({ id: "enr_m2", cohortId: "coh_m2", position: 2 })],
+      [
+        [],
+        [],
+        [{ id: "as_1", cohortId: "coh_m1", name: "Entrega", required: true, position: 0 }],
+        [{ assessmentId: "as_1", enrollmentId: "enr_m1", passed: true }],
+      ]
+    );
+    const { programGrading } = await import("@/server/grading");
+    const r = await programGrading("org_1", "enr_madre");
+
+    expect(r!.modules.map((m) => m.state)).toEqual(["aprobado", "sin_datos"]);
+    expect(r!.state).toBe("pendiente");
+    expect(r!.reasons.join(" ")).toContain("Módulo 2");
+    expect(r!.reasons.join(" ")).toContain("sin datos");
   });
 
   /** FR-017 / SC-010 — el módulo que no empezó deja pendiente, no reprobado. */
@@ -597,8 +630,14 @@ describe("programGrading — el estado de la madre, compuesto sobre sus hijas (F
       [
         [],
         [],
-        [{ id: "as_1", cohortId: "coh_m2", name: "Entrega final", required: true, position: 0 }],
-        [{ assessmentId: "as_1", enrollmentId: "enr_m2", passed: false }],
+        [
+          { id: "as_0", cohortId: "coh_m1", name: "Entrega", required: true, position: 0 },
+          { id: "as_1", cohortId: "coh_m2", name: "Entrega final", required: true, position: 0 },
+        ],
+        [
+          { assessmentId: "as_0", enrollmentId: "enr_m1", passed: true },
+          { assessmentId: "as_1", enrollmentId: "enr_m2", passed: false },
+        ],
       ]
     );
     const { programGrading } = await import("@/server/grading");
@@ -989,5 +1028,46 @@ describe("getStudentRecord — la especialización con sus módulos (FR-031)", (
     const { getStudentRecord } = await import("@/server/student-record");
     const r = await getStudentRecord("org_1", "ct_1", []);
     expect(r!.courses[0]!.approval).not.toBe("aprobado");
+  });
+
+  /**
+   * SC-010 — el ordinal del legajo sale del PROGRAMA, igual que en el
+   * Recorrido. Quien no cursa el módulo 1 no puede ver su módulo 2 rotulado
+   * "Módulo 1": el legajo y la grilla dirían cosas distintas de la misma
+   * persona.
+   */
+  it("sin el módulo 1, el módulo 2 se sigue llamando Módulo 2", async () => {
+    selectQueue.push([CONTACTO]);
+    selectQueue.push([
+      filaLegajo({
+        enrollment: { id: "enr_madre" },
+        cohort: { id: "coh_padre", name: "EBIM 13" },
+        course: { name: "Especialización en Proyectos BIM" },
+      }),
+      filaLegajo({
+        enrollment: { id: "enr_m2", parentEnrollmentId: "enr_madre" },
+        cohort: {
+          id: "coh_m2",
+          name: "Revit Estructura",
+          courseId: "crs_2",
+          parentCohortId: "coh_padre",
+          position: 20,
+        },
+        course: { id: "crs_2", name: "Revit Estructura" },
+      }),
+    ]);
+    for (let i = 0; i < 5; i++) selectQueue.push([]);
+    // Los módulos del programa de la camada madre.
+    selectQueue.push([
+      { id: "coh_m1", position: 10, courseId: "crs_1", startDate: new Date("2026-04-22"), parentCohortId: "coh_padre" },
+      { id: "coh_m2", position: 20, courseId: "crs_2", startDate: new Date("2026-06-22"), parentCohortId: "coh_padre" },
+    ]);
+
+    const { getStudentRecord } = await import("@/server/student-record");
+    const r = await getStudentRecord("org_1", "ct_1", []);
+
+    const razones = r!.courses[0]!.approvalReasons.join(" ");
+    expect(razones).toContain("Módulo 2 — Revit Estructura");
+    expect(razones).not.toContain("Módulo 1");
   });
 });

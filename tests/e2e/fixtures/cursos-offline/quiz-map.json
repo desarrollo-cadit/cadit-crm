@@ -1,0 +1,13 @@
+{
+  "quizzes": {
+    "9001": { "status": "confirmed", "course": 9101, "lesson": 9201, "title": "Cuestionario simple E2E" },
+    "9002": { "status": "confirmed", "course": 9101, "title": "Cuestionario múltiple E2E" },
+    "9003": {
+      "status": "pending",
+      "course": 9102,
+      "reason": "E2E: waits for owner confirmation, must not be imported",
+      "title": "Cuestionario pendiente E2E"
+    },
+    "9004": { "status": "skip", "reason": "E2E: 0 questions", "title": "Cuestionario descartado E2E" }
+  }
+}

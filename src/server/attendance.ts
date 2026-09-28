@@ -1,7 +1,8 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
+import { etiquetaDeModulo, modulosConOrdinal } from "@/lib/program-order";
 
 /**
  * 009 — Clases dictadas y asistencia.
@@ -263,7 +264,10 @@ export async function generateSchedule(
       )
     )
     .limit(1);
-  if (modulos.length > 0) {
+  // 028 (seguimiento) — La marca también cuenta: una especialización todavía
+  // sin módulos tampoco tiene clases propias, y generarlas ahora dejaría
+  // cuarenta clases huérfanas el día que se le agregue el primero.
+  if (cohort.isSpecialization || modulos.length > 0) {
     return {
       ok: false,
       status: 422,
@@ -355,6 +359,185 @@ export function hoursFromTimes(start: string | null, end: string | null): number
   return Math.round((b - a) / 60);
 }
 
+/* ============================================================
+ * 029 — El cronograma de TODOS los módulos de una especialización
+ * ============================================================ */
+
+type ModuloParaCronograma = {
+  id: string;
+  name: string | null;
+  courseName: string;
+  position: number | null;
+  startDate: Date;
+  endDate: Date | null;
+  daysOfWeek: string | null;
+  startTime: string | null;
+  endTime: string | null;
+  teacherId: string | null;
+};
+
+export type MotivoDeSalteo = "ya_tiene_clases" | "sin_fecha_fin" | "sin_dias" | "sin_clases";
+
+export type CronogramaDelProgramaDto = {
+  generated: { cohortId: string; label: string; classes: number }[];
+  skipped: { cohortId: string; label: string; reason: MotivoDeSalteo; message: string }[];
+};
+
+const MOTIVO_DE_SALTEO: Record<MotivoDeSalteo, string> = {
+  ya_tiene_clases: "Ya tiene cronograma: no se regenera para no duplicar clases.",
+  sin_fecha_fin: "No tiene fecha de fin.",
+  sin_dias: "No declara días de cursada.",
+  sin_clases: "El rango de fechas y los días de cursada no producen ninguna clase.",
+};
+
+/**
+ * PURA — Qué se genera y qué se saltea, módulo por módulo.
+ *
+ * Cada módulo es una cohorte y se planifica con `buildClassSchedule`, la misma
+ * función que usa `generateSchedule`: no hay una segunda regla para "todos".
+ * Un módulo que no se puede generar NO frena a los demás; se dice por qué.
+ */
+export function planDeCronogramaDelPrograma(
+  modulos: readonly ModuloParaCronograma[],
+  conClases: ReadonlySet<string>
+) {
+  const filas: {
+    cohortId: string;
+    number: number;
+    date: Date;
+    startTime: string | null;
+    endTime: string | null;
+    hours: number | null;
+    teacherId: string | null;
+  }[] = [];
+  const resumen: CronogramaDelProgramaDto = { generated: [], skipped: [] };
+
+  for (const m of modulosConOrdinal(modulos)) {
+    const label = etiquetaDeModulo(m.ordinal, m.name ?? m.courseName);
+    const saltear = (reason: MotivoDeSalteo) =>
+      resumen.skipped.push({ cohortId: m.id, label, reason, message: MOTIVO_DE_SALTEO[reason] });
+
+    if (conClases.has(m.id)) {
+      saltear("ya_tiene_clases");
+      continue;
+    }
+    if (!m.endDate) {
+      saltear("sin_fecha_fin");
+      continue;
+    }
+    if (!m.daysOfWeek?.trim()) {
+      saltear("sin_dias");
+      continue;
+    }
+    const plan = buildClassSchedule(
+      m.startDate,
+      m.endDate,
+      m.daysOfWeek,
+      hoursFromTimes(m.startTime, m.endTime)
+    );
+    if (plan.length === 0) {
+      saltear("sin_clases");
+      continue;
+    }
+    for (const p of plan) {
+      filas.push({
+        cohortId: m.id,
+        number: p.number,
+        date: p.date,
+        startTime: m.startTime,
+        endTime: m.endTime,
+        hours: p.hours,
+        teacherId: m.teacherId,
+      });
+    }
+    resumen.generated.push({ cohortId: m.id, label, classes: plan.length });
+  }
+
+  return { filas, ...resumen };
+}
+
+/**
+ * 029 — Genera el cronograma de cada módulo que todavía no tiene, en UN
+ * insert. La ruta corre dentro de la transacción de `withAuth`, así que o
+ * entran todas las clases o ninguna.
+ *
+ * Solo sobre una especialización (la marca o la presencia de módulos, como
+ * `generateSchedule` al revés): en una cohorte común esto no tiene sentido.
+ */
+export async function generateProgramSchedule(
+  organizationId: string,
+  cohortId: string
+): Promise<AttendanceResult<CronogramaDelProgramaDto>> {
+  const db = getDb();
+
+  const [madre] = await db
+    .select({ id: schema.cohort.id, isSpecialization: schema.cohort.isSpecialization })
+    .from(schema.cohort)
+    .where(scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, cohortId)))
+    .limit(1);
+  if (!madre) {
+    return { ok: false, status: 404, code: "not_found", message: "Cohorte no encontrada" };
+  }
+
+  const modulos = await db
+    .select({
+      id: schema.cohort.id,
+      name: schema.cohort.name,
+      courseName: schema.course.name,
+      position: schema.cohort.position,
+      startDate: schema.cohort.startDate,
+      endDate: schema.cohort.endDate,
+      daysOfWeek: schema.cohort.daysOfWeek,
+      startTime: schema.cohort.startTime,
+      endTime: schema.cohort.endTime,
+      teacherId: schema.cohort.teacherId,
+    })
+    .from(schema.cohort)
+    .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
+    .where(
+      scoped(
+        schema.cohort.organizationId,
+        organizationId,
+        eq(schema.cohort.parentCohortId, cohortId)
+      )
+    );
+  if (!madre.isSpecialization && modulos.length === 0) {
+    return {
+      ok: false,
+      status: 422,
+      code: "not_a_program",
+      message: "Esta cohorte no es una especialización: generá su cronograma desde su pestaña Clases.",
+    };
+  }
+  if (modulos.length === 0) return { ok: true, data: { generated: [], skipped: [] } };
+
+  const conClases = new Set(
+    (
+      await db
+        .selectDistinct({ cohortId: schema.classSession.cohortId })
+        .from(schema.classSession)
+        .where(
+          scoped(
+            schema.classSession.organizationId,
+            organizationId,
+            inArray(
+              schema.classSession.cohortId,
+              modulos.map((m) => m.id)
+            )
+          )
+        )
+    ).map((r) => r.cohortId)
+  );
+
+  const { filas, generated, skipped } = planDeCronogramaDelPrograma(modulos, conClases);
+  if (filas.length > 0) {
+    await db
+      .insert(schema.classSession)
+      .values(filas.map((f) => ({ id: newId("classSession"), organizationId, ...f })));
+  }
+  return { ok: true, data: { generated, skipped } };
+}
+
 export async function listSessions(
   organizationId: string,
   cohortId: string
@@ -426,11 +609,21 @@ export async function markAttendance(
   }
   if (entries.length === 0) return { ok: true, data: { marked: 0 } };
 
+  /**
+   * 029 — UNA sentencia para toda la planilla, no una por alumno.
+   *
+   * Postgres rechaza un INSERT … ON CONFLICT que toca la misma fila dos veces,
+   * así que una inscripción repetida se compacta antes: gana la ÚLTIMA, que es
+   * lo que dejaba el bucle de antes.
+   */
+  const ultimaPorInscripcion = new Map<string, (typeof entries)[number]>();
+  for (const e of entries) ultimaPorInscripcion.set(e.enrollmentId, e);
+
   const now = new Date();
-  for (const e of entries) {
-    await db
-      .insert(schema.attendance)
-      .values({
+  await db
+    .insert(schema.attendance)
+    .values(
+      [...ultimaPorInscripcion.values()].map((e) => ({
         id: newId("attendance"),
         organizationId,
         classSessionId,
@@ -438,21 +631,21 @@ export async function markAttendance(
         status: e.status,
         notes: e.notes ?? null,
         recordedBy: recordedBy ?? null,
-      })
-      .onConflictDoUpdate({
-        target: [schema.attendance.classSessionId, schema.attendance.enrollmentId],
-        set: {
-          status: e.status,
-          notes: e.notes ?? null,
-          // La corrección pisa al autor anterior: quien vale es quien dejó el
-          // dato como está ahora, no quien lo puso mal la primera vez.
-          recordedBy: recordedBy ?? null,
-          updatedAt: now,
-        },
-      });
-  }
+      }))
+    )
+    .onConflictDoUpdate({
+      target: [schema.attendance.classSessionId, schema.attendance.enrollmentId],
+      set: {
+        status: sql`excluded.status`,
+        notes: sql`excluded.notes`,
+        // La corrección pisa al autor anterior: quien vale es quien dejó el
+        // dato como está ahora, no quien lo puso mal la primera vez.
+        recordedBy: sql`excluded.recorded_by`,
+        updatedAt: now,
+      },
+    });
 
-  return { ok: true, data: { marked: entries.length } };
+  return { ok: true, data: { marked: ultimaPorInscripcion.size } };
 }
 
 /** Cancela una clase. Deja de contar para el porcentaje de todos (FR-004). */
@@ -556,8 +749,9 @@ export async function cohortAttendance(
       eq(schema.attendance.classSessionId, schema.classSession.id)
     )
     .where(
-      and(
-        eq(schema.attendance.organizationId, organizationId),
+      scoped(
+        schema.attendance.organizationId,
+        organizationId,
         eq(schema.classSession.cohortId, cohortId)
       )
     );

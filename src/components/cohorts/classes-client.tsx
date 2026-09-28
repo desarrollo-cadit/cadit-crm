@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { CalendarDays, DoorOpen, Video, Link2 } from "lucide-react";
-import { ResourcesPanel } from "@/components/academic/resources-panel";
+import { ResourcesPanel, useClassMaterial } from "@/components/academic/resources-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -87,6 +87,11 @@ export function ClassesClient({
   const [aulas, setAulas] = useState<Aula[] | null>(null);
   const [aulasError, setAulasError] = useState<string | null>(null);
   const [guardandoAula, setGuardandoAula] = useState<string | null>(null);
+  /**
+   * 029 — El material de TODAS las filas en un solo pedido. Antes cada fila
+   * montaba su panel y pedía lo suyo: 100 clases, 100 requests.
+   */
+  const material = useClassMaterial(cohortId);
 
   const refetch = useCallback(async () => {
     const res = await fetch(`/api/cohorts/${cohortId}/classes`).catch(() => null);
@@ -268,6 +273,15 @@ export function ClassesClient({
         </div>
       )}
 
+      {material.error && (
+        <div className="flex flex-wrap items-center gap-3 rounded-md border border-danger-border bg-danger-soft px-3 py-2 text-sm">
+          <span>{material.error}</span>
+          <Button size="sm" variant="outline" onClick={() => void material.reintentar()}>
+            Reintentar
+          </Button>
+        </div>
+      )}
+
       {/* 013 (T014) — La proyección se distingue a simple vista, no en un
           tooltip: si no se nota, el equipo cree que son clases reales y se
           pregunta por qué no puede cancelar ninguna. */}
@@ -322,9 +336,13 @@ export function ClassesClient({
             {/* 013 (T023) — El material de ESTA clase, donde se lo busca.
                 Una proyección no puede tener material: todavía no existe como
                 clase a la cual colgarle nada. */}
-            {!c.projected && c.id && (
+            {!c.projected && c.id && material.porClase && (
               <span className="w-full order-last">
-                <ResourcesPanel classSessionId={c.id} canEdit={canEdit} />
+                <ResourcesPanel
+                  classSessionId={c.id}
+                  canEdit={canEdit}
+                  initialItems={material.porClase[c.id] ?? []}
+                />
               </span>
             )}
 

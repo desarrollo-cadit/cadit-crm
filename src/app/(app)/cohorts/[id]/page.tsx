@@ -1,8 +1,10 @@
 import { getSessionOrNull } from "@/lib/auth/session";
 import { sessionCapabilities } from "@/lib/capabilities";
 import { withTenantTransaction } from "@/lib/db/with-tenant";
-import { listarModulos } from "@/server/program-modules";
+import { cohorteEsEspecializacion } from "@/server/program-modules";
 import { CohortTabs } from "@/components/cohorts/cohort-tabs";
+import { CohortHeader } from "@/components/cohorts/cohort-header";
+import { encabezadoDeCohorte } from "@/server/cohort-header";
 
 export const dynamic = "force-dynamic";
 
@@ -25,9 +27,11 @@ export default async function CohortPage({
   // barrera.
   const caps = session ? sessionCapabilities(session) : [];
   /**
-   * 028 fase 4 (FR-033) — ¿Es la camada de una especialización? Se pregunta
-   * por la PRESENCIA de módulos, que es un dato, y no por una bandera de
-   * configuración ni por una heurística sobre el nombre del curso.
+   * 028 (seguimiento) — ¿Es la camada de una especialización? Se pregunta por
+   * la MARCA explícita (`cohort.is_specialization`), no por la presencia de
+   * módulos: una especialización recién creada no tiene ninguno, y es
+   * justamente la que necesita la pestaña para armarse. Tampoco por una
+   * heurística sobre el nombre del curso.
    *
    * Se resuelve acá y no con una llamada del cliente a propósito: las 33
    * cohortes simples tienen que seguir pidiendo exactamente los mismos
@@ -58,22 +62,34 @@ export default async function CohortPage({
    * no puede verla tampoco paga la consulta.
    */
   const puedeVerPrograma = caps.includes("academico.ver");
-  const modulos =
+  /**
+   * 029 — El encabezado (miga, nombre, fechas, módulo N de M) se lee en la
+   * MISMA transacción, con la misma capacidad que la pestaña de la
+   * especialización: dice lo mismo, de qué está hecha la cohorte.
+   */
+  const { isSpecialization, header } =
     session && puedeVerPrograma
-      ? await withTenantTransaction(session, () =>
-          listarModulos(session.organizationId, id)
-        )
-      : [];
+      ? await withTenantTransaction(session, async () => ({
+          isSpecialization: await cohorteEsEspecializacion(session.organizationId, id),
+          header: await encabezadoDeCohorte(session.organizationId, id),
+        }))
+      : { isSpecialization: false, header: null };
   return (
-    <CohortTabs
-      cohortId={id}
-      canEnroll={fullAccess}
-      canEditAcademic={caps.includes("academico.editar")}
-      canEditAttendance={caps.includes("asistencia.editar")}
-      canEditGrading={caps.includes("evaluacion.editar")}
-      canEditEnrollments={caps.includes("inscripciones.editar")}
-      canIssueCertificates={caps.includes("certificados.emitir")}
-      esEspecializacion={modulos.length > 0}
-    />
+    <div className="flex h-full flex-col">
+      {header ? <CohortHeader header={header} /> : null}
+      <div className="min-h-0 flex-1">
+        <CohortTabs
+          cohortId={id}
+          canEnroll={fullAccess}
+          canViewAcademic={puedeVerPrograma}
+          canEditAcademic={caps.includes("academico.editar")}
+          canEditAttendance={caps.includes("asistencia.editar")}
+          canEditGrading={caps.includes("evaluacion.editar")}
+          canEditEnrollments={caps.includes("inscripciones.editar")}
+          canIssueCertificates={caps.includes("certificados.emitir")}
+          esEspecializacion={isSpecialization}
+        />
+      </div>
+    </div>
   );
 }

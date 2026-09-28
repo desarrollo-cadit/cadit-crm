@@ -53,6 +53,17 @@ const prefixes = {
   // individual que le corre el plazo a UNA persona en UNA evaluación.
   submission: "sub",
   assessmentExtension: "ext",
+  // cursos-offline — the LearnDash content library, its quizzes, the attempts
+  // and who can read each course.
+  offlineCourse: "ocrs",
+  offlineLesson: "oles",
+  offlineTopic: "otop",
+  offlineQuiz: "oqz",
+  offlineQuestion: "oqst",
+  offlineAnswer: "oans",
+  offlineQuizAttempt: "oatt",
+  offlineCourseAccess: "oacc",
+  offlineTopicProgress: "otpg",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

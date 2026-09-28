@@ -1,0 +1,35 @@
+-- cursos-offline T9b — El progreso de video se ACUMULA entre sesiones.
+--
+-- Qué agrega y por qué:
+--
+--   `offline_topic_progress.played_ranges`
+--     Hasta la 0043 cada reporte del reproductor calculaba su propio ratio y
+--     se guardaba el máximo: quien veía 0–50% un día y 50–100% al siguiente
+--     nunca llegaba al 90%. Ahora se guardan los rangos reproducidos
+--     (`[{start, end}]` en segundos, fusionados, ordenados, a lo sumo 200) y
+--     el ratio se calcula sobre la UNIÓN de todo lo reportado.
+--
+--   `offline_topic_progress.video_duration`
+--     La duración sobre la que se calcula ese ratio. NULL hasta el primer
+--     reporte de video (temas sin video, marcas del staff).
+--
+-- ============================================================
+-- RLS
+-- ============================================================
+-- Solo se agregan columnas a una tabla que ya tiene `tenant_isolation`
+-- (0043): no hay política nueva que escribir.
+--
+-- ============================================================
+-- RE-EJECUTABLE (constitución IV)
+-- ============================================================
+-- `add column if not exists`.
+--
+-- ============================================================
+-- SIN REGRESIÓN
+-- ============================================================
+-- Las filas existentes quedan con `played_ranges = '[]'` y sin duración:
+-- conservan su `watched_ratio` (que nunca baja) y empiezan a acumular desde el
+-- próximo reporte.
+
+alter table "offline_topic_progress" add column if not exists "played_ranges" jsonb default '[]'::jsonb not null;--> statement-breakpoint
+alter table "offline_topic_progress" add column if not exists "video_duration" numeric;

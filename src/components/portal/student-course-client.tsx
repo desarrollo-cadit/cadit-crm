@@ -528,7 +528,13 @@ function ModulosTab({ modules }: { modules: Module[] }) {
             className="flex min-h-[64px] items-center gap-3.5 px-4 py-3 transition-colors hover:bg-accent"
           >
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold tabular-nums text-text-2">
-              {m.position ?? i + 1}
+              {/*
+                El LUGAR en la lista, nunca la `position` guardada: es una clave
+                de orden, y una especialización cargada 10/20/30 diría "30".
+                La lista ya viene ordenada y los sin orden van al final, así
+                que `i + 1` es el mismo ordinal que `modulosConOrdinal`.
+              */}
+              {m.position === null ? "·" : i + 1}
             </span>
 
             <span className="min-w-0 flex-1">

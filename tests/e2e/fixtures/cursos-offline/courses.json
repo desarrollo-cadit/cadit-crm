@@ -1,0 +1,139 @@
+{
+  "_comment": "Synthetic fixture for the cursos-offline E2E section. Same shape as the LearnDash export (see src/server/offline-courses/import-plan.ts); invented content, not client data.",
+  "courses": [
+    {
+      "id": 9101,
+      "title": "Curso E2E A",
+      "slug": "curso-e2e-a",
+      "status": "publish",
+      "description_md": "Curso de **prueba** para el arnés E2E.",
+      "thumbnail": null,
+      "lessons": [
+        {
+          "id": 9201,
+          "title": "Lección 1 E2E",
+          "content_md": "Introducción a la lección 1.",
+          "topics": [
+            {
+              "id": 9301,
+              "title": "Tema 1.1 E2E",
+              "content_md": "Texto en **negrita E2E**.\n\n- primer punto\n- segundo punto\n\n[Un enlace](https://example.com/e2e)\n\n<script>alert('e2e-xss')</script>",
+              "video_url": "https://vimeo.com/900000001",
+              "video_shown": "BEFORE"
+            },
+            {
+              "id": 9302,
+              "title": "Tema 1.2 E2E",
+              "content_md": "Segundo tema de la lección 1.",
+              "video_url": null,
+              "video_shown": "AFTER"
+            }
+          ]
+        },
+        {
+          "id": 9202,
+          "title": "Lección 2 E2E",
+          "content_md": "",
+          "topics": [
+            { "id": 9303, "title": "Tema 2.1 E2E", "content_md": "Primer tema de la lección 2.", "video_url": "https://player.vimeo.com/video/900000003", "video_shown": "AFTER" },
+            { "id": 9304, "title": "Tema 2.2 E2E", "content_md": "Último tema del curso A.", "video_url": "https://vimeo.com/900000004", "video_shown": "after" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 9102,
+      "title": "Curso E2E B",
+      "slug": "curso-e2e-b",
+      "status": "publish",
+      "description_md": "Segundo curso de prueba.",
+      "thumbnail": null,
+      "lessons": [
+        {
+          "id": 9203,
+          "title": "Lección única E2E",
+          "content_md": "",
+          "topics": [
+            { "id": 9305, "title": "Tema B E2E", "content_md": "El único tema del curso B.", "video_url": "https://vimeo.com/900000005", "video_shown": "AFTER" }
+          ]
+        }
+      ]
+    }
+  ],
+  "quizzes_all": [
+    {
+      "id": 9001,
+      "title": "Cuestionario simple E2E",
+      "description_md": "Dos preguntas de opción única.",
+      "passing_percentage": "80",
+      "retries_allowed": "1",
+      "questions": [
+        {
+          "sort": 1,
+          "question_md": "¿Cuánto es 2 + 2?",
+          "answer_type": "single",
+          "points": 1,
+          "answers": [
+            { "text": "3", "correct": false },
+            { "text": "4", "correct": true },
+            { "text": "5", "correct": false }
+          ]
+        },
+        {
+          "sort": 2,
+          "question_md": "¿De qué color es el cielo despejado?",
+          "answer_type": "single",
+          "points": 1,
+          "answers": [
+            { "text": "Azul", "correct": true },
+            { "text": "Verde", "correct": false }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 9002,
+      "title": "Cuestionario múltiple E2E",
+      "description_md": "",
+      "passing_percentage": null,
+      "retries_allowed": null,
+      "questions": [
+        {
+          "sort": 1,
+          "question_md": "¿Cuáles son números pares?",
+          "answer_type": "multiple",
+          "points": 2,
+          "answers": [
+            { "text": "2", "correct": true },
+            { "text": "3", "correct": false },
+            { "text": "4", "correct": true }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 9003,
+      "title": "Cuestionario pendiente E2E",
+      "description_md": "",
+      "passing_percentage": "80",
+      "retries_allowed": null,
+      "questions": [
+        {
+          "sort": 1,
+          "question_md": "Pregunta que no debe importarse",
+          "answer_type": "single",
+          "points": 1,
+          "answers": [{ "text": "Sí", "correct": true }]
+        }
+      ]
+    },
+    {
+      "id": 9004,
+      "title": "Cuestionario descartado E2E",
+      "description_md": "",
+      "passing_percentage": "80",
+      "retries_allowed": null,
+      "questions": []
+    }
+  ]
+}

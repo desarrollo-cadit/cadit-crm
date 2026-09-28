@@ -19,6 +19,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { cn, formatAmount } from "@/lib/utils";
 import { BillingBulkPanel } from "@/components/cohorts/billing-bulk-panel";
 import { BillingPanel } from "@/components/cohorts/billing-panel";
+import { OfflineCoursesPanel } from "@/components/offline-courses/offline-courses-panel";
 import { EnrollForm } from "@/components/enrollments/enroll-form";
 import { EnrollmentCommercialForm } from "@/components/enrollments/enrollment-commercial-form";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -83,8 +84,14 @@ const PAGE_SIZE = 20;
 export function RosterClient({
   cohortId,
   canEnroll = true,
+  canViewOfflineCourses = false,
+  canEditOfflineCourses = false,
 }: {
   cohortId: string;
+  /** cursos-offline — `academico.ver`: draw the per-student library panel. */
+  canViewOfflineCourses?: boolean;
+  /** cursos-offline — `academico.editar`: add / remove / reset per student. */
+  canEditOfflineCourses?: boolean;
   /** 005 iteración 6 (hallazgo del reviewer) — POST /api/enrollments acepta
    * datos financieros y exige `inscripciones.editar`; soporte no debe ver
    * un botón que le va a devolver 403. */
@@ -584,6 +591,19 @@ export function RosterClient({
                                   </span>
                                 )}
                               </div>
+
+                              {/* cursos-offline — Library access for THIS
+                                  student (exceptions over the cohort) and
+                                  their quiz attempts. Not financial, so it
+                                  sits outside the financial block. */}
+                              {canViewOfflineCourses && (
+                                <div className="mt-3 border-t pt-3">
+                                  <OfflineCoursesPanel
+                                    enrollmentId={e.id}
+                                    canEdit={canEditOfflineCourses}
+                                  />
+                                </div>
+                              )}
 
                               {/* Sección financiera — SOLO si el DTO la trae (rol con acceso completo). */}
                               {isFullAccess(e) && (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import type { CohortDto, CourseDto, SoftwareDto, TeacherDto } from "@/lib/types";
 import { cn, WEEKDAY_LABELS } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,20 @@ function toDateInput(iso: string | null) {
 }
 
 /**
+ * 028 (seguimiento) — La especialización de la que se está creando un módulo,
+ * desde su pestaña. Trae sus fechas para proponerlas: un módulo casi siempre
+ * cae dentro del período de su especialización.
+ */
+export type ModuloDe = {
+  id: string;
+  name: string;
+  startDate: string | null;
+  endDate: string | null;
+};
+
+type Tipo = "comun" | "especializacion";
+
+/**
  * 005 (T014, US1, FR-005) — alta/edición de una cohorte con toda la
  * información operativa: costo, horario, aula, temario, software y
  * profesor. `initial` presente = edición (PATCH); ausente = alta (POST).
@@ -26,6 +41,7 @@ export function CohortForm({
   software,
   cohorts,
   initial,
+  moduloDe,
   onClose,
   onSaved,
   onTeacherCreated,
@@ -33,17 +49,27 @@ export function CohortForm({
   courses: CourseDto[];
   teachers: TeacherDto[];
   software: SoftwareDto[];
-  /** 028 — Todas las camadas cargadas, para poder elegir la padre. */
-  cohorts: CohortDto[];
+  /**
+   * 028 — Las camadas cargadas. Ya no se ofrecen como madre (el módulo se
+   * crea desde la pestaña de su especialización); sirven para nombrar a la
+   * madre cuando se edita un módulo.
+   */
+  cohorts?: CohortDto[];
   initial?: CohortDto | null;
+  /** 028 (seguimiento) — Presente = alta de un módulo de esa especialización. */
+  moduloDe?: ModuloDe | null;
   onClose: () => void;
   onSaved: () => void;
   onTeacherCreated: (teacher: TeacherDto) => void;
 }) {
   const [courseId, setCourseId] = useState(initial?.courseId ?? courses[0]?.id ?? "");
   const [name, setName] = useState(initial?.name ?? "");
-  const [startDate, setStartDate] = useState(toDateInput(initial?.startDate ?? null));
-  const [endDate, setEndDate] = useState(toDateInput(initial?.endDate ?? null));
+  const [startDate, setStartDate] = useState(
+    toDateInput(initial?.startDate ?? moduloDe?.startDate ?? null)
+  );
+  const [endDate, setEndDate] = useState(
+    toDateInput(initial?.endDate ?? moduloDe?.endDate ?? null)
+  );
   const [teacherId, setTeacherId] = useState(initial?.teacher?.id ?? "");
   const [cost, setCost] = useState(initial?.cost?.toString() ?? "");
   const [frequency, setFrequency] = useState(initial?.frequency ?? "");
@@ -98,17 +124,35 @@ export function CohortForm({
     initial?.software.map((s) => s.id) ?? []
   );
   /**
-   * 028 fase 4 (FR-001/FR-002) — Armar la especialización: de qué camada es
-   * módulo esta cohorte, y en qué lugar.
+   * 028 (seguimiento) — Qué ES esta cohorte, decidido arriba de todo.
    *
-   * Vacío = cohorte suelta, que es el estado de las 33 simples y lo que sigue
-   * pasando si nadie toca nada (FR-032). Colgar y descolgar son la misma
-   * operación con distinto valor, y la regla del árbol —un solo nivel, nadie
-   * es su propio padre— la aplica `verificarPadreDeCohorte` en el servidor: el
-   * formulario ofrece, no valida.
+   * Antes el formulario tenía un selector de "camada padre" con cuarenta
+   * cohortes sin fechas y un número de orden crudo (10/20/30) que nunca se
+   * mostraba en ningún lado. Ahora:
+   *
+   * - una cohorte es **común** o **especialización**, y se elige primero;
+   * - un **módulo** no se arma acá: se agrega desde la pestaña de su
+   *   especialización, que ya sabe la madre y le asigna el lugar al final.
+   *
+   * Editar un módulo muestra de quién es, sin selector: mudarlo de programa
+   * no es algo que se haga desde el formulario genérico.
    */
-  const [parentCohortId, setParentCohortId] = useState(initial?.parentCohortId ?? "");
-  const [position, setPosition] = useState(initial?.position?.toString() ?? "");
+  const madreId = moduloDe?.id ?? initial?.parentCohortId ?? null;
+  const esModulo = madreId !== null;
+  const madreCargada = cohorts?.find((c) => c.id === madreId);
+  const nombreDeMadre =
+    moduloDe?.name ??
+    (madreCargada ? (madreCargada.name ?? madreCargada.courseName) : "su especialización");
+  const [tipo, setTipo] = useState<Tipo>(
+    initial?.isSpecialization ? "especializacion" : "comun"
+  );
+  /**
+   * Una especialización no dicta clases: sus clases son las de sus módulos
+   * (DV-009). Profesor, horario, días, aulas, enlace de reunión y software son
+   * de cada módulo, y ninguna pantalla los lee de la madre — pedirlos acá es
+   * invitar a cargar un dato que no va a usar nadie.
+   */
+  const esEspecializacion = !esModulo && tipo === "especializacion";
   const [newTeacherName, setNewTeacherName] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -164,30 +208,48 @@ export function CohortForm({
     }
     setSaving(true);
     setError(null);
+    /**
+     * Lo operativo viaja sólo cuando la cohorte dicta clases. En una
+     * especialización se OMITE —no se manda en null—: así editar una EBIM
+     * vieja que traía profesor u horario cargados no los borra de paso.
+     */
+    const operativo = esEspecializacion
+      ? {}
+      : {
+          teacherId: teacherId || null,
+          frequency: frequency.trim() || null,
+          startTime: startTime || null,
+          endTime: endTime || null,
+          daysOfWeek: daysOfWeek.length > 0 ? daysOfWeek.join(",") : null,
+          classroom: classroom.trim() || null,
+          meetingUrl: meetingUrl.trim() || null,
+          // Cadena vacía = "sin aula", y eso se manda como null: el schema del
+          // servidor acepta null y rechaza el string vacío.
+          virtualRoomId: virtualRoomId || null,
+          softwareIds,
+        };
+    /**
+     * El árbol: el alta de un módulo manda su madre y NO manda lugar —el
+     * servidor lo pone al final—. Editar un módulo no toca ni la madre ni el
+     * lugar (se reordena desde la pestaña). Una cohorte que no es módulo
+     * declara si es especialización; la coherencia la decide el servidor.
+     */
+    const arbol = moduloDe
+      ? { parentCohortId: moduloDe.id }
+      : esModulo
+        ? {}
+        : { isSpecialization: esEspecializacion };
     const payload = {
+      ...operativo,
+      ...arbol,
       courseId,
       name: name.trim() || null,
       startDate,
       endDate: endDate || null,
-      teacherId: teacherId || null,
       cost: cost.trim() ? Number(cost) : null,
-      frequency: frequency.trim() || null,
-      startTime: startTime || null,
-      endTime: endTime || null,
-      daysOfWeek: daysOfWeek.length > 0 ? daysOfWeek.join(",") : null,
-      classroom: classroom.trim() || null,
-      meetingUrl: meetingUrl.trim() || null,
-      // Cadena vacía = "sin aula", y eso se manda como null: el schema del
-      // servidor acepta null y rechaza el string vacío.
-      virtualRoomId: virtualRoomId || null,
       capacity: capacity.trim() ? Number(capacity) : null,
       whatsappGroupLink: whatsappGroupLink.trim() || null,
       minAttendancePct: minAttendancePct.trim() ? Number(minAttendancePct) : null,
-      // 028 — Cadena vacía = "no es módulo de nada", y se manda null explícito
-      // para poder DESCOLGAR: omitirlo dejaría el padre como está.
-      parentCohortId: parentCohortId || null,
-      position: parentCohortId && position.trim() ? Number(position) : null,
-      softwareIds,
     };
     const res = await fetch(
       initial ? `/api/cohorts/${initial.id}` : "/api/cohorts",
@@ -237,10 +299,77 @@ export function CohortForm({
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="mb-4 font-semibold">
-          {initial ? "Editar cohorte" : "Nueva cohorte"}
+          {moduloDe
+            ? `Nuevo módulo de ${moduloDe.name}`
+            : esModulo
+              ? "Editar módulo"
+              : initial
+                ? esEspecializacion
+                  ? "Editar especialización"
+                  : "Editar cohorte"
+                : esEspecializacion
+                  ? "Nueva especialización"
+                  : "Nueva cohorte"}
         </h3>
 
         <div className="space-y-3">
+          {/*
+            028 (seguimiento) — La primera decisión, y arriba de todo: qué ES
+            esta cohorte. Un módulo no la ofrece: dice de quién es.
+          */}
+          {esModulo ? (
+            <p className="rounded-md border bg-subtle px-3 py-2 text-xs text-muted-foreground">
+              Módulo de{" "}
+              {moduloDe ? (
+                <span className="font-medium text-foreground">{nombreDeMadre}</span>
+              ) : (
+                <Link
+                  href={`/cohorts/${madreId}`}
+                  className="font-medium text-foreground underline-offset-2 hover:underline"
+                >
+                  {nombreDeMadre}
+                </Link>
+              )}
+              . El orden se cambia desde la pestaña Especialización.
+            </p>
+          ) : (
+            <div className="space-y-1.5">
+              <div
+                role="radiogroup"
+                aria-label="Tipo de cohorte"
+                className="inline-flex gap-1 rounded-lg bg-secondary p-1"
+              >
+                {(
+                  [
+                    { key: "comun", label: "Cohorte común" },
+                    { key: "especializacion", label: "Especialización" },
+                  ] as const
+                ).map((t) => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    role="radio"
+                    aria-checked={tipo === t.key}
+                    className={cn(
+                      "rounded-md px-3.5 py-1.5 text-xs font-medium transition-colors",
+                      tipo === t.key
+                        ? "bg-card text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                    onClick={() => setTipo(t.key)}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {esEspecializacion
+                  ? "Un programa de varios módulos. Cada módulo es su propia cohorte, con profesor y horario; se agregan desde la pestaña Especialización."
+                  : "Una edición de un curso, con su profesor, su horario y sus clases."}
+              </p>
+            </div>
+          )}
+
           <div className="space-y-1.5">
             <Label htmlFor="cohort-course">Curso</Label>
             <select
@@ -291,6 +420,7 @@ export function CohortForm({
             </div>
           </div>
 
+          {!esEspecializacion && (
           <div className="space-y-1.5">
             <Label htmlFor="cohort-teacher">Profesor</Label>
             <div className="flex gap-2">
@@ -331,6 +461,7 @@ export function CohortForm({
               </Button>
             </div>
           </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
@@ -352,54 +483,6 @@ export function CohortForm({
                 value={capacity}
                 onChange={(e) => setCapacity(e.target.value)}
               />
-            </div>
-          </div>
-
-          {/*
-            028 fase 4 (US3) — Armar la especialización. Va junto al mínimo de
-            asistencia porque las dos son decisiones de la ESTRUCTURA de la
-            cursada, no del calendario ni de la venta.
-          */}
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="cohort-parent">Módulo de la especialización</Label>
-              <Select
-                id="cohort-parent"
-                value={parentCohortId}
-                onChange={(e) => setParentCohortId(e.target.value)}
-              >
-                <option value="">No es un módulo</option>
-                {cohorts
-                  // Un módulo no tiene sub-módulos y nadie es su propio padre
-                  // (FR-003/FR-004): se filtran acá para no ofrecer lo que el
-                  // servidor va a rechazar. La regla sigue siendo del servidor.
-                  .filter((c) => c.parentCohortId === null && c.id !== initial?.id)
-                  .map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name ?? c.courseName}
-                    </option>
-                  ))}
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                Elegí la camada de la que esta cohorte es un módulo. Vacío = cohorte
-                suelta.
-              </p>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="cohort-position">Orden dentro del programa</Label>
-              <Input
-                id="cohort-position"
-                type="number"
-                min={0}
-                disabled={!parentCohortId}
-                placeholder="10, 20, 30…"
-                value={position}
-                onChange={(e) => setPosition(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">
-                Ordena los módulos; no es el número que se muestra. Podés dejar huecos
-                (10, 20, 30) para insertar uno en el medio más adelante.
-              </p>
             </div>
           </div>
 
@@ -429,6 +512,8 @@ export function CohortForm({
             </p>
           </div>
 
+          {!esEspecializacion && (
+          <>
           <div className="space-y-1.5">
             <Label htmlFor="cohort-frequency">Horario</Label>
             <Input
@@ -572,6 +657,8 @@ export function CohortForm({
               ))}
             </div>
           </div>
+          </>
+          )}
         </div>
 
         {error && <p className="mt-3 text-xs text-destructive">{error}</p>}

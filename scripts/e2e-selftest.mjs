@@ -30,6 +30,8 @@
  */
 
 import { createHmac } from "node:crypto";
+import { seccion029 } from "./e2e/navegacion-029.mjs";
+import { seccionCursosOffline } from "./e2e/cursos-offline.mjs";
 
 const BASE = process.env.APP_BASE_URL ?? "http://localhost:3000";
 const BOT_KEY = process.env.BOT_API_KEY;
@@ -3426,15 +3428,19 @@ async function main() {
 
   const nombreCamada = `EBIM E2E ${sello028}`;
   const nombreCamadaSiguiente = `EBIM siguiente E2E ${sello028}`;
+  // 028 (seguimiento) — La madre se MARCA como especialización al crearla:
+  // desde la marca explícita, colgar un módulo de una cohorte común se rechaza.
   const camada = await cohorteNueva({
     courseId: cursoPrograma,
     name: nombreCamada,
     startDate: isoDia(20),
+    isSpecialization: true,
   });
   const camadaSiguiente = await cohorteNueva({
     courseId: cursoPrograma,
     name: nombreCamadaSiguiente,
     startDate: isoDia(60),
+    isSpecialization: true,
   });
 
   // Se cargan FUERA del orden de `position` a propósito: el orden que se ve
@@ -4626,6 +4632,269 @@ async function main() {
     pantallaAlumno016.status < 400 && pantallaProfe016.status < 400,
     `${pantallaAlumno016.status}/${pantallaProfe016.status}`
   );
+
+  // ============================================================
+  // 028 (seguimiento) — La especialización EXPLÍCITA, armada desde su pestaña.
+  //
+  // El dueño encontraba confuso armar un programa: nada marcaba a la madre,
+  // el selector de "camada padre" listaba cuarenta cohortes sin fechas, el
+  // orden se pedía como un número crudo y el listado mostraba madre y módulos
+  // como filas sueltas. Se conduce el camino nuevo entero, como lo haría la
+  // coordinación: crear la especialización, agregarle dos módulos DESDE LA
+  // PESTAÑA (navegador real), reordenarlos con ↑, verlos agrupados en el
+  // listado académico, e intentar desmarcarla con módulos (rechazado).
+  // ============================================================
+  console.log("\n== 028+: especialización explícita, armada desde la pestaña ==");
+
+  const selloEsp = Date.now();
+  const cursoDeEsp = async (name) =>
+    (
+      await api("/api/courses", {
+        method: "POST",
+        body: JSON.stringify({ name, published: false }),
+      })
+    ).json?.course?.id;
+  const cursoEspMadre = await cursoDeEsp(`Especialización UX E2E ${selloEsp}`);
+  const cursoEspA = await cursoDeEsp(`Módulo UX A E2E ${selloEsp}`);
+  const cursoEspB = await cursoDeEsp(`Módulo UX B E2E ${selloEsp}`);
+
+  const nombreEsp = `EBIM UX E2E ${selloEsp}`;
+  const esp = await cohorteNueva({
+    courseId: cursoEspMadre,
+    name: nombreEsp,
+    startDate: isoDia(10),
+    endDate: isoDia(120),
+    isSpecialization: true,
+  });
+  ok(
+    "crear una especialización marcada (201)",
+    esp.status === 201 && Boolean(esp.id),
+    `${esp.status} ${JSON.stringify(esp.json)}`
+  );
+  const espLeida = (await api(`/api/cohorts/${esp.id}`)).json?.cohort;
+  ok(
+    "la marca se persiste: `isSpecialization` vuelve en true",
+    espLeida?.isSpecialization === true,
+    JSON.stringify(espLeida?.isSpecialization)
+  );
+
+  const espVacia = (await api(`/api/cohorts/${esp.id}/program`)).json;
+  ok(
+    "recién creada no tiene módulos, y el programa lo dice con una lista vacía",
+    Array.isArray(espVacia?.modules) && espVacia.modules.length === 0,
+    JSON.stringify(espVacia)
+  );
+
+  // La regla nueva: sólo una especialización puede ser madre.
+  const comunEsp = await cohorteNueva({
+    courseId: cursoEspA,
+    name: `Cohorte común UX ${selloEsp}`,
+    startDate: isoDia(10),
+  });
+  const colgadaDeComun = await cohorteNueva({
+    courseId: cursoEspA,
+    name: `Módulo colgado de una común ${selloEsp}`,
+    startDate: isoDia(10),
+    parentCohortId: comunEsp.id,
+  });
+  ok(
+    "colgar un módulo de una cohorte COMÚN se rechaza (422)",
+    comunEsp.status === 201 &&
+      colgadaDeComun.status === 422 &&
+      /no es una especializaci/.test(colgadaDeComun.json?.error?.message ?? ""),
+    `${comunEsp.status}/${colgadaDeComun.status} ${JSON.stringify(colgadaDeComun.json?.error)}`
+  );
+  const moduloMarcado = await cohorteNueva({
+    courseId: cursoEspA,
+    name: `Módulo marcado ${selloEsp}`,
+    startDate: isoDia(10),
+    parentCohortId: esp.id,
+    isSpecialization: true,
+  });
+  ok(
+    "un módulo no puede estar marcado como especialización (422)",
+    moduloMarcado.status === 422,
+    `${moduloMarcado.status} ${JSON.stringify(moduloMarcado.json?.error)}`
+  );
+
+  // ---- Navegador real: la pestaña, el formulario en modo módulo, ↑ y el listado.
+  const nombreModA = `UX Módulo A ${selloEsp}`;
+  const nombreModB = `UX Módulo B ${selloEsp}`;
+  let navegador = null;
+  try {
+    const { chromium } = await import("playwright");
+    navegador = await chromium.launch();
+    const contexto = await navegador.newContext();
+    const url = new URL(BASE);
+    await contexto.addCookies(
+      cookie
+        .split("; ")
+        .filter(Boolean)
+        .map((par) => {
+          const i = par.indexOf("=");
+          return {
+            name: par.slice(0, i),
+            value: par.slice(i + 1),
+            domain: url.hostname,
+            path: "/",
+          };
+        })
+    );
+    const pagina = await contexto.newPage();
+
+    // Hasta que hidrata, el botón existe pero no responde (y la red nunca queda
+    // quieta: /api/events es SSE). Se reintenta el clic hasta ver el contenido.
+    await pagina.goto(`${BASE}/cohorts/${esp.id}`, { timeout: 120000 });
+    // 029 — La pestaña se llama Recorrido y es la de entrada de la madre.
+    const pestana = pagina.getByRole("button", { name: "Recorrido", exact: true });
+    await pestana.waitFor({ timeout: 30000 });
+    ok("la pestaña Recorrido aparece aunque todavía no haya módulos", true);
+    const vacio = pagina.getByText("Esta especialización todavía no tiene módulos");
+    for (let intento = 0; intento < 30 && !(await vacio.isVisible()); intento++) {
+      await pestana.click();
+      await vacio.waitFor({ timeout: 2000 }).catch(() => {});
+    }
+    await vacio.waitFor({ timeout: 5000 });
+    ok("el estado vacío explica qué es y ofrece agregar", true);
+
+    async function agregarModulo(courseId, nombre) {
+      await pagina.getByRole("button", { name: /Agregar módulo/ }).first().click();
+      await pagina.locator("#cohort-course").waitFor({ timeout: 15000 });
+      await pagina.locator("#cohort-course").selectOption(courseId);
+      await pagina.locator("#cohort-name").fill(nombre);
+      await pagina.getByRole("button", { name: "Guardar" }).click();
+      await pagina.getByText(nombre).first().waitFor({ timeout: 15000 });
+    }
+
+    // El formulario en modo módulo: la madre fija, sin selector ni número de orden.
+    await pagina.getByRole("button", { name: /Agregar módulo/ }).first().click();
+    await pagina.locator("#cohort-course").waitFor({ timeout: 15000 });
+    const sinSelectorDeMadre = (await pagina.locator("#cohort-parent").count()) === 0;
+    const sinNumeroDeOrden = (await pagina.locator("#cohort-position").count()) === 0;
+    const fechaPropuesta = await pagina.locator("#cohort-start").inputValue();
+    ok(
+      "modo módulo: sin selector de madre ni número de orden, con las fechas de la especialización propuestas",
+      sinSelectorDeMadre && sinNumeroDeOrden && fechaPropuesta === isoDia(10).slice(0, 10),
+      `${sinSelectorDeMadre}/${sinNumeroDeOrden}/${fechaPropuesta}`
+    );
+    await pagina.getByRole("button", { name: "Cancelar" }).click();
+
+    await agregarModulo(cursoEspA, nombreModA);
+    await agregarModulo(cursoEspB, nombreModB);
+
+    const trasAlta = (await api(`/api/cohorts/${esp.id}/program`)).json;
+    ok(
+      "dos módulos agregados desde la pestaña, en el orden de alta",
+      JSON.stringify((trasAlta?.modules ?? []).map((m) => m.name)) ===
+        JSON.stringify([nombreModA, nombreModB]),
+      JSON.stringify((trasAlta?.modules ?? []).map((m) => m.name))
+    );
+    ok(
+      "el lugar lo pone el servidor, al final y con hueco (10, 20)",
+      JSON.stringify((trasAlta?.modules ?? []).map((m) => m.position)) ===
+        JSON.stringify([10, 20]),
+      JSON.stringify((trasAlta?.modules ?? []).map((m) => m.position))
+    );
+
+    // ↑ sobre el segundo: pasa a ser el primero.
+    await pagina.getByRole("button", { name: `Subir Módulo 2 — ${nombreModB}` }).click();
+    await pagina.getByText(`Módulo 1 — ${nombreModB}`).first().waitFor({ timeout: 15000 });
+    const trasSubir = (await api(`/api/cohorts/${esp.id}/program`)).json;
+    ok(
+      "↑ reordena: el módulo B pasa a ser el Módulo 1",
+      JSON.stringify((trasSubir?.modules ?? []).map((m) => m.label)) ===
+        JSON.stringify([`Módulo 1 — ${nombreModB}`, `Módulo 2 — ${nombreModA}`]),
+      JSON.stringify((trasSubir?.modules ?? []).map((m) => m.label))
+    );
+
+    // El listado académico: la madre con su insignia, los módulos adentro.
+    await pagina.goto(`${BASE}/academico`, { timeout: 120000 });
+    await pagina.getByRole("button", { name: "Cohortes", exact: true }).click();
+    const filaMadre = pagina.locator("li", { hasText: nombreEsp }).first();
+    await filaMadre.waitFor({ timeout: 30000 });
+    const insigniaDeMadre = filaMadre.getByRole("button", { name: /Especialización · 2 módulos/ });
+    await insigniaDeMadre.waitFor({ timeout: 15000 });
+    const sueltoAntes = await pagina.getByText(`Módulo 1 — ${nombreModB}`).count();
+    ok(
+      "listado: la madre lleva “Especialización · 2 módulos” y arranca plegada",
+      sueltoAntes === 0 && (await insigniaDeMadre.count()) === 1,
+      `módulos visibles antes de desplegar: ${sueltoAntes}`
+    );
+    // Los módulos NO aparecen como filas sueltas: con la madre plegada, el
+    // nombre de ningún módulo está en la pantalla. (Por el CURSO no sirve: la
+    // cohorte común de arriba comparte curso con el módulo A y es suelta.)
+    const filasSueltasDeModulo =
+      (await pagina.getByText(nombreModA).count()) +
+      (await pagina.getByText(nombreModB).count());
+    await insigniaDeMadre.click();
+    await pagina.getByText(`Módulo 1 — ${nombreModB}`).first().waitFor({ timeout: 15000 });
+    await pagina.getByText(`Módulo 2 — ${nombreModA}`).first().waitFor({ timeout: 15000 });
+    ok(
+      "desplegada: los módulos aparecen adentro, rotulados con su ordinal, y no como filas sueltas",
+      filasSueltasDeModulo === 0,
+      `filas sueltas con el curso del módulo: ${filasSueltasDeModulo}`
+    );
+  } catch (err) {
+    ok("recorrido en el navegador de la especialización", false, String(err?.message ?? err));
+  } finally {
+    await navegador?.close().catch(() => {});
+  }
+
+  // Reordenar con una lista que no es la de sus módulos se rechaza.
+  const ordenAjeno = await api(`/api/cohorts/${esp.id}/modules/order`, {
+    method: "PUT",
+    body: JSON.stringify({ order: [comunEsp.id] }),
+  });
+  ok(
+    "reordenar con un módulo ajeno se rechaza (422)",
+    ordenAjeno.res.status === 422,
+    `${ordenAjeno.res.status} ${JSON.stringify(ordenAjeno.json?.error)}`
+  );
+
+  // Desmarcar con módulos colgando: rechazado, con un mensaje que se entiende.
+  const desmarcar = await api(`/api/cohorts/${esp.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ isSpecialization: false }),
+  });
+  const sigueMarcada = (await api(`/api/cohorts/${esp.id}`)).json?.cohort?.isSpecialization;
+  ok(
+    "desmarcar una especialización que tiene módulos se rechaza (422) y la marca queda",
+    desmarcar.res.status === 422 &&
+      /todavía tiene módulos/.test(desmarcar.json?.error?.message ?? "") &&
+      sigueMarcada === true,
+    `${desmarcar.res.status} ${JSON.stringify(desmarcar.json?.error)} marcada=${sigueMarcada}`
+  );
+
+  // La especialización vacía no genera clases propias (DV-009 con la marca).
+  const espSinModulos = await cohorteNueva({
+    courseId: cursoEspMadre,
+    name: `Especialización vacía ${selloEsp}`,
+    startDate: isoDia(10),
+    endDate: isoDia(40),
+    daysOfWeek: "0,2",
+    isSpecialization: true,
+  });
+  const genVacia = await api(`/api/cohorts/${espSinModulos.id}/schedule`, { method: "POST" });
+  ok(
+    "una especialización SIN módulos tampoco genera clases propias (422)",
+    genVacia.res.status === 422 && genVacia.json?.error?.code === "camada_con_modulos",
+    `${genVacia.res.status} ${JSON.stringify(genVacia.json?.error)}`
+  );
+  const desmarcarVacia = await api(`/api/cohorts/${espSinModulos.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ isSpecialization: false }),
+  });
+  ok(
+    "desmarcar una especialización vacía sí se permite",
+    desmarcarVacia.res.ok,
+    `${desmarcarVacia.res.status} ${JSON.stringify(desmarcarVacia.json?.error)}`
+  );
+
+  // 029 — Navegación, material en un pedido y agregados de la especialización.
+  await seccion029({ api, ok, BASE, getCookie: () => cookie });
+
+  // cursos-offline — Biblioteca importada de LearnDash, acceso y cuestionarios.
+  await seccionCursosOffline({ api, ok, BASE, getCookie: () => cookie });
 
   console.log(`\n===== ${checks - failures}/${checks} checks OK, ${failures} fallos =====`);
   process.exit(failures > 0 ? 1 : 0);

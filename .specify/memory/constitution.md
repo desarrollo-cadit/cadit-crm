@@ -1,7 +1,18 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Versión: 1.2.0 → 1.3.0
+Versión: 1.3.0 → 1.4.0
+
+Cambios (1.4.0, 2026-09-25):
+  - Principio II: se AGREGA el reproductor embebido de Vimeo como cuarta
+    dependencia de runtime permitida, para los videos de los cursos offline
+    que la academia YA aloja en Vimeo. Solo el NAVEGADOR carga el iframe
+    oficial (`player.vimeo.com`): el servidor no llama a Vimeo, no hay tokens
+    ni credenciales de API y el CRM no almacena video. Aislado tras UN
+    componente; un curso sin video sigue funcionando. Decisión del dueño del
+    producto (feature cursos-offline, export v2).
+  Bump: MINOR (1.3.0 → 1.4.0) — amplía la lista cerrada del Principio II sin
+  redefinir principios existentes.
 
 Cambios (1.3.0, 2026-08-17):
   - Principio II: se AGREGA Microsoft 365 / Microsoft Graph como tercera
@@ -86,16 +97,23 @@ dependencias externas en runtime es CERRADA:
      una `ApplicationAccessPolicy` de Exchange Online, porque el permiso de
      aplicación `Mail.Send` sin acotar habilita enviar como CUALQUIER buzón del
      tenant.
+  4. **El reproductor embebido de Vimeo**, para los videos de los cursos offline
+     que la academia ya aloja en Vimeo. ÚNICAMENTE el navegador carga el iframe
+     oficial del reproductor (`player.vimeo.com`): el servidor NO llama a Vimeo,
+     NO hay tokens ni credenciales de API y el CRM NO almacena ni retransmite
+     video. Se aísla tras UN solo componente de UI; un curso sin video funciona
+     igual.
 - **PROHIBIDO en v1**: almacenamiento de objetos externo (S3/R2), Stripe u otro
   billing, y servicios de Google. Cualquier feature que los requiera queda fuera
   del alcance de v1.
 - El instalador solo necesita: un VPS con Coolify o Docker, un dominio, credenciales
   de Meta, (opcional) un token de OpenRouter y las credenciales de M365 para el
-  envío de correo. Nada más.
+  envío de correo. Nada más (el reproductor de Vimeo no requiere credenciales).
 - Las funciones core —autenticación y base de datos— corren self-hosted (Better
   Auth + PostgreSQL propios de la instancia).
 - Las integraciones externas permitidas se aíslan tras adaptadores dedicados
-  (cliente Graph API propio; adaptador LLM) para no acoplar el dominio a ellas.
+  (cliente Graph API propio; adaptador LLM; componente único del reproductor de
+  Vimeo) para no acoplar el dominio a ellas.
 
 **Rationale**: El producto se regala para que agencias lo desplieguen en VPS de
 clientes; cada dependencia externa adicional es un costo, un punto de fallo y una
@@ -279,4 +297,4 @@ práctica, convención o preferencia; ante un conflicto, gana la constitución.
 - **Propagación**: al enmendar la constitución se revisan y, si procede, se actualizan
   las plantillas dependientes (plan, spec, tasks).
 
-**Version**: 1.3.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-08-17
+**Version**: 1.4.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-09-25

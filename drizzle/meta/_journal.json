@@ -288,6 +288,41 @@
       "when": 1789735441273,
       "tag": "0040_entrega_abierta_unica",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1790258057234,
+      "tag": "0041_especializacion_explicita",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1790342893254,
+      "tag": "0042_cursos_offline",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1790361535762,
+      "tag": "0043_cursos_offline_videos",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1790365349958,
+      "tag": "0044_cursos_offline_rangos",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1790599758057,
+      "tag": "0045_cursos_offline_editor",
+      "breakpoints": true
     }
   ]
 }

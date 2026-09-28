@@ -4,6 +4,7 @@ import {
   index,
   integer,
   jsonb,
+  numeric,
   pgTable,
   primaryKey,
   text,
@@ -541,6 +542,20 @@ export const cohort = pgTable(
      * sin padre no significa nada y no se muestra.
      */
     position: integer("position"),
+    /**
+     * 028 (seguimiento) — La cohorte ES una especialización: la madre de un
+     * programa de módulos.
+     *
+     * Antes era implícito —"es especialización si tiene hijos"— y eso tenía
+     * dos costos: una especialización recién creada no tenía dónde armarse
+     * (sin hijos no había pestaña), y cualquier cohorte raíz servía de madre,
+     * así que colgar un módulo de la camada equivocada la convertía en
+     * especialización sin que nadie lo decidiera. Ahora es una decisión
+     * explícita, y el árbol la respeta: sólo una cohorte marcada puede ser
+     * madre, un módulo no puede estar marcado, y no se desmarca con módulos
+     * colgando (`src/server/program-modules.ts`).
+     */
+    isSpecialization: boolean("is_specialization").notNull().default(false),
     /** 005 iteración 2 — nombre propio de la cohorte; NULL = usar course.name. */
     name: text("name"),
     startDate: timestamp("start_date").notNull(),
@@ -1969,5 +1984,362 @@ export const virtualRoom = pgTable(
     index("virtual_room_org_idx").on(t.organizationId),
     // Dos aulas con el mismo nombre son imposibles de asignar sin equivocarse.
     uniqueIndex("virtual_room_org_name_uq").on(t.organizationId, t.name),
+  ]
+);
+
+/* ============================================================
+ * cursos-offline — The offline content library (imported from LearnDash)
+ * ============================================================
+ *
+ * Read-only content: course → lesson → topic, plus single/multiple-choice
+ * quizzes. It never touches `course`/`cohort`/`enrollment`: a cohort only
+ * POINTS at library courses through `offline_course_access`.
+ *
+ * Every IMPORTED content row carries `legacy_ref` (the LearnDash id, e.g.
+ * `quiz:1281`) unique per organization, so re-running the import finds its
+ * rows instead of duplicating them (constitution IV). Rows created from the
+ * staff editor (T11) have `legacy_ref` NULL (migration 0045); two NULLs never
+ * collide on the unique index, and the importer never matches them.
+ */
+
+export const OFFLINE_COURSE_STATUSES = ["published", "draft"] as const;
+export type OfflineCourseStatus = (typeof OFFLINE_COURSE_STATUSES)[number];
+
+export const OFFLINE_ANSWER_TYPES = ["single", "multiple"] as const;
+export type OfflineAnswerType = (typeof OFFLINE_ANSWER_TYPES)[number];
+
+export const OFFLINE_ACCESS_MODES = ["grant", "revoke"] as const;
+export type OfflineAccessMode = (typeof OFFLINE_ACCESS_MODES)[number];
+
+/** Where the topic video goes relative to the text (LearnDash BEFORE|AFTER). */
+export const OFFLINE_VIDEO_SHOWN = ["before", "after"] as const;
+export type OfflineVideoShown = (typeof OFFLINE_VIDEO_SHOWN)[number];
+
+/** How a topic became complete: watched, had no video, or staff override. */
+export const OFFLINE_COMPLETION_SOURCES = ["video", "no_video", "staff"] as const;
+export type OfflineCompletionSource = (typeof OFFLINE_COMPLETION_SOURCES)[number];
+
+export const offlineCourse = pgTable(
+  "offline_course",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    legacyRef: text("legacy_ref"),
+    title: text("title").notNull(),
+    slug: text("slug").notNull(),
+    descriptionMd: text("description_md").notNull().default(""),
+    /** Never hot-linked to the retired WordPress domain. */
+    thumbnailUrl: text("thumbnail_url"),
+    status: text("status", { enum: OFFLINE_COURSE_STATUSES }).notNull().default("published"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("offline_course_org_legacy_uq").on(t.organizationId, t.legacyRef),
+    index("offline_course_org_title_idx").on(t.organizationId, t.title),
+  ]
+);
+
+export const offlineLesson = pgTable(
+  "offline_lesson",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    courseId: text("course_id")
+      .notNull()
+      .references(() => offlineCourse.id, { onDelete: "cascade" }),
+    legacyRef: text("legacy_ref"),
+    title: text("title").notNull(),
+    contentMd: text("content_md").notNull().default(""),
+    position: integer("position").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("offline_lesson_org_legacy_uq").on(t.organizationId, t.legacyRef),
+    index("offline_lesson_org_course_idx").on(t.organizationId, t.courseId, t.position),
+  ]
+);
+
+export const offlineTopic = pgTable(
+  "offline_topic",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    lessonId: text("lesson_id")
+      .notNull()
+      .references(() => offlineLesson.id, { onDelete: "cascade" }),
+    legacyRef: text("legacy_ref"),
+    title: text("title").notNull(),
+    contentMd: text("content_md").notNull().default(""),
+    position: integer("position").notNull().default(0),
+    /**
+     * Vimeo URL the academy already hosts (constitution II, item 4): only the
+     * browser loads the official player. NULL = no video, the topic completes
+     * on open.
+     */
+    videoUrl: text("video_url"),
+    videoShown: text("video_shown", { enum: OFFLINE_VIDEO_SHOWN }).notNull().default("after"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("offline_topic_org_legacy_uq").on(t.organizationId, t.legacyRef),
+    index("offline_topic_org_lesson_idx").on(t.organizationId, t.lessonId, t.position),
+    check("offline_topic_video_shown_valid", sql`${t.videoShown} in ('before', 'after')`),
+  ]
+);
+
+/**
+ * A quiz belongs to the course; it hangs from a lesson only when the lesson
+ * names the same module (old editions). `set null` on the lesson: losing the
+ * lesson must not delete the quiz nor its attempt history.
+ */
+export const offlineQuiz = pgTable(
+  "offline_quiz",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    courseId: text("course_id")
+      .notNull()
+      .references(() => offlineCourse.id, { onDelete: "cascade" }),
+    lessonId: text("lesson_id").references(() => offlineLesson.id, { onDelete: "set null" }),
+    legacyRef: text("legacy_ref"),
+    title: text("title").notNull(),
+    descriptionMd: text("description_md").notNull().default(""),
+    /** Passed = score >= this. 80 when LearnDash did not say. */
+    passingPercentage: integer("passing_percentage").notNull().default(80),
+    /** Retakes AFTER the first attempt (max attempts = 1 + this). NULL = unlimited. */
+    retriesAllowed: integer("retries_allowed"),
+    position: integer("position").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("offline_quiz_org_legacy_uq").on(t.organizationId, t.legacyRef),
+    index("offline_quiz_org_course_idx").on(t.organizationId, t.courseId, t.position),
+    check("offline_quiz_passing_range", sql`${t.passingPercentage} between 0 and 100`),
+    check(
+      "offline_quiz_retries_non_negative",
+      sql`${t.retriesAllowed} is null or ${t.retriesAllowed} >= 0`
+    ),
+  ]
+);
+
+export const offlineQuestion = pgTable(
+  "offline_question",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    quizId: text("quiz_id")
+      .notNull()
+      .references(() => offlineQuiz.id, { onDelete: "cascade" }),
+    legacyRef: text("legacy_ref"),
+    questionMd: text("question_md").notNull(),
+    answerType: text("answer_type", { enum: OFFLINE_ANSWER_TYPES }).notNull(),
+    points: integer("points").notNull().default(1),
+    position: integer("position").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("offline_question_org_legacy_uq").on(t.organizationId, t.legacyRef),
+    index("offline_question_org_quiz_idx").on(t.organizationId, t.quizId, t.position),
+    check("offline_question_points_non_negative", sql`${t.points} >= 0`),
+  ]
+);
+
+/** `is_correct` NEVER travels to the student, before or after an attempt. */
+export const offlineAnswer = pgTable(
+  "offline_answer",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    questionId: text("question_id")
+      .notNull()
+      .references(() => offlineQuestion.id, { onDelete: "cascade" }),
+    legacyRef: text("legacy_ref"),
+    text: text("text").notNull(),
+    isCorrect: boolean("is_correct").notNull().default(false),
+    position: integer("position").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("offline_answer_org_legacy_uq").on(t.organizationId, t.legacyRef),
+    index("offline_answer_org_question_idx").on(t.organizationId, t.questionId, t.position),
+  ]
+);
+
+/**
+ * Snapshot of what the student chose, with the texts: re-importing the quiz
+ * may replace answer rows, and the history must still read the same.
+ */
+export type OfflineAnswersGiven = Array<{
+  questionId: string;
+  questionText: string;
+  answerIds: string[];
+  answerTexts: string[];
+}>;
+
+/**
+ * One row per attempt; none is ever updated. Retries are counted per CONTACT
+ * (across enrollments), hence `contact_id` and the unique
+ * (quiz, contact, attempt_number): two simultaneous submissions cannot both
+ * take the same attempt number (constitution IV).
+ */
+export const offlineQuizAttempt = pgTable(
+  "offline_quiz_attempt",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    quizId: text("quiz_id")
+      .notNull()
+      .references(() => offlineQuiz.id, { onDelete: "cascade" }),
+    enrollmentId: text("enrollment_id")
+      .notNull()
+      .references(() => enrollment.id, { onDelete: "cascade" }),
+    contactId: text("contact_id")
+      .notNull()
+      .references(() => contact.id, { onDelete: "cascade" }),
+    attemptNumber: integer("attempt_number").notNull(),
+    scorePercentage: numeric("score_percentage", { precision: 5, scale: 2 }).notNull(),
+    passed: boolean("passed").notNull(),
+    answersGiven: jsonb("answers_given")
+      .$type<OfflineAnswersGiven>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("offline_quiz_attempt_quiz_contact_number_uq").on(
+      t.quizId,
+      t.contactId,
+      t.attemptNumber
+    ),
+    index("offline_quiz_attempt_org_contact_idx").on(t.organizationId, t.contactId, t.quizId),
+    index("offline_quiz_attempt_org_enrollment_idx").on(t.organizationId, t.enrollmentId),
+    check("offline_quiz_attempt_number_positive", sql`${t.attemptNumber} >= 1`),
+  ]
+);
+
+/**
+ * Who reads which library course.
+ *
+ * Two kinds of row, told apart by which FK is set (the CHECK enforces exactly
+ * one):
+ *   - cohort row (`cohort_id`, `mode` NULL): the whole cohort inherits it.
+ *   - enrollment row (`enrollment_id`, `mode` grant|revoke): an individual
+ *     override on top of the cohort.
+ * Effective = (cohort assigned AND NOT revoke) OR grant — see
+ * `src/server/offline-courses/logic.ts`.
+ */
+export const offlineCourseAccess = pgTable(
+  "offline_course_access",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    offlineCourseId: text("offline_course_id")
+      .notNull()
+      .references(() => offlineCourse.id, { onDelete: "cascade" }),
+    cohortId: text("cohort_id").references(() => cohort.id, { onDelete: "cascade" }),
+    enrollmentId: text("enrollment_id").references(() => enrollment.id, {
+      onDelete: "cascade",
+    }),
+    mode: text("mode", { enum: OFFLINE_ACCESS_MODES }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+  },
+  (t) => [
+    uniqueIndex("offline_course_access_cohort_uq")
+      .on(t.cohortId, t.offlineCourseId)
+      // Unqualified columns: a table-qualified name inside an index predicate
+      // is rejected by Postgres (same trap as `submission_abierta_uq`).
+      .where(sql`cohort_id is not null`),
+    uniqueIndex("offline_course_access_enrollment_uq")
+      .on(t.enrollmentId, t.offlineCourseId)
+      .where(sql`enrollment_id is not null`),
+    index("offline_course_access_org_cohort_idx").on(t.organizationId, t.cohortId),
+    index("offline_course_access_org_enrollment_idx").on(t.organizationId, t.enrollmentId),
+    index("offline_course_access_org_course_idx").on(t.organizationId, t.offlineCourseId),
+    check(
+      "offline_course_access_target_coherent",
+      sql`(${t.cohortId} is not null and ${t.enrollmentId} is null and ${t.mode} is null)
+       or (${t.enrollmentId} is not null and ${t.cohortId} is null and ${t.mode} is not null)`
+    ),
+  ]
+);
+
+/**
+ * How far a CONTACT got in a topic (per contact, like attempts: progress
+ * follows the person across enrollments). One row per (contact, topic).
+ * `completed_by` is set ONLY for a staff override — who marked it, for review.
+ * Client-side video tracking is spoofable; acceptable for an academy.
+ */
+export const offlineTopicProgress = pgTable(
+  "offline_topic_progress",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    contactId: text("contact_id")
+      .notNull()
+      .references(() => contact.id, { onDelete: "cascade" }),
+    topicId: text("topic_id")
+      .notNull()
+      .references(() => offlineTopic.id, { onDelete: "cascade" }),
+    /** 0..1 share of the video really played (merged ranges). */
+    watchedRatio: numeric("watched_ratio", { precision: 5, scale: 4 }).notNull().default("0"),
+    /** Every range ever played, merged (seconds) — the ratio is over their union (T9b). */
+    playedRanges: jsonb("played_ranges")
+      .$type<Array<{ start: number; end: number }>>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    /** Seconds the ratio is computed over; `null` until the first video report. */
+    videoDuration: numeric("video_duration"),
+    completedAt: timestamp("completed_at"),
+    completedBy: text("completed_by").references(() => user.id, { onDelete: "set null" }),
+    completionSource: text("completion_source", { enum: OFFLINE_COMPLETION_SOURCES }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("offline_topic_progress_contact_topic_uq").on(t.contactId, t.topicId),
+    index("offline_topic_progress_org_contact_idx").on(t.organizationId, t.contactId),
+    index("offline_topic_progress_org_topic_idx").on(t.organizationId, t.topicId),
+    check(
+      "offline_topic_progress_ratio_range",
+      sql`${t.watchedRatio} >= 0 and ${t.watchedRatio} <= 1`
+    ),
+    check(
+      "offline_topic_progress_completion_coherent",
+      sql`(${t.completedAt} is null) = (${t.completionSource} is null)`
+    ),
+    check(
+      "offline_topic_progress_source_valid",
+      sql`${t.completionSource} is null or ${t.completionSource} in ('video', 'no_video', 'staff')`
+    ),
+    // The author of a completion exists only for a staff override.
+    check(
+      "offline_topic_progress_staff_author",
+      sql`${t.completedBy} is null or ${t.completionSource} = 'staff'`
+    ),
   ]
 );

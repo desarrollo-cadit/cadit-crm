@@ -34,11 +34,14 @@ accionable para code review.
 
 ## Seguridad y dependencias
 
-- Ninguna dependencia externa nueva en runtime salvo las TRES permitidas por
-  la constitución (`.specify/memory/constitution.md` 1.3.0, Principio II):
-  WhatsApp Cloud API, el adaptador OpenRouter-compatible del LLM (opcional) y
+- Ninguna dependencia externa nueva en runtime salvo las CUATRO permitidas por
+  la constitución (`.specify/memory/constitution.md` 1.4.0, Principio II):
+  WhatsApp Cloud API, el adaptador OpenRouter-compatible del LLM (opcional),
   Microsoft Graph para el correo transaccional a alumnos (tras `src/lib/m365`)
-  — nada de S3/R2, Stripe, Google u otros servicios externos.
+  y el reproductor embebido de Vimeo para los videos de los cursos offline
+  (solo el NAVEGADOR carga el iframe, tras el único componente
+  `src/components/offline-courses/vimeo-player.tsx`; el servidor no llama a
+  Vimeo) — nada de S3/R2, Stripe, Google u otros servicios externos.
 - Secretos nunca al cliente ni a logs; cifrados en reposo.
 
 ## Estilo y comentarios

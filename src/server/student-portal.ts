@@ -12,7 +12,7 @@ import {
 } from "@/server/attendance";
 import {
   dispensaDeInscripcion,
-  moduleApprovalState,
+  estadoDeModulo,
   programApprovalState,
   type ApprovalState,
 } from "@/server/grading";
@@ -580,14 +580,16 @@ function buildCourse(
     ...enrollment,
     attendanceWaiverByName: waiverAuthorName,
   });
-  const { state, reasons } = moduleApprovalState(
+  const { state, reasons } = estadoDeModulo(
     assessments.filter((a) => a.required).map((a) => a.passed),
     attendancePct,
     minAttendancePct,
     dispensa
   );
 
-  const sinDatos = assessments.length === 0 && attendancePct === null;
+  // 030 — `estadoDeModulo` decide `sin_datos` con la MISMA regla que el
+  // legajo, la grilla del Recorrido y el certificado general.
+  const sinDatos = state === "sin_datos";
 
   const cert = data.certificados.find((c) => c.enrollmentId === enrollment.id);
   const lic = data.licencias.find((l) => l.enrollmentId === enrollment.id);
@@ -750,8 +752,8 @@ function buildModule(
  * persona a abrir cuatro pantallas para enterarse de lo que el sistema ya
  * sabe.
  *
- * `sin_datos` no es un `ApprovalState` y por eso no entra a la composición:
- * cuenta como `pendiente`, salvo cuando **todos** los módulos están así — ahí
+ * Un módulo `sin_datos` deja la especialización en `pendiente` (030),
+ * salvo cuando **todos** los módulos están así — ahí
  * la especialización entera es `sin_datos`, porque afirmar cualquier otra cosa
  * sería afirmar algo sobre una persona sin un solo dato cargado.
  */
@@ -768,9 +770,7 @@ function estadoDeEspecializacion(modulos: StudentModuleDto[]): {
     };
   }
 
-  const { state } = programApprovalState(
-    modulos.map((m) => (m.approval === "sin_datos" ? "pendiente" : m.approval))
-  );
+  const { state } = programApprovalState(modulos.map((m) => m.approval));
 
   if (state === "reprobado") {
     return {

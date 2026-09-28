@@ -188,6 +188,12 @@ export type CohortDto = {
    * el ordinal derivado del lugar en la lista. Sin padre no significa nada.
    */
   position: number | null;
+  /**
+   * 028 (seguimiento) — La cohorte ES una especialización (la madre de un
+   * programa de módulos). Explícito: decide la pestaña, el formulario y quién
+   * puede ser madre de quién.
+   */
+  isSpecialization: boolean;
   status: "planificada" | "en_curso" | "finalizada";
   software: { id: string; name: string }[];
 };

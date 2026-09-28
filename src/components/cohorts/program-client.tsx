@@ -1,22 +1,28 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarDays, GraduationCap, MoveRight, RotateCcw, ShieldCheck } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  CalendarDays,
+  GraduationCap,
+  MoveRight,
+  Plus,
+  RotateCcw,
+  ShieldCheck,
+} from "lucide-react";
+import type { CourseDto, SoftwareDto, TeacherDto } from "@/lib/types";
+import { CohortForm } from "@/components/academic/cohort-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { RecorridoGrid } from "@/components/cohorts/recorrido-grid";
 
 type State = "aprobado" | "reprobado" | "pendiente";
+/** 030 — Un módulo sin evaluaciones ni asistencia cargadas NO es aprobado. */
+type ModuleState = State | "sin_datos";
 
 type Modulo = {
   cohortId: string;
@@ -46,7 +52,7 @@ type ModuloDelAlumno = {
   position: number | null;
   ordinal: number | null;
   label: string;
-  state: State;
+  state: ModuleState;
   reasons: string[];
   attendancePct: number | null;
   minAttendancePct: number | null;
@@ -68,9 +74,19 @@ type Programa = {
   cohortId: string;
   name: string;
   courseName: string;
+  /** Para proponerlas como fechas del módulo nuevo. */
+  startDate: string;
+  endDate: string | null;
   modules: Modulo[];
   students?: Alumno[];
 };
+
+/**
+ * 028 (seguimiento) — Lo que el formulario de cohorte necesita para dar de
+ * alta un módulo. Se pide recién al abrirlo: la pestaña la ven también
+ * quienes no pueden editar, y no tienen por qué pagar tres listados.
+ */
+type Catalogo = { courses: CourseDto[]; teachers: TeacherDto[]; software: SoftwareDto[] };
 
 /** Lo mínimo del listado de cohortes para poder elegir la otra camada. */
 type CohortOption = {
@@ -91,12 +107,6 @@ type CohortOption = {
  * otorgó.
  */
 type Via = "baja" | "recursada" | "dispensar" | "revocar-dispensa";
-
-const ESTADO: Record<State, { label: string; variant: "success" | "destructive" | "warning" }> = {
-  aprobado: { label: "Aprobado", variant: "success" },
-  reprobado: { label: "Reprobado", variant: "destructive" },
-  pendiente: { label: "Pendiente", variant: "warning" },
-};
 
 function fecha(iso: string | null): string {
   return iso ? new Date(iso).toLocaleDateString("es-UY", { timeZone: "UTC" }) : "—";
@@ -125,10 +135,17 @@ function fecha(iso: string | null): string {
  */
 export function ProgramClient({
   cohortId,
+  canEditAcademic,
   canEditEnrollments,
   canEditGrading,
 }: {
   cohortId: string;
+  /**
+   * `academico.editar` — armar la especialización: agregar y reordenar
+   * módulos. Es la capacidad de `PATCH /api/cohorts/[id]` y de
+   * `PUT /api/cohorts/[id]/modules/order`; el front oculta, las rutas prohíben.
+   */
+  canEditAcademic: boolean;
   /** `inscripciones.editar` — mover una cursada o armar una recursada (US4). */
   canEditEnrollments: boolean;
   /**
@@ -154,6 +171,68 @@ export function ProgramClient({
   /** US6/FR-023 — el motivo de la dispensa: sin él no hay dispensa. */
   const [motivo, setMotivo] = useState("");
   const [guardando, setGuardando] = useState(false);
+  /** 028 (seguimiento) — El alta de un módulo desde la pestaña. */
+  const [catalogo, setCatalogo] = useState<Catalogo | null>(null);
+  const [abriendoAlta, setAbriendoAlta] = useState(false);
+  const [reordenando, setReordenando] = useState(false);
+
+  /**
+   * Abre el formulario en modo módulo. Los tres listados se piden juntos y
+   * recién ahora; si alguno falla se dice, en vez de abrir un formulario con
+   * el selector de cursos vacío.
+   */
+  async function abrirAlta() {
+    setAbriendoAlta(true);
+    setError(null);
+    try {
+      const [c, t, s] = await Promise.all(
+        ["/api/courses", "/api/teachers", "/api/software"].map(async (url) => {
+          const res = await fetch(url);
+          if (!res.ok) throw new Error(String(res.status));
+          return res.json();
+        })
+      );
+      setCatalogo({
+        courses: (c as { courses: CourseDto[] }).courses,
+        teachers: (t as { teachers: TeacherDto[] }).teachers,
+        software: (s as { software: SoftwareDto[] }).software,
+      });
+    } catch {
+      setError("No se pudieron cargar los cursos y profesores para agregar el módulo");
+    } finally {
+      setAbriendoAlta(false);
+    }
+  }
+
+  /**
+   * ↑/↓ — Se manda la lista COMPLETA en el orden nuevo y el servidor renumera
+   * 10, 20, 30…: así mover un módulo nunca depende de qué números había
+   * guardados, ni de que dos hayan quedado con el mismo.
+   */
+  async function mover(indice: number, delta: -1 | 1) {
+    if (!data) return;
+    const destino = indice + delta;
+    if (destino < 0 || destino >= data.modules.length) return;
+    const orden = data.modules.map((m) => m.cohortId);
+    [orden[indice], orden[destino]] = [orden[destino]!, orden[indice]!];
+
+    setReordenando(true);
+    setError(null);
+    const res = await fetch(`/api/cohorts/${cohortId}/modules/order`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ order: orden }),
+    }).catch(() => null);
+    setReordenando(false);
+    if (!res?.ok) {
+      const body = (await res?.json().catch(() => null)) as
+        | { error?: { message?: string } }
+        | null;
+      setError(body?.error?.message ?? "No se pudo cambiar el orden de los módulos");
+      return;
+    }
+    void refetch();
+  }
 
   const refetch = useCallback(async () => {
     const res = await fetch(`/api/cohorts/${cohortId}/program`).catch(() => null);
@@ -329,12 +408,63 @@ export function ProgramClient({
     );
   }
 
-  if (!data || data.modules.length === 0) {
+  if (!data) return null;
+
+  /**
+   * 028 (seguimiento) — El formulario de cohorte en modo MÓDULO: la madre va
+   * fija (no hay selector que equivocar) y el lugar lo pone el servidor, al
+   * final. Las fechas de la especialización se proponen; el curso se elige.
+   */
+  const altaDeModulo = catalogo ? (
+    <CohortForm
+      courses={catalogo.courses}
+      teachers={catalogo.teachers}
+      software={catalogo.software}
+      moduloDe={{
+        id: data.cohortId,
+        name: data.name,
+        startDate: data.startDate || null,
+        endDate: data.endDate,
+      }}
+      onClose={() => setCatalogo(null)}
+      onSaved={() => {
+        setCatalogo(null);
+        setAviso("Módulo agregado al final de la especialización.");
+        void refetch();
+      }}
+      onTeacherCreated={(t) =>
+        setCatalogo((prev) => (prev ? { ...prev, teachers: [...prev.teachers, t] } : prev))
+      }
+    />
+  ) : null;
+
+  const botonAgregar = canEditAcademic ? (
+    <Button size="sm" loading={abriendoAlta} onClick={() => void abrirAlta()}>
+      <Plus className="h-4 w-4" aria-hidden /> Agregar módulo
+    </Button>
+  ) : null;
+
+  /**
+   * Una especialización recién creada no tiene módulos, y no es un error: es
+   * el punto de partida. Se explica qué es y se ofrece el primer paso.
+   */
+  if (data.modules.length === 0) {
     return (
-      <p className="p-6 text-sm text-muted-foreground">
-        Esta camada no tiene módulos: no es una especialización. Para armarla, editá
-        cada camada de módulo y elegí ésta como camada padre.
-      </p>
+      <div className="space-y-3 p-6">
+        {error ? <p className="text-sm text-danger">{error}</p> : null}
+        <div className="rounded-lg border border-dashed p-6 text-center">
+          <p className="text-sm font-medium text-foreground">
+            Esta especialización todavía no tiene módulos
+          </p>
+          <p className="mx-auto mt-1 max-w-md text-xs text-muted-foreground">
+            Cada módulo es una cohorte propia, con su curso, su profesor y su
+            horario. Se cursan en el orden en que los agregues, y ese orden se
+            puede cambiar después.
+          </p>
+          {botonAgregar ? <div className="mt-4">{botonAgregar}</div> : null}
+        </div>
+        {altaDeModulo}
+      </div>
     );
   }
 
@@ -343,19 +473,62 @@ export function ProgramClient({
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       {aviso ? <p className="text-sm text-success">{aviso}</p> : null}
 
+      {botonAgregar ? (
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs text-muted-foreground">
+            {data.modules.length} módulo{data.modules.length === 1 ? "" : "s"}, en el
+            orden en que se cursan.
+          </p>
+          {botonAgregar}
+        </div>
+      ) : null}
+
       {/* Los módulos en orden, cada uno con su profesor, sus fechas y su avance. */}
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {data.modules.map((m) => (
+      <section
+        aria-label="Módulos del programa, en orden"
+        className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"
+      >
+        {data.modules.map((m, i) => (
           <article key={m.cohortId} className="rounded-lg border bg-card p-4">
             <div className="flex items-start justify-between gap-2">
-              <h3 className="text-sm font-semibold text-foreground">{m.label}</h3>
-              {m.clases.sinCronograma ? (
-                <Badge variant="warning">Sin cronograma</Badge>
-              ) : (
-                <Badge variant="secondary">
-                  {m.clases.dictadas}/{m.clases.total} clases
-                </Badge>
-              )}
+              <h3 className="text-sm font-semibold text-foreground">
+                <a href={`/cohorts/${m.cohortId}`} className="hover:underline">
+                  {m.label}
+                </a>
+              </h3>
+              <div className="flex shrink-0 items-center gap-1">
+                {m.clases.sinCronograma ? (
+                  <Badge variant="warning">Sin cronograma</Badge>
+                ) : (
+                  <Badge variant="secondary">
+                    {m.clases.dictadas}/{m.clases.total} clases
+                  </Badge>
+                )}
+                {canEditAcademic ? (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Subir ${m.label}`}
+                      title="Subir"
+                      disabled={i === 0 || reordenando}
+                      onClick={() => void mover(i, -1)}
+                    >
+                      <ArrowUp className="h-4 w-4" aria-hidden />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Bajar ${m.label}`}
+                      title="Bajar"
+                      disabled={i === data.modules.length - 1 || reordenando}
+                      onClick={() => void mover(i, 1)}
+                    >
+                      <ArrowDown className="h-4 w-4" aria-hidden />
+                    </Button>
+                  </>
+                ) : null}
+              </div>
             </div>
             <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
               <GraduationCap className="h-3.5 w-3.5" aria-hidden />
@@ -385,7 +558,12 @@ export function ProgramClient({
         ))}
       </section>
 
-      {/* La grilla: una fila por alumno, una celda por módulo cursado. */}
+      {/*
+        029 — La grilla del Recorrido: una fila por alumno, una celda por
+        módulo, cada celda un estado DICHO (aprobado, cursando, baja → otra
+        camada, recursa…) y la última columna el certificado. Las acciones de
+        US4/US6 cuelgan de la celda, con las mismas capacidades de siempre.
+      */}
       {data.students === undefined ? (
         <p className="text-sm text-muted-foreground">
           El estado de aprobación por módulo requiere permiso de evaluación.
@@ -395,125 +573,51 @@ export function ProgramClient({
           Todavía no hay nadie inscripto en esta especialización.
         </p>
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Alumno</TableHead>
-              <TableHead>Especialización</TableHead>
-              {data.modules.map((m) => (
-                <TableHead key={m.cohortId}>{m.label}</TableHead>
-              ))}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data.students.map((a) => (
-              <TableRow key={a.enrollmentId}>
-                <TableCell className="font-medium">{a.contact.name}</TableCell>
-                <TableCell>
-                  <Badge variant={ESTADO[a.state].variant}>{ESTADO[a.state].label}</Badge>
-                  {a.reasons.length > 0 ? (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {a.reasons.join(" · ")}
-                    </p>
-                  ) : null}
-                </TableCell>
-                {data.modules.map((col) => {
-                  /*
-                    Primero por cohorte —la corrida exacta— y si no, por CURSO:
-                    quien recursó el módulo 2 con EBIM 14 cursó ese mismo
-                    módulo, en otra corrida. Buscando sólo por `cohortId` esa
-                    persona quedaría con la columna vacía, que es justo aquella
-                    sobre la que la pantalla tiene algo que decir.
-                  */
-                  const celda =
-                    a.modules.find((m) => m.cohortId === col.cohortId) ??
-                    a.modules.find((m) => m.courseId === col.courseId);
-                  if (!celda) {
-                    return (
-                      <TableCell key={col.cohortId} className="text-muted-foreground">
-                        —
-                      </TableCell>
-                    );
-                  }
-                  return (
-                    <TableCell key={col.cohortId}>
-                      <Badge variant={ESTADO[celda.state].variant}>
-                        {ESTADO[celda.state].label}
-                      </Badge>
-                      {celda.dispensada ? (
-                        <p className="mt-1 text-xs text-warning">Con dispensa</p>
-                      ) : null}
-                      {/*
-                        FR-025 — el motivo NO alcanza con que viaje: tiene que
-                        leerse. "Con dispensa" dice que la hay; esta línea dice
-                        quién la otorgó, cuándo y por qué —y también, cuando no
-                        hay dispensa, por qué el módulo está como está—. Sin
-                        ella la celda afirma un estado que nadie puede
-                        explicar, que es la dispensa silenciosa que la decisión
-                        4 prohíbe.
-                      */}
-                      {celda.reasons.length > 0 ? (
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {celda.reasons.join(" · ")}
-                        </p>
-                      ) : null}
-                      {celda.otraCamada ? (
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          Cursa con {celda.camadaName ?? "otra camada"}
-                        </p>
-                      ) : null}
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {canEditEnrollments ? (
-                          <>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => abrir(a, celda, "baja")}
-                            >
-                              <MoveRight className="mr-1 h-3 w-3" aria-hidden />
-                              Mudar
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => abrir(a, celda, "recursada")}
-                            >
-                              <RotateCcw className="mr-1 h-3 w-3" aria-hidden />
-                              Recursar
-                            </Button>
-                          </>
-                        ) : null}
-                        {/*
-                          US6 — el botón dice cuál de los dos actos ofrece,
-                          nunca "dispensa" a secas: con una vigente lo único
-                          que queda por hacer es quitarla, y un interruptor sin
-                          motivo sería exactamente la dispensa silenciosa que
-                          FR-025 prohíbe.
-                        */}
-                        {canEditGrading ? (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() =>
-                              abrir(
-                                a,
-                                celda,
-                                celda.dispensada ? "revocar-dispensa" : "dispensar"
-                              )
-                            }
-                          >
-                            <ShieldCheck className="mr-1 h-3 w-3" aria-hidden />
-                            {celda.dispensada ? "Quitar dispensa" : "Dispensar"}
-                          </Button>
-                        ) : null}
-                      </div>
-                    </TableCell>
-                  );
-                })}
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <RecorridoGrid
+          columnas={data.modules}
+          alumnos={data.students}
+          ahora={new Date()}
+          acciones={
+            canEditEnrollments || canEditGrading
+              ? (a, celda) => (
+                  <>
+                    {canEditEnrollments ? (
+                      <>
+                        <Button variant="ghost" size="sm" onClick={() => abrir(a, celda, "baja")}>
+                          <MoveRight className="mr-1 h-3 w-3" aria-hidden />
+                          Mudar
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => abrir(a, celda, "recursada")}
+                        >
+                          <RotateCcw className="mr-1 h-3 w-3" aria-hidden />
+                          Recursar
+                        </Button>
+                      </>
+                    ) : null}
+                    {/*
+                      US6 — el botón dice cuál de los dos actos ofrece, nunca
+                      "dispensa" a secas (FR-025).
+                    */}
+                    {canEditGrading ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          abrir(a, celda, celda.dispensada ? "revocar-dispensa" : "dispensar")
+                        }
+                      >
+                        <ShieldCheck className="mr-1 h-3 w-3" aria-hidden />
+                        {celda.dispensada ? "Quitar dispensa" : "Dispensar"}
+                      </Button>
+                    ) : null}
+                  </>
+                )
+              : undefined
+          }
+        />
       )}
 
       {/*
@@ -629,6 +733,8 @@ export function ProgramClient({
           ) : null}
         </div>
       ) : null}
+
+      {altaDeModulo}
     </div>
   );
 }

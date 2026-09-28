@@ -3,9 +3,12 @@
 import { useState } from "react";
 import { AttendanceClient } from "@/components/cohorts/attendance-client";
 import { AnnouncementsClient } from "@/components/cohorts/announcements-client";
+import { CohortOfflineCoursesClient } from "@/components/offline-courses/cohort-offline-courses-client";
 import { ClassesClient } from "@/components/cohorts/classes-client";
 import { GradingClient } from "@/components/cohorts/grading-client";
+import { ProgramClassesClient } from "@/components/cohorts/program-classes-client";
 import { ProgramClient } from "@/components/cohorts/program-client";
+import { ProgramSheetSwitcher } from "@/components/cohorts/program-sheet-switcher";
 import { RosterClient } from "@/components/cohorts/roster-client";
 
 /**
@@ -17,6 +20,7 @@ import { RosterClient } from "@/components/cohorts/roster-client";
 export function CohortTabs({
   cohortId,
   canEnroll,
+  canViewAcademic,
   canEditAcademic,
   canEditAttendance,
   canEditGrading,
@@ -26,6 +30,12 @@ export function CohortTabs({
 }: {
   cohortId: string;
   canEnroll: boolean;
+  /**
+   * cursos-offline — `academico.ver`: the "Cursos offline" tab and the
+   * per-student panel in the roster. Without it they are not drawn at all
+   * (their fetches would answer 403).
+   */
+  canViewAcademic: boolean;
   /** 013 — `academico.editar`: generar el cronograma. */
   canEditAcademic: boolean;
   /** 013 — `asistencia.editar`: cargar enlaces y grabaciones (DV-001c). */
@@ -37,30 +47,41 @@ export function CohortTabs({
   /** 024 — `certificados.emitir`: emitir y anular son la MISMA capacidad. */
   canIssueCertificates: boolean;
   /**
-   * 028 fase 4 (FR-032/FR-033) — ¿Esta camada tiene módulos colgando?
+   * 028 (seguimiento) — ¿Esta cohorte está MARCADA como especialización?
    *
-   * La pestaña se agrega SÓLO cuando los tiene, y la condición es un dato —la
-   * presencia de cohortes hijas—, nunca una bandera ni una heurística sobre el
-   * nombre del curso. Una pestaña de más en las 33 cohortes simples ya es un
-   * cambio de pantalla, y FR-032 es un requisito duro.
+   * La pestaña se agrega SÓLO en ese caso, y la condición es la columna
+   * `cohort.is_specialization` —no contar hijos: una especialización recién
+   * creada no tiene ninguno y es la que más necesita la pestaña para armarse—,
+   * nunca una heurística sobre el nombre del curso. Una pestaña de más en las
+   * 33 cohortes simples ya es un cambio de pantalla, y FR-032 es un requisito
+   * duro.
    */
   esEspecializacion: boolean;
 }) {
   const [tab, setTab] = useState<
-    "roster" | "program" | "classes" | "attendance" | "grading" | "announcements"
-  >("roster");
+    | "roster"
+    | "program"
+    | "classes"
+    | "attendance"
+    | "grading"
+    | "announcements"
+    | "offline"
+    // 029 — En una especialización se entra por el Recorrido: es la pantalla
+    // que responde "¿cómo va cada uno, módulo por módulo?".
+  >(esEspecializacion ? "program" : "roster");
 
   return (
     <div className="flex h-full flex-col">
       <div className="flex gap-2 border-b px-6 pt-4">
         {(
           [
-            { key: "roster", label: "Alumnos" },
-            // 028 — Segunda y sólo en una especialización: antes de mirar
-            // clases o notas, lo que hay que ver es de qué está hecha.
+            // 029 — En una especialización, el Recorrido va PRIMERO y es la
+            // pestaña por defecto: antes de mirar clases o notas, lo que hay
+            // que ver es de qué está hecha y cómo va cada alumno.
             ...(esEspecializacion
-              ? ([{ key: "program", label: "Especialización" }] as const)
+              ? ([{ key: "program", label: "Recorrido" }] as const)
               : []),
+            { key: "roster", label: "Alumnos" },
             // 013 — Después de saber QUIÉNES cursan, lo que se mira es CUÁNDO.
             // Asistencia y evaluación vienen después.
             { key: "classes", label: "Clases" },
@@ -68,6 +89,11 @@ export function CohortTabs({
             { key: "grading", label: "Evaluación" },
             // 013 — Última: es comunicación, no gestión de la cursada.
             { key: "announcements", label: "Avisos" },
+            // cursos-offline — Library content assigned to the cohort. Last:
+            // it complements the cursada, it does not run it.
+            ...(canViewAcademic
+              ? ([{ key: "offline", label: "Cursos offline" }] as const)
+              : []),
           ] as const
         ).map((t) => (
           <button
@@ -88,12 +114,28 @@ export function CohortTabs({
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {tab === "roster" ? (
-          <RosterClient cohortId={cohortId} canEnroll={canEnroll} />
+          <RosterClient
+            cohortId={cohortId}
+            canEnroll={canEnroll}
+            canViewOfflineCourses={canViewAcademic}
+            canEditOfflineCourses={canEditAcademic}
+          />
         ) : tab === "program" ? (
           <ProgramClient
             cohortId={cohortId}
+            canEditAcademic={canEditAcademic}
             canEditEnrollments={canEditEnrollments}
             canEditGrading={canEditGrading}
+          />
+        ) : tab === "classes" && esEspecializacion ? (
+          <ProgramClassesClient cohortId={cohortId} canEdit={canEditAcademic} />
+        ) : (tab === "attendance" || tab === "grading") && esEspecializacion ? (
+          <ProgramSheetSwitcher
+            key={tab}
+            cohortId={cohortId}
+            kind={tab}
+            canEditGrading={canEditGrading}
+            canIssueCertificates={canIssueCertificates}
           />
         ) : tab === "classes" ? (
           <ClassesClient
@@ -103,6 +145,8 @@ export function CohortTabs({
           />
         ) : tab === "attendance" ? (
           <AttendanceClient cohortId={cohortId} />
+        ) : tab === "offline" ? (
+          <CohortOfflineCoursesClient cohortId={cohortId} canEdit={canEditAcademic} />
         ) : tab === "grading" ? (
           <GradingClient
             cohortId={cohortId}

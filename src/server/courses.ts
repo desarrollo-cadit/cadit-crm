@@ -14,7 +14,11 @@ import {
 } from "@/server/course-content";
 import { findScheduleConflicts, type ScheduleConflict } from "@/server/teachers";
 import { roomAssignmentError } from "@/server/virtual-rooms";
-import { verificarPadreDeCohorte } from "@/server/program-modules";
+import {
+  verificarMarcaDeEspecializacion,
+  verificarPadreDeCohorte,
+} from "@/server/program-modules";
+import { planDeReorden, siguientePosicion } from "@/lib/program-order";
 
 
 /**
@@ -377,8 +381,17 @@ export type CohortInput = {
    * pueda nacer torcido por ninguna vía del servidor.
    */
   parentCohortId?: string | null;
-  /** 028 (FR-002) — Orden del módulo dentro de su programa. Sin padre, no significa nada. */
+  /**
+   * 028 (FR-002) — Orden del módulo dentro de su programa. Sin padre, no
+   * significa nada. En el alta de un módulo, omitirlo lo manda al FINAL
+   * (`siguientePosicion`): nadie tiene que tipear 10/20/30.
+   */
   position?: number | null;
+  /**
+   * 028 (seguimiento) — La cohorte ES una especialización. Omitido en el alta
+   * = cohorte común; omitido en un PATCH = no se toca.
+   */
+  isSpecialization?: boolean;
   /** 005 (DV-004) — software(s) que declara usar la cohorte. */
   softwareIds?: string[];
 };
@@ -440,6 +453,12 @@ export const cohortInputSchema = {
    */
   parentCohortId: z.string().min(1).nullable().optional(),
   position: z.number().int().min(0).nullable().optional(),
+  /**
+   * 028 (seguimiento) — Marcar o desmarcar la especialización. Igual que el
+   * padre, la forma la comprueba Zod y la coherencia con el árbol la
+   * comprueba `verificarMarcaDeEspecializacion`, en un solo lugar.
+   */
+  isSpecialization: z.boolean().optional(),
   softwareIds: z.array(z.string().min(1)).optional(),
 };
 
@@ -589,23 +608,58 @@ export async function createCohort(
   // 028 (FR-003/FR-004) — antes de insertar: el árbol es de un solo nivel.
   // El último argumento declara un HECHO, no una excepción a la regla: esta
   // cohorte todavía no existe, así que nadie puede estar cursándola.
-  const treeError = await verificarPadreDeCohorte(
-    db,
-    organizationId,
-    id,
-    input.parentCohortId ?? null,
-    true
-  );
+  const esEspecializacion = input.isSpecialization ?? false;
+  const treeError =
+    (await verificarMarcaDeEspecializacion(
+      db,
+      organizationId,
+      id,
+      esEspecializacion,
+      input.parentCohortId ?? null,
+      true
+    )) ??
+    (await verificarPadreDeCohorte(
+      db,
+      organizationId,
+      id,
+      input.parentCohortId ?? null,
+      true,
+      esEspecializacion
+    ));
   if (treeError) {
     return { ok: false, status: 422, code: "invalid_body", message: treeError.message };
   }
+
+  /**
+   * El módulo nuevo sin lugar declarado va al FINAL del programa. Se resuelve
+   * acá y no en el navegador: la pantalla puede tener una lista vieja, y dos
+   * altas seguidas desde la pestaña caerían en el mismo número.
+   */
+  const position =
+    input.parentCohortId && input.position == null
+      ? siguientePosicion(
+          (
+            await db
+              .select({ position: schema.cohort.position })
+              .from(schema.cohort)
+              .where(
+                scoped(
+                  schema.cohort.organizationId,
+                  organizationId,
+                  eq(schema.cohort.parentCohortId, input.parentCohortId)
+                )
+              )
+          ).map((r) => r.position)
+        )
+      : (input.position ?? null);
 
   await db.insert(schema.cohort).values({
     id,
     organizationId,
     courseId: input.courseId,
     parentCohortId: input.parentCohortId ?? null,
-    position: input.position ?? null,
+    position,
+    isSpecialization: esEspecializacion,
     name: input.name ?? null,
     startDate: input.startDate,
     endDate: input.endDate ?? null,
@@ -677,10 +731,42 @@ export async function updateCohort(
       db,
       organizationId,
       cohortId,
-      input.parentCohortId
+      input.parentCohortId,
+      false,
+      input.isSpecialization
     );
     if (treeError) {
       return { ok: false, status: 422, code: "invalid_body", message: treeError.message };
+    }
+  }
+
+  /**
+   * 028 (seguimiento) — Sólo si el pedido TOCA la marca, por el mismo motivo
+   * que el padre. El padre con el que queda la cohorte es el del pedido si lo
+   * trae; si no, el que ya tenía.
+   */
+  if (input.isSpecialization !== undefined) {
+    const padreFinal =
+      input.parentCohortId !== undefined
+        ? input.parentCohortId
+        : ((
+            await db
+              .select({ parentCohortId: schema.cohort.parentCohortId })
+              .from(schema.cohort)
+              .where(
+                scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, cohortId))
+              )
+              .limit(1)
+          )[0]?.parentCohortId ?? null);
+    const markError = await verificarMarcaDeEspecializacion(
+      db,
+      organizationId,
+      cohortId,
+      input.isSpecialization,
+      padreFinal
+    );
+    if (markError) {
+      return { ok: false, status: 422, code: "invalid_body", message: markError.message };
     }
   }
 
@@ -692,6 +778,9 @@ export async function updateCohort(
         ? { parentCohortId: input.parentCohortId }
         : {}),
       ...(input.position !== undefined ? { position: input.position } : {}),
+      ...(input.isSpecialization !== undefined
+        ? { isSpecialization: input.isSpecialization }
+        : {}),
       ...(input.name !== undefined ? { name: input.name } : {}),
       ...(input.startDate !== undefined ? { startDate: input.startDate } : {}),
       ...(input.endDate !== undefined ? { endDate: input.endDate } : {}),
@@ -764,6 +853,75 @@ export async function updateCohort(
   return { ok: true, cohort, licenseWarnings, scheduleWarnings };
 }
 
+export type ReordenarModulosResult =
+  | { ok: true; positions: { id: string; position: number }[] }
+  | { ok: false; status: 404; code: "not_found"; message: string }
+  | { ok: false; status: 422; code: "invalid_body"; message: string };
+
+/**
+ * 028 (seguimiento) — Reordenar los módulos desde la pestaña (↑/↓).
+ *
+ * El pedido es la lista COMPLETA en el orden nuevo y el servidor renumera
+ * 10, 20, 30… (`planDeReorden`). Así un ↑ nunca depende de qué números había
+ * cargados, y de paso se ordena lo que estuviera mal cargado.
+ *
+ * Toda la validación va ANTES de la primera escritura: devolver un 422 no
+ * revierte la transacción del pedido, así que un error a mitad de camino
+ * dejaría la mitad de los módulos renumerados.
+ */
+export async function reordenarModulos(
+  organizationId: string,
+  parentCohortId: string,
+  order: string[]
+): Promise<ReordenarModulosResult> {
+  const db = getDb();
+
+  const madre = await db
+    .select({ id: schema.cohort.id })
+    .from(schema.cohort)
+    .where(
+      scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, parentCohortId))
+    )
+    .limit(1);
+  if (!madre[0]) {
+    return { ok: false, status: 404, code: "not_found", message: "Cohorte no encontrada" };
+  }
+
+  const actuales = await db
+    .select({ id: schema.cohort.id })
+    .from(schema.cohort)
+    .where(
+      scoped(
+        schema.cohort.organizationId,
+        organizationId,
+        eq(schema.cohort.parentCohortId, parentCohortId)
+      )
+    );
+
+  const plan = planDeReorden(
+    actuales.map((m) => m.id),
+    order
+  );
+  if (!plan.ok) {
+    return { ok: false, status: 422, code: "invalid_body", message: plan.message };
+  }
+
+  for (const { id, position } of plan.positions) {
+    await db
+      .update(schema.cohort)
+      .set({ position, updatedAt: new Date() })
+      .where(
+        scoped(
+          schema.cohort.organizationId,
+          organizationId,
+          eq(schema.cohort.id, id),
+          eq(schema.cohort.parentCohortId, parentCohortId)
+        )
+      );
+  }
+  return { ok: true, positions: plan.positions };
+}
+
 type CohortRow = typeof schema.cohort.$inferSelect;
 type CourseRow = typeof schema.course.$inferSelect;
 type TeacherRow = typeof schema.teacher.$inferSelect;
@@ -824,6 +982,8 @@ function serializeCohort(
      */
     parentCohortId: cohort.parentCohortId,
     position: cohort.position,
+    /** 028 (seguimiento) — La marca explícita: decide la pestaña y el formulario. */
+    isSpecialization: cohort.isSpecialization,
     startDate: cohort.startDate.toISOString(),
     endDate: cohort.endDate?.toISOString() ?? null,
     startTime: cohort.startTime,

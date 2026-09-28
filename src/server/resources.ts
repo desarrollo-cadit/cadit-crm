@@ -1,5 +1,5 @@
 import { httpUrl } from "@/lib/url-schema";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, or } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
@@ -147,12 +147,148 @@ export async function listResources(
   return rows.map(serialize);
 }
 
+/**
+ * 029 — El material de CADA clase de una cohorte, repartido por clase.
+ *
+ * Existe para cortar el N+1 de la pestaña Clases: antes cada fila montaba su
+ * panel y pedía lo suyo. Recibe filas ya ordenadas y conserva ese orden; se
+ * queda solo con lo que cuelga de una clase y devuelve el MISMO DTO que el
+ * pedido por clase — ni una columna más.
+ */
+export function agruparMaterialPorClase(
+  rows: readonly ResourceDto[]
+): Record<string, ResourceDto[]> {
+  const porClase: Record<string, ResourceDto[]> = {};
+  for (const r of rows) {
+    if (!r.classSessionId) continue;
+    // Se rearma a propósito y no se empuja `r`: el tipo admite filas más
+    // anchas (con `organizationId`, `createdAt`…) y lo que viaja al cliente es
+    // el DTO exacto, ni una columna más.
+    const dto: ResourceDto = {
+      id: r.id,
+      title: r.title,
+      url: r.url,
+      kind: r.kind,
+      position: r.position,
+      courseId: r.courseId,
+      cohortId: r.cohortId,
+      classSessionId: r.classSessionId,
+      courseModuleId: r.courseModuleId,
+    };
+    (porClase[r.classSessionId] ??= []).push(dto);
+  }
+  return porClase;
+}
+
+/**
+ * 029 — Todo el material de clase de una cohorte en UNA consulta.
+ *
+ * Si la cohorte es una especialización, entran también las clases de sus
+ * módulos (`parent_cohort_id`): la pestaña Clases de la madre las muestra
+ * agrupadas por módulo, y pedirlas módulo por módulo sería el mismo N+1 con
+ * otro nombre. Mismas reglas de visibilidad que `listResources`: el material
+ * es contenido del curso y lo ve quien ve lo académico.
+ */
+export async function listClassResourcesOfCohort(
+  organizationId: string,
+  cohortId: string
+): Promise<Record<string, ResourceDto[]>> {
+  const rows = await getDb()
+    .select({
+      id: schema.resource.id,
+      title: schema.resource.title,
+      url: schema.resource.url,
+      kind: schema.resource.kind,
+      position: schema.resource.position,
+      courseId: schema.resource.courseId,
+      cohortId: schema.resource.cohortId,
+      classSessionId: schema.resource.classSessionId,
+      courseModuleId: schema.resource.courseModuleId,
+    })
+    .from(schema.resource)
+    .innerJoin(schema.classSession, eq(schema.resource.classSessionId, schema.classSession.id))
+    .innerJoin(schema.cohort, eq(schema.classSession.cohortId, schema.cohort.id))
+    .where(
+      scoped(
+        schema.resource.organizationId,
+        organizationId,
+        or(eq(schema.cohort.id, cohortId), eq(schema.cohort.parentCohortId, cohortId))
+      )
+    )
+    .orderBy(asc(schema.resource.position), asc(schema.resource.createdAt));
+  return agruparMaterialPorClase(rows);
+}
+
+/**
+ * Confirma que el contenedor y el módulo del temario que llegan del cliente
+ * pertenecen a `organizationId`. Las FK se verifican fuera de RLS: sin esto,
+ * un material propio podría apuntar a un curso, camada o clase de OTRA
+ * organización con solo conocer su id — misma disciplina que
+ * `validateCohortForeignKeys`.
+ */
+async function validateResourceForeignKeys(
+  organizationId: string,
+  input: ResourceInput
+): Promise<string | null> {
+  const db = getDb();
+  if (input.courseId) {
+    const rows = await db
+      .select({ id: schema.course.id })
+      .from(schema.course)
+      .where(scoped(schema.course.organizationId, organizationId, eq(schema.course.id, input.courseId)))
+      .limit(1);
+    if (!rows[0]) return "Curso inexistente";
+  }
+  if (input.cohortId) {
+    const rows = await db
+      .select({ id: schema.cohort.id })
+      .from(schema.cohort)
+      .where(scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, input.cohortId)))
+      .limit(1);
+    if (!rows[0]) return "Camada inexistente";
+  }
+  if (input.classSessionId) {
+    const rows = await db
+      .select({ id: schema.classSession.id })
+      .from(schema.classSession)
+      .where(
+        scoped(
+          schema.classSession.organizationId,
+          organizationId,
+          eq(schema.classSession.id, input.classSessionId)
+        )
+      )
+      .limit(1);
+    if (!rows[0]) return "Clase inexistente";
+  }
+  if (input.courseModuleId) {
+    const rows = await db
+      .select({ id: schema.courseModule.id })
+      .from(schema.courseModule)
+      .where(
+        scoped(
+          schema.courseModule.organizationId,
+          organizationId,
+          eq(schema.courseModule.id, input.courseModuleId)
+        )
+      )
+      .limit(1);
+    if (!rows[0]) return "Módulo del temario inexistente";
+  }
+  return null;
+}
+
 export async function createResource(
   organizationId: string,
   input: ResourceInput
 ): Promise<ResourceResult<ResourceDto>> {
   const valid = validateResource(input);
   if (!valid.ok) return valid;
+
+  const fkError = await validateResourceForeignKeys(organizationId, input);
+  if (fkError) {
+    return { ok: false, status: 422, code: "invalid_reference", message: fkError };
+  }
 
   const inserted = await getDb()
     .insert(schema.resource)

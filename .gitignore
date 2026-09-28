@@ -70,3 +70,4 @@ dev-e2e.log
 # Contraseña suelta de una prueba local: nunca al repositorio.
 .tmp-pass.txt
 .next-build/
+.tmp-import-offline-courses.mjs
