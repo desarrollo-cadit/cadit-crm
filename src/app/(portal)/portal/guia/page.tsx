@@ -10,6 +10,7 @@ import {
   GUIA_PORTAL_PROFESOR,
 } from "@/lib/guia-portal";
 import { ITEMS_ALUMNO, ITEMS_PROFESOR } from "@/lib/nav";
+import { EncabezadoDePagina } from "@/components/portal/campus";
 
 export const dynamic = "force-dynamic";
 
@@ -41,13 +42,14 @@ export default async function GuiaPortalPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Guía del portal</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Descripción de cada sección del menú. Solo se muestran las secciones
-          habilitadas para tu cuenta.
-        </p>
-      </div>
+      <EncabezadoDePagina
+        migas={[
+          { label: "Inicio", href: "/portal" },
+          { label: "Guía del portal", href: null },
+        ]}
+        titulo="Guía del portal"
+        descripcion="Descripción de cada sección del menú. Solo se muestran las secciones habilitadas para tu cuenta."
+      />
 
       {/*
         SC-005 — Quien cursa Y da clase ve las dos secciones, rotuladas. Es un
@@ -96,7 +98,7 @@ function Seccion({
 }) {
   return (
     <section>
-      <h2 className="portal-vista-label font-display text-[10.5px] font-semibold uppercase tracking-wide text-text-3">
+      <h2 className="text-[10.5px] font-semibold uppercase tracking-wide text-text-3">
         {titulo}
       </h2>
       <ul className="mt-2 divide-y divide-border rounded-lg border border-border">
