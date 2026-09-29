@@ -111,7 +111,7 @@ export function TemplatesClient() {
         ))}
         {!loading && templates.length === 0 && (
           <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-            Sin plantillas todavía. Crea la primera arriba — por ejemplo un
+            Sin plantillas todavía. Creá la primera arriba — por ejemplo un
             «seguimos disponibles, ¿retomamos tu cotización?» para
             conversaciones frías.
           </p>

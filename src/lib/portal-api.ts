@@ -35,7 +35,7 @@ export function requireTeacherPortal<Args extends unknown[]>(
 ): (...args: Args) => Promise<Response> {
   return async (...args: Args) => {
     const portal = await resolvePortalSession();
-    if (!portal) return apiError(401, "unauthorized", "No autenticado");
+    if (!portal) return apiError(401, "unauthorized", "Tu sesión expiró. Volvé a iniciar sesión.");
 
     const teacherId = portalTeacherId(portal);
     if (!teacherId) {
@@ -56,7 +56,7 @@ export function requireTeacherPortal<Args extends unknown[]>(
       );
     } catch (err) {
       console.error("[portal] error no controlado:", err);
-      return apiError(500, "internal", "Error interno");
+      return apiError(500, "internal", "Algo falló de nuestro lado. Probá de nuevo en unos minutos.");
     }
   };
 }
@@ -93,7 +93,7 @@ export function requireStudentPortal<Args extends unknown[]>(
 ): (...args: Args) => Promise<Response> {
   return async (...args: Args) => {
     const portal = await resolvePortalSession();
-    if (!portal) return apiError(401, "unauthorized", "No autenticado");
+    if (!portal) return apiError(401, "unauthorized", "Tu sesión expiró. Volvé a iniciar sesión.");
 
     const contactId = studentContactId(portal);
     if (!contactId) {
@@ -112,7 +112,7 @@ export function requireStudentPortal<Args extends unknown[]>(
       );
     } catch (err) {
       console.error("[portal] error no controlado:", err);
-      return apiError(500, "internal", "Error interno");
+      return apiError(500, "internal", "Algo falló de nuestro lado. Probá de nuevo en unos minutos.");
     }
   };
 }

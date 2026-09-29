@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderTemplate } from "@/server/email/templates";
+import { contenidoPortalPara } from "@/server/email/portal-access-copy";
 // 023 — `escapeHtml` se unificó en `@/lib/utils`: había tres copias divergentes.
 import { escapeHtml } from "@/lib/utils";
 
@@ -51,5 +52,39 @@ describe("renderTemplate", () => {
 
   it("escapeHtml cubre los cinco caracteres", () => {
     expect(escapeHtml(`<>&"'`)).toBe("&lt;&gt;&amp;&quot;&#39;");
+  });
+});
+
+/**
+ * El correo de acceso al portal lo reciben alumnos Y profesores. El texto que
+ * describe qué hay adentro depende de a quién va: a un profesor no se le
+ * promete un legajo ni certificados que no tiene.
+ */
+describe("correo de acceso al portal", () => {
+  const base = { nombre: "Ana", academia: "CAD IT" };
+  // Lo que lee la persona: los comentarios de la plantilla son para quien la edita.
+  const visible = (html: string) => html.replace(/<!--[\s\S]*?-->/g, "");
+
+  it("al profesor le describe su portal, sin hablarle como alumno", () => {
+    const html = visible(
+      renderTemplate("acceso-portal", {
+        ...base,
+        contenidoPortal: contenidoPortalPara("profesor"),
+      })
+    );
+    expect(html).toContain("tus cohortes");
+    expect(html).not.toMatch(/legajo/i);
+    expect(html).not.toMatch(/alumno/i);
+  });
+
+  it("al alumno le sigue contando sus cursadas, legajo y certificados", () => {
+    const html = renderTemplate("acceso-portal", {
+      ...base,
+      contenidoPortal: contenidoPortalPara("alumno"),
+    });
+    expect(html).toContain(
+      "Ahí vas a encontrar tus cursadas, tu legajo y tus certificados."
+    );
+    expect(html).toContain("ya tenés acceso al portal de CAD IT");
   });
 });

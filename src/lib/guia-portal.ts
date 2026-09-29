@@ -29,7 +29,7 @@ export const GUIA_PORTAL_ALUMNO: Record<HrefAlumno, string> = {
   "/portal":
     "Resumen de tus cursos: próxima clase, avance y pendientes.",
   "/portal/cuenta":
-    "Cuotas, pagos registrados, saldo y próximo vencimiento. Si algún importe no coincide con tus pagos, comunicate con la academia.",
+    "Cuotas, pagos registrados, saldo y próximo vencimiento. Si algún importe no coincide con lo que pagaste, escribinos y lo revisamos.",
   "/portal/certificados":
     "Los certificados de los cursos que finalizaste. Cada uno incluye un enlace público de verificación: podés compartirlo con una empresa sin otorgarle acceso a otros datos personales.",
   "/portal/cursos-offline":
@@ -38,7 +38,7 @@ export const GUIA_PORTAL_ALUMNO: Record<HrefAlumno, string> = {
 
 export const GUIA_PORTAL_PROFESOR: Record<HrefProfesor, string> = {
   "/portal/dictado":
-    "Las cohortes a tu cargo. Desde aquí registrás la asistencia de cada clase, cargás los resultados de las evaluaciones, revisás las entregas y publicás material.",
+    "Las cohortes a tu cargo. Desde acá registrás la asistencia de cada clase, cargás los resultados de las evaluaciones, revisás las entregas y publicás material.",
   "/portal/horas":
     "Las horas que dictaste, con el total general y el de cada cohorte. Sirve como referencia para controlar la liquidación.",
 };
@@ -52,4 +52,4 @@ export const GUIA_PORTAL_PROFESOR: Record<HrefProfesor, string> = {
  * cualquier lista.
  */
 export const CIERRE_PORTAL =
-  "Si no encontrás lo que buscás, comunicate con la academia por WhatsApp o por correo electrónico.";
+  "¿No encontrás lo que buscás? Escribinos por WhatsApp o por correo y te ayudamos.";

@@ -193,7 +193,7 @@ export function FinanzasClient() {
     setCargando(false);
     if (!res?.ok) {
       setError(
-        "No se pudo cargar el período. Volvé a intentar; si sigue igual, avisá a quien administra la instancia."
+        "No pudimos cargar el período. Si al reintentar sigue igual, avisale a quien administra la instancia."
       );
       return;
     }

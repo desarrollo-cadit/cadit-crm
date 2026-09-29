@@ -148,7 +148,7 @@ export function StudentDashboard() {
     void (async () => {
       const res = await fetch("/api/portal/me").catch(() => null);
       if (!res?.ok) {
-        setError("No se pudo cargar tu información. Recargá la página o intentá nuevamente más tarde.");
+        setError("No pudimos cargar tu información. Suele ser algo momentáneo: en unos minutos debería aparecer.");
         return;
       }
       setData((await res.json()) as Overview);

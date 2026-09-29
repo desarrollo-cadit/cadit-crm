@@ -16,6 +16,7 @@ import {
   programApprovalState,
   type ApprovalState,
 } from "@/server/grading";
+import { reasonForStudent } from "@/server/student-reasons";
 import {
   listAnnouncements,
   listCohortMaterial,
@@ -624,8 +625,8 @@ function buildCourse(
     minAttendancePct,
     approval: sinDatos ? "sin_datos" : state,
     approvalReasons: sinDatos
-      ? ["Este curso no tiene asistencia ni evaluaciones registradas en el sistema"]
-      : reasons,
+      ? ["Todavía no hay asistencia ni evaluaciones cargadas para este curso"]
+      : reasons.map(reasonForStudent),
     assessments,
     certificate: cert
       ? {
@@ -790,7 +791,7 @@ function estadoDeEspecializacion(modulos: StudentModuleDto[]): {
     const faltan = modulos.filter((m) => m.approval !== "aprobado");
     return {
       state,
-      reasons: [`Falta aprobar ${faltan.map((m) => m.cohortName).join(", ")}`],
+      reasons: [`Te falta aprobar ${faltan.map((m) => m.cohortName).join(", ")}`],
     };
   }
 
@@ -1691,7 +1692,7 @@ export function buildMilestones(input: {
        * qué sin tener que preguntar.
        */
       detail: input.certificate?.revokedAt
-        ? "Anulado — consultá con la academia"
+        ? "Anulado · Escribinos si tenés dudas"
         : input.certificate
           ? null
           : "Se emite cuando estén aprobados todos los módulos de la especialización",
@@ -1797,7 +1798,7 @@ export function buildMilestones(input: {
     key: "certificado",
     label: "Certificado",
     detail: input.certificate?.revokedAt
-      ? "Anulado — consultá con la academia"
+      ? "Anulado · Escribinos si tenés dudas"
       : input.certificate
         ? null
         : "Se emite al terminar, con la asistencia y las evaluaciones cumplidas",

@@ -52,7 +52,7 @@ export function TopicDialog({
 
   async function save() {
     if (!title.trim()) {
-      setError("El título es obligatorio.");
+      setError("Falta el título.");
       return;
     }
     if (video.kind === "invalid") {

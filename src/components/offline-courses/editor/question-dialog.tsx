@@ -72,10 +72,10 @@ export function QuestionDialog({
 
   async function save() {
     setTried(true);
-    if (!text.trim()) return setError("La pregunta es obligatoria.");
+    if (!text.trim()) return setError("Falta la pregunta.");
     const pts = points.trim();
     if (!/^\d+$/.test(pts) || Number(pts) > 1000) {
-      return setError("Los puntos deben ser un número entero entre 0 y 1000.");
+      return setError("Los puntos van de 0 a 1000, sin decimales.");
     }
     if (emptyAnswer) return setError("Una respuesta no puede estar vacía.");
     // Shown live under the answers (and it clears itself once fixed).

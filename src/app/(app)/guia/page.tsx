@@ -61,9 +61,8 @@ export default async function GuiaPage() {
 
         {propias.length === 0 ? (
           <p className="mt-8 rounded-md border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
-            Tu cuenta todavía no tiene ningún permiso asignado. Pedile a quien
-            administra la instancia que te asigne un rol: hasta entonces vas a
-            ver el panel vacío.
+            Tu cuenta todavía no tiene un rol asignado, por eso el panel se ve
+            vacío. Quien administra la instancia puede asignártelo.
           </p>
         ) : (
           <div className="mt-7 space-y-7">
@@ -118,9 +117,9 @@ export default async function GuiaPage() {
             </summary>
             <div className="border-t border-border px-4 pb-4 pt-3">
               <p className="text-xs text-muted-foreground">
-                El sistema hace todo esto, pero no con tu cuenta. Está acá para
-                que sepas a quién pedírselo, no para que lo intentes: estas
-                pantallas te van a responder que no tenés acceso.
+                Estas funciones existen, pero tu rol no las incluye. Te las
+                mostramos para que sepas a quién pedírselas cuando las
+                necesites.
               </p>
               <div className="mt-4 space-y-5">
                 {agruparCapacidades(ajenas).map((grupo) => (

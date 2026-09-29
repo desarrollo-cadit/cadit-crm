@@ -139,7 +139,7 @@ export function Composer({
   async function submitLocation() {
     const coords = parseCoords(coordsRaw);
     if (!coords) {
-      setError("Coordenadas inválidas — pega «lat, long» o un enlace de Google Maps");
+      setError("No reconocemos esas coordenadas. Pegá «lat, long» o un enlace de Google Maps");
       return;
     }
     setSending(true);
@@ -375,7 +375,7 @@ export function Composer({
         </div>
         <textarea
           ref={taRef}
-          placeholder={file ? "Pie del adjunto (opcional)…" : "Escribe una respuesta…"}
+          placeholder={file ? "Pie del adjunto (opcional)…" : "Escribí una respuesta…"}
           value={text}
           rows={1}
           onChange={(e) => {

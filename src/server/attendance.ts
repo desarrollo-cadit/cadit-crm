@@ -281,7 +281,7 @@ export async function generateSchedule(
       ok: false,
       status: 422,
       code: "no_end_date",
-      message: "La cohorte no tiene fecha de fin: no se puede generar el cronograma",
+      message: "La cohorte todavía no tiene fecha de fin. Cuando la cargues, vas a poder generar el cronograma.",
     };
   }
   if (!cohort.daysOfWeek) {
@@ -289,7 +289,7 @@ export async function generateSchedule(
       ok: false,
       status: 422,
       code: "no_days",
-      message: "La cohorte no declara días de cursada. Cargalos y volvé a generar.",
+      message: "La cohorte todavía no tiene días de cursada. Cuando los cargues, vas a poder generar el cronograma.",
     };
   }
 

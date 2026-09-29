@@ -173,7 +173,7 @@ export async function submitAttempt(
       ok: false,
       status: 409,
       code: "attempt_conflict",
-      message: "Se registró otro envío al mismo tiempo. Recargá la página para ver el resultado.",
+      message: "Recibimos otro envío al mismo tiempo. Al recargar la página vas a ver el resultado.",
     };
   }
 

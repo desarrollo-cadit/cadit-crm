@@ -1,4 +1,4 @@
-import { CalendarClock, GraduationCap, Wallet } from "lucide-react";
+import { CalendarClock, FolderOpen, GraduationCap } from "lucide-react";
 import { IsotipoCadIT, LogoCadIT } from "@/components/logo-cadit";
 import { DEFAULT_BRANDING } from "@/lib/branding";
 import { getBranding } from "@/server/branding";
@@ -75,9 +75,9 @@ export default async function AuthLayout({
 
           <ul className="mt-9 space-y-3.5">
             {[
-              { Icon: CalendarClock, text: "Tu próxima clase, con el enlace de la reunión" },
-              { Icon: GraduationCap, text: "Tu asistencia y tus evaluaciones, al día" },
-              { Icon: Wallet, text: "Tus cuotas y tus pagos, en tu moneda" },
+              { Icon: CalendarClock, text: "Clases y enlaces de reunión, siempre a mano" },
+              { Icon: GraduationCap, text: "Asistencia y evaluaciones, al día" },
+              { Icon: FolderOpen, text: "Material, entregas y certificados en un solo lugar" },
             ].map(({ Icon, text }) => (
               <li key={text} className="flex items-center gap-3 text-sm text-on-accent">
                 <span className="on-brand-chip flex h-8 w-8 shrink-0 items-center justify-center rounded-md border">

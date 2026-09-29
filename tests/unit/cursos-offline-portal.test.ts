@@ -11,7 +11,9 @@ import { describe, expect, it } from "vitest";
  * that adds `isCorrect` compiles and hands out the answer key.
  */
 
-const read = (...parts: string[]) => readFileSync(path.join(process.cwd(), ...parts), "utf8");
+// Line endings normalized: with core.autocrlf the checkout is CRLF on Windows.
+const read = (...parts: string[]) =>
+  readFileSync(path.join(process.cwd(), ...parts), "utf8").replace(/\r\n/g, "\n");
 
 /** The source without comments: the rules talk about code, not prose. */
 const sinComentarios = (src: string) =>

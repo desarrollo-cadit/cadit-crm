@@ -26,10 +26,10 @@ export default function RegisterPage() {
     if (err) {
       if (err.status === 403) {
         setError(
-          "El registro está cerrado: esta instancia ya tiene su organización. Pide acceso al propietario."
+          "El registro está cerrado porque esta instancia ya tiene su organización. Podés pedirle acceso a quien la administra."
         );
       } else if (err.status === 429) {
-        setError("Demasiados intentos. Espera unos minutos.");
+        setError("Hubo varios intentos seguidos. En unos minutos vas a poder intentarlo de nuevo.");
       } else {
         setError(err.message ?? "No se pudo crear la cuenta.");
       }
@@ -87,7 +87,7 @@ export default function RegisterPage() {
             {loading ? "Creando…" : "Crear cuenta"}
           </Button>
           <p className="text-center text-sm text-muted-foreground">
-            ¿Ya tienes cuenta?{" "}
+            ¿Ya tenés cuenta?{" "}
             <Link href="/login" className="text-primary hover:underline">
               Inicia sesión
             </Link>

@@ -218,8 +218,8 @@ export function ContactPanel({
                 />
                 <p className="text-[11px] leading-relaxed text-warning">
                   {aiConfigured
-                    ? "El agente de CadIT no responde por su cuenta. Configura lo básico y enciéndelo (o conecta tu propio bot por la API)."
-                    : "Falta la clave de IA de la instancia (OPENROUTER_API_TOKEN) para que el agente responda, o conecta tu propio bot por la API."}
+                    ? "El agente de CadIT no responde por su cuenta. Configurá lo básico y encendelo (o conectá tu propio bot por la API)."
+                    : "Falta la clave de IA de la instancia (OPENROUTER_API_TOKEN) para que el agente responda, o conectá tu propio bot por la API."}
                   {aiConfigured && (
                     <Link
                       href="/agent"

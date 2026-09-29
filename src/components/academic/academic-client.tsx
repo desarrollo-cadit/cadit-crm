@@ -313,8 +313,8 @@ export function AcademicClient() {
      */
     setAvisoProfesor(
       data.emailError
-        ? `Acceso creado, pero el correo NO salió (${data.emailError}) — dictale vos la contraseña: ${data.temporaryPassword}. No se puede volver a ver.`
-        : `Acceso creado. Contraseña temporal: ${data.temporaryPassword} — ya se la mandamos por correo, no se puede volver a ver.`
+        ? `Creamos el acceso, pero el correo no se pudo enviar (${data.emailError}). La contraseña temporal es ${data.temporaryPassword}: compartila por otro medio, porque no se va a volver a mostrar.`
+        : `Acceso creado y correo enviado. Contraseña temporal: ${data.temporaryPassword} (no se va a volver a mostrar).`
     );
   }
 

@@ -88,7 +88,7 @@ export function getEnv(): Env {
       .join("\n  ");
     throw new Error(
       `Variables de entorno inválidas o faltantes:\n  ${missing}\n` +
-        "Revisa .env.example para la guía de cada variable."
+        "Revisá .env.example para la guía de cada variable."
     );
   }
   cached = parsed.data;

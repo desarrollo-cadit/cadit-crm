@@ -167,7 +167,7 @@ export function VimeoPlayer({
             Verlo en vimeo.com
             <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.7} />
           </a>
-          . Si lo ves allá, pedile a la academia que marque el tema como completado.
+          . Si allá se ve bien, escribinos y marcamos el tema como completado.
         </p>
       )}
     </div>

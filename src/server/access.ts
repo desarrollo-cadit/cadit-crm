@@ -11,6 +11,7 @@ import { PORTAL_NO_EMAIL_REASON } from "@/lib/portal-access";
 import { fullName } from "@/lib/utils";
 import { resolveMembership } from "@/server/auth/on-signup";
 import { getBranding } from "@/server/branding";
+import { contenidoPortalPara } from "@/server/email/portal-access-copy";
 import { renderTemplate } from "@/server/email/templates";
 
 /**
@@ -411,7 +412,7 @@ export async function grantPortalAccess(
   });
   if (!linked.ok) return linked;
 
-  const envio = await sendInvitationEmail(organizationId, contact, temporaryPassword);
+  const envio = await sendInvitationEmail(organizationId, contact, temporaryPassword, "alumno");
 
   return {
     ok: true,
@@ -529,7 +530,12 @@ export async function grantTeacherPortalAccess(
   });
   if (!linked.ok) return linked;
 
-  const envio = await sendInvitationEmail(organizationId, comoContacto, temporaryPassword);
+  const envio = await sendInvitationEmail(
+    organizationId,
+    comoContacto,
+    temporaryPassword,
+    "profesor"
+  );
 
   return {
     ok: true,
@@ -555,7 +561,12 @@ async function inviteExisting(
     await authCtx.password.hash(temporaryPassword)
   );
 
-  const envio = await sendInvitationEmail(organizationId, contact, temporaryPassword);
+  const envio = await sendInvitationEmail(
+    organizationId,
+    contact,
+    temporaryPassword,
+    link.kind
+  );
 
   return {
     ok: true,
@@ -569,7 +580,8 @@ type EnvioDeInvitacion = { emailSentAt: string | null; emailError: string | null
 async function sendInvitationEmail(
   organizationId: string,
   contact: typeof schema.contact.$inferSelect,
-  temporaryPassword: string
+  temporaryPassword: string,
+  kind: AccountLinkKind
 ): Promise<EnvioDeInvitacion> {
   const env = getEnv();
   /**
@@ -598,6 +610,7 @@ async function sendInvitationEmail(
       usuario: (contact.email ?? "").toLowerCase(),
       contrasenaTemporal: temporaryPassword,
       contactoSoporte: env.M365_SENDER ?? "",
+      contenidoPortal: contenidoPortalPara(kind),
     }),
     bcc: env.M365_BCC,
   });

@@ -62,7 +62,7 @@ export function FormsClient() {
           </div>
         ) : forms.length === 0 ? (
           <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-            Sin formularios todavía. Crea el primero arriba para obtener su
+            Sin formularios todavía. Creá el primero arriba para obtener su
             URL de envío.
           </p>
         ) : (

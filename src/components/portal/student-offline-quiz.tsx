@@ -209,7 +209,7 @@ function QuizForm({
       onResult(body.result);
       return;
     }
-    setError(body?.error?.message ?? "No se pudo enviar el cuestionario. Intentá nuevamente.");
+    setError(body?.error?.message ?? "No pudimos enviar el cuestionario. Podés intentarlo de nuevo en un momento.");
     // The choices stay on screen: reloading only refreshes the attempts count.
     if (res?.status === 409) await onConflict();
   }
@@ -217,7 +217,7 @@ function QuizForm({
   if (!canAttempt) {
     return (
       <EmptyNote title="No quedan intentos para este cuestionario">
-        Ya se usaron todos los intentos disponibles. Si necesitás otro, consultá con la academia.
+        Usaste todos los intentos disponibles. Si necesitás uno más, escribinos y lo vemos.
       </EmptyNote>
     );
   }
@@ -278,9 +278,9 @@ function QuizForm({
       {confirmBlank && (
         <p role="alert" className="text-sm text-warning">
           {unanswered === 1
-            ? "Hay 1 pregunta sin responder; cuenta como incorrecta."
-            : `Hay ${unanswered} preguntas sin responder; cuentan como incorrectas.`}{" "}
-          Enviá de nuevo para confirmar.
+            ? "Te queda 1 pregunta sin responder, y cuenta como incorrecta."
+            : `Te quedan ${unanswered} preguntas sin responder, y cuentan como incorrectas.`}{" "}
+          Si igual querés enviarlo, tocá «Enviar de todos modos».
         </p>
       )}
       <Button type="submit" size="lg" disabled={sending}>

@@ -182,10 +182,11 @@ describe("cannotGenerateReason — el motivo, no un botón que falla", () => {
     ).toBeNull();
   });
 
-  it("sin días declarados, lo dice y dice dónde cargarlos", () => {
+  it("sin días declarados, lo dice y dice qué destraba", () => {
     const motivo = cannotGenerateReason({ endDate: new Date("2026-06-01"), daysOfWeek: null });
-    expect(motivo).toContain("días de cursada");
-    expect(motivo).toContain("edición de la cohorte");
+    expect(motivo).toBe(
+      "La cohorte todavía no tiene días de cursada. Cuando los cargues, vas a poder generar el cronograma."
+    );
   });
 
   it("días en blanco cuenta como no declarados", () => {

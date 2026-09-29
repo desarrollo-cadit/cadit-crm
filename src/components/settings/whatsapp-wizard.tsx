@@ -70,8 +70,8 @@ export function WhatsappWizard() {
               El token de WhatsApp expiró o fue revocado.
             </p>
             <p className="text-danger">
-              Los envíos están pausados. Pega un token nuevo abajo y prueba la
-              conexión para reconectar.
+              Los envíos están pausados. Para reanudarlos, pegá un token nuevo
+              abajo y probá la conexión.
             </p>
           </div>
         </div>
@@ -84,7 +84,7 @@ export function WhatsappWizard() {
             <p className="font-medium text-success">
               Número conectado: {connection.displayPhoneNumber ?? connection.phoneNumberId}
             </p>
-            <p className="text-success80">
+            <p className="text-text-2">
               {connection.verifiedName ? `${connection.verifiedName} · ` : ""}
               token …{connection.tokenLast4}
             </p>
@@ -178,7 +178,7 @@ function ConnectForm({
           {existing ? "Reconectar / actualizar el número" : "Conectar tu número de WhatsApp"}
         </CardTitle>
         <CardDescription>
-          Pega las credenciales de WhatsApp Cloud API. El token se valida
+          Pegá las credenciales de WhatsApp Cloud API. El token se valida
           contra Meta ANTES de guardarse y se almacena cifrado.
         </CardDescription>
       </CardHeader>
@@ -234,7 +234,7 @@ function ConnectForm({
           <Input
             id="token"
             type="password"
-            placeholder={existing ? `Guardado (…${existing.tokenLast4}) — pega uno nuevo para cambiarlo` : "EAAG…"}
+            placeholder={existing ? `Guardado (…${existing.tokenLast4}) — pegá uno nuevo para cambiarlo` : "EAAG…"}
             value={token}
             onChange={(e) => {
               setToken(e.target.value);
@@ -248,7 +248,7 @@ function ConnectForm({
             className={`text-sm ${testResult.ok ? "text-success" : "text-destructive"}`}
           >
             {testResult.ok
-              ? `✓ Token válido para ${testResult.display}. Ya puedes guardar.`
+              ? `✓ Token válido para ${testResult.display}. Ya podés guardar.`
               : testResult.message}
           </p>
         )}
@@ -289,10 +289,10 @@ function WebhookCard({ webhook }: { webhook: WebhookInfo }) {
       <CardHeader>
         <CardTitle>Webhook de WhatsApp</CardTitle>
         <CardDescription>
-          Pega estos valores en el panel de Meta (modo directo) o úsalos en el
+          Pegá estos valores en el panel de Meta (modo directo) o usalos en el
           override de tu backend de agencia (a nivel WABA).{" "}
           <strong className="text-foreground">
-            Guarda la conexión ANTES de configurar el webhook:
+            Guardá la conexión antes de configurar el webhook:
           </strong>{" "}
           la verificación (handshake) funciona sin guardar, pero los mensajes
           solo se reciben si la conexión está guardada — se enrutan por tu

@@ -27,7 +27,7 @@ export async function callApi<T = unknown>(
       body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
     });
   } catch {
-    return { ok: false, status: 0, code: "network", message: "No se pudo conectar con el servidor. Probá de nuevo." };
+    return { ok: false, status: 0, code: "network", message: "No pudimos conectar con el servidor. Podés intentarlo de nuevo en un momento." };
   }
   const json = (await res.json().catch(() => null)) as unknown;
   if (res.ok) return { ok: true, data: json as T };

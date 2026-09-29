@@ -28,7 +28,7 @@ export function NewCourseButton() {
 
   async function create() {
     if (!title.trim()) {
-      setError("El título es obligatorio.");
+      setError("Falta el título.");
       return;
     }
     setSaving(true);

@@ -179,7 +179,7 @@ export function StudentCourseClient({ enrollmentId }: { enrollmentId: string }) 
         setError(
           res?.status === 404
             ? "No se encontró este curso entre tus inscripciones."
-            : "No se pudo cargar el curso. Intentá nuevamente más tarde."
+            : "No pudimos cargar el curso. Suele ser algo momentáneo: en unos minutos debería aparecer."
         );
         return;
       }
@@ -524,9 +524,9 @@ function ProgramCard({
       <p className="text-xs text-text-3">
         {aprobados >= modules.length
           ? "Especialización completa."
-          : `Faltan ${modules.length - aprobados}.`}{" "}
-        La asistencia y la aprobación son por módulo: ingresá a cada módulo
-        para consultar sus clases y evaluaciones.
+          : `Te faltan ${modules.length - aprobados}.`}{" "}
+        La asistencia y la aprobación se cuentan por módulo: en cada uno vas a
+        ver sus clases y evaluaciones.
       </p>
 
       {course.approvalReasons.length > 0 && (

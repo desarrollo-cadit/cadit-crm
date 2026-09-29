@@ -51,11 +51,11 @@ export function TemplateSender({
   if (templates.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        Aún no hay plantillas aprobadas. Créalas en{" "}
+        Todavía no hay plantillas aprobadas. Podés crearlas en{" "}
         <a href="/settings/templates" className="text-primary hover:underline">
           Configuración → Plantillas
-        </a>{" "}
-        y espera la aprobación de Meta.
+        </a>
+        ; aparecen acá cuando Meta las aprueba.
       </p>
     );
   }
@@ -101,7 +101,7 @@ export function TemplateSender({
           onChange={(e) => setSelectedId(e.target.value)}
           className="flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
-          <option value="">Elige una plantilla…</option>
+          <option value="">Elegí una plantilla…</option>
           {templates.map((t) => (
             <option key={t.id} value={t.id}>
               {t.name} ({t.language})

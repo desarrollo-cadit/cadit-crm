@@ -203,7 +203,7 @@ export function CohortForm({
 
   async function submit() {
     if (!courseId || !startDate) {
-      setError("Curso y fecha de inicio son obligatorios");
+      setError("Falta elegir el curso y la fecha de inicio.");
       return;
     }
     setSaving(true);
@@ -603,7 +603,7 @@ export function CohortForm({
               <p className="text-xs text-muted-foreground">
                 {rooms.length === 0
                   ? "Cargá tus cuentas de Zoom en la pestaña Aulas."
-                  : "La CUENTA que ocupa. Sirve para avisarte si dos cohortes se pisan."}
+                  : "La cuenta de Zoom que usa. Con esto te avisamos si dos cohortes se superponen."}
               </p>
             </div>
           </div>

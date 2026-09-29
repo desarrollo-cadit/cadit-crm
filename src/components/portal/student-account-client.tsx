@@ -78,7 +78,7 @@ export function StudentAccountClient() {
     void (async () => {
       const res = await fetch("/api/portal/me/cuenta").catch(() => null);
       if (!res?.ok) {
-        setError("No se pudo cargar tu estado de cuenta. Intentá nuevamente más tarde.");
+        setError("No pudimos cargar tu estado de cuenta. Suele ser algo momentáneo: en unos minutos debería aparecer.");
         return;
       }
       setData((await res.json()) as Account);

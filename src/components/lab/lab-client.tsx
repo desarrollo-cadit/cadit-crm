@@ -123,12 +123,12 @@ export function LabClient() {
         <div className="m-6 rounded-lg border border-brand-soft bg-brand-tint p-8 text-center">
           <Sparkles className="mx-auto mb-2 h-8 w-8 text-primary" />
           <p className="font-medium">
-            Configura tu proveedor de IA para usar el Laboratorio
+            Configurá tu proveedor de IA para usar el Laboratorio
           </p>
           <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-            El Laboratorio necesita el agente activo: agrega{" "}
+            El Laboratorio necesita el agente activo: agregá{" "}
             <code className="rounded bg-secondary px-1">OPENROUTER_API_TOKEN</code> a la
-            instancia y vuelve aquí.
+            instancia y volvé acá.
           </p>
         </div>
       </div>
@@ -175,8 +175,8 @@ export function LabClient() {
         ) : (
           <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
             {runs.length === 0
-              ? "Corre tu primera evaluación: 6 clientes simulados conversarán con tu agente y un juez calificará cada conversación."
-              : "Elige una corrida del historial."}
+              ? "Corré tu primera evaluación: 6 clientes simulados van a conversar con tu agente y un juez va a calificar cada conversación."
+              : "Elegí una corrida del historial."}
           </div>
         )}
       </div>
@@ -296,8 +296,8 @@ function Report({
           </div>
           {run.status === "failed" && (
             <p className="text-sm text-destructive">
-              La corrida falló: {run.error ?? "error desconocido"}. Vuelve a
-              intentarlo.
+              La corrida falló: {run.error ?? "error desconocido"}. Podés
+              intentarlo de nuevo.
             </p>
           )}
         </CardHeader>

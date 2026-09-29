@@ -169,7 +169,7 @@ export async function generateInstallmentPlan(
       ok: false,
       status: 409,
       code: "plan_exists",
-      message: "La inscripción ya tiene un plan de cuotas. Anulá el actual antes de rearmarlo.",
+      message: "Esta inscripción ya tiene un plan de cuotas. Para armar uno nuevo, primero hay que anular el actual.",
     };
   }
 
@@ -392,7 +392,9 @@ export async function voidPayment(
       voidedBy: input.voidedBy ?? null,
       voidReason: input.reason,
     })
-    .where(eq(schema.payment.id, paymentId))
+    .where(
+      scoped(schema.payment.organizationId, organizationId, eq(schema.payment.id, paymentId))
+    )
     .returning();
 
   return { ok: true, data: serializePayment(updated[0]!) };

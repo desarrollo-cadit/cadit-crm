@@ -180,10 +180,10 @@ export type EntregaResult<T> =
  * entienden", que no dice qué está mal.
  */
 export const plazoSchema = z.object({
-  fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha con formato AAAA-MM-DD"),
+  fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "La fecha va con formato AAAA-MM-DD"),
   hora: z
     .string()
-    .regex(/^([01]?\d|2[0-3]):[0-5]\d$/, "Hora de 00:00 a 23:59"),
+    .regex(/^([01]?\d|2[0-3]):[0-5]\d$/, "La hora va de 00:00 a 23:59"),
 });
 
 export type PlazoInput = z.infer<typeof plazoSchema>;
@@ -601,7 +601,7 @@ const ENTREGA_CERRADA = {
   status: 422,
   code: "entrega_cerrada",
   message:
-    "Esta entrega ya fue registrada. Para realizar una nueva entrega, tu profesor tiene que habilitar la reapertura.",
+    "Esta entrega ya está registrada. Si necesitás cambiarla, tu profesor puede reabrirla.",
 } as const;
 
 /**
@@ -810,7 +810,7 @@ const COHORTE_FINALIZADA = {
   ok: false,
   status: 422,
   code: "cohorte_finalizada",
-  message: "La cohorte ya finalizó: las entregas no se pueden cambiar",
+  message: "Esta cohorte ya terminó, así que sus entregas quedaron cerradas",
 } as const;
 
 type VeredictoDeAlcance =

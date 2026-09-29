@@ -122,7 +122,7 @@ export function tooManyRequests(windowMs: number): Response {
     {
       error: {
         code: "rate_limited",
-        message: "Demasiados envíos. Intentá de nuevo en unos minutos.",
+        message: "Recibimos muchos envíos seguidos. En unos minutos vas a poder intentarlo de nuevo.",
       },
     },
     { status: 429, headers: { "Retry-After": String(Math.ceil(windowMs / 1000)) } }

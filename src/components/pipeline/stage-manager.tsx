@@ -145,7 +145,7 @@ export function StageManager({
         {deleting && (
           <div className="mt-4 rounded-md border border-warning-border bg-warning-soft p-3">
             <p className="text-sm text-warning">
-              &quot;{deleting.name}&quot; tiene tarjetas. Elige a dónde moverlas:
+              &quot;{deleting.name}&quot; tiene tarjetas. Elegí a dónde moverlas:
             </p>
             <div className="mt-2 flex gap-2">
               <select

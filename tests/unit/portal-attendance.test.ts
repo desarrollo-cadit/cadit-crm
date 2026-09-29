@@ -267,7 +267,7 @@ describe("T027 — la cohorte finalizada se ve, no se edita (DV-005)", () => {
     if (r.ok) return;
     expect(r.status).toBe(422);
     expect(r.code).toBe("cohorte_finalizada");
-    expect(r.message).toContain("finalizó");
+    expect(r.message).toContain("ya terminó");
     expect(markAttendance).not.toHaveBeenCalled();
   });
 

@@ -30,7 +30,7 @@ export function StudentCertificatesClient() {
     void (async () => {
       const res = await fetch("/api/portal/me/certificados").catch(() => null);
       if (!res?.ok) {
-        setError("No se pudieron cargar tus certificados. Intentá nuevamente más tarde.");
+        setError("No pudimos cargar tus certificados. Suele ser algo momentáneo: en unos minutos deberían aparecer.");
         return;
       }
       const body = (await res.json()) as { certificates: Certificate[] };
@@ -102,8 +102,8 @@ export function StudentCertificatesClient() {
               <div className="sm:text-right">
                 <ChipDeEstado tono="atencion">Anulado</ChipDeEstado>
                 <p className="mt-2 text-xs text-text-3">
-                  Anulado el {formatDate(c.revokedAt)}. Para más información,
-                  comunicate con la academia.
+                  Anulado el {formatDate(c.revokedAt)}. Si tenés dudas,
+                  escribinos y lo vemos juntos.
                 </p>
               </div>
             </PortalCard>

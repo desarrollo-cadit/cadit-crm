@@ -48,7 +48,7 @@ export default async function GuiaPortalPage() {
           { label: "Guía del portal", href: null },
         ]}
         titulo="Guía del portal"
-        descripcion="Descripción de cada sección del menú. Solo se muestran las secciones habilitadas para tu cuenta."
+        descripcion="Qué vas a encontrar en cada sección del menú. Ves solo las que están habilitadas para tu cuenta."
       />
 
       {/*

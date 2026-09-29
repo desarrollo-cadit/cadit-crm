@@ -578,16 +578,30 @@ export function RosterClient({
 
                                 {temporaryPassword?.enrollmentId === e.id && (
                                   <span className="rounded border border-warning-border bg-warning-soft px-2 py-1">
-                                    Contraseña temporal:{" "}
-                                    <code className="font-mono font-semibold">
-                                      {temporaryPassword.password}
-                                    </code>{" "}
                                     {/* 014 — Decir que salió el correo cuando no
                                         salió es mentir sobre lo único que la
                                         persona necesita para entrar. */}
-                                    {temporaryPassword.emailError
-                                      ? `— el correo NO salió (${temporaryPassword.emailError}). Dictásela vos; no se puede volver a ver.`
-                                      : "— ya se la mandamos por correo. No se puede volver a ver."}
+                                    {temporaryPassword.emailError ? (
+                                      <>
+                                        Creamos el acceso, pero el correo no se pudo
+                                        enviar ({temporaryPassword.emailError}). La
+                                        contraseña temporal es{" "}
+                                        <code className="font-mono font-semibold">
+                                          {temporaryPassword.password}
+                                        </code>
+                                        : compartila por otro medio, porque no se va a
+                                        volver a mostrar.
+                                      </>
+                                    ) : (
+                                      <>
+                                        Acceso creado y correo enviado. Contraseña
+                                        temporal:{" "}
+                                        <code className="font-mono font-semibold">
+                                          {temporaryPassword.password}
+                                        </code>{" "}
+                                        (no se va a volver a mostrar).
+                                      </>
+                                    )}
                                   </span>
                                 )}
                               </div>

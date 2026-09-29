@@ -581,14 +581,14 @@ export async function teacherMarkAttendance(
 ): Promise<PortalResult<{ marked: number }>> {
   const planilla = await teacherAttendanceSheet(organizationId, teacherId, classSessionId);
   if (!planilla) {
-    return { ok: false, status: 404, code: "not_found", message: "Clase no encontrada" };
+    return { ok: false, status: 404, code: "not_found", message: "No encontramos esta clase" };
   }
   if (planilla.cohort.status === "finalizada") {
     return {
       ok: false,
       status: 422,
       code: "cohorte_finalizada",
-      message: "La cohorte ya finalizó: la asistencia no se puede cambiar",
+      message: "Esta cohorte ya terminó, así que su asistencia quedó cerrada",
     };
   }
   // Descartada la cohorte, lo único que queda no editable es la cancelación.
@@ -597,7 +597,7 @@ export async function teacherMarkAttendance(
       ok: false,
       status: 422,
       code: "session_canceled",
-      message: "La clase está cancelada: no se puede tomar asistencia",
+      message: "Esta clase se canceló, así que no lleva asistencia",
     };
   }
 
@@ -686,7 +686,7 @@ export async function teacherRecordResult(
       ok: false,
       status: 422,
       code: "cohorte_finalizada",
-      message: "La cohorte ya finalizó: los resultados no se pueden cambiar",
+      message: "Esta cohorte ya terminó, así que sus resultados quedaron cerrados",
     };
   }
 
@@ -845,9 +845,9 @@ export async function teacherSetRecording(
   const clase = filas[0];
   // Ausencia = "no la encontré", y la ruta lo traduce a 404. Distinguir
   // "no existe" de "no es tuya" le diría a un profesor ajeno que existe.
-  if (!clase) return { ok: false, status: 404, code: "not_found", message: "Clase no encontrada" };
+  if (!clase) return { ok: false, status: 404, code: "not_found", message: "No encontramos esta clase" };
   if (!(await teacherReachesCohort(organizationId, teacherId, clase.cohortId))) {
-    return { ok: false, status: 404, code: "not_found", message: "Clase no encontrada" };
+    return { ok: false, status: 404, code: "not_found", message: "No encontramos esta clase" };
   }
 
   /**
@@ -860,7 +860,7 @@ export async function teacherSetRecording(
       ok: false,
       status: 422,
       code: "class_canceled",
-      message: "La clase está cancelada: no ofrece grabación",
+      message: "Esta clase se canceló, así que no lleva grabación",
     };
   }
 
@@ -910,9 +910,9 @@ export async function teacherAddClassResource(
     .limit(1);
 
   const clase = filas[0];
-  if (!clase) return { ok: false, status: 404, code: "not_found", message: "Clase no encontrada" };
+  if (!clase) return { ok: false, status: 404, code: "not_found", message: "No encontramos esta clase" };
   if (!(await teacherReachesCohort(organizationId, teacherId, clase.cohortId))) {
-    return { ok: false, status: 404, code: "not_found", message: "Clase no encontrada" };
+    return { ok: false, status: 404, code: "not_found", message: "No encontramos esta clase" };
   }
 
   const creado = await createResource(organizationId, {

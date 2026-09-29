@@ -31,7 +31,7 @@ export type SendEnrollmentEmailResult =
 
 const SUBJECTS: Record<EmailKind, (courseName: string) => string> = {
   terms: (c) => `Términos de la licencia ATC — ${c}`,
-  welcome: (c) => `Bienvenido/a a ${c}`,
+  welcome: (c) => `Te damos la bienvenida a ${c}`,
 };
 
 /** Datos de la inscripción, su alumno y su cohorte, en una sola consulta. */
@@ -206,7 +206,13 @@ export async function sendEnrollmentEmail(
         ? { termsEmailSentAt: now, updatedAt: now }
         : { welcomeEmailSentAt: now, updatedAt: now }
     )
-    .where(eq(schema.enrollment.id, enrollmentId));
+    .where(
+      scoped(
+        schema.enrollment.organizationId,
+        organizationId,
+        eq(schema.enrollment.id, enrollmentId)
+      )
+    );
 
   return { ok: true, sentAt: now.toISOString() };
 }

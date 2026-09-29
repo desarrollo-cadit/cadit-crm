@@ -217,7 +217,7 @@ export function InboxClient() {
           </>
         ) : (
           <div className="flex flex-1 items-center justify-center bg-chat text-sm text-text-3">
-            Elige una conversación para ver el hilo
+            Elegí una conversación para ver el hilo
           </div>
         )}
       </section>

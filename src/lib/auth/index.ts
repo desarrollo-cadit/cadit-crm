@@ -93,7 +93,7 @@ function createAuth() {
         });
         if (!allowed) {
           throw new APIError("TOO_MANY_REQUESTS", {
-            message: "Demasiados intentos; espera unos minutos",
+            message: "Hubo varios intentos seguidos y, por seguridad, pausamos el ingreso unos minutos.",
           });
         }
         // Registro público cerrado tras la primera organización (FR-060).

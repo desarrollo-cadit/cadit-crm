@@ -96,14 +96,14 @@ export function LoadFallback({ load, notFound }: { load: Load<unknown>; notFound
   if (load.state === "not_found") {
     return (
       <EmptyNote title={notFound}>
-        Es posible que este contenido ya no esté asignado a tu cuenta. Si considerás que es un error, comunicate con la academia.
+        Puede que este curso ya no esté asignado a tu cuenta. Si creés que es un error, escribinos y lo revisamos.
       </EmptyNote>
     );
   }
   return (
     <PortalCard className="border-danger-border bg-danger-soft">
       <p className="text-sm text-danger">
-        No se pudo cargar la información. Intentá nuevamente más tarde.
+        No pudimos cargar la información. Suele ser algo momentáneo: en unos minutos debería aparecer.
       </p>
     </PortalCard>
   );
@@ -486,7 +486,7 @@ function TopicBody({ data, courseId }: { data: StudentOfflineTopic; courseId: st
 
       {save === "error" && (
         <p role="alert" className="text-sm text-danger">
-          No se pudo registrar tu avance. Revisá tu conexión y recargá la página.
+          No pudimos guardar tu avance, puede ser la conexión. Cuando vuelva, podés recargar la página y marcarlo otra vez.
         </p>
       )}
 

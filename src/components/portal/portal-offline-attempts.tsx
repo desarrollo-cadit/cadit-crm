@@ -25,7 +25,7 @@ export function PortalOfflineAttempts({ cohortId }: { cohortId: string }) {
     <section className="space-y-2">
       <h2 className="text-sm font-semibold">Cuestionarios de cursos offline</h2>
       {error ? (
-        <p className="text-sm text-danger">No se pudieron cargar los intentos. Recargá la página.</p>
+        <p className="text-sm text-danger">No pudimos cargar los intentos. Suele ser algo momentáneo: en unos minutos deberían aparecer.</p>
       ) : attempts === null ? (
         <Skeleton className="h-16 w-full" />
       ) : (

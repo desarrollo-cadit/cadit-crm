@@ -149,8 +149,8 @@ export function RoomsPanel() {
             el sistema no —que esa clase se movió, que ese día es feriado—.
           */}
           <p className="text-xs text-text-3">
-            El sistema no lo impide: puede haber un motivo que no conoce.
-            Cambiá el aula de una de las dos clases para resolverlo.
+            Te avisamos, pero no lo bloqueamos por si hay un motivo. Si no lo
+            hay, alcanza con cambiar el aula de una de las dos clases.
           </p>
         </section>
       )}

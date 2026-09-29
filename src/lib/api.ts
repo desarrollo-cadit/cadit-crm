@@ -11,9 +11,10 @@ import { withOrganizationScope, withTenantTransaction } from "@/lib/db/with-tena
 export function apiError(
   status: number,
   code: string,
-  message: string
+  message: string,
+  extra?: { fields?: { path: string; message: string }[] }
 ): Response {
-  return Response.json({ error: { code, message } }, { status });
+  return Response.json({ error: { code, message, ...extra } }, { status });
 }
 
 /**
@@ -36,7 +37,7 @@ async function resolveOr401(): Promise<SessionContext | Response> {
     return await requireSession();
   } catch (err) {
     if (err instanceof UnauthorizedError) {
-      return apiError(401, "unauthorized", "No autenticado");
+      return apiError(401, "unauthorized", "Tu sesión expiró. Volvé a iniciar sesión.");
     }
     throw err;
   }
@@ -77,7 +78,7 @@ async function runScoped(
       );
     }
     console.error("[api] error no controlado:", err);
-    return apiError(500, "internal", "Error interno");
+    return apiError(500, "internal", "Algo falló de nuestro lado. Probá de nuevo en unos minutos.");
   }
 }
 
@@ -118,7 +119,7 @@ export function withOrganization<Args extends unknown[]>(
         );
       }
       console.error("[api] error no controlado:", err);
-      return apiError(500, "internal", "Error interno");
+      return apiError(500, "internal", "Algo falló de nuestro lado. Probá de nuevo en unos minutos.");
     }
   };
 }
@@ -169,7 +170,7 @@ function describeUniqueViolation(constraintName: string): string {
 function forbiddenMessage(capability: Capability): string {
   return FINANCIAL_CAPABILITIES.includes(capability)
     ? "Sin acceso a datos financieros"
-    : "Sin permiso para esta acción";
+    : "Tu rol no incluye esta acción.";
 }
 
 /**
@@ -211,6 +212,27 @@ export function requireCapability<Args extends unknown[]>(
   };
 }
 
+/**
+ * El `message` de un 422 lo muestra la UI tal cual, así que va SIN la ruta del
+ * campo ("cursada: …" le enseñaba a la persona un nombre interno). La ruta
+ * sigue viajando, estructurada, en `fields`.
+ */
+function validationError(
+  error: z.ZodError,
+  raiz: string
+): { message: string; fields: { path: string; message: string }[] } {
+  const fields = error.issues.map((i) => ({
+    path: i.path.join(".") || raiz,
+    message: i.message,
+  }));
+  const frases = [...new Set(fields.map((f) => f.message.trim()))];
+  const message =
+    frases.length === 1
+      ? frases[0]!
+      : frases.map((f) => (/[.!?…]$/.test(f) ? f : `${f}.`)).join(" ");
+  return { message, fields };
+}
+
 /** Parsea query params con un esquema Zod; inválido → Response 422. */
 export function parseQuery<S extends z.ZodTypeAny>(
   url: URL,
@@ -218,12 +240,10 @@ export function parseQuery<S extends z.ZodTypeAny>(
 ): { ok: true; data: z.infer<S> } | { ok: false; response: Response } {
   const parsed = schema.safeParse(Object.fromEntries(url.searchParams));
   if (!parsed.success) {
-    const detail = parsed.error.issues
-      .map((i) => `${i.path.join(".") || "query"}: ${i.message}`)
-      .join("; ");
+    const { message, fields } = validationError(parsed.error, "query");
     return {
       ok: false,
-      response: apiError(422, "invalid_query", detail),
+      response: apiError(422, "invalid_query", message, { fields }),
     };
   }
   return { ok: true, data: parsed.data };
@@ -245,12 +265,10 @@ export async function parseBody<T>(
   }
   const parsed = schema.safeParse(raw);
   if (!parsed.success) {
-    const detail = parsed.error.issues
-      .map((i) => `${i.path.join(".") || "body"}: ${i.message}`)
-      .join("; ");
+    const { message, fields } = validationError(parsed.error, "body");
     return {
       ok: false,
-      response: apiError(422, "invalid_body", detail),
+      response: apiError(422, "invalid_body", message, { fields }),
     };
   }
   return { ok: true, data: parsed.data };

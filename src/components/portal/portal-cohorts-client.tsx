@@ -68,7 +68,7 @@ export function PortalCohortsClient() {
     void (async () => {
       const res = await fetch("/api/portal/cohorts").catch(() => null);
       if (!res?.ok) {
-        setError("No se pudieron cargar tus cohortes. Recargá la página o intentá nuevamente más tarde.");
+        setError("No pudimos cargar tus cohortes. Suele ser algo momentáneo: en unos minutos deberían aparecer.");
         setCohorts([]);
         return;
       }

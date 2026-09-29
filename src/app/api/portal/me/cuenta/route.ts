@@ -12,6 +12,6 @@ export const dynamic = "force-dynamic";
  */
 export const GET = requireStudentPortal(async (ctx) => {
   const data = await studentAccount(ctx.organizationId, ctx.contactId);
-  if (!data) return apiError(404, "not_found", "No se encontró tu registro de alumno");
+  if (!data) return apiError(404, "not_found", "No encontramos tu inscripción como alumno. Escribinos y lo revisamos.");
   return Response.json(data);
 });

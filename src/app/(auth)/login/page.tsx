@@ -45,8 +45,8 @@ export default function LoginPage() {
     if (err) {
       setError(
         err.status === 429
-          ? "Demasiados intentos seguidos. Esperá unos minutos y volvé a probar."
-          : "El correo o la contraseña no coinciden. Revisá que no haya quedado un espacio de más."
+          ? "Hubo varios intentos seguidos y, por seguridad, pausamos el ingreso unos minutos. Después vas a poder intentarlo de nuevo."
+          : "El correo o la contraseña no coinciden. A veces es un espacio de más al copiar y pegar."
       );
       return;
     }
@@ -59,7 +59,7 @@ export default function LoginPage() {
       <div className="space-y-1.5">
         <h1 className="text-2xl font-semibold tracking-tight">Iniciar sesión</h1>
         <p className="text-sm text-muted-foreground">
-          Ingresá con el correo que brindaste a la academia.
+          Con el correo que tenés registrado en la academia.
         </p>
       </div>
 
@@ -134,7 +134,7 @@ export default function LoginPage() {
         hacer —pedirle a la academia que la regenere— se dice con esas palabras.
       */}
       <p className="text-sm text-muted-foreground">
-        ¿No podés entrar? Escribile a la academia y te generan un acceso nuevo.
+        ¿Problemas para entrar? Escribinos y te generamos un acceso nuevo.
       </p>
     </div>
   );

@@ -209,7 +209,7 @@ function LessonDialog({
 
   async function save() {
     if (!title.trim()) {
-      setError("El título es obligatorio.");
+      setError("Falta el título.");
       return;
     }
     setSaving(true);

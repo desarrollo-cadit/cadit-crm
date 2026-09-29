@@ -116,8 +116,8 @@ export function PortalSubmissions({ cohortId }: { cohortId: string }) {
     return (
       <div className="space-y-3 rounded-lg border border-dashed p-6 text-center">
         <p className="text-sm text-destructive">
-          No se pudieron cargar las entregas. Reintentá; si el problema
-          persiste, comunicate con la academia.
+          No pudimos cargar las entregas. Si al reintentar sigue igual,
+          escribinos.
         </p>
         <Button variant="outline" size="sm" onClick={() => void refetch()}>
           Reintentar
@@ -143,8 +143,8 @@ export function PortalSubmissions({ cohortId }: { cohortId: string }) {
       {/* Falló al refrescar: lo de abajo es real, pero puede estar viejo. */}
       {fallo && (
         <p className="text-sm text-destructive">
-          No se pudo actualizar la lista. Lo que ves abajo puede estar
-          desactualizado.
+          No pudimos actualizar la lista. Lo que ves abajo puede no estar al
+          día.
         </p>
       )}
       {datos.assessments.map((e) => (

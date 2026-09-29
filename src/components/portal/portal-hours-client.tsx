@@ -46,7 +46,7 @@ export function PortalHoursClient() {
     return (
       <div className="space-y-3 rounded-lg border border-dashed p-6 text-center">
         <p className="text-sm text-destructive">
-          No se pudieron cargar las horas dictadas. Intentá nuevamente.
+          No pudimos cargar las horas dictadas. Suele ser algo momentáneo: en unos minutos deberían aparecer.
         </p>
         <Button variant="outline" size="sm" onClick={() => void cargar()}>
           Reintentar
@@ -91,8 +91,8 @@ export function PortalHoursClient() {
       </ul>
 
       <p className="text-xs text-muted-foreground">
-        Las clases canceladas no se computan. Si detectás alguna diferencia,
-        comunicate con la academia; este listado es informativo.
+        Las clases canceladas no se cuentan. El listado es informativo: si ves
+        alguna diferencia, escribinos y lo revisamos.
       </p>
     </div>
   );

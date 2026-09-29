@@ -231,7 +231,7 @@ export async function issueCertificate(
           message:
             student.reasons.length > 0
               ? `No se puede emitir: ${student.reasons.join("; ")}`
-              : "No se puede emitir: el alumno no está aprobado",
+              : "Todavía no se puede emitir: el alumno no figura como aprobado.",
         };
       }
       /**

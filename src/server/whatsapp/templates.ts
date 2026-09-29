@@ -90,7 +90,7 @@ export async function createTemplate(
 
   const creds = await getCredentialsByOrg(organizationId);
   if (!creds) {
-    throw new TemplateError("not_connected", "Conecta tu número de WhatsApp primero");
+    throw new TemplateError("not_connected", "Primero conectá tu número de WhatsApp.");
   }
   if (creds.status === "reconnect_required") {
     throw new TemplateError("reconnect_required", "Reconecta tu número antes de crear plantillas");
@@ -193,7 +193,7 @@ function mapMetaStatus(
 export async function syncTemplates(organizationId: string): Promise<number> {
   const creds = await getCredentialsByOrg(organizationId);
   if (!creds) {
-    throw new TemplateError("not_connected", "Conecta tu número de WhatsApp primero");
+    throw new TemplateError("not_connected", "Primero conectá tu número de WhatsApp.");
   }
 
   let data: {
@@ -238,7 +238,9 @@ export async function syncTemplates(organizationId: string): Promise<number> {
         waTemplateId: match.waTemplateId ?? remote.id ?? null,
         updatedAt: new Date(),
       })
-      .where(eq(schema.template.id, match.id));
+      .where(
+        scoped(schema.template.organizationId, organizationId, eq(schema.template.id, match.id))
+      );
     updated += 1;
   }
   return updated;
@@ -267,10 +269,10 @@ export async function applyTemplateStatusEvent(
       updatedAt: new Date(),
     })
     .where(
-      and(
-        eq(schema.template.organizationId, creds.organizationId),
-        eq(schema.template.name, name),
-        eq(schema.template.language, language)
+      scoped(
+        schema.template.organizationId,
+        creds.organizationId,
+        and(eq(schema.template.name, name), eq(schema.template.language, language))
       )
     );
 }
@@ -386,7 +388,13 @@ export async function sendTemplate(input: {
   await db
     .update(schema.conversation)
     .set({ lastMessageAt: new Date(), updatedAt: new Date() })
-    .where(eq(schema.conversation.id, input.conversationId));
+    .where(
+      scoped(
+        schema.conversation.organizationId,
+        input.organizationId,
+        eq(schema.conversation.id, input.conversationId)
+      )
+    );
 
   publish(input.organizationId, {
     type: "message.new",

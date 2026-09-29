@@ -31,11 +31,11 @@ export default async function VerificarPage({
         {!cert ? (
           <div className="mt-6">
             <p className="text-sm font-medium text-destructive">
-              No existe un certificado con ese código.
+              No encontramos un certificado con ese código.
             </p>
             <p className="mt-2 text-xs text-muted-foreground">
-              Revisá que esté copiado completo, con sus guiones. El código tiene el
-              formato XXXX-XXXX-XXXX.
+              Puede que falte algún carácter o un guion. El formato es
+              XXXX-XXXX-XXXX.
             </p>
           </div>
         ) : (

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 /**
  * 005 (DV-001/DV-002): el corte financiero bloquea el rol `soporte` con 403,
@@ -152,7 +153,7 @@ describe("corte financiero: requireCapability('cobranza.ver') (DV-001)", () => {
    * 012 (T007) — El texto es el MISMO que devolvía `requireFullAccess`.
    *
    * Migrar las rutas financieras a `requireCapability` a secas les habría
-   * cambiado el mensaje por el genérico "Sin permiso para esta acción", y la
+   * cambiado el mensaje por el genérico "Tu rol no incluye esta acción.", y la
    * fase 2 no cambia lo que ve el usuario. Este caso lo fija: si alguien
    * borra `forbiddenMessage`, el test lo dice.
    */
@@ -160,8 +161,8 @@ describe("corte financiero: requireCapability('cobranza.ver') (DV-001)", () => {
     ["cobranza.ver", "Sin acceso a datos financieros"],
     ["cobranza.editar", "Sin acceso a datos financieros"],
     ["inscripciones.editar", "Sin acceso a datos financieros"],
-    ["inscripciones.ver", "Sin permiso para esta acción"],
-    ["academico.editar", "Sin permiso para esta acción"],
+    ["inscripciones.ver", "Tu rol no incluye esta acción."],
+    ["academico.editar", "Tu rol no incluye esta acción."],
   ] as const)("el 403 de %s dice «%s»", async (capability, message) => {
     const { requireSession } = await import("@/lib/auth/session");
     vi.mocked(requireSession).mockResolvedValue({
@@ -236,5 +237,47 @@ describe("corte financiero: requireCapability('cobranza.ver') (DV-001)", () => {
 
     const res = await handler();
     expect(res.status).toBe(403);
+  });
+});
+
+/**
+ * El `message` de un 422 lo muestra la UI tal cual. Prefijarlo con la ruta del
+ * campo ("cursada: Falta elegir…") le mostraba a la persona un nombre interno.
+ * La ruta sigue viajando, pero estructurada, en `fields`.
+ */
+describe("parseBody: mensajes de validación", () => {
+  const schema = z.object({
+    cursada: z.string().min(1, "Falta elegir el curso de la entrega."),
+    url: z.string().url("El enlace no parece válido."),
+  });
+  const pedido = (body: unknown) =>
+    new Request("http://x", { method: "POST", body: JSON.stringify(body) });
+
+  it("el mensaje humano no lleva la ruta del campo", async () => {
+    const { parseBody } = await import("@/lib/api");
+    const r = await parseBody(pedido({ cursada: "", url: "https://ok.uy" }), schema);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    const body = (await r.response.json()) as {
+      error: { code: string; message: string; fields?: { path: string; message: string }[] };
+    };
+    expect(r.response.status).toBe(422);
+    expect(body.error.code).toBe("invalid_body");
+    expect(body.error.message).toBe("Falta elegir el curso de la entrega.");
+    expect(body.error.fields).toEqual([
+      { path: "cursada", message: "Falta elegir el curso de la entrega." },
+    ]);
+  });
+
+  it("varios errores se unen en frases, sin rutas", async () => {
+    const { parseBody } = await import("@/lib/api");
+    const r = await parseBody(pedido({ cursada: "", url: "nada" }), schema);
+    if (r.ok) throw new Error("debía fallar");
+    const body = (await r.response.json()) as { error: { message: string; fields: unknown[] } };
+    expect(body.error.message).toBe(
+      "Falta elegir el curso de la entrega. El enlace no parece válido."
+    );
+    expect(body.error.message).not.toContain("cursada");
+    expect(body.error.fields).toHaveLength(2);
   });
 });

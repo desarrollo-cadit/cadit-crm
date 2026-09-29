@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 /** La cursada de la que se piden las entregas. Query, pero input externo igual. */
 const cursadaSchema = z.object({
-  cursada: z.string().min(1, "Falta indicar el curso"),
+  cursada: z.string().min(1, "Falta elegir el curso de la entrega."),
 });
 
 /**

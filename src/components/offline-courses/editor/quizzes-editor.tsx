@@ -252,12 +252,12 @@ function QuizDialog({
 
   async function save() {
     if (!title.trim()) {
-      setError("El título es obligatorio.");
+      setError("Falta el título.");
       return;
     }
     const pct = passing.trim();
     if (!/^\d+$/.test(pct) || Number(pct) > 100) {
-      setError("El porcentaje para aprobar debe ser un número entero entre 0 y 100.");
+      setError("El porcentaje para aprobar va de 0 a 100, sin decimales.");
       return;
     }
     const parsedRetries = parseRetries(unlimited, retries);

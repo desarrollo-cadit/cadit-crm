@@ -76,7 +76,7 @@ export function PortalAttendanceSheet({
       () => null
     );
     if (!res?.ok) {
-      setError("No se pudo cargar la clase. Volvé al listado e intentá nuevamente.");
+      setError("No pudimos cargar la clase. Desde el listado podés abrirla de nuevo.");
       return;
     }
     setSheet((await res.json()) as Sheet);
@@ -114,7 +114,7 @@ export function PortalAttendanceSheet({
       const body = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      setError(body?.error?.message ?? "No se pudo registrar la asistencia. Intentá nuevamente.");
+      setError(body?.error?.message ?? "No pudimos guardar la asistencia. Podés intentarlo de nuevo en un momento.");
       // Y se vuelve a lo que dice el servidor: mostrar una marca que no se
       // guardó es peor que no mostrar ninguna.
       void refetch();

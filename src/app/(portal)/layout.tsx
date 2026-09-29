@@ -101,11 +101,10 @@ function SinVinculo() {
       className="flex min-h-screen items-center justify-center bg-background p-4"
     >
       <div className="max-w-md rounded-lg border border-dashed border-border p-8 text-center">
-        <p className="text-base font-semibold">Cuenta pendiente de vinculación</p>
+        <p className="text-base font-semibold">Tu cuenta todavía no está vinculada</p>
         <p className="mt-2 text-sm text-muted-foreground">
-          La cuenta existe, pero aún no está asociada a una inscripción ni a un
-          registro de profesor. Si sos alumno o profesor de la academia,
-          comunicate con la academia para habilitarla.
+          Ya la creamos, pero falta asociarla a tu inscripción o a los cursos
+          que dictás. Escribinos y la dejamos lista.
         </p>
       </div>
     </div>

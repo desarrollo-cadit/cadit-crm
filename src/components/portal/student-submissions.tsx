@@ -110,7 +110,7 @@ export function StudentSubmissions({
       que cumplió.
     */
     if (!res?.ok) {
-      setError("No se pudieron cargar tus entregas. Intentá nuevamente más tarde.");
+      setError("No pudimos cargar tus entregas. Suele ser algo momentáneo: en unos minutos deberían aparecer.");
       return;
     }
     const body = (await res.json()) as { assessments: EvaluacionConEntregas[] };
@@ -149,7 +149,7 @@ export function StudentSubmissions({
       {/* Falló al refrescar: lo de abajo es real, pero puede estar viejo. */}
       {error && (
         <p className="rounded-md border border-danger-border bg-danger-soft px-3 py-2 text-sm text-danger">
-          {error} La información mostrada puede no estar actualizada.
+          {error} Lo que ves puede no estar actualizado.
         </p>
       )}
       <ul className="space-y-3">
@@ -251,8 +251,8 @@ function EvaluacionItem({
             exactamente lo que esta fase vino a evitar.
           */
           <p className="text-xs text-text-3">
-            Entrega registrada. Para realizar una nueva entrega, solicitá a tu
-            profesor la reapertura.
+            Entrega recibida. Si necesitás cambiarla, tu profesor puede
+            reabrirla.
           </p>
         )
       )}
@@ -390,7 +390,7 @@ function FormularioDeEntrega({
       const body = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      setError(body?.error?.message ?? "No se pudo registrar la entrega. Verificá el enlace e intentá nuevamente.");
+      setError(body?.error?.message ?? "No pudimos registrar la entrega. ¿El enlace está completo? Podés corregirlo y enviarla otra vez.");
       return;
     }
 
@@ -415,9 +415,9 @@ function FormularioDeEntrega({
           onChange={(e) => setUrl(e.target.value)}
         />
         <p className="text-xs text-text-3">
-          Pegá el enlace a tu archivo (Drive, WeTransfer, Autodesk Docs). El
-          portal almacena solo el enlace: verificá que el archivo esté
-          compartido.
+          El enlace a tu archivo en Drive, WeTransfer o Autodesk Docs. Guardamos
+          solo el enlace, así que el archivo tiene que estar compartido para
+          que tu profesor pueda abrirlo.
         </p>
       </div>
 

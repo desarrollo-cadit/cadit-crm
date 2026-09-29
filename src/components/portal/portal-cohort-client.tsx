@@ -162,7 +162,7 @@ export function PortalCohortClient({ cohortId }: { cohortId: string }) {
         <div className="rounded-lg border border-dashed p-6 text-center">
           <p className="text-sm font-medium">No encontramos esta cohorte entre las asignadas a tu cuenta</p>
           <p className="mt-2 text-sm text-muted-foreground">
-            Si considerás que es un error, comunicate con la academia.
+            Si creés que es un error, escribinos y lo revisamos.
           </p>
         </div>
       </div>
@@ -670,8 +670,7 @@ function DialogoGrabacion({
       <div className="w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-pop">
         <h3 className="text-base font-semibold tracking-tight">Grabación de la clase</h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          Pegá el enlace de la grabación. El portal almacena solo el enlace,
-          no el archivo de video.
+          El enlace a la grabación. Guardamos solo el enlace, no el video.
         </p>
 
         <form onSubmit={guardar} className="mt-4 space-y-4">
@@ -761,8 +760,8 @@ function DialogoMaterial({
       <div className="w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-pop">
         <h3 className="text-base font-semibold tracking-tight">Publicar material</h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          Lo verán los alumnos de esta cohorte. Ingresá un enlace (Drive,
-          WeTransfer, Autodesk Docs): el portal no almacena archivos.
+          Lo van a ver los alumnos de esta cohorte. Funciona con enlaces de
+          Drive, WeTransfer o Autodesk Docs; no guardamos archivos.
         </p>
 
         <form onSubmit={guardar} className="mt-4 space-y-4">
@@ -831,7 +830,7 @@ function FalloDeCarga({ onRetry }: { onRetry: () => void }) {
   return (
     <div className="space-y-3 rounded-lg border border-dashed p-6 text-center">
       <p className="text-sm text-destructive">
-        No se pudo cargar la información. Intentá nuevamente.
+        No pudimos cargar la información. Suele ser algo momentáneo: en unos minutos debería aparecer.
       </p>
       <Button variant="outline" size="sm" onClick={onRetry}>
         Reintentar
