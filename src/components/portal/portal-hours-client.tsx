@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
 type Hours = {
@@ -24,21 +25,41 @@ type Hours = {
  */
 export function PortalHoursClient() {
   const [datos, setDatos] = useState<Hours | null>(null);
+  const [fallo, setFallo] = useState(false);
 
-  useEffect(() => {
-    void (async () => {
-      const res = await fetch("/api/portal/hours").catch(() => null);
-      if (res?.ok) setDatos((await res.json()) as Hours);
-    })();
+  const cargar = useCallback(async () => {
+    const res = await fetch("/api/portal/hours").catch(() => null);
+    if (!res?.ok) {
+      setFallo(true);
+      return;
+    }
+    setFallo(false);
+    setDatos((await res.json()) as Hours);
   }, []);
 
-  if (!datos) return <Skeleton className="h-40 w-full" />;
+  useEffect(() => {
+    void cargar();
+  }, [cargar]);
+
+  if (!datos) {
+    if (!fallo) return <Skeleton className="h-40 w-full" />;
+    return (
+      <div className="space-y-3 rounded-lg border border-dashed p-6 text-center">
+        <p className="text-sm text-destructive">
+          No se pudieron cargar las horas dictadas. Intentá nuevamente.
+        </p>
+        <Button variant="outline" size="sm" onClick={() => void cargar()}>
+          Reintentar
+        </Button>
+      </div>
+    );
+  }
 
   if (datos.sessions === 0) {
     return (
       <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-        Todavía no hay clases dictadas registradas a tu nombre. Aparecen acá a
-        medida que se cargan en el cronograma.
+        No hay clases dictadas registradas a tu nombre. Se mostrarán aquí a
+        medida que se registren en el cronograma.
       </p>
     );
   }
@@ -60,7 +81,7 @@ export function PortalHoursClient() {
         {datos.byCohort.map((c) => (
           <li key={c.cohortId} className="flex items-center justify-between gap-3 p-3">
             <span className="min-w-0 truncate text-sm">
-              {c.cohortName ?? "Sin nombre de edición"}
+              {c.cohortName ?? "Cohorte sin nombre"}
             </span>
             <span className="shrink-0 text-xs text-muted-foreground">
               {c.sessions} {c.sessions === 1 ? "clase" : "clases"} · {c.hours} h
@@ -70,8 +91,8 @@ export function PortalHoursClient() {
       </ul>
 
       <p className="text-xs text-muted-foreground">
-        Las clases canceladas no se cuentan: no se dictaron. Si ves algo que no
-        cierra, habla con la academia — este listado es informativo.
+        Las clases canceladas no se computan. Si detectás alguna diferencia,
+        comunicate con la academia; este listado es informativo.
       </p>
     </div>
   );

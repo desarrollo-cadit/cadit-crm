@@ -38,7 +38,7 @@ const prorrogaSchema = z.object({
   enrollmentId: z.string().min(1),
   plazo: plazoSchema,
   /** FR-005b — sin motivo no hay prórroga. */
-  motivo: z.string().trim().min(3, "Hay que decir por qué"),
+  motivo: z.string().trim().min(3, "Indicá el motivo de la prórroga"),
 });
 
 /** FR-005b — La fecha límite de toda la cohorte. */

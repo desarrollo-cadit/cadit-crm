@@ -8,7 +8,7 @@ import { cohortGrading, recordResults, type AssessmentDto } from "@/server/gradi
 import {
   createResource,
   listAnnouncements,
-  listResources,
+  listCohortMaterial,
   type AnnouncementDto,
   type ResourceDto,
 } from "@/server/resources";
@@ -705,9 +705,10 @@ export type TeacherContentDto = {
 };
 
 /**
- * Material y avisos de la cohorte (FR-007). De solo lectura: el material lo
- * publica la academia, y el profesor lo necesita para saber qué tienen sus
- * alumnos delante.
+ * Material y avisos de la cohorte (FR-007). El material es el del curso más el
+ * que se publicó para esta cohorte, incluido el que sube el propio profesor
+ * (023): si solo se listara el del curso, lo que el profesor publica no
+ * aparecería en la lista recargada y lo volvería a subir.
  */
 export async function teacherCohortContent(
   organizationId: string,
@@ -725,9 +726,7 @@ export async function teacherCohortContent(
 
   const [announcements, resources] = await Promise.all([
     listAnnouncements(organizationId, cohortId),
-    curso[0]
-      ? listResources(organizationId, { courseId: curso[0].courseId })
-      : Promise.resolve([]),
+    listCohortMaterial(organizationId, { courseId: curso[0]?.courseId ?? null, cohortId }),
   ]);
 
   return { cohort: detalle.cohort, announcements, resources };
@@ -949,7 +948,7 @@ export async function teacherAddCohortResource(
 ): Promise<PortalResult<ResourceDto>> {
   if (!(await teacherReachesCohort(organizationId, teacherId, cohortId))) {
     // Ausencia = 404: un 403 confirmaría que la camada existe.
-    return { ok: false, status: 404, code: "not_found", message: "Camada no encontrada" };
+    return { ok: false, status: 404, code: "not_found", message: "Cohorte no encontrada" };
   }
 
   const creado = await createResource(organizationId, {

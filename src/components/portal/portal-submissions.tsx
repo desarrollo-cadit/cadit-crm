@@ -116,8 +116,8 @@ export function PortalSubmissions({ cohortId }: { cohortId: string }) {
     return (
       <div className="space-y-3 rounded-lg border border-dashed p-6 text-center">
         <p className="text-sm text-destructive">
-          No se pudieron cargar las entregas. La cohorte puede tener
-          evaluaciones y alumnos: lo que falló es la consulta, no el dato.
+          No se pudieron cargar las entregas. Reintentá; si el problema
+          persiste, comunicate con la academia.
         </p>
         <Button variant="outline" size="sm" onClick={() => void refetch()}>
           Reintentar
@@ -131,8 +131,8 @@ export function PortalSubmissions({ cohortId }: { cohortId: string }) {
   if (datos.assessments.length === 0) {
     return (
       <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-        Esta cohorte todavía no tiene evaluaciones cargadas. Las define la
-        academia; cuando estén, vas a ver acá lo que entregue cada alumno.
+        Esta cohorte aún no tiene evaluaciones. La academia las define; una
+        vez creadas, aquí verás las entregas de cada alumno.
       </p>
     );
   }
@@ -195,7 +195,7 @@ function EvaluacionBloque({
           onClick={() => setEditandoPlazo((v) => !v)}
         >
           <CalendarClock className="h-4 w-4" />
-          {evaluacion.dueAt ? "Cambiar plazo" : "Poner plazo"}
+          {evaluacion.dueAt ? "Modificar plazo" : "Establecer plazo"}
         </Button>
       </div>
 
@@ -368,7 +368,7 @@ function AlumnoFila({
               </Button>
             )}
             <Button size="sm" variant="outline" onClick={() => setProrrogando((v) => !v)}>
-              Dar prórroga
+              Otorgar prórroga
             </Button>
           </div>
 
@@ -387,7 +387,7 @@ function AlumnoFila({
         <div className="flex flex-wrap items-center gap-2">
           <p className="text-xs text-muted-foreground">Todavía no entregó.</p>
           <Button size="sm" variant="outline" onClick={() => setProrrogando((v) => !v)}>
-            Dar prórroga
+            Otorgar prórroga
           </Button>
         </div>
       )}
@@ -509,9 +509,9 @@ function PlazoDelGrupo({
   return (
     <div className="space-y-3 rounded-md border border-dashed p-3">
       <p className="text-xs text-muted-foreground">
-        La fecha vale para toda la cohorte. Pasada la fecha, las entregas se
-        siguen aceptando marcadas como fuera de plazo: quien decide si las toma
-        sos vos.
+        El plazo se aplica a toda la cohorte. Vencido el plazo, las entregas
+        se siguen recibiendo, marcadas como fuera de plazo; la decisión de
+        aceptarlas queda a tu criterio.
       </p>
       <CamposDePlazo
         fecha={fecha}
@@ -604,13 +604,13 @@ function FormularioDeProrroga({
           id={`motivo-${assessmentId}-${enrollmentId}`}
           required
           className="h-11"
-          placeholder="Avisó antes que se iba de viaje"
+          placeholder="Ej.: viaje notificado con anticipación"
           value={motivo}
           onChange={(e) => setMotivo(e.target.value)}
         />
       </div>
       <Button type="submit" size="sm" disabled={!fecha || guardando}>
-        Dar la prórroga
+        Otorgar prórroga
       </Button>
     </form>
   );
@@ -670,8 +670,8 @@ function FormularioDeCorreccion({
           value={passed}
           onChange={(e) => setPassed(e.target.value)}
         >
-          <option value="si">Aprobó</option>
-          <option value="no">No aprobó</option>
+          <option value="si">Aprobado</option>
+          <option value="no">No aprobado</option>
         </Select>
       </div>
       <div className="space-y-1.5">
@@ -686,8 +686,8 @@ function FormularioDeCorreccion({
           onChange={(e) => setFeedback(e.target.value)}
         />
         <p className="text-xs text-muted-foreground">
-          La lee el alumno. Guardar también carga el resultado en la planilla de
-          evaluación: no hay que cargarlo dos veces.
+          El alumno podrá leer esta devolución. Al guardar, el resultado se
+          registra también en la planilla de evaluaciones.
         </p>
       </div>
       <Button type="submit" size="sm" disabled={feedback.trim().length < 3 || guardando}>

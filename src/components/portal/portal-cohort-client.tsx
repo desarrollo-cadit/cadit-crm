@@ -116,9 +116,10 @@ function fecha(iso: string): string {
 /**
  * 014 (T025) — La cohorte, como la ve el profesor.
  *
- * Tres pestañas y ninguna más: clases (donde toma asistencia), evaluación
- * (donde carga resultados) y material (de solo lectura). Todo lo que no está
- * es deliberado — inscribir, cobrar y emitir certificados son de la academia.
+ * Cuatro pestañas: clases (donde toma asistencia y carga la grabación),
+ * evaluaciones (donde carga resultados), entregas (donde lee y devuelve) y
+ * material (donde también publica). Todo lo que no está es deliberado —
+ * inscribir, cobrar y emitir certificados son de la academia.
  */
 export function PortalCohortClient({ cohortId }: { cohortId: string }) {
   const [tab, setTab] = useState<Tab>("clases");
@@ -130,6 +131,7 @@ export function PortalCohortClient({ cohortId }: { cohortId: string }) {
   } | null>(null);
   const [datos, setDatos] = useState<ClassesPayload | null>(null);
   const [noEncontrada, setNoEncontrada] = useState(false);
+  const [fallo, setFallo] = useState(false);
 
   const refetch = useCallback(async () => {
     const res = await fetch(`/api/portal/cohorts/${cohortId}/classes`).catch(() => null);
@@ -139,7 +141,12 @@ export function PortalCohortClient({ cohortId }: { cohortId: string }) {
       setNoEncontrada(true);
       return;
     }
-    if (res?.ok) setDatos((await res.json()) as ClassesPayload);
+    if (!res?.ok) {
+      setFallo(true);
+      return;
+    }
+    setFallo(false);
+    setDatos((await res.json()) as ClassesPayload);
   }, [cohortId]);
 
   useEffect(() => {
@@ -153,16 +160,22 @@ export function PortalCohortClient({ cohortId }: { cohortId: string }) {
           <ArrowLeft className="h-4 w-4" /> Mis cohortes
         </Link>
         <div className="rounded-lg border border-dashed p-6 text-center">
-          <p className="text-sm font-medium">Esa cohorte no está entre las tuyas</p>
+          <p className="text-sm font-medium">No encontramos esta cohorte entre las asignadas a tu cuenta</p>
           <p className="mt-2 text-sm text-muted-foreground">
-            Si tendría que estarlo, avisale a la academia.
+            Si considerás que es un error, comunicate con la academia.
           </p>
         </div>
       </div>
     );
   }
 
-  if (!datos) return <Skeleton className="h-64 w-full" />;
+  if (!datos) {
+    return fallo ? (
+      <FalloDeCarga onRetry={() => void refetch()} />
+    ) : (
+      <Skeleton className="h-64 w-full" />
+    );
+  }
 
   if (claseAbierta) {
     return (
@@ -188,7 +201,7 @@ export function PortalCohortClient({ cohortId }: { cohortId: string }) {
         <p className="text-sm text-muted-foreground">
           {datos.cohort.program &&
             `${datos.cohort.program.name} · `}
-          {datos.cohort.name ?? "Sin nombre de edición"} · {datos.cohort.students}{" "}
+          {datos.cohort.name ?? "Cohorte sin nombre"} · {datos.cohort.students}{" "}
           {datos.cohort.students === 1 ? "alumno" : "alumnos"}
           {datos.cohort.role === "suplente" && " · suplencia"}
         </p>
@@ -215,7 +228,7 @@ export function PortalCohortClient({ cohortId }: { cohortId: string }) {
         {(
           [
             { key: "clases", label: "Clases" },
-            { key: "evaluacion", label: "Evaluación" },
+            { key: "evaluacion", label: "Evaluaciones" },
             // 016 — Entregas va ANTES de Material: es trabajo pendiente del
             // profesor, y Material es consulta. Lo que hay que hacer primero.
             { key: "entregas", label: "Entregas" },
@@ -299,9 +312,9 @@ function Clases({
         // así que no se le puede tomar asistencia. Decirlo evita que el
         // profesor toque y no pase nada.
         <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
-          Estas clases son una proyección de los días declarados: todavía no
-          existen. Cuando la academia genere el cronograma vas a poder tomar
-          asistencia.
+          Estas clases son una proyección según los días previstos. Vas a
+          poder registrar la asistencia cuando la academia genere el
+          cronograma.
         </p>
       )}
 
@@ -348,7 +361,7 @@ function Clases({
                       rel="noreferrer"
                       className="inline-flex items-center gap-1 underline"
                     >
-                      <ExternalLink className="h-3.5 w-3.5" /> Entrar a la clase
+                      <ExternalLink className="h-3.5 w-3.5" /> Ingresar a la clase
                     </a>
                   )}
                   {c.recordingUrl && (
@@ -398,10 +411,16 @@ function Clases({
 function Evaluacion({ cohortId }: { cohortId: string }) {
   const [datos, setDatos] = useState<GradingPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [fallo, setFallo] = useState(false);
 
   const refetch = useCallback(async () => {
     const res = await fetch(`/api/portal/cohorts/${cohortId}/grading`).catch(() => null);
-    if (res?.ok) setDatos((await res.json()) as GradingPayload);
+    if (!res?.ok) {
+      setFallo(true);
+      return;
+    }
+    setFallo(false);
+    setDatos((await res.json()) as GradingPayload);
   }, [cohortId]);
 
   useEffect(() => {
@@ -427,13 +446,19 @@ function Evaluacion({ cohortId }: { cohortId: string }) {
     void refetch();
   }
 
-  if (!datos) return <Skeleton className="h-40 w-full" />;
+  if (!datos) {
+    return fallo ? (
+      <FalloDeCarga onRetry={() => void refetch()} />
+    ) : (
+      <Skeleton className="h-40 w-full" />
+    );
+  }
 
   if (datos.assessments.length === 0) {
     return (
       <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-        Esta cohorte todavía no tiene evaluaciones cargadas. Las define la
-        academia; cuando estén, vas a poder poner los resultados acá.
+        Esta cohorte aún no tiene evaluaciones. La academia las define; una
+        vez creadas, vas a poder registrar aquí los resultados.
       </p>
     );
   }
@@ -443,7 +468,8 @@ function Evaluacion({ cohortId }: { cohortId: string }) {
       {error && <p className="text-sm text-destructive">{error}</p>}
       {!datos.editable && (
         <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-          La cohorte ya finalizó: los resultados se ven, no se cambian.
+          La cohorte finalizó: los resultados están disponibles solo para
+          consulta.
         </p>
       )}
 
@@ -470,8 +496,8 @@ function Evaluacion({ cohortId }: { cohortId: string }) {
                       {/* El vacío NO es un reprobado (FR-005): tiene su propia
                           opción, y dice lo que significa. */}
                       <option value="">Sin corregir</option>
-                      <option value="si">Aprobó</option>
-                      <option value="no">No aprobó</option>
+                      <option value="si">Aprobado</option>
+                      <option value="no">No aprobado</option>
                     </Select>
                   </div>
                 );
@@ -484,21 +510,36 @@ function Evaluacion({ cohortId }: { cohortId: string }) {
   );
 }
 
-/** 014 (T029, FR-007) — Material y avisos, de solo lectura. */
+/**
+ * 014 (T029, FR-007) — Material y avisos de la cohorte. Los avisos se leen;
+ * el material, además, lo puede publicar el profesor (023).
+ */
 function Material({ cohortId }: { cohortId: string }) {
   const [datos, setDatos] = useState<ContentPayload | null>(null);
   const [publicando, setPublicando] = useState(false);
+  const [fallo, setFallo] = useState(false);
 
   const cargar = useCallback(async () => {
     const res = await fetch(`/api/portal/cohorts/${cohortId}/content`).catch(() => null);
-    if (res?.ok) setDatos((await res.json()) as ContentPayload);
+    if (!res?.ok) {
+      setFallo(true);
+      return;
+    }
+    setFallo(false);
+    setDatos((await res.json()) as ContentPayload);
   }, [cohortId]);
 
   useEffect(() => {
     void cargar();
   }, [cargar]);
 
-  if (!datos) return <Skeleton className="h-40 w-full" />;
+  if (!datos) {
+    return fallo ? (
+      <FalloDeCarga onRetry={() => void cargar()} />
+    ) : (
+      <Skeleton className="h-40 w-full" />
+    );
+  }
 
   const vacio = datos.announcements.length === 0 && datos.resources.length === 0;
 
@@ -554,16 +595,16 @@ function Material({ cohortId }: { cohortId: string }) {
       {datos.resources.length > 0 && (
         <section className="space-y-2">
           <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Material del curso
+            Material
           </h2>
-          <ul className="divide-y rounded-lg border hover:bg-accent">
+          <ul className="divide-y rounded-lg border">
             {datos.resources.map((r) => (
               <li key={r.id}>
                 <a
                   href={r.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex h-12 items-center justify-between gap-2 px-3 text-sm"
+                  className="flex h-12 items-center justify-between gap-2 px-3 text-sm transition-colors hover:bg-accent"
                 >
                   <span className="truncate">{r.title}</span>
                   <ExternalLink className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -629,8 +670,8 @@ function DialogoGrabacion({
       <div className="w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-pop">
         <h3 className="text-base font-semibold tracking-tight">Grabación de la clase</h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          Pegá el enlace de la nube. El sistema no guarda el video: guarda el
-          enlace.
+          Pegá el enlace de la grabación. El portal almacena solo el enlace,
+          no el archivo de video.
         </p>
 
         <form onSubmit={guardar} className="mt-4 space-y-4">
@@ -647,7 +688,7 @@ function DialogoGrabacion({
             />
             {actual && (
               <p className="text-xs text-muted-foreground">
-                Si lo dejás vacío, se borra el enlace que hay cargado.
+                Si dejás el campo vacío, se eliminará el enlace actual.
               </p>
             )}
           </div>
@@ -720,8 +761,8 @@ function DialogoMaterial({
       <div className="w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-pop">
         <h3 className="text-base font-semibold tracking-tight">Publicar material</h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          Lo van a ver los alumnos de esta cohorte. Es un ENLACE —Drive,
-          WeTransfer, Autodesk—: el sistema no guarda archivos.
+          Lo verán los alumnos de esta cohorte. Ingresá un enlace (Drive,
+          WeTransfer, Autodesk Docs): el portal no almacena archivos.
         </p>
 
         <form onSubmit={guardar} className="mt-4 space-y-4">
@@ -782,6 +823,19 @@ function DialogoMaterial({
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+function FalloDeCarga({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="space-y-3 rounded-lg border border-dashed p-6 text-center">
+      <p className="text-sm text-destructive">
+        No se pudo cargar la información. Intentá nuevamente.
+      </p>
+      <Button variant="outline" size="sm" onClick={onRetry}>
+        Reintentar
+      </Button>
     </div>
   );
 }

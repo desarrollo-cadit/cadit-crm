@@ -42,10 +42,10 @@ export default async function GuiaPortalPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Cómo funciona esto</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Guía del portal</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Qué hay en cada pantalla del menú y para qué sirve. Sólo aparece lo
-          que vos podés abrir.
+          Descripción de cada sección del menú. Solo se muestran las secciones
+          habilitadas para tu cuenta.
         </p>
       </div>
 
@@ -57,7 +57,7 @@ export default async function GuiaPortalPage() {
       */}
       {esAlumno && (
         <Seccion
-          titulo="Mientras cursás"
+          titulo="Como alumno"
           items={ITEMS_ALUMNO.map((i) => ({
             label: i.label,
             texto: GUIA_PORTAL_ALUMNO[i.href],
@@ -67,7 +67,7 @@ export default async function GuiaPortalPage() {
 
       {esProfesor && (
         <Seccion
-          titulo="Cuando das clase"
+          titulo="Como profesor"
           items={ITEMS_PROFESOR.map((i) => ({
             label: i.label,
             texto: GUIA_PORTAL_PROFESOR[i.href],
@@ -96,7 +96,7 @@ function Seccion({
 }) {
   return (
     <section>
-      <h2 className="text-[10.5px] font-semibold uppercase tracking-wide text-text-3">
+      <h2 className="portal-vista-label font-display text-[10.5px] font-semibold uppercase tracking-wide text-text-3">
         {titulo}
       </h2>
       <ul className="mt-2 divide-y divide-border rounded-lg border border-border">

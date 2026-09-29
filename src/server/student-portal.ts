@@ -18,6 +18,7 @@ import {
 } from "@/server/grading";
 import {
   listAnnouncements,
+  listCohortMaterial,
   listResources,
   type AnnouncementDto,
   type ResourceDto,
@@ -1128,9 +1129,11 @@ export async function studentCourseDetail(
   const propia = mia.cohort?.id ?? null;
   const [announcements, resources] = await Promise.all([
     propia ? listAnnouncements(organizationId, propia) : Promise.resolve([]),
-    mia.course?.id
-      ? listResources(organizationId, { courseId: mia.course.id })
-      : Promise.resolve([]),
+    propia
+      ? listCohortMaterial(organizationId, { courseId: mia.course?.id ?? null, cohortId: propia })
+      : mia.course?.id
+        ? listResources(organizationId, { courseId: mia.course.id })
+        : Promise.resolve([]),
   ]);
 
   const certificadoPropio = certificados.find(
