@@ -15,7 +15,7 @@ import { getBranding } from "@/server/branding";
  * panel de marca al otro. Se eligió por una razón de contenido y no de
  * estética — mucha de la gente que entra acá lo hace por PRIMERA vez, con una
  * contraseña que le dictaron por teléfono, y no sabe bien qué es esto. El
- * panel es el lugar donde eso se explica sin ensuciar el formulario.
+ * panel lo dice —qué es y qué va a encontrar— sin ensuciar el formulario.
  *
  * En celular el panel no se muestra: ahí la única tarea es entrar, y una
  * portada empujando el formulario abajo del pliegue es una portada que estorba.
@@ -70,12 +70,7 @@ export default async function AuthLayout({
           <LogoCadIT className="mb-9 w-60 rounded-lg p-5" />
 
           <p className="text-3xl font-semibold leading-tight tracking-tight text-on-accent">
-            Tu cursada, en un solo lugar.
-          </p>
-          <p className="mt-4 max-w-md text-sm leading-relaxed text-on-accent opacity-90">
-            Acá vive todo lo que hoy se pregunta por WhatsApp: cuándo es tu
-            próxima clase, cómo venís de asistencia, qué te falta pagar y dónde
-            está tu certificado.
+            Campus académico.
           </p>
 
           <ul className="mt-9 space-y-3.5">
