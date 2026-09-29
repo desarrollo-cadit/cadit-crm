@@ -623,7 +623,7 @@ function buildCourse(
     minAttendancePct,
     approval: sinDatos ? "sin_datos" : state,
     approvalReasons: sinDatos
-      ? ["Esta cursada no tiene asistencia ni evaluaciones registradas en el sistema"]
+      ? ["Este curso no tiene asistencia ni evaluaciones registradas en el sistema"]
       : reasons,
     assessments,
     certificate: cert
@@ -902,7 +902,7 @@ function pickNextClass(
   return {
     enrollmentId: e.enrollment.id,
     cohortId: s.cohortId,
-    cohortName: e.cohort?.name ?? e.course?.name ?? "Mi cursada",
+    cohortName: e.cohort?.name ?? e.course?.name ?? "Mi curso",
     courseName: e.course?.name ?? "—",
     number: s.number,
     date: s.date.toISOString(),
@@ -1556,7 +1556,7 @@ export async function studentNavCourses(
     .filter((r) => r.parentEnrollmentId === null)
     .map((r) => ({
       enrollmentId: r.enrollmentId,
-      label: r.courseName ?? r.cohortName ?? "Mi cursada",
+      label: r.courseName ?? r.cohortName ?? "Mi curso",
       active: r.status !== "finalizada",
       moduleCount: modulosPorMadre.get(r.enrollmentId) ?? 0,
     }));
@@ -1639,7 +1639,7 @@ export function buildMilestones(input: {
   if (input.enrolledAt) {
     hitos.push({
       key: "inscripcion",
-      label: "Te inscribiste",
+      label: "Inscripción",
       detail: null,
       state: "cumplido",
       at: input.enrolledAt.toISOString(),
@@ -1725,7 +1725,7 @@ export function buildMilestones(input: {
     const mitad = clases[Math.ceil(clases.length / 2) - 1]!;
     hitos.push({
       key: "mitad",
-      label: "Mitad de la cursada",
+      label: "Mitad del curso",
       detail: `Clase ${mitad.number} de ${clases.length}`,
       state: paso(mitad.date) ? "cumplido" : "pendiente",
       at: mitad.date.toISOString(),
@@ -1762,8 +1762,8 @@ export function buildMilestones(input: {
         input.attendancePct === null
           ? "Todavía no se registró asistencia"
           : input.attendanceWaived && input.attendancePct < input.minAttendancePct
-            ? `Vas ${input.attendancePct}% — habilitada por dispensa`
-            : `Vas ${input.attendancePct}%`,
+            ? `Asistencia: ${input.attendancePct}% — habilitada por dispensa`
+            : `Asistencia: ${input.attendancePct}%`,
       /**
        * `sin_datos` y no "no alcanzado": **0% porque nadie pasó lista no es 0%
        * porque no vino**. Es la corrección de 013/T034, y acá es la diferencia
@@ -1835,8 +1835,8 @@ function detalleDeModulo(modulo: {
   if (modulo.otraCamada) {
     partes.push(
       modulo.camadaName
-        ? `Lo cursás con la camada ${modulo.camadaName}`
-        : "Lo cursás con otra camada"
+        ? `Cursado con la cohorte ${modulo.camadaName}`
+        : "Cursado con otra cohorte"
     );
   }
   if (modulo.certificate) {
