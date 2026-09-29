@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Badge } from "@/components/ui/badge";
+import { ChipDeEstado, EncabezadoDePagina } from "@/components/portal/campus";
 import { Button } from "@/components/ui/button";
 import { Markdown } from "@/components/offline-courses/markdown";
 import { EmptyNote, PortalCard, SectionTitle, formatDate } from "@/components/portal/student-bits";
@@ -53,12 +53,17 @@ export function StudentOfflineQuizClient({ courseId, quizId }: { courseId: strin
   const quiz = load.data.quiz;
   return (
     <div className="space-y-5">
-      <BackLink href={back}>{quiz.course.title}</BackLink>
       <header className="space-y-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <h1 className="text-2xl font-semibold tracking-tight">{quiz.title}</h1>
-          <QuizStatusBadge quiz={quiz} />
-        </div>
+        <EncabezadoDePagina
+          migas={[
+            { label: "Inicio", href: "/portal" },
+            { label: "Cursos offline", href: OFFLINE_BASE },
+            { label: quiz.course.title, href: back },
+            { label: quiz.title, href: null },
+          ]}
+          titulo={quiz.title}
+          acciones={<QuizStatusBadge quiz={quiz} />}
+        />
         <p className="text-sm text-text-3">
           Se aprueba con {quiz.passingPercentage}% ·{" "}
           {quiz.maxAttempts === null
@@ -100,9 +105,13 @@ export function StudentOfflineQuizClient({ courseId, quizId }: { courseId: strin
                   <span className="text-text-3">{formatDate(a.createdAt)}</span>
                   <span className="ml-auto tabular-nums">{pct(a.scorePercentage)}</span>
                   {a.passed ? (
-                    <Badge variant="success">Aprobado</Badge>
+                    <ChipDeEstado tono="ok">
+                      Aprobado
+                    </ChipDeEstado>
                   ) : (
-                    <Badge variant="destructive">No aprobado</Badge>
+                    <ChipDeEstado tono="atencion">
+                      No aprobado
+                    </ChipDeEstado>
                   )}
                 </li>
               ))}
@@ -200,7 +209,7 @@ function QuizForm({
       onResult(body.result);
       return;
     }
-    setError(body?.error?.message ?? "No se pudo enviar el cuestionario. Probá de nuevo.");
+    setError(body?.error?.message ?? "No se pudo enviar el cuestionario. Intentá nuevamente.");
     // The choices stay on screen: reloading only refreshes the attempts count.
     if (res?.status === 409) await onConflict();
   }
@@ -228,7 +237,7 @@ function QuizForm({
               <div id={labelId} className="space-y-1">
                 <p className="text-xs font-medium text-text-3">
                   Pregunta {i + 1} de {quiz.questions.length}
-                  {multiple && " · puede elegir más de una"}
+                  {multiple && " · podés elegir más de una"}
                 </p>
                 <Markdown source={q.questionMd} className="font-medium" />
               </div>

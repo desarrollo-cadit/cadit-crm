@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { ChipDeEstado } from "@/components/portal/campus";
 import { Clock, ExternalLink, MessageSquare, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
 import { EmptyNote, PortalCard, formatDate } from "@/components/portal/student-bits";
 
 /**
@@ -75,24 +75,12 @@ function fechaYHora(iso: string, timeZone: string): string {
   }).format(new Date(iso));
 }
 
-const ESTADO: Record<Estado, { label: string; className: string }> = {
-  sin_entrega: {
-    label: "Sin entregar",
-    className: "border-border bg-secondary text-text-2",
-  },
-  entregada: {
-    label: "Entregada",
-    className: "border-success-border bg-success-soft text-success",
-  },
+const ESTADO: Record<Estado, { label: string; tone: "curso" | "atencion" | "neutro" }> = {
+  sin_entrega: { label: "Sin entregar", tone: "neutro" },
+  entregada: { label: "Entregada", tone: "curso" },
   /** SC-003 — fuera de plazo se distingue a simple vista. No rechaza: avisa. */
-  tardia: {
-    label: "Entregada fuera de plazo",
-    className: "border-warning-border bg-warning-soft text-warning",
-  },
-  corregida: {
-    label: "Corregida",
-    className: "border-border bg-secondary text-text-2",
-  },
+  tardia: { label: "Entregada fuera de plazo", tone: "atencion" },
+  corregida: { label: "Corregida", tone: "curso" },
 };
 
 export function StudentSubmissions({
@@ -122,7 +110,7 @@ export function StudentSubmissions({
       que cumplió.
     */
     if (!res?.ok) {
-      setError("No pudimos cargar tus entregas. Probá de nuevo en un momento.");
+      setError("No se pudieron cargar tus entregas. Intentá nuevamente más tarde.");
       return;
     }
     const body = (await res.json()) as { assessments: EvaluacionConEntregas[] };
@@ -136,9 +124,9 @@ export function StudentSubmissions({
 
   if (assessments.length === 0) {
     return (
-      <EmptyNote title="Esta cursada todavía no tiene evaluaciones cargadas">
-        Cuando la academia las cargue vas a ver acá cuáles aprobaste, cuáles
-        faltan corregir y dónde entregar tu trabajo.
+      <EmptyNote title="Este curso aún no tiene evaluaciones">
+        Cuando la academia las publique, aquí verás su estado de corrección y
+        dónde realizar cada entrega.
       </EmptyNote>
     );
   }
@@ -161,7 +149,7 @@ export function StudentSubmissions({
       {/* Falló al refrescar: lo de abajo es real, pero puede estar viejo. */}
       {error && (
         <p className="rounded-md border border-danger-border bg-danger-soft px-3 py-2 text-sm text-danger">
-          {error} Lo que ves abajo puede estar desactualizado.
+          {error} La información mostrada puede no estar actualizada.
         </p>
       )}
       <ul className="space-y-3">
@@ -204,27 +192,22 @@ function EvaluacionItem({
           )}
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-          <span
-            className={cn(
-              "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium",
-              ESTADO[estado].className
-            )}
-          >
+          <ChipDeEstado tono={ESTADO[estado].tone}>
             {ESTADO[estado].label}
-          </span>
+          </ChipDeEstado>
           {/*
             FR-005 de 010 — sin corregir se muestra PENDIENTE, jamás
             desaprobada. El resultado sale de la evaluación, no de la entrega:
             la academia puede corregir por fuera del sistema.
           */}
           {resumen.passed === null ? null : resumen.passed ? (
-            <span className="inline-flex items-center rounded-full border border-success-border bg-success-soft px-2.5 py-0.5 text-xs font-medium text-success">
+            <ChipDeEstado tono="ok">
               Aprobada
-            </span>
+            </ChipDeEstado>
           ) : (
-            <span className="inline-flex items-center rounded-full border border-danger-border bg-danger-soft px-2.5 py-0.5 text-xs font-medium text-danger">
-              Desaprobada
-            </span>
+            <ChipDeEstado tono="atencion">
+              No aprobada
+            </ChipDeEstado>
           )}
         </div>
       </div>
@@ -268,8 +251,8 @@ function EvaluacionItem({
             exactamente lo que esta fase vino a evitar.
           */
           <p className="text-xs text-text-3">
-            Ya entregaste. Si necesitás volver a entregar, pedile a tu profesor
-            que reabra la entrega.
+            Entrega registrada. Para realizar una nueva entrega, solicitá a tu
+            profesor la reapertura.
           </p>
         )
       )}
@@ -302,13 +285,13 @@ function Plazo({
     <div className="space-y-1">
       <p className="inline-flex items-center gap-1.5 text-xs text-text-2">
         <Clock className="h-3.5 w-3.5 text-text-3" strokeWidth={1.8} />
-        Entregás hasta el {fechaYHora(evaluacion.vigenteAt, zona)}
+        Plazo de entrega: {fechaYHora(evaluacion.vigenteAt, zona)}
       </p>
       {evaluacion.prorroga && (
         <p className="text-xs text-text-3">
-          Tenés una prórroga
+          Prórroga otorgada
           {evaluacion.prorroga.grantedByName &&
-            ` de ${evaluacion.prorroga.grantedByName}`}
+            ` por ${evaluacion.prorroga.grantedByName}`}
           : {evaluacion.prorroga.reason}
         </p>
       )}
@@ -333,9 +316,9 @@ function EntregaHecha({ entrega, zona }: { entrega: Entrega; zona: string }) {
           {fechaYHora(entrega.submittedAt, zona)}
         </span>
         {entrega.tardia && (
-          <span className="inline-flex items-center rounded-full border border-warning-border bg-warning-soft px-2 py-0.5 text-[10.5px] font-medium text-warning">
+          <ChipDeEstado tono="atencion">
             Fuera de plazo
-          </span>
+          </ChipDeEstado>
         )}
       </div>
 
@@ -407,7 +390,7 @@ function FormularioDeEntrega({
       const body = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      setError(body?.error?.message ?? "No pudimos registrar tu entrega.");
+      setError(body?.error?.message ?? "No se pudo registrar la entrega. Verificá el enlace e intentá nuevamente.");
       return;
     }
 
@@ -433,7 +416,7 @@ function FormularioDeEntrega({
         />
         <p className="text-xs text-text-3">
           Pegá el enlace a tu archivo (Drive, WeTransfer, Autodesk Docs). El
-          sistema no guarda el archivo: guarda el enlace, así que dejalo
+          portal almacena solo el enlace: verificá que el archivo esté
           compartido.
         </p>
       </div>

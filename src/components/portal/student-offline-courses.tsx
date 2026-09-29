@@ -12,12 +12,17 @@ import {
   ListChecks,
   Lock,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Markdown } from "@/components/offline-courses/markdown";
 import { VimeoPlayer, type VimeoProgressReport } from "@/components/offline-courses/vimeo-player";
 import { EmptyNote, PortalCard, SectionTitle } from "@/components/portal/student-bits";
+import {
+  ChipDeEstado,
+  EncabezadoDePagina,
+  GrillaDeMetricas,
+  ProgresoDeClases,
+  type TramoEstado,
+} from "@/components/portal/campus";
 import type {
   StudentOfflineCourse,
   StudentOfflineCourseCard,
@@ -64,7 +69,11 @@ export function usePortalJson<T>(url: string) {
     const res = await fetch(url, { cache: "no-store" }).catch(() => null);
     if (res?.status === 404) return setLoad({ state: "not_found" });
     if (!res?.ok) return setLoad({ state: "error" });
-    setLoad({ state: "ok", data: (await res.json()) as T });
+    // Un 200 con un cuerpo ilegible también es un error: sin esto, la pantalla
+    // se quedaba cargando para siempre.
+    const data = (await res.json().catch(() => null)) as T | null;
+    if (data === null) return setLoad({ state: "error" });
+    setLoad({ state: "ok", data });
   }, [url]);
 
   useEffect(() => {
@@ -87,14 +96,14 @@ export function LoadFallback({ load, notFound }: { load: Load<unknown>; notFound
   if (load.state === "not_found") {
     return (
       <EmptyNote title={notFound}>
-        Puede que el curso ya no esté asignado. Si creés que es un error, consultá con la academia.
+        Es posible que este contenido ya no esté asignado a tu cuenta. Si considerás que es un error, comunicate con la academia.
       </EmptyNote>
     );
   }
   return (
     <PortalCard className="border-danger-border bg-danger-soft">
       <p className="text-sm text-danger">
-        No se pudo cargar la información. Probá de nuevo en un momento.
+        No se pudo cargar la información. Intentá nuevamente más tarde.
       </p>
     </PortalCard>
   );
@@ -117,15 +126,20 @@ export function BackLink({ href, children }: { href: string; children: React.Rea
  * ============================================================ */
 
 export function QuizStatusBadge({ quiz }: { quiz: Pick<StudentQuizSummary, "status" | "attemptsRemaining"> }) {
-  if (quiz.status === "aprobado") return <Badge variant="success">Aprobado</Badge>;
-  if (quiz.status === "sin_intentos") return <Badge variant="destructive">Sin intentos</Badge>;
-  if (quiz.attemptsRemaining === null) return <Badge variant="secondary">Intentos ilimitados</Badge>;
+  if (quiz.status === "aprobado") return <ChipDeEstado tono="ok">Aprobado</ChipDeEstado>;
+  if (quiz.status === "sin_intentos") return <ChipDeEstado tono="atencion">Sin intentos</ChipDeEstado>;
+  if (quiz.attemptsRemaining === null)
+    return (
+      <ChipDeEstado tono="neutro">
+        Intentos ilimitados
+      </ChipDeEstado>
+    );
   return (
-    <Badge variant="warning">
+    <ChipDeEstado tono="curso">
       {quiz.attemptsRemaining === 1
         ? "1 intento restante"
         : `${quiz.attemptsRemaining} intentos restantes`}
-    </Badge>
+    </ChipDeEstado>
   );
 }
 
@@ -141,18 +155,18 @@ export function StudentOfflineCoursesClient() {
   if (load.data.courses.length === 0) {
     return (
       <EmptyNote title="Todavía no tenés cursos offline asignados">
-        Cuando la academia asigne un curso a tu grupo, aparecerá acá con sus guías y cuestionarios.
+        Cuando la academia te asigne un curso, aparecerá aquí con sus guías y cuestionarios.
       </EmptyNote>
     );
   }
 
   return (
-    <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+    <ul className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
       {load.data.courses.map((c) => (
         <li key={c.id}>
           <Link
             href={`${OFFLINE_BASE}/${c.id}`}
-            className="flex h-full flex-col overflow-hidden rounded-lg border border-border bg-card shadow-sm transition-colors hover:bg-accent"
+            className="group flex h-full flex-col overflow-hidden rounded-lg border border-border bg-card shadow-sm transition-colors hover:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
             {c.hasThumbnail ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -163,15 +177,14 @@ export function StudentOfflineCoursesClient() {
                 loading="lazy"
               />
             ) : (
-              <div
-                aria-hidden
-                className="flex aspect-video w-full items-center justify-center bg-brand-tint text-brand-text"
-              >
-                <Library className="h-8 w-8" strokeWidth={1.6} />
+              <div aria-hidden className="flex aspect-video w-full items-center justify-center bg-brand-tint">
+                <Library className="h-10 w-10 text-brand-text" strokeWidth={1.4} />
               </div>
             )}
-            <div className="flex flex-1 flex-col gap-3 p-[var(--portal-card-pad)]">
-              <p className="text-sm font-semibold">{c.title}</p>
+            <div className="flex flex-1 flex-col gap-3 p-5">
+              <p className="text-lg font-semibold leading-snug tracking-tight">
+                {c.title}
+              </p>
               <CourseProgress card={c} />
             </div>
           </Link>
@@ -186,14 +199,27 @@ function CourseProgress({ card }: { card: StudentOfflineCourseCard }) {
   return (
     <div className="mt-auto space-y-1.5">
       <CompletionLine completion={completion} />
-      <CompletionBar completion={completion} />
+      <CompletionChain completion={completion} />
     </div>
   );
 }
 
 type Completion = StudentOfflineCourse["completion"];
 
-/** "3 de 10 temas · 1 de 2 cuestionarios" + the finished badge. */
+/**
+ * Topics and quizzes weigh the same: each is one thing left to do. The chain
+ * shows the done ones first — the API gives counts, not which ones.
+ */
+function CompletionChain({ completion }: { completion: Completion }) {
+  const total = completion.topicsTotal + completion.quizzesTotal;
+  const done = completion.topicsDone + completion.quizzesPassed;
+  const states: TramoEstado[] = Array.from({ length: total }, (_, i) =>
+    i < done ? "asistio" : "futura"
+  );
+  return <ProgresoDeClases total={total} done={done} states={states} />;
+}
+
+/** "3 de 10 temas · 1 de 2 cuestionarios" + the finished stamp. */
 function CompletionLine({ completion }: { completion: Completion }) {
   const temas = `${completion.topicsDone} de ${completion.topicsTotal} ${
     completion.topicsTotal === 1 ? "tema" : "temas"
@@ -209,23 +235,11 @@ function CompletionLine({ completion }: { completion: Completion }) {
       <span>
         {temas} · {cuestionarios}
       </span>
-      {completion.completed && <Badge variant="success">Curso terminado</Badge>}
+      {completion.completed && <ChipDeEstado tono="curso">Curso completado</ChipDeEstado>}
     </p>
   );
 }
 
-/** Topics and quizzes weigh the same: each is one thing left to do. */
-function CompletionBar({ completion }: { completion: Completion }) {
-  const total = completion.topicsTotal + completion.quizzesTotal;
-  const done = completion.topicsDone + completion.quizzesPassed;
-  return (
-    <Progress
-      value={total === 0 ? 0 : (done / total) * 100}
-      tone={completion.completed ? "success" : "brand"}
-      label={`Avance del curso: ${done} de ${total}`}
-    />
-  );
-}
 
 /* ============================================================
  * One course
@@ -236,7 +250,6 @@ export function StudentOfflineCourseClient({ courseId }: { courseId: string }) {
 
   return (
     <div className="space-y-5">
-      <BackLink href={OFFLINE_BASE}>Cursos offline</BackLink>
       {load.state !== "ok" ? (
         <LoadFallback load={load} notFound="Curso no encontrado" />
       ) : (
@@ -250,23 +263,42 @@ function CourseBody({ course }: { course: StudentOfflineCourse }) {
   const base = `${OFFLINE_BASE}/${course.id}`;
   return (
     <>
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{course.title}</h1>
-        {course.descriptionMd && (
-          <Markdown source={course.descriptionMd} className="mt-2 text-muted-foreground" />
-        )}
-      </div>
+      <EncabezadoDePagina
+        migas={[
+          { label: "Inicio", href: "/portal" },
+          { label: "Cursos offline", href: OFFLINE_BASE },
+          { label: course.title, href: null },
+        ]}
+        titulo={course.title}
+        acciones={
+          course.completion.completed && <ChipDeEstado tono="ok">Curso completado</ChipDeEstado>
+        }
+      />
+      <GrillaDeMetricas
+        items={[
+          {
+            label: "Temas",
+            value: `${course.completion.topicsDone} / ${course.completion.topicsTotal}`,
+            note: "se habilitan en orden",
+          },
+          {
+            label: "Cuestionarios",
+            value:
+              course.completion.quizzesTotal === 0
+                ? "—"
+                : `${course.completion.quizzesPassed} / ${course.completion.quizzesTotal}`,
+            note:
+              course.completion.quizzesTotal === 0
+                ? "sin cuestionarios"
+                : "aprobados · sin orden obligatorio",
+          },
+        ]}
+      />
+      <CompletionChain completion={course.completion} />
 
-      <PortalCard className="space-y-2">
-        <CompletionLine completion={course.completion} />
-        <CompletionBar completion={course.completion} />
-        {!course.completion.completed && (
-          <p className="text-xs text-text-3">
-            Los temas se abren en orden: cada uno se habilita al terminar el anterior. Los
-            cuestionarios los podés hacer cuando quieras.
-          </p>
-        )}
-      </PortalCard>
+      {course.descriptionMd && (
+        <Markdown source={course.descriptionMd} className="max-w-prose text-muted-foreground" />
+      )}
 
       <section className="space-y-3">
         <SectionTitle>Contenido</SectionTitle>
@@ -275,7 +307,9 @@ function CourseBody({ course }: { course: StudentOfflineCourse }) {
         ) : (
           course.lessons.map((lesson) => (
             <PortalCard key={lesson.id} className="space-y-2">
-              <h2 className="text-sm font-semibold">{lesson.title}</h2>
+              <h2 className="text-lg font-semibold tracking-tight">
+                {lesson.title}
+              </h2>
               {lesson.topics.length === 0 ? (
                 <p className="text-xs text-text-3">Sin temas</p>
               ) : (
@@ -289,7 +323,7 @@ function CourseBody({ course }: { course: StudentOfflineCourse }) {
                         >
                           {t.completed ? (
                             <CheckCircle2
-                              className="h-4 w-4 shrink-0 text-success"
+                              className="h-4 w-4 shrink-0 text-brand"
                               strokeWidth={1.7}
                               aria-label="Completado"
                             />
@@ -392,9 +426,10 @@ function TopicBody({ data, courseId }: { data: StudentOfflineTopic; courseId: st
         keepalive: true,
       }).catch(() => null);
       if (!res?.ok) return setSave("error");
-      const json = (await res.json()) as {
+      const json = (await res.json().catch(() => null)) as {
         progress: { watchedRatio: number; completed: boolean };
-      };
+      } | null;
+      if (!json) return setSave("error");
       setProgress((p) => ({
         completed: p.completed || json.progress.completed,
         watchedRatio: Math.max(p.watchedRatio, json.progress.watchedRatio),
@@ -425,14 +460,17 @@ function TopicBody({ data, courseId }: { data: StudentOfflineTopic; courseId: st
 
   return (
     <article className="space-y-5">
-      <BackLink href={base}>{course.title}</BackLink>
-      <header className="space-y-1">
-        {lessonTitle && <p className="text-xs font-medium text-text-3">{lessonTitle}</p>}
-        <div className="flex flex-wrap items-center gap-2">
-          <h1 className="text-2xl font-semibold tracking-tight">{topic.title}</h1>
-          {progress.completed && <Badge variant="success">Tema completado</Badge>}
-        </div>
-      </header>
+      <EncabezadoDePagina
+        migas={[
+          { label: "Inicio", href: "/portal" },
+          { label: "Cursos offline", href: OFFLINE_BASE },
+          { label: course.title, href: base },
+          { label: topic.title, href: null },
+        ]}
+        titulo={topic.title}
+        descripcion={lessonTitle || undefined}
+        acciones={progress.completed && <ChipDeEstado tono="ok">Tema completado</ChipDeEstado>}
+      />
 
       {video?.shown === "before" && player}
 
@@ -456,7 +494,7 @@ function TopicBody({ data, courseId }: { data: StudentOfflineTopic; courseId: st
         {prev ? (
           <Link
             href={`${base}/temas/${prev.id}`}
-            className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-md border border-input px-4 text-sm transition-colors hover:bg-accent"
+            className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-md border border-input px-4 text-sm font-semibold transition-colors hover:bg-accent"
           >
             <ArrowLeft className="h-4 w-4 shrink-0" />
             <span className="truncate">{prev.title}</span>
@@ -468,7 +506,7 @@ function TopicBody({ data, courseId }: { data: StudentOfflineTopic; courseId: st
           progress.completed ? (
             <Link
               href={`${base}/temas/${next.id}`}
-              className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-md border border-input px-4 text-sm transition-colors hover:bg-accent"
+              className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-on-accent transition-colors hover:bg-brand-hover"
             >
               <span className="truncate">Siguiente tema: {next.title}</span>
               <ArrowRight className="h-4 w-4 shrink-0" />
@@ -479,7 +517,7 @@ function TopicBody({ data, courseId }: { data: StudentOfflineTopic; courseId: st
                 type="button"
                 disabled
                 aria-describedby="siguiente-bloqueado"
-                className="inline-flex min-h-[44px] max-w-full cursor-not-allowed items-center gap-2 rounded-md border border-input px-4 text-sm text-text-3"
+                className="inline-flex min-h-[44px] max-w-full cursor-not-allowed items-center gap-2 rounded-md border border-dashed border-input px-4 text-sm font-semibold text-text-3"
               >
                 <Lock className="h-4 w-4 shrink-0" strokeWidth={1.7} />
                 <span className="truncate">Siguiente tema</span>

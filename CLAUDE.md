@@ -200,6 +200,22 @@ ni ningún token de texto: eso invalidaría las garantías de contraste. El pane
 del staff conserva su densidad (`--row-py`, `text-xs/sm/base` intactos) porque
 el equipo lo mira ocho horas por día.
 
+**El alumno tiene su propio mundo: "campus"** (2026-09-29). Es un portal de
+estudio moderno (referencia: Coderhouse), a todo el ancho y con migas de pan
+en cada pantalla. Las rutas del ALUMNO encienden `data-world="campus"`
+(`PortalWorld`, lista de exclusión con las rutas del profesor). El bloque NO
+redefine texto ni `--bg`: solo agrega `--bg-page` y los radios/sombras, y
+`tests/unit/mundo-campus.test.ts` exige contraste también sobre ese fondo.
+Las piezas viven en `src/components/portal/campus.tsx`; el detalle, en
+`DESIGN.md`.
+
+**La barra lateral es navy (#001b5e) en toda la app y en los dos temas**
+(clase `barra-marca`): redefine sus propios tokens para que todo lo de
+adentro quede en blanco, y fija `color` porque el texto sin clase hereda el
+color ya resuelto de la página. Al agregar colores a `tailwind.config.ts`,
+**reiniciá el dev server**: si no, las clases nuevas no se generan y no avisa
+nada.
+
 ## El portal del profesor (ciclo 014)
 
 **Dos puertas, y un test que las separa.** El staff entra por

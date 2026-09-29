@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-28T00:00:00Z",
+  "title": "Design System: CadIT",
+  "extensions": {
+    "colorMeta": {
+      "accent-steel": { "role": "primary", "displayName": "Acero de cota", "canonical": "#3f5972", "tonalRamp": ["#141d26", "#223242", "#2b4056", "#3f5972", "#5b7591", "#8ea3b9", "#dde5ee", "#f3f6f9"] },
+      "ink": { "role": "neutral", "displayName": "Tinta", "canonical": "#1a1a1e", "tonalRamp": ["#1a1a1e", "#56565e", "#6e6e75", "#8d8d93", "#939397", "#ecedf0", "#f4f4f5", "#ffffff"] },
+      "success-sage": { "role": "tertiary", "displayName": "Salvia", "canonical": "#4f7761" },
+      "warning-ochre": { "role": "tertiary", "displayName": "Ocre", "canonical": "#866a48" },
+      "danger-brick": { "role": "tertiary", "displayName": "Ladrillo", "canonical": "#a2504c" }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "Headline", "purpose": "Título de página." },
+      "body": { "displayName": "Body", "purpose": "Contenido operativo; 14px fijo por densidad." },
+      "section-label": { "displayName": "Section label", "purpose": "Encabezado de grupo en la barra lateral, en mayúsculas." }
+    },
+    "shadows": [
+      { "name": "apoyo", "value": "0 1px 2px rgba(20,20,30,0.05)", "purpose": "Tarjetas y campos en reposo." },
+      { "name": "flotante", "value": "0 6px 20px -6px rgba(20,20,35,0.12)", "purpose": "Menús y paneles elevados." },
+      { "name": "emergente", "value": "0 12px 32px -8px rgba(20,20,35,0.22)", "purpose": "Diálogos y cajón móvil." }
+    ],
+    "motion": [
+      { "name": "colors", "value": "transition-colors 150ms", "purpose": "Hover y estados de controles." },
+      { "name": "progress", "value": "width 500ms", "purpose": "Relleno de barras de progreso." }
+    ],
+    "breakpoints": [
+      { "name": "md", "value": "768px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Acción principal de una pantalla.",
+      "html": "<button class=\"ds-btn-primary\">Guardar cambios</button>",
+      "css": ".ds-btn-primary { height: 36px; padding: 8px 16px; border: none; border-radius: var(--radius, 10px); background: var(--accent, #3f5972); color: var(--on-accent, #fff); font: 500 14px/20px Geist, sans-serif; box-shadow: 0 1px 2px rgba(20,20,30,.05); transition: background-color .15s; cursor: pointer; } .ds-btn-primary:hover { background: var(--accent-hover, #334a60); } .ds-btn-primary:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--bg, #fff), 0 0 0 4px var(--accent, #3f5972); } .ds-btn-primary:active { transform: translateY(1px); }"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Acción secundaria.",
+      "html": "<button class=\"ds-btn-outline\">Cancelar</button>",
+      "css": ".ds-btn-outline { height: 36px; padding: 8px 16px; border: 1px solid var(--border-strong, #939397); border-radius: var(--radius, 10px); background: transparent; color: var(--text, #1a1a1e); font: 500 14px/20px Geist, sans-serif; transition: background-color .15s; cursor: pointer; } .ds-btn-outline:hover { background: var(--bg-hover, #f4f4f5); } .ds-btn-outline:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--bg, #fff), 0 0 0 4px var(--accent, #3f5972); }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Campo de texto con borde de 3:1.",
+      "html": "<input class=\"ds-input\" placeholder=\"Buscar alumno…\" />",
+      "css": ".ds-input { height: 36px; width: 240px; padding: 4px 12px; border: 1px solid var(--border-strong, #939397); border-radius: var(--radius, 10px); background: transparent; color: var(--text, #1a1a1e); font: 400 14px/20px Geist, sans-serif; transition: border-color .15s; } .ds-input:hover { border-color: var(--text-3, #6e6e75); } .ds-input:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--bg, #fff), 0 0 0 4px var(--accent, #3f5972); }"
+    },
+    {
+      "name": "Status Badge",
+      "kind": "chip",
+      "refersTo": "badge-success",
+      "description": "Estado apagado y legible.",
+      "html": "<span class=\"ds-badge ds-badge-ok\">Al día</span> <span class=\"ds-badge ds-badge-warn\">Vence pronto</span> <span class=\"ds-badge ds-badge-bad\">Moroso</span>",
+      "css": ".ds-badge { display: inline-flex; align-items: center; padding: 2px 10px; border-radius: 9999px; border: 1px solid; font: 500 12px/16px Geist, sans-serif; } .ds-badge-ok { background: var(--success-soft, #eff7f1); border-color: var(--success-border, #d8e8dd); color: var(--success, #4f7761); } .ds-badge-warn { background: var(--warning-soft, #faf7f0); border-color: var(--warning-border, #ece2cf); color: var(--warning, #866a48); } .ds-badge-bad { background: var(--danger-soft, #faf1f0); border-color: var(--danger-border, #ecd4d2); color: var(--danger, #a2504c); }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Contenedor base.",
+      "html": "<div class=\"ds-card\"><p class=\"ds-card-t\">Revit Arquitectura · Cohorte 12</p><p class=\"ds-card-d\">Próxima clase: jueves 18:30</p></div>",
+      "css": ".ds-card { width: 280px; padding: 20px; border: 1px solid var(--border, #ecedf0); border-radius: var(--radius-lg, 14px); background: var(--bg, #fff); box-shadow: 0 1px 2px rgba(20,20,30,.05); font-family: Geist, sans-serif; } .ds-card-t { margin: 0; font-weight: 600; font-size: 14px; color: var(--text, #1a1a1e); } .ds-card-d { margin: 6px 0 0; font-size: 14px; color: var(--text-3, #6e6e75); }"
+    },
+    {
+      "name": "Sidebar Nav",
+      "kind": "nav",
+      "refersTo": "nav-item-active",
+      "description": "Barra lateral con ítem activo tintado.",
+      "html": "<nav class=\"ds-nav\"><span class=\"ds-nav-h\">Cursada</span><a class=\"ds-nav-i ds-on\">Inicio</a><a class=\"ds-nav-i\">Certificados</a><a class=\"ds-nav-i\">Mi cuenta</a></nav>",
+      "css": ".ds-nav { display: flex; flex-direction: column; gap: 2px; width: 216px; padding: 12px; background: var(--bg-subtle, #fbfbfc); font-family: Geist, sans-serif; } .ds-nav-h { padding: 0 10px 4px; font-size: 10.5px; font-weight: 600; letter-spacing: .025em; text-transform: uppercase; color: var(--text-3, #6e6e75); } .ds-nav-i { padding: 8px 10px; border-radius: var(--radius, 10px); font-size: 14px; color: var(--text-2, #56565e); cursor: pointer; } .ds-nav-i:hover { background: var(--bg-hover, #f4f4f5); color: var(--text, #1a1a1e); } .ds-nav-i.ds-on { background: var(--accent-tint, #f3f6f9); color: var(--text, #1a1a1e); font-weight: 500; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "La mesa de dibujo técnico",
+    "overview": "Atlas es la mesa de un dibujante de CAD: hoja blanca, líneas finas grises y frías, y un único acento acero que marca la cota que importa. La precisión es la estética. Existe para el staff que opera la academia ocho horas por día, donde lo apagado es una virtud. El portal del alumno tendrá un mundo propio, separado de Atlas.",
+    "keyCharacteristics": [
+      "Neutros fríos calculados al umbral WCAG y un solo acento acero configurable.",
+      "Densidad de herramienta: cuerpo de 14 px y titulares escalonados a 20, 24 y 30 px.",
+      "Dos temas completos y simétricos, con la preferencia guardada en una cookie.",
+      "La grilla de plano (28/140 px) como única textura de marca.",
+      "Una variante portal que sube los radios y la presencia de marca sin tocar las superficies de texto."
+    ],
+    "rules": [
+      { "name": "The Colors-Live-In-Tokens Rule", "body": "Ningún .tsx escribe un color, ni siquiera bg-white. tests/unit/tema-oscuro.test.ts falla con el archivo y la línea del infractor.", "section": "colors" },
+      { "name": "The No-Opacity-On-Var Rule", "body": "bg-token/50 no emite ninguna regla. Si hace falta una variante más suave, se agrega un token o una clase con color-mix.", "section": "colors" },
+      { "name": "The Computed-Contrast Rule", "body": "El contraste se calcula con contrastRatio() y lo verifica contraste.test.ts: 4.5:1 para texto y 3:1 para íconos y bordes de control, en los dos temas.", "section": "colors" },
+      { "name": "The Headline-Steps-Only Rule", "body": "Solo se remapean text-lg, text-xl y text-2xl. xs, sm y base se quedan en el default de Tailwind porque el panel se mira ocho horas por día.", "section": "typography" }
+    ],
+    "dos": [
+      "Do preguntar por un token semántico (text-muted-foreground, bg-brand-soft) antes que por un valor.",
+      "Do apoyar el logo sobre el plato blanco (--brand-plate) en los dos temas. Los archivos de marca están dibujados para fondo claro.",
+      "Do declarar cada token nuevo en :root y en :root[data-theme=\"dark\"].",
+      "Do mostrar \"sin datos\" cuando falta el dato. Nunca un 0 % ni un \"aprobado\" por omisión."
+    ],
+    "donts": [
+      "Don't escribir un color en un .tsx: ni hex, ni bg-white, ni bg-amber-500.",
+      "Don't usar el modificador de opacidad de Tailwind sobre un token var().",
+      "Don't redefinir --bg, --bg-panel ni los tokens de texto dentro de [data-surface=\"portal\"].",
+      "Don't agrandar el cuerpo de texto del panel del staff.",
+      "Don't nombrar una clase vieja en un comentario: Tailwind escanea los comentarios y genera la regla muerta."
+    ]
+  }
+}
