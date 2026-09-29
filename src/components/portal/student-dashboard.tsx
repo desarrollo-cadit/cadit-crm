@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
+  ArrowRight,
   Award,
   CalendarClock,
   ChevronRight,
@@ -18,15 +19,25 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn, formatAmount } from "@/lib/utils";
 import {
   ApprovalBadge,
-  ClassTime,
   EmptyNote,
   PortalCard,
   formatDate,
   formatDay,
+  formatHour,
   relativeDay,
   useViewerTimeZone,
+  zoneLabel,
 } from "@/components/portal/student-bits";
 import type { ApprovalValue } from "@/components/portal/student-bits";
+import {
+  ChipDeEstado,
+  EncabezadoDePagina,
+  EnlaceBoton,
+  Metrica,
+  ProgresoDeClases,
+  Tarjeta,
+  TituloDeSeccion,
+} from "@/components/portal/campus";
 
 /**
  * 015/023 — El inicio del alumno.
@@ -37,17 +48,13 @@ import type { ApprovalValue } from "@/components/portal/student-bits";
  * debo, dónde está mi certificado.
  *
  * 023 — La primera versión listaba datos correctos en cajas iguales, y se leía
- * como un formulario: nada decía que la cursada AVANZA. Los cambios de esta
- * pasada son eso, no maquillaje:
+ * como un formulario: nada decía que la cursada AVANZA.
  *
- *  - La próxima clase deja de ser una tarjeta más y pasa a ser la pantalla:
- *    es la pregunta que más veces por semana interrumpe a coordinación.
- *  - Cada cursada muestra **clase N de M** con su barra. La asistencia
- *    responde "¿voy bien?"; el avance responde "¿cuánto me falta?", y sin el
- *    segundo el portal no transmite movimiento.
- *  - Los números viven DENTRO de la cursada que describen, no en una fila de
- *    métricas sueltas arriba: un porcentaje sin su curso al lado obliga a
- *    recordar de cuál era.
+ * Mundo "campus" — La pantalla usa el ancho completo. Arriba, lado a lado, la
+ * próxima clase (lo que más se pregunta) y el avance del curso al que
+ * pertenece; debajo, los otros cursos activos en grilla, y al final la cuenta,
+ * la licencia y los certificados. Cada curso aparece UNA vez: el que tiene la
+ * próxima clase ya está arriba y no se repite en la grilla.
  */
 
 type Assessment = { name: string; required: boolean; passed: boolean | null };
@@ -141,7 +148,7 @@ export function StudentDashboard() {
     void (async () => {
       const res = await fetch("/api/portal/me").catch(() => null);
       if (!res?.ok) {
-        setError("No pudimos cargar tu información. Probá de nuevo en un momento.");
+        setError("No se pudo cargar tu información. Recargá la página o intentá nuevamente más tarde.");
         return;
       }
       setData((await res.json()) as Overview);
@@ -179,70 +186,118 @@ export function StudentDashboard() {
     ])
     .filter((c): c is NonNullable<Course["certificate"]> & { curso: string } => c !== null);
 
-  return (
-    <div className="space-y-10">
-      <header className="space-y-1">
-        <h1 className="text-3xl font-semibold tracking-tight">Hola, {nombreCorto}</h1>
-        <p className="text-[15px] text-muted-foreground">
-          {activos.length > 0
-            ? `Estás cursando ${activos.length} ${activos.length === 1 ? "curso" : "cursos"}.`
-            : "No tenés cursos en marcha ahora mismo."}
-        </p>
-      </header>
+  /**
+   * La próxima clase va arriba, a todo el ancho: es la pregunta que más veces
+   * por semana interrumpe a coordinación. Sin clase en agenda, la tarjeta
+   * habla del primer curso activo. Debajo, TODOS los cursos activos en una
+   * sola grilla: ninguna tarjeta se estira para igualar la altura de otra.
+   */
+  const principal =
+    activos.find((c) => c.enrollmentId === data.nextClass?.enrollmentId) ?? activos[0] ?? null;
+  const next = principal && data.nextClass?.enrollmentId === principal.enrollmentId ? data.nextClass : null;
 
-      <NextClassHero next={data.nextClass} academyZone={data.timezone} />
+  return (
+    <div className="space-y-8">
+      <EncabezadoDePagina
+        migas={[{ label: "Inicio", href: null }]}
+        titulo={`Hola, ${nombreCorto}`}
+        descripcion={
+          activos.length > 0
+            ? `Estás cursando ${activos.length} ${activos.length === 1 ? "curso" : "cursos"}.`
+            : "No tenés cursos activos."
+        }
+      />
 
       <Alertas courses={data.courses} balances={data.balances} />
 
-      {activos.length > 0 && (
-        <Section title="Mis cursos">
-          {/*
-            Una sola cursada ocupa el ancho. En dos columnas quedaba una
-            tarjeta a media página con un hueco al lado, que se lee como algo
-            que falta cargar — y la mayoría de los 340 tiene una sola.
-          */}
-          <div className={cn("grid gap-4", activos.length > 1 && "lg:grid-cols-2")}>
+      {principal && <ProximaClase course={principal} next={next} academyZone={data.timezone} />}
+
+      {activos.length > 0 ? (
+        <section className="space-y-4">
+          <TituloDeSeccion>Mis cursos</TituloDeSeccion>
+          <div className="grid gap-6 md:grid-cols-2 2xl:grid-cols-3">
             {activos.map((c) => (
-              <CourseCard key={c.enrollmentId} course={c} />
+              <ResumenDeCurso
+                key={c.enrollmentId}
+                course={c}
+                next={c.enrollmentId === principal?.enrollmentId ? next : null}
+              />
             ))}
           </div>
-        </Section>
+        </section>
+      ) : (
+        data.courses.length > 0 && (
+          <SinCursosActivos cursados={cerrados.length} certificados={certificados.length} />
+        )
       )}
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <BalanceCard balances={data.balances} />
-        {licencias.length > 0 && <LicenseCard license={licencias[0]!} extra={licencias.length - 1} />}
+      <div className="grid gap-6 lg:grid-cols-2 2xl:grid-cols-3">
+        <section className="flex flex-col gap-4">
+          <TituloDeSeccion
+            aside={
+              data.balances.length > 0 && (
+                <Link
+                  href="/portal/cuenta"
+                  className="inline-flex shrink-0 items-center gap-1 text-sm font-medium text-brand-text hover:underline"
+                >
+                  Cuotas y pagos
+                  <ChevronRight className="h-4 w-4" strokeWidth={2} />
+                </Link>
+              )
+            }
+          >
+            Estado de cuenta
+          </TituloDeSeccion>
+          <BalanceCard balances={data.balances} />
+        </section>
+        {licencias.length > 0 && (
+          <section className="flex flex-col gap-4">
+            <TituloDeSeccion>Mi licencia</TituloDeSeccion>
+            <LicenseCard license={licencias[0]!} extra={licencias.length - 1} />
+          </section>
+        )}
+        {certificados.length > 0 && (
+          <section className="flex flex-col gap-4">
+            <TituloDeSeccion
+              aside={
+                <Link
+                  href="/portal/certificados"
+                  className="inline-flex shrink-0 items-center gap-1 text-sm font-medium text-brand-text hover:underline"
+                >
+                  Ver todos
+                  <ChevronRight className="h-4 w-4" strokeWidth={2} />
+                </Link>
+              }
+            >
+              Mis certificados
+            </TituloDeSeccion>
+            <div className="flex flex-1 flex-col gap-3">
+              {certificados.slice(0, 3).map((c) => (
+                <CertificateCard key={c.code} cert={c} />
+              ))}
+            </div>
+          </section>
+        )}
       </div>
 
-      {certificados.length > 0 && (
-        <Section title="Mis certificados">
-          <div className="grid gap-3 sm:grid-cols-2">
-            {certificados.map((c) => (
-              <CertificateCard key={c.code} cert={c} />
-            ))}
-          </div>
-        </Section>
-      )}
-
       {cerrados.length > 0 && (
-        <Section title={`Ya cursados (${cerrados.length})`}>
-          <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+        <section className="space-y-4">
+          <TituloDeSeccion>Cursos finalizados · {cerrados.length}</TituloDeSeccion>
+          <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card shadow-sm">
             {cerrados.map((c) => (
               <li key={c.enrollmentId}>
                 <Link
                   href={`/portal/cursadas/${c.enrollmentId}`}
-                  className="flex min-h-[56px] items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-accent"
+                  className="flex min-h-[60px] items-center justify-between gap-3 px-5 py-3 transition-colors hover:bg-accent"
                 >
                   <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium">
-                      {c.courseName}
-                    </span>
+                    <span className="block truncate text-sm font-semibold">{c.courseName}</span>
                     <span className="block truncate text-xs text-text-3">
                       {formatDate(c.startDate)}
                       {c.endDate && ` – ${formatDate(c.endDate)}`}
                     </span>
                   </span>
-                  <span className="flex shrink-0 items-center gap-2">
+                  <span className="flex shrink-0 items-center gap-3">
                     <ApprovalBadge value={c.approval} />
                     <ChevronRight className="h-4 w-4 text-text-4" strokeWidth={1.7} />
                   </span>
@@ -250,121 +305,126 @@ export function StudentDashboard() {
               </li>
             ))}
           </ul>
-        </Section>
+        </section>
       )}
 
       {data.courses.length === 0 && (
-        <EmptyNote title="Todavía no tenés ninguna inscripción">
-          Cuando la academia te inscriba en un curso, lo vas a ver acá con sus
-          fechas, tu asistencia y tu estado de cuenta.
+        <EmptyNote title="No tenés inscripciones registradas">
+          Cuando la academia registre tu inscripción, aquí verás las fechas del
+          curso, tu asistencia y tu estado de cuenta.
         </EmptyNote>
       )}
     </div>
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="space-y-3.5">
-      <h2 className="text-[13px] font-semibold tracking-tight text-text-2">{title}</h2>
-      {children}
-    </section>
-  );
-}
-
 /* ============================================================
- * US2 — La próxima clase: la pantalla, no una tarjeta más
+ * US2 — La próxima clase
  * ============================================================ */
 
 /**
- * "¿Cuál era el link del Zoom?" es la pregunta que más veces por semana
- * interrumpe a coordinación, así que ocupa el lugar que le corresponde.
+ * La próxima clase, a la escala de la pregunta: la hora es lo más grande de la
+ * pantalla, y el botón para entrar está al lado.
  *
  * El enlace aparece SOLO dentro de la ventana de la organización (FR-003 de
- * 013): 15 minutos antes, 30 después. Cuando no está, la pantalla dice CUÁNDO
+ * 013): 15 minutos antes, 30 después. Cuando no está, la tarjeta dice CUÁNDO
  * va a estar en vez de dejar un botón muerto — un enlace visible todo el día
  * invita a entrar a una sala vacía.
  */
-function NextClassHero({
+function ProximaClase({
+  course,
   next,
   academyZone,
 }: {
+  course: Course;
   next: NextClass | null;
   academyZone: string;
 }) {
-  const viewerZone = useViewerTimeZone() ?? academyZone;
+  const viewerZone = useViewerTimeZone();
+  const zona = viewerZone ?? academyZone;
+  const completa = course.totalClasses > 0 && course.completedClasses >= course.totalClasses;
 
   if (!next) {
     return (
-      <PortalCard className="flex items-start gap-3.5">
-        <CalendarClock className="mt-0.5 h-5 w-5 shrink-0 text-text-3" strokeWidth={1.7} />
-        <div>
-          <p className="font-medium">No tenés clases próximas</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Cuando la academia cargue el cronograma de tu camada, tu próxima
-            clase y su enlace aparecen acá.
-          </p>
+      <Tarjeta className="flex flex-col justify-center gap-3">
+        <div className="flex items-center gap-3 text-text-3">
+          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-secondary">
+            <CalendarClock className="h-5 w-5" strokeWidth={1.7} />
+          </span>
+          <p className="text-sm font-medium">Próxima clase</p>
         </div>
-      </PortalCard>
+        <p className="text-2xl font-bold tracking-tight">
+          {completa ? "Clases finalizadas" : "Sin clases programadas"}
+        </p>
+        <p className="max-w-prose text-sm text-text-2">
+          {completa
+            ? `Se dictaron las ${course.totalClasses} clases del cronograma. Tu asistencia figura en el resumen; los requisitos pendientes para finalizar el curso, en «Tu recorrido».`
+            : course.totalClasses > 0
+              ? // Hay cronograma, pero ninguna clase por delante tiene fecha confirmada.
+                "Las próximas clases aún no tienen fecha confirmada. La fecha y el enlace de acceso se publicarán aquí."
+              : "Cuando la academia publique el cronograma de tu cohorte, aquí verás la próxima clase y su enlace de acceso."}
+        </p>
+      </Tarjeta>
     );
   }
 
   const cuando = next.startsAt ?? next.date;
+  const distinta = viewerZone !== null && viewerZone !== academyZone;
+  const hora = next.startsAt
+    ? next.endsAt
+      ? `${formatHour(next.startsAt, zona)} – ${formatHour(next.endsAt, zona)}`
+      : formatHour(next.startsAt, zona)
+    : null;
 
   return (
-    <section
-      className={cn(
-        "relative overflow-hidden rounded-lg border shadow-md",
-        next.live ? "border-brand bg-brand-soft" : "border-brand-soft bg-brand-tint"
-      )}
+    <Tarjeta
+      aria-labelledby="proxima-clase"
+      className={cn("border-brand-soft bg-brand-tint", next.live && "ring-2 ring-brand")}
     >
-      <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-6 p-6 sm:p-7">
-        <div className="min-w-0 space-y-2.5">
-          <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-brand-text">
-            {next.live && (
-              // El único momento animado de la pantalla, y solo cuando la
-              // clase está pasando de verdad.
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:gap-8">
+        <div className="min-w-0 space-y-2 lg:w-[21rem] lg:shrink-0">
+          {next.live ? (
+            <ChipDeEstado tono="atencion">
               <span className="relative flex h-2 w-2" aria-hidden>
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand opacity-70" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-brand" />
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-danger opacity-70" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-danger" />
               </span>
-            )}
-            {next.live ? "Tu clase está pasando" : "Tu próxima clase"}
+              En vivo
+            </ChipDeEstado>
+          ) : (
+            <ChipDeEstado tono="curso" className="first-letter:uppercase">
+              {relativeDay(cuando, zona)}
+            </ChipDeEstado>
+          )}
+          <p className="text-lg font-semibold first-letter:uppercase">{formatDay(cuando, zona)}</p>
+          <p className="text-4xl font-bold tabular-nums tracking-tight sm:text-5xl">
+            {hora ?? "Sin horario"}
           </p>
-
-          <p className="text-2xl font-semibold leading-tight tracking-tight">
-            {next.courseName}
-          </p>
-
-          <p className="text-[15px] text-text-2 first-letter:uppercase">
-            <span className="font-medium">{formatDay(cuando, viewerZone)}</span>
-            {" · "}
-            <ClassTime
-              startsAt={next.startsAt}
-              endsAt={next.endsAt}
-              academyZone={academyZone}
-            />
-          </p>
-
-          {next.topic && (
-            <p className="text-sm text-muted-foreground">
-              Clase {next.number}: {next.topic}
+          {distinta && next.startsAt && (
+            <p className="text-xs text-text-3">
+              Hora local. En {zoneLabel(academyZone)}: {formatHour(next.startsAt, academyZone)}.
             </p>
           )}
+        </div>
 
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 pt-1 text-xs text-text-3">
-            <span className="rounded-full border border-brand-soft bg-background px-2.5 py-1 font-medium text-brand-text">
-              {next.live ? "en curso" : relativeDay(cuando, viewerZone)}
-            </span>
+        <div className="min-w-0 flex-1 space-y-2 lg:border-l lg:border-brand-soft lg:pl-8">
+          <h2 id="proxima-clase" className="text-sm font-medium text-text-2">
+            {next.live ? "Clase en curso" : "Próxima clase"} · {next.courseName}
+          </h2>
+          <p className="text-lg font-semibold leading-snug">
+            Clase {next.number}
+            {next.topic && <span className="font-normal text-text-2"> · {next.topic}</span>}
+          </p>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-text-3">
             {next.teacherName && (
               <span className="inline-flex items-center gap-1.5">
-                <UserRound className="h-3.5 w-3.5" strokeWidth={1.7} />
+                <UserRound className="h-4 w-4" strokeWidth={1.7} />
                 {next.teacherName}
               </span>
             )}
             {next.classroom && (
               <span className="inline-flex items-center gap-1.5">
-                <MapPin className="h-3.5 w-3.5" strokeWidth={1.7} />
+                <MapPin className="h-4 w-4" strokeWidth={1.7} />
                 {next.classroom}
               </span>
             )}
@@ -376,19 +436,196 @@ function NextClassHero({
             href={next.meetingUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-md bg-brand px-6 text-sm font-semibold text-on-accent shadow-sm transition-colors hover:bg-brand-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-md bg-primary px-6 text-base font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-brand-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
-            <Video className="h-4 w-4" strokeWidth={2} />
-            Entrar a la clase
+            <Video className="h-5 w-5" strokeWidth={2} />
+            Ingresar a la clase
           </a>
         ) : (
-          <p className="inline-flex shrink-0 items-center gap-2 text-xs text-text-3">
-            <Video className="h-4 w-4 shrink-0" strokeWidth={1.7} />
-            El enlace se abre unos minutos antes
+          <p className="inline-flex max-w-[16rem] shrink-0 items-start gap-2 rounded-md bg-card px-3 py-2 text-sm text-text-2">
+            <Video className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={1.7} />
+            El enlace de acceso se habilita 15 minutos antes del inicio.
           </p>
         )}
       </div>
-    </section>
+    </Tarjeta>
+  );
+}
+
+/* ============================================================
+ * US1, US3, US4 — Cómo voy en cada curso
+ * ============================================================ */
+
+/**
+ * El resumen de un curso: su estado, el progreso clase por clase y las
+ * lecturas con su condición al lado. Un 50% no dice nada sin el mínimo, y
+ * "1 de 2" no dice nada sin saber que la otra todavía no se corrigió.
+ */
+function ResumenDeCurso({
+  course,
+  next,
+}: {
+  course: Course;
+  next: NextClass | null;
+}) {
+  const obligatorias = course.assessments.filter((a) => a.required);
+  const aprobadas = obligatorias.filter((a) => a.passed === true).length;
+  const pendientes = obligatorias.filter((a) => a.passed === null).length;
+  const debajoDelMinimo =
+    course.attendancePct !== null &&
+    course.minAttendancePct !== null &&
+    course.attendancePct < course.minAttendancePct;
+
+  return (
+    <Tarjeta as="article" className="flex flex-col gap-5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-balance text-lg font-semibold leading-snug tracking-tight">
+            {course.courseName}
+          </h2>
+          <p className="mt-0.5 truncate text-sm text-text-3">
+            {[course.teacherName, course.cohortName].filter(Boolean).join(" · ")}
+          </p>
+        </div>
+        <ApprovalBadge value={course.approval} />
+      </div>
+
+      {course.totalClasses > 0 ? (
+        <div className="space-y-2">
+          <div className="flex items-baseline justify-between gap-2 text-sm">
+            <span className="font-semibold">
+              Clase {course.completedClasses} de {course.totalClasses}
+            </span>
+            <span className="text-text-3">
+              {course.completedClasses >= course.totalClasses
+                ? "completo"
+                : `faltan ${course.totalClasses - course.completedClasses}`}
+            </span>
+          </div>
+          <ProgresoDeClases
+            total={course.totalClasses}
+            done={course.completedClasses}
+            next={next?.number ?? null}
+          />
+        </div>
+      ) : (
+        <p className="text-sm text-text-3">Sin cronograma cargado.</p>
+      )}
+
+      {/*
+        028 (US3) — La especialización muestra sus MÓDULOS, no un par de números
+        agregados. No existe "la asistencia de la especialización": cada módulo
+        tiene su cronograma y su propio mínimo, y promediarlos inventaría un
+        criterio que nadie decidió.
+      */}
+      {course.modules ? (
+        <ModulesList modules={course.modules} />
+      ) : (
+        <div className="grid grid-cols-2 gap-4 rounded-md bg-secondary p-4">
+          {course.attendancePct === null ? (
+            <Metrica etiqueta="Asistencia" valor="—" nota="sin registrar" />
+          ) : (
+            <Metrica
+              etiqueta="Asistencia"
+              valor={`${course.attendancePct}%`}
+              alerta={debajoDelMinimo}
+              nota={
+                <>
+                  {course.attendedCount} de {course.eligibleCount}
+                  {course.minAttendancePct !== null && ` · mín. ${course.minAttendancePct}%`}
+                </>
+              }
+            />
+          )}
+          {obligatorias.length === 0 ? (
+            <Metrica etiqueta="Evaluaciones" valor="—" nota="sin cargar" />
+          ) : (
+            <Metrica
+              etiqueta="Evaluaciones"
+              valor={`${aprobadas} / ${obligatorias.length}`}
+              // FR-005 — sin corregir es PENDIENTE, jamás desaprobada.
+              nota={pendientes > 0 ? `${pendientes} sin corregir` : "todas corregidas"}
+            />
+          )}
+        </div>
+      )}
+
+      {debajoDelMinimo && (
+        <p className="text-sm text-danger">
+          Tu asistencia está por debajo del mínimo para aprobar.
+        </p>
+      )}
+      {course.approval === "sin_datos" && course.approvalReasons[0] && (
+        <p className="text-sm text-text-3">{course.approvalReasons[0]}</p>
+      )}
+
+      <div className="mt-auto">
+        <EnlaceBoton href={`/portal/cursadas/${course.enrollmentId}`} className="w-full sm:w-auto">
+          Ver curso
+          <ArrowRight className="h-4 w-4" strokeWidth={2} />
+        </EnlaceBoton>
+      </div>
+    </Tarjeta>
+  );
+}
+
+/* ============================================================
+ * 028 (US3, US4) — Los módulos de una especialización
+ * ============================================================ */
+
+/**
+ * Los módulos en orden de `position`, cada uno con su estado.
+ *
+ * Tres reglas que no son de estilo:
+ *
+ * - **Un módulo sin cronograma se muestra igual, declarándolo.** Ocultarlo es
+ *   de donde vienen los 0 `class_session` de las camadas reales: un módulo
+ *   invisible es un módulo que nadie carga.
+ * - **El módulo cursado con otra cohorte lo dice** (US4). Es el hecho que el
+ *   ciclo existe para poder representar; esconderlo lo desperdicia.
+ * - **`sin_datos` no se dibuja como aprobado.** `ApprovalBadge` ya separa los
+ *   cuatro estados, y por eso se reusa en vez de inventar un cartel nuevo.
+ */
+function ModulesList({ modules }: { modules: Module[] }) {
+  return (
+    <ol className="divide-y divide-border overflow-hidden rounded-md border border-border">
+      {modules.map((m, i) => (
+        <li key={m.enrollmentId} className="flex items-center gap-3 px-3 py-2.5">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-tint text-xs font-bold tabular-nums text-brand-text">
+            {m.position ?? i + 1}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-medium">{m.cohortName}</span>
+            <span className="block truncate text-xs text-text-3">
+              {m.sinCronograma
+                ? "Sin cronograma"
+                : `${m.completedClasses} de ${m.totalClasses} clases`}
+              {m.attendancePct !== null && ` · ${m.attendancePct}% de asistencia`}
+              {m.otraCamada && ` · cursado con ${m.camadaName ? `la cohorte ${m.camadaName}` : "otra cohorte"}`}
+            </span>
+          </span>
+          <ApprovalBadge value={m.approval} />
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/**
+ * Quien ya no cursa nada no ve un hueco: ve lo que ya hizo. Solo se dicen
+ * cosas que el sistema sabe — cuántos cursos cerró y cuántos certificados
+ * tiene.
+ */
+function SinCursosActivos({ cursados, certificados }: { cursados: number; certificados: number }) {
+  return (
+    <Tarjeta className="flex flex-col gap-2">
+      <p className="text-2xl font-bold tracking-tight">Sin cursos activos</p>
+      <p className="max-w-prose text-sm text-text-2">
+        {cursados > 0 &&
+          `Finalizaste ${cursados} ${cursados === 1 ? "curso" : "cursos"}${certificados > 0 ? ` y tenés ${certificados} ${certificados === 1 ? "certificado" : "certificados"}` : ""}. `}
+        Cuando te inscribas en un nuevo curso, aparecerá aquí.
+      </p>
+    </Tarjeta>
   );
 }
 
@@ -406,17 +643,11 @@ function Alertas({ courses, balances }: { courses: Course[]; balances: Balance[]
 
   for (const c of courses) {
     if (c.status === "finalizada") continue;
-    if (
-      c.attendancePct !== null &&
-      c.minAttendancePct !== null &&
-      c.attendancePct < c.minAttendancePct
-    ) {
-      avisos.push({
-        key: `asis-${c.enrollmentId}`,
-        text: `En ${c.courseName} vas ${c.attendancePct}% de asistencia y el mínimo para aprobar es ${c.minAttendancePct}%.`,
-        href: `/portal/cursadas/${c.enrollmentId}`,
-      });
-    }
+    /*
+      La asistencia del curso debajo del mínimo NO se repite acá: cada curso
+      activo tiene su tarjeta en "Mis cursos", y ahí la lectura ya va en rojo,
+      junto al mínimo. Un aviso aparte decía lo mismo dos veces.
+    */
     /**
      * 028 (Regla 5) — La asistencia es POR MÓDULO, así que el aviso también.
      * "Vas 40% en la especialización" no existe: existe "vas 40% en el
@@ -430,7 +661,7 @@ function Alertas({ courses, balances }: { courses: Course[]; balances: Balance[]
       ) {
         avisos.push({
           key: `asis-${m.enrollmentId}`,
-          text: `En ${m.cohortName} vas ${m.attendancePct}% de asistencia y el mínimo para aprobar es ${m.minAttendancePct}%.`,
+          text: `En ${m.cohortName} tu asistencia es de ${m.attendancePct}%; el mínimo requerido para aprobar es ${m.minAttendancePct}%.`,
           href: `/portal/cursadas/${c.enrollmentId}`,
         });
       }
@@ -465,9 +696,9 @@ function Alertas({ courses, balances }: { courses: Course[]; balances: Balance[]
       {avisos.map((a) => (
         <li
           key={a.key}
-          className="flex items-start gap-3 rounded-lg border border-warning-border bg-warning-soft px-4 py-3.5"
+          className="flex items-start gap-3 rounded-lg border border-danger-border bg-danger-soft px-4 py-3.5"
         >
-          <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" strokeWidth={2} />
+          <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-danger" strokeWidth={2} />
           <p className="text-sm text-text-2">
             {a.text}
             {a.href && (
@@ -489,178 +720,6 @@ function Alertas({ courses, balances }: { courses: Course[]; balances: Balance[]
 }
 
 /* ============================================================
- * US1, US3, US4 — Cómo voy en cada curso
- * ============================================================ */
-
-function CourseCard({ course }: { course: Course }) {
-  const obligatorias = course.assessments.filter((a) => a.required);
-  const aprobadas = obligatorias.filter((a) => a.passed === true).length;
-  const pendientes = obligatorias.filter((a) => a.passed === null).length;
-
-  const avance =
-    course.totalClasses > 0
-      ? Math.round((course.completedClasses / course.totalClasses) * 100)
-      : null;
-
-  const alcanzaMinimo =
-    course.attendancePct === null ||
-    course.minAttendancePct === null ||
-    course.attendancePct >= course.minAttendancePct;
-
-  return (
-    <Link
-      href={`/portal/cursadas/${course.enrollmentId}`}
-      className="group flex flex-col rounded-lg border border-border bg-card p-[var(--portal-card-pad)] shadow-sm transition-colors hover:border-brand-soft hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-base font-semibold tracking-tight">{course.courseName}</p>
-          <p className="mt-0.5 truncate text-sm text-text-3">
-            {course.teacherName ?? course.cohortName}
-          </p>
-        </div>
-        <ApprovalBadge value={course.approval} />
-      </div>
-
-      {/*
-        023 — El AVANCE, que es lo que faltaba. La asistencia dice "¿voy
-        bien?"; esto dice "¿cuánto me falta?", y es lo que convierte una lista
-        de datos en una cursada que se mueve.
-      */}
-      {avance !== null && (
-        <div className="mt-5 space-y-2">
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="text-sm font-medium">
-              Clase {course.completedClasses} de {course.totalClasses}
-            </span>
-            <span className="text-xs text-text-3">
-              {course.completedClasses >= course.totalClasses
-                ? "cursada completa"
-                : `faltan ${course.totalClasses - course.completedClasses}`}
-            </span>
-          </div>
-          <Progress value={avance} label={`Avance del curso, ${avance}%`} />
-        </div>
-      )}
-
-      {/*
-        028 (US3) — La especialización muestra sus MÓDULOS, no un par de
-        números agregados. No existe "la asistencia de la especialización":
-        cada módulo tiene su cronograma y su propio mínimo, y promediarlos
-        inventaría un criterio que nadie decidió.
-      */}
-      {course.modules ? (
-        <ModulesList modules={course.modules} />
-      ) : (
-      /*
-        Flex y no grid: en una tarjeta a ancho completo, dos columnas de grilla
-        estiran los números hasta 600px cada una y el segundo queda flotando en
-        el medio de la nada. Así se agrupan y se leen como un par.
-      */
-      <div className="mt-5 flex flex-wrap gap-x-12 gap-y-4 border-t border-border pt-4">
-        <div className="min-w-[8rem]">
-          <p className="text-xs text-text-3">Asistencia</p>
-          {course.attendancePct === null ? (
-            <p className="mt-0.5 text-sm text-text-3">Sin registrar</p>
-          ) : (
-            <>
-              <p
-                className={cn(
-                  "mt-0.5 text-xl font-semibold tabular-nums",
-                  !alcanzaMinimo && "text-danger"
-                )}
-              >
-                {course.attendancePct}%
-              </p>
-              <p className="text-xs text-text-3">
-                {course.attendedCount} de {course.eligibleCount}
-                {course.minAttendancePct !== null && ` · mín. ${course.minAttendancePct}%`}
-              </p>
-            </>
-          )}
-        </div>
-
-        <div className="min-w-[8rem]">
-          <p className="text-xs text-text-3">Evaluaciones</p>
-          {obligatorias.length === 0 ? (
-            <p className="mt-0.5 text-sm text-text-3">Sin cargar</p>
-          ) : (
-            <>
-              <p className="mt-0.5 text-xl font-semibold tabular-nums">
-                {aprobadas}
-                <span className="text-sm font-normal text-text-3">
-                  /{obligatorias.length}
-                </span>
-              </p>
-              {/* FR-005 — sin corregir es PENDIENTE, jamás desaprobada. */}
-              <p className="text-xs text-text-3">
-                {pendientes > 0 ? `${pendientes} sin corregir` : "todo corregido"}
-              </p>
-            </>
-          )}
-        </div>
-      </div>
-      )}
-
-      {course.approval === "sin_datos" && (
-        <p className="mt-4 text-sm text-text-3">{course.approvalReasons[0]}</p>
-      )}
-
-      <span className="mt-4 inline-flex items-center gap-1 text-xs font-medium text-brand-text">
-        Ver la cursada
-        <ChevronRight
-          className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5"
-          strokeWidth={2}
-        />
-      </span>
-    </Link>
-  );
-}
-
-/* ============================================================
- * 028 (US3, US4) — Los módulos de una especialización
- * ============================================================ */
-
-/**
- * Los módulos en orden de `position`, cada uno con su estado.
- *
- * Tres reglas que no son de estilo:
- *
- * - **Un módulo sin cronograma se muestra igual, declarándolo.** Ocultarlo es
- *   de donde vienen los 0 `class_session` de las camadas reales: un módulo
- *   invisible es un módulo que nadie carga.
- * - **El módulo cursado con otra camada lo dice** (US4). Es el hecho que el
- *   ciclo existe para poder representar; esconderlo lo desperdicia.
- * - **`sin_datos` no se dibuja como aprobado.** `ApprovalBadge` ya separa los
- *   cuatro estados, y por eso se reusa en vez de inventar un cartel nuevo.
- */
-function ModulesList({ modules }: { modules: Module[] }) {
-  return (
-    <ol className="mt-5 divide-y divide-border border-t border-border">
-      {modules.map((m, i) => (
-        <li key={m.enrollmentId} className="flex items-center gap-3 py-2.5">
-          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-secondary text-[11px] font-semibold tabular-nums text-text-2">
-            {m.position ?? i + 1}
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm font-medium">{m.cohortName}</span>
-            <span className="block truncate text-xs text-text-3">
-              {m.sinCronograma
-                ? "Todavía sin cronograma"
-                : `${m.completedClasses} de ${m.totalClasses} clases`}
-              {m.attendancePct !== null && ` · ${m.attendancePct}% de asistencia`}
-              {m.otraCamada &&
-                ` · lo cursás con ${m.camadaName ?? "otra camada"}`}
-            </span>
-          </span>
-          <ApprovalBadge value={m.approval} />
-        </li>
-      ))}
-    </ol>
-  );
-}
-
-/* ============================================================
  * US7 — Mi estado de cuenta
  * ============================================================ */
 
@@ -673,13 +732,13 @@ function ModulesList({ modules }: { modules: Module[] }) {
 function BalanceCard({ balances }: { balances: Balance[] }) {
   if (balances.length === 0) {
     return (
-      <PortalCard className="flex items-start gap-3.5">
+      <PortalCard className="flex flex-1 items-start gap-3.5">
         <Wallet className="mt-0.5 h-5 w-5 shrink-0 text-text-3" strokeWidth={1.7} />
         <div>
           <p className="font-medium">Sin movimientos de cuenta</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Cuando la academia genere tu plan de cuotas vas a ver acá qué
-            pagaste y qué falta.
+            Aquí verás tus pagos y el saldo pendiente una vez que la academia
+            registre tu plan de cuotas.
           </p>
         </div>
       </PortalCard>
@@ -687,61 +746,48 @@ function BalanceCard({ balances }: { balances: Balance[] }) {
   }
 
   return (
-    <PortalCard className="flex flex-col">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-[13px] font-semibold tracking-tight text-text-2">Mi cuenta</p>
-        <Link
-          href="/portal/cuenta"
-          className="inline-flex items-center gap-1 text-xs font-medium text-brand-text underline-offset-4 hover:underline"
-        >
-          Cuotas y pagos
-          <ChevronRight className="h-3.5 w-3.5" strokeWidth={2} />
-        </Link>
-      </div>
-
-      <div className="mt-4 space-y-5">
-        {balances.map((b) => {
-          const pagadoPct = b.total > 0 ? Math.round((b.paid / b.total) * 100) : 0;
-          return (
-            <div key={b.currency} className="space-y-2">
-              <div className="flex items-baseline justify-between gap-3">
-                <p
-                  className={cn(
-                    "text-2xl font-semibold tabular-nums",
-                    b.overdueCount > 0 && "text-danger"
-                  )}
-                >
-                  {formatAmount(b.balance, b.currency)}
-                </p>
-                <p className="text-xs text-text-3">
-                  {balances.length > 1 && `${b.currency} · `}
-                  {b.balance === 0 ? "al día" : "por pagar"}
-                </p>
-              </div>
-
-              <Progress
-                value={pagadoPct}
-                tone={b.overdueCount > 0 ? "danger" : "success"}
-                label={`Pagaste el ${pagadoPct}% del total`}
-              />
-
-              <p className="text-xs text-text-3">
-                Pagaste {formatAmount(b.paid, b.currency)} de{" "}
-                {formatAmount(b.total, b.currency)}
-                {b.overdueCount > 0 ? (
-                  <span className="font-medium text-danger">
-                    {" · "}
-                    {b.overdueCount}{" "}
-                    {b.overdueCount === 1 ? "cuota vencida" : "cuotas vencidas"}
-                  </span>
-                ) : (
-                  b.nextDueDate && ` · próxima el ${formatDate(b.nextDueDate)}`
+    <PortalCard className="flex flex-1 flex-col space-y-5">
+      {balances.map((b) => {
+        const pagadoPct = b.total > 0 ? Math.round((b.paid / b.total) * 100) : 0;
+        return (
+          <div key={b.currency} className="space-y-2.5">
+            <div className="flex items-baseline justify-between gap-3">
+              <p
+                className={cn(
+                  "text-3xl font-bold tabular-nums tracking-tight",
+                  b.overdueCount > 0 && "text-danger"
                 )}
+              >
+                {formatAmount(b.balance, b.currency)}
+              </p>
+              <p className="text-sm font-medium text-text-3">
+                {balances.length > 1 && `${b.currency} · `}
+                {b.balance === 0 ? "al día" : "por pagar"}
               </p>
             </div>
-          );
-        })}
-      </div>
+
+            <Progress
+              value={pagadoPct}
+              tone={b.overdueCount > 0 ? "danger" : "brand"}
+              label={`Pagaste el ${pagadoPct}% del total`}
+            />
+
+            <p className="text-xs text-text-3">
+              Pagaste {formatAmount(b.paid, b.currency)} de{" "}
+              {formatAmount(b.total, b.currency)}
+              {b.overdueCount > 0 ? (
+                <span className="font-medium text-danger">
+                  {" · "}
+                  {b.overdueCount}{" "}
+                  {b.overdueCount === 1 ? "cuota vencida" : "cuotas vencidas"}
+                </span>
+              ) : (
+                b.nextDueDate && ` · próxima el ${formatDate(b.nextDueDate)}`
+              )}
+            </p>
+          </div>
+        );
+      })}
     </PortalCard>
   );
 }
@@ -769,59 +815,57 @@ function LicenseCard({
     license.daysLeft !== null && license.daysLeft >= 0 && license.daysLeft <= 30;
 
   return (
-    <PortalCard className="flex flex-col">
-      <p className="text-[13px] font-semibold tracking-tight text-text-2">Mi licencia</p>
+    <PortalCard className="flex flex-1 items-start gap-4">
+      <span
+        className={cn(
+          "flex h-11 w-11 shrink-0 items-center justify-center rounded-md",
+          license.assigned ? "bg-brand-tint text-brand-text" : "bg-secondary text-text-3"
+        )}
+      >
+        <KeyRound className="h-5 w-5" strokeWidth={1.7} />
+      </span>
 
-      <div className="mt-4 flex items-start gap-3.5">
-        <span
-          className={cn(
-            "flex h-10 w-10 shrink-0 items-center justify-center rounded-md",
-            license.assigned ? "bg-brand-soft text-brand-text" : "bg-secondary text-text-3"
-          )}
-        >
-          <KeyRound className="h-5 w-5" strokeWidth={1.7} />
-        </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-lg font-semibold leading-tight tracking-tight">
+          {license.softwareName}
+        </p>
+        <p className="truncate text-xs text-text-3">para {license.curso}</p>
 
-        <div className="min-w-0 flex-1">
-          <p className="text-base font-semibold tracking-tight">{license.softwareName}</p>
-          <p className="truncate text-xs text-text-3">para {license.curso}</p>
+        {license.assigned ? (
+          <p
+            className={cn(
+              "mt-2 text-sm text-text-2",
+              (vencida || porVencer) && "font-medium text-warning"
+            )}
+          >
+            {license.expiresAt ? (
+              <>
+                {vencida ? "Venció" : "Vence"} el {formatDate(license.expiresAt)}
+                {porVencer &&
+                  license.daysLeft !== null &&
+                  ` · quedan ${license.daysLeft} ${license.daysLeft === 1 ? "día" : "días"}`}
+              </>
+            ) : (
+              <>
+                Activa
+                {license.assignedAt && ` desde el ${formatDate(license.assignedAt)}`}. Sin
+                fecha de vencimiento cargada.
+              </>
+            )}
+          </p>
+        ) : (
+          <p className="mt-2 text-sm text-text-2">
+            En trámite. Una vez asignada, aquí verás su fecha de inicio y de
+            vencimiento.
+          </p>
+        )}
 
-          {license.assigned ? (
-            <p
-              className={cn(
-                "mt-2 text-sm text-text-2",
-                (vencida || porVencer) && "font-medium text-warning"
-              )}
-            >
-              {license.expiresAt ? (
-                <>
-                  {vencida ? "Venció" : "Vence"} el {formatDate(license.expiresAt)}
-                  {porVencer &&
-                    license.daysLeft !== null &&
-                    ` · quedan ${license.daysLeft} ${license.daysLeft === 1 ? "día" : "días"}`}
-                </>
-              ) : (
-                <>
-                  Activa
-                  {license.assignedAt && ` desde el ${formatDate(license.assignedAt)}`}. Sin
-                  fecha de vencimiento cargada.
-                </>
-              )}
-            </p>
-          ) : (
-            <p className="mt-2 text-sm text-text-2">
-              En trámite. Cuando la academia te la asigne vas a ver acá desde
-              cuándo y hasta cuándo la tenés.
-            </p>
-          )}
-
-          {extra > 0 && (
-            <p className="mt-2 text-xs text-text-3">
-              y {extra} {extra === 1 ? "licencia más" : "licencias más"} en tus otras
-              cursadas
-            </p>
-          )}
-        </div>
+        {extra > 0 && (
+          <p className="mt-2 text-xs text-text-3">
+            y {extra} {extra === 1 ? "licencia más" : "licencias más"} en tus otros
+            cursos
+          </p>
+        )}
       </div>
     </PortalCard>
   );
@@ -838,15 +882,25 @@ function CertificateCard({
 }) {
   const anulado = cert.revokedAt !== null;
 
+  if (anulado) {
+    // FR-009 — un certificado anulado se ve, pero no se ofrece.
+    return (
+      <PortalCard className="flex items-center justify-between gap-4 border-dashed">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-text-2">{cert.curso}</p>
+          <p className="truncate text-xs text-text-3">
+            {formatDate(cert.issuedAt)} · <span className="font-mono">{cert.code}</span>
+          </p>
+        </div>
+        <ChipDeEstado tono="atencion">Anulado</ChipDeEstado>
+      </PortalCard>
+    );
+  }
+
   return (
-    <PortalCard className="flex items-center justify-between gap-4">
-      <div className="flex min-w-0 items-center gap-3.5">
-        <span
-          className={cn(
-            "flex h-10 w-10 shrink-0 items-center justify-center rounded-md",
-            anulado ? "bg-secondary text-text-4" : "bg-brand-soft text-brand-text"
-          )}
-        >
+    <PortalCard className="flex items-center justify-between gap-4 py-4">
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-tint text-brand-text">
           <Award className="h-5 w-5" strokeWidth={1.7} />
         </span>
         <div className="min-w-0">
@@ -856,33 +910,28 @@ function CertificateCard({
           </p>
         </div>
       </div>
-
-      {/* FR-009 — un certificado anulado se ve, pero no se ofrece. */}
-      {anulado ? (
-        <span className="shrink-0 text-xs font-medium text-danger">Anulado</span>
-      ) : (
-        <Link
-          href={`/verificar/${cert.code}`}
-          className="inline-flex h-9 shrink-0 items-center rounded-md border border-input px-3 text-xs font-medium transition-colors hover:bg-accent"
-        >
-          Compartir
-        </Link>
-      )}
+      <Link
+        href={`/verificar/${cert.code}`}
+        className="inline-flex min-h-9 shrink-0 items-center rounded-md border border-border-strong px-3 text-sm font-semibold transition-colors hover:bg-accent"
+      >
+        Ver
+      </Link>
     </PortalCard>
   );
 }
 
 function DashboardSkeleton() {
   return (
-    <div className="space-y-10">
-      <div className="space-y-2">
-        <Skeleton className="h-9 w-56" />
-        <Skeleton className="h-5 w-40" />
-      </div>
+    <div className="space-y-8">
+      <Skeleton className="h-16 w-80" />
       <Skeleton className="h-44 w-full rounded-lg" />
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Skeleton className="h-56 w-full rounded-lg" />
-        <Skeleton className="h-56 w-full rounded-lg" />
+      <div className="grid gap-6 md:grid-cols-2">
+        <Skeleton className="h-72 w-full rounded-lg" />
+        <Skeleton className="h-72 w-full rounded-lg" />
+      </div>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Skeleton className="h-44 w-full rounded-lg" />
+        <Skeleton className="h-44 w-full rounded-lg" />
       </div>
     </div>
   );

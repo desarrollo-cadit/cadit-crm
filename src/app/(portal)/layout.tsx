@@ -10,6 +10,7 @@ import { withOrganizationScope } from "@/lib/db/with-tenant";
 import { getBranding } from "@/server/branding";
 import { studentNavCourses } from "@/server/student-portal";
 import { PortalNav } from "@/components/portal/portal-nav";
+import { PortalWorld } from "@/components/portal/portal-world";
 import { parseThemeCookie, THEME_COOKIE } from "@/lib/theme";
 
 /**
@@ -63,24 +64,32 @@ export default async function PortalLayout({
       data-surface="portal"
       className="flex min-h-screen flex-col bg-background md:h-screen md:flex-row md:overflow-hidden"
     >
-      <PortalNav
-        branding={branding}
-        userName={authSession?.user.name ?? "Mi cuenta"}
-        audience={{ isStudent: Boolean(contactId), isTeacher: Boolean(teacherId) }}
-        courses={courses}
-        theme={parseThemeCookie((await cookies()).get(THEME_COOKIE)?.value)}
-      />
-
       {/*
-        El contenido scrollea por dentro en escritorio —igual que el panel— y
-        por fuera en celular, donde el encabezado es pegajoso y el cajón vive
-        sobre todo lo demás.
+        El mundo del alumno se enciende adentro, por ruta: una misma persona
+        puede ser alumno y profesor, y cada pantalla lleva el mundo de su
+        audiencia. `bg-background` va en `main` y no solo en el contenedor
+        porque el contenedor queda afuera del mundo.
       */}
-      <main className="min-w-0 flex-1 md:overflow-y-auto">
-        <div className="mx-auto w-full max-w-5xl px-4 py-5 md:px-8 md:py-8">
-          {children}
-        </div>
-      </main>
+      <PortalWorld isStudent={Boolean(contactId)}>
+        <PortalNav
+          branding={branding}
+          userName={authSession?.user.name ?? "Usuario"}
+          audience={{ isStudent: Boolean(contactId), isTeacher: Boolean(teacherId) }}
+          courses={courses}
+          theme={parseThemeCookie((await cookies()).get(THEME_COOKIE)?.value)}
+        />
+
+        {/*
+          El contenido scrollea por dentro en escritorio —igual que el panel— y
+          por fuera en celular, donde el encabezado es pegajoso y el cajón vive
+          sobre todo lo demás.
+        */}
+        <main className="portal-contenido-fondo min-w-0 flex-1 bg-background md:overflow-y-auto">
+          <div className="portal-contenido mx-auto w-full max-w-5xl px-4 py-5 md:px-8 md:py-8 lg:px-10">
+            {children}
+          </div>
+        </main>
+      </PortalWorld>
     </div>
   );
 }
@@ -92,10 +101,11 @@ function SinVinculo() {
       className="flex min-h-screen items-center justify-center bg-background p-4"
     >
       <div className="max-w-md rounded-lg border border-dashed border-border p-8 text-center">
-        <p className="text-base font-semibold">Tu cuenta todavía no está vinculada</p>
+        <p className="text-base font-semibold">Cuenta pendiente de vinculación</p>
         <p className="mt-2 text-sm text-muted-foreground">
-          Existe, pero no está asociada a una inscripción ni a una ficha de
-          profesor. Si cursás o das clase acá y ves esto, avisale a la academia.
+          La cuenta existe, pero aún no está asociada a una inscripción ni a un
+          registro de profesor. Si sos alumno o profesor de la academia,
+          comunicate con la academia para habilitarla.
         </p>
       </div>
     </div>

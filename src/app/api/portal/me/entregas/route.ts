@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 /** La cursada de la que se piden las entregas. Query, pero input externo igual. */
 const cursadaSchema = z.object({
-  cursada: z.string().min(1, "Falta la cursada"),
+  cursada: z.string().min(1, "Falta indicar el curso"),
 });
 
 /**
@@ -28,7 +28,7 @@ export const GET = requireStudentPortal(async (ctx, req: Request) => {
     ctx.contactId,
     query.data.cursada
   );
-  if (!data) return apiError(404, "not_found", "Cursada no encontrada");
+  if (!data) return apiError(404, "not_found", "Curso no encontrado");
   return Response.json({ assessments: data });
 });
 

@@ -32,9 +32,9 @@ type Sheet = {
  * una conversación posterior que hace la coordinación.
  */
 const BOTONES: { valor: Status; label: string; activo: string }[] = [
-  { valor: "presente", label: "Vino", activo: "bg-success text-on-state border-success" },
+  { valor: "presente", label: "Presente", activo: "bg-success text-on-state border-success" },
   { valor: "tarde", label: "Tarde", activo: "bg-warning text-on-state border-warning" },
-  { valor: "ausente", label: "Faltó", activo: "bg-danger text-on-state border-danger" },
+  { valor: "ausente", label: "Ausente", activo: "bg-danger text-on-state border-danger" },
 ];
 
 function cuando(iso: string): string {
@@ -76,7 +76,7 @@ export function PortalAttendanceSheet({
       () => null
     );
     if (!res?.ok) {
-      setError("No se pudo cargar la clase.");
+      setError("No se pudo cargar la clase. Volvé al listado e intentá nuevamente.");
       return;
     }
     setSheet((await res.json()) as Sheet);
@@ -114,7 +114,7 @@ export function PortalAttendanceSheet({
       const body = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      setError(body?.error?.message ?? "No se pudo guardar.");
+      setError(body?.error?.message ?? "No se pudo registrar la asistencia. Intentá nuevamente.");
       // Y se vuelve a lo que dice el servidor: mostrar una marca que no se
       // guardó es peor que no mostrar ninguna.
       void refetch();
@@ -159,7 +159,7 @@ export function PortalAttendanceSheet({
         <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
           {sheet.classSession.canceled
             ? "Esta clase está cancelada: no cuenta para la asistencia."
-            : "La cohorte ya finalizó. Podés ver la asistencia, pero no cambiarla."}
+            : "La cohorte finalizó: la asistencia está disponible solo para consulta."}
         </p>
       )}
 
@@ -177,7 +177,7 @@ export function PortalAttendanceSheet({
           className="flex h-11 w-full items-center justify-center gap-2 rounded-md border text-sm font-medium hover:bg-accent disabled:opacity-50"
         >
           <Check className="h-4 w-4" />
-          Marcar presentes a los {sinMarcar.length} que faltan
+          Marcar como presentes a los {sinMarcar.length} alumnos sin registrar
         </button>
       )}
 
@@ -199,7 +199,7 @@ export function PortalAttendanceSheet({
                     onClick={() =>
                       void marcar([{ enrollmentId: s.enrollmentId, status: b.valor }])
                     }
-                    className={`h-11 min-w-[64px] rounded-md border px-2 text-xs font-medium transition-colors disabled:opacity-50 ${
+                    className={`h-11 min-w-[72px] rounded-md border px-2 text-xs font-medium transition-colors disabled:opacity-50 ${
                       s.status === b.valor ? b.activo : "hover:bg-accent"
                     }`}
                   >
@@ -229,7 +229,7 @@ export function PortalAttendanceSheet({
 
       {sheet.students.length === 0 && (
         <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-          Esta cohorte todavía no tiene alumnos inscriptos.
+          Esta cohorte aún no tiene alumnos inscriptos.
         </p>
       )}
     </div>

@@ -749,7 +749,7 @@ describe("016 — un fallo de carga no se disfraza de vacío", () => {
     expect(guarda).toBeGreaterThan(-1);
     const bloque = ENTREGAS_PROFE.slice(
       guarda,
-      ENTREGAS_PROFE.indexOf("Dar prórroga", guarda)
+      ENTREGAS_PROFE.indexOf("Otorgar prórroga", guarda)
     );
     expect(bloque).toContain("void reabrir()");
   });

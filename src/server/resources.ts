@@ -148,6 +148,38 @@ export async function listResources(
 }
 
 /**
+ * Lo que ve una cohorte: el programa oficial del curso primero y lo que
+ * agregó esa cohorte después, sin repetir. Es la unión que pide el comentario
+ * de `listResources`, en un solo lugar para las dos puertas (profesor y
+ * alumno).
+ */
+export function materialVisibleDeCohorte(
+  delCurso: readonly ResourceDto[],
+  deLaCohorte: readonly ResourceDto[]
+): ResourceDto[] {
+  const vistos = new Set<string>();
+  return [...delCurso, ...deLaCohorte].filter((r) => {
+    if (vistos.has(r.id)) return false;
+    vistos.add(r.id);
+    return true;
+  });
+}
+
+/** El material que ve una cohorte: el de su curso más el suyo propio. */
+export async function listCohortMaterial(
+  organizationId: string,
+  alcance: { courseId: string | null; cohortId: string }
+): Promise<ResourceDto[]> {
+  const [delCurso, deLaCohorte] = await Promise.all([
+    alcance.courseId
+      ? listResources(organizationId, { courseId: alcance.courseId })
+      : Promise.resolve([]),
+    listResources(organizationId, { cohortId: alcance.cohortId }),
+  ]);
+  return materialVisibleDeCohorte(delCurso, deLaCohorte);
+}
+
+/**
  * 029 — El material de CADA clase de una cohorte, repartido por clase.
  *
  * Existe para cortar el N+1 de la pestaña Clases: antes cada fila montaba su

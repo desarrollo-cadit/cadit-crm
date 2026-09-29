@@ -2,13 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Award } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  EmptyNote,
-  PortalCard,
-  formatDate,
-} from "@/components/portal/student-bits";
+import { PortalCard, formatDate } from "@/components/portal/student-bits";
+import { ChipDeEstado, Tarjeta } from "@/components/portal/campus";
 
 /**
  * 015 (US6, FR-009) — Mis certificados.
@@ -34,7 +30,7 @@ export function StudentCertificatesClient() {
     void (async () => {
       const res = await fetch("/api/portal/me/certificados").catch(() => null);
       if (!res?.ok) {
-        setError("No pudimos cargar tus certificados. Probá de nuevo en un momento.");
+        setError("No se pudieron cargar tus certificados. Intentá nuevamente más tarde.");
         return;
       }
       const body = (await res.json()) as { certificates: Certificate[] };
@@ -61,51 +57,78 @@ export function StudentCertificatesClient() {
 
   if (certs.length === 0) {
     return (
-      <EmptyNote title="Todavía no tenés certificados">
-        Se emiten al terminar una cursada, cuando cumplís la asistencia mínima
-        y aprobás las evaluaciones obligatorias. Cuando salga el tuyo, lo vas a
-        encontrar acá con su enlace de verificación.
-      </EmptyNote>
+      // El lugar del certificado ya existe: se muestra vacío, no se oculta.
+      <PortalCard className="flex flex-col items-start gap-4 border-dashed p-6 sm:p-8">
+        <ChipDeEstado tono="neutro">Sin emitir</ChipDeEstado>
+        <p className="text-2xl font-bold tracking-tight">
+          No tenés certificados emitidos
+        </p>
+        <p className="max-w-prose text-sm text-text-2">
+          Los certificados se emiten al finalizar el curso, con la asistencia
+          mínima cumplida y las evaluaciones obligatorias aprobadas. Los
+          requisitos pendientes de cada curso figuran en su recorrido. Una vez
+          emitido, tu certificado estará disponible aquí con su enlace de
+          verificación.
+        </p>
+        <Link
+          href="/portal"
+          className="inline-flex min-h-10 items-center rounded-md border border-border-strong px-4 text-sm font-semibold transition-colors hover:bg-accent"
+        >
+          Ver mis cursos
+        </Link>
+      </PortalCard>
     );
   }
 
   return (
-    <div className="space-y-3">
+    <div className="grid gap-4 lg:grid-cols-2">
       {certs.map((c) => {
         const anulado = c.revokedAt !== null;
         return (
-          <PortalCard key={c.code} className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex min-w-0 items-start gap-3">
-              <Award
-                className={`mt-0.5 h-6 w-6 shrink-0 ${anulado ? "text-text-4" : "text-brand"}`}
-                strokeWidth={1.6}
-              />
+          anulado ? (
+            // FR-009 — el anulado se ve, pero no se ofrece.
+            <PortalCard
+              key={c.code}
+              className="flex flex-wrap items-center justify-between gap-4 border-dashed"
+            >
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold">{c.courseName}</p>
+                <p className="truncate text-sm font-semibold text-text-2">{c.courseName}</p>
                 <p className="truncate text-xs text-text-3">{c.cohortName}</p>
                 <p className="mt-1 text-xs text-text-3">
                   Emitido el {formatDate(c.issuedAt)} · código{" "}
                   <span className="font-mono">{c.code}</span>
                 </p>
               </div>
-            </div>
-
-            {anulado ? (
-              <div className="text-right">
-                <p className="text-xs font-medium text-danger">Anulado</p>
-                <p className="text-xs text-text-3">
-                  El {formatDate(c.revokedAt)} · consultá con la academia
+              <div className="sm:text-right">
+                <ChipDeEstado tono="atencion">Anulado</ChipDeEstado>
+                <p className="mt-2 text-xs text-text-3">
+                  Anulado el {formatDate(c.revokedAt)}. Para más información,
+                  comunicate con la academia.
                 </p>
               </div>
-            ) : (
-              <Link
-                href={`/verificar/${c.code}`}
-                className="inline-flex h-10 shrink-0 items-center rounded-md border border-input px-4 text-sm font-medium transition-colors hover:bg-accent"
-              >
-                Ver y compartir
-              </Link>
-            )}
-          </PortalCard>
+            </PortalCard>
+          ) : (
+            <Tarjeta key={c.code} as="article" className="p-0 sm:p-0">
+              <div className="flex flex-wrap items-center justify-between gap-4 p-5 sm:p-6">
+                <div className="min-w-0">
+                  <p className="text-lg font-semibold leading-tight tracking-tight">
+                    {c.courseName}
+                  </p>
+                  <p className="truncate text-sm text-text-3">{c.cohortName}</p>
+                  <p className="mt-1 text-xs text-text-3">
+                    Emitido el {formatDate(c.issuedAt)} · código{" "}
+                    <span className="font-mono">{c.code}</span>
+                  </p>
+                </div>
+                <Link
+                  href={`/verificar/${c.code}`}
+                  className="inline-flex min-h-10 shrink-0 items-center rounded-md bg-primary px-5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-brand-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                >
+                  Ver y compartir
+                </Link>
+              </div>
+            </Tarjeta>
+          )
         );
       })}
     </div>

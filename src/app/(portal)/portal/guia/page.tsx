@@ -10,6 +10,7 @@ import {
   GUIA_PORTAL_PROFESOR,
 } from "@/lib/guia-portal";
 import { ITEMS_ALUMNO, ITEMS_PROFESOR } from "@/lib/nav";
+import { EncabezadoDePagina } from "@/components/portal/campus";
 
 export const dynamic = "force-dynamic";
 
@@ -41,13 +42,14 @@ export default async function GuiaPortalPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Cómo funciona esto</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Qué hay en cada pantalla del menú y para qué sirve. Sólo aparece lo
-          que vos podés abrir.
-        </p>
-      </div>
+      <EncabezadoDePagina
+        migas={[
+          { label: "Inicio", href: "/portal" },
+          { label: "Guía del portal", href: null },
+        ]}
+        titulo="Guía del portal"
+        descripcion="Descripción de cada sección del menú. Solo se muestran las secciones habilitadas para tu cuenta."
+      />
 
       {/*
         SC-005 — Quien cursa Y da clase ve las dos secciones, rotuladas. Es un
@@ -57,7 +59,7 @@ export default async function GuiaPortalPage() {
       */}
       {esAlumno && (
         <Seccion
-          titulo="Mientras cursás"
+          titulo="Como alumno"
           items={ITEMS_ALUMNO.map((i) => ({
             label: i.label,
             texto: GUIA_PORTAL_ALUMNO[i.href],
@@ -67,7 +69,7 @@ export default async function GuiaPortalPage() {
 
       {esProfesor && (
         <Seccion
-          titulo="Cuando das clase"
+          titulo="Como profesor"
           items={ITEMS_PROFESOR.map((i) => ({
             label: i.label,
             texto: GUIA_PORTAL_PROFESOR[i.href],

@@ -27,20 +27,20 @@ import type { HrefAlumno, HrefProfesor } from "@/lib/nav";
 
 export const GUIA_PORTAL_ALUMNO: Record<HrefAlumno, string> = {
   "/portal":
-    "El resumen de todo: qué estás cursando, cuándo es la próxima clase y si hay algo pendiente.",
+    "Resumen de tus cursos: próxima clase, avance y pendientes.",
   "/portal/cuenta":
-    "Tus cuotas: cuánto pagaste, cuánto falta y cuándo vence lo próximo. Si algo no coincide con lo que pagaste, avisá.",
+    "Cuotas, pagos registrados, saldo y próximo vencimiento. Si algún importe no coincide con tus pagos, comunicate con la academia.",
   "/portal/certificados":
-    "Los certificados de los cursos que terminaste. Cada uno trae un enlace público de verificación: se lo podés pasar a una empresa sin darle acceso a nada más tuyo.",
+    "Los certificados de los cursos que finalizaste. Cada uno incluye un enlace público de verificación: podés compartirlo con una empresa sin otorgarle acceso a otros datos personales.",
   "/portal/cursos-offline":
     "Las guías teóricas y los cuestionarios de los cursos asignados. Cada cuestionario se corrige al enviarlo: muestra el puntaje, si quedó aprobado y cuántos intentos quedan.",
 };
 
 export const GUIA_PORTAL_PROFESOR: Record<HrefProfesor, string> = {
   "/portal/dictado":
-    "Los grupos a los que les das clase. Desde acá entrás a la lista de la clase del día para marcar quién vino, y a las notas del grupo.",
+    "Las cohortes a tu cargo. Desde aquí registrás la asistencia de cada clase, cargás los resultados de las evaluaciones, revisás las entregas y publicás material.",
   "/portal/horas":
-    "Las horas que dictaste, clase por clase, con el total del mes. Es lo que sirve para revisar una liquidación.",
+    "Las horas que dictaste, con el total general y el de cada cohorte. Sirve como referencia para controlar la liquidación.",
 };
 
 /**
@@ -52,4 +52,4 @@ export const GUIA_PORTAL_PROFESOR: Record<HrefProfesor, string> = {
  * cualquier lista.
  */
 export const CIERRE_PORTAL =
-  "¿Buscabas algo que no está acá? Escribile a la academia por WhatsApp o por correo: hay cosas que se resuelven del otro lado del sistema.";
+  "Si no encontrás lo que buscás, comunicate con la academia por WhatsApp o por correo electrónico.";

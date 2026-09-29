@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
+import { ChipDeEstado, TituloDeSeccion, type TonoDeChip } from "@/components/portal/campus";
 
 /**
  * 015 — Las piezas compartidas de las pantallas del alumno.
@@ -74,22 +75,23 @@ export function formatDate(iso: string | null): string {
 
 /** "hoy", "mañana", "en 3 días", "hace 2 días". */
 export function relativeDay(iso: string, timeZone: string): string {
-  const dia = (d: Date) =>
-    Number(
-      new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" })
-        .format(d)
-        .replace(/-/g, "")
-    );
-  const objetivo = new Date(iso);
-  const hoy = new Date();
-  const dif = Math.round(
-    (Date.UTC(objetivo.getUTCFullYear(), objetivo.getUTCMonth(), objetivo.getUTCDate()) -
-      Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), hoy.getUTCDate())) /
-      86_400_000
-  );
-  // `dia()` fija la comparación en la zona pedida cuando el corte del día
-  // importa; el resto sale de la diferencia en días completos.
-  if (dia(objetivo) === dia(hoy)) return "hoy";
+  // El día calendario en la zona pedida, como número de días desde 1970. Las
+  // dos fechas se miden igual: si una se midiera en UTC, cerca de medianoche
+  // una clase de mañana se leería "hace 0 días".
+  const dia = (d: Date) => {
+    const [y, m, dd] = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    })
+      .format(d)
+      .split("-")
+      .map(Number);
+    return Date.UTC(y!, m! - 1, dd!) / 86_400_000;
+  };
+  const dif = dia(new Date(iso)) - dia(new Date());
+  if (dif === 0) return "hoy";
   if (dif === 1) return "mañana";
   if (dif === -1) return "ayer";
   if (dif > 1) return `en ${dif} días`;
@@ -131,7 +133,7 @@ export function ClassTime({
       <span className="tabular-nums">{rango}</span>
       {distinta && (
         <span className="text-xs text-text-3">
-          tu hora · {formatHour(startsAt, academyZone)} en {zoneLabel(academyZone)}
+          hora local · {formatHour(startsAt, academyZone)} en {zoneLabel(academyZone)}
         </span>
       )}
     </span>
@@ -146,43 +148,25 @@ export type ApprovalValue = "aprobado" | "reprobado" | "pendiente" | "sin_datos"
 
 const APROBACION: Record<
   ApprovalValue,
-  { label: string; className: string }
+  { label: string; tone: TonoDeChip }
 > = {
-  aprobado: {
-    label: "Aprobado",
-    className: "border-success-border bg-success-soft text-success",
-  },
-  reprobado: {
-    label: "No alcanzado",
-    className: "border-danger-border bg-danger-soft text-danger",
-  },
-  pendiente: {
-    label: "En curso",
-    className: "border-warning-border bg-warning-soft text-warning",
-  },
+  aprobado: { label: "Aprobado", tone: "ok" },
+  reprobado: { label: "No aprobado", tone: "atencion" },
+  pendiente: { label: "En curso", tone: "curso" },
   /**
    * DV-003 — La mayoría de las 41 cohortes importadas está acá. Decirle
    * "Aprobado" a alguien de quien no se cargó una sola nota es afirmar algo
    * que el sistema no puede respaldar; decirle "0%" es peor.
+   *
+   * Por eso va en el tono neutro, de borde punteado: el de lo que todavía no
+   * tiene datos, igual que el segmento de una clase sin lista.
    */
-  sin_datos: {
-    label: "Sin registro",
-    className: "border-border bg-secondary text-text-2",
-  },
+  sin_datos: { label: "Sin registro", tone: "neutro" },
 };
 
 export function ApprovalBadge({ value }: { value: ApprovalValue }) {
-  const { label, className } = APROBACION[value];
-  return (
-    <span
-      className={cn(
-        "inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-xs font-medium",
-        className
-      )}
-    >
-      {label}
-    </span>
-  );
+  const { label, tone } = APROBACION[value];
+  return <ChipDeEstado tono={tone}>{label}</ChipDeEstado>;
 }
 
 /* ============================================================
@@ -197,7 +181,7 @@ export function PortalCard({
   return (
     <div
       className={cn(
-        "rounded-lg border border-border bg-card p-[var(--portal-card-pad)] shadow-sm",
+        "rounded-lg border border-border bg-card p-5 shadow-sm sm:p-6",
         className
       )}
       {...props}
@@ -206,11 +190,7 @@ export function PortalCard({
 }
 
 export function SectionTitle({ children }: { children: React.ReactNode }) {
-  return (
-    <h2 className="text-xs font-semibold uppercase tracking-wide text-text-3">
-      {children}
-    </h2>
-  );
+  return <TituloDeSeccion>{children}</TituloDeSeccion>;
 }
 
 /**

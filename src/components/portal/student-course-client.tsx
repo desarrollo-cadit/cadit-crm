@@ -13,7 +13,6 @@ import {
   Video,
   X,
 } from "lucide-react";
-import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import {
@@ -26,6 +25,15 @@ import {
 import type { ApprovalValue } from "@/components/portal/student-bits";
 import { StudentMilestones, type Milestone } from "@/components/portal/student-milestones";
 import { StudentSubmissions } from "@/components/portal/student-submissions";
+import {
+  ChipDeEstado,
+  EncabezadoDePagina,
+  LeyendaDeProgreso,
+  Metrica,
+  ProgresoDeClases,
+  Tarjeta,
+  type TramoEstado,
+} from "@/components/portal/campus";
 
 /**
  * 015/024 — Una cursada del alumno.
@@ -136,30 +144,19 @@ type Detail = {
   milestones: Milestone[];
 };
 
+/**
+ * La marca de asistencia de cada clase, como chip: el acento si viniste,
+ * rojo si faltaste, punteado si la falta está justificada. Los mismos colores
+ * que ProgresoDeClases, para que la lista y el progreso digan lo mismo.
+ */
 const ASISTENCIA: Record<
   AttendanceStatus,
-  { label: string; className: string; Icon: typeof Check }
+  { label: string; tone: "curso" | "atencion" | "neutro"; Icon: typeof Check }
 > = {
-  presente: {
-    label: "Viniste",
-    className: "border-success-border bg-success-soft text-success",
-    Icon: Check,
-  },
-  tarde: {
-    label: "Llegaste tarde",
-    className: "border-success-border bg-success-soft text-success",
-    Icon: Clock,
-  },
-  ausente: {
-    label: "Faltaste",
-    className: "border-danger-border bg-danger-soft text-danger",
-    Icon: X,
-  },
-  justificado: {
-    label: "Falta justificada",
-    className: "border-warning-border bg-warning-soft text-warning",
-    Icon: Minus,
-  },
+  presente: { label: "Presente", tone: "curso", Icon: Check },
+  tarde: { label: "Tarde", tone: "curso", Icon: Clock },
+  ausente: { label: "Ausente", tone: "atencion", Icon: X },
+  justificado: { label: "Justificada", tone: "neutro", Icon: Minus },
 };
 
 type TabKey = "modulos" | "clases" | "evaluaciones" | "material" | "avisos";
@@ -181,8 +178,8 @@ export function StudentCourseClient({ enrollmentId }: { enrollmentId: string }) 
       if (!res?.ok) {
         setError(
           res?.status === 404
-            ? "No encontramos esta cursada en tu ficha."
-            : "No pudimos cargar la cursada. Probá de nuevo en un momento."
+            ? "No se encontró este curso entre tus inscripciones."
+            : "No se pudo cargar el curso. Intentá nuevamente más tarde."
         );
         return;
       }
@@ -216,6 +213,10 @@ export function StudentCourseClient({ enrollmentId }: { enrollmentId: string }) 
   const canceladas = data.classes.filter((c) => c.canceled).length;
   const modulos = course.modules ?? [];
   const activa: TabKey = tab ?? (modulos.length > 0 ? "modulos" : "clases");
+  const ahora = Date.now();
+  const siguiente =
+    data.classes.find((c) => !c.canceled && new Date(c.startsAt ?? c.date).getTime() >= ahora)
+      ?.number ?? null;
 
   const pestanas: { key: TabKey; label: string; count: number | null }[] = [
     // 028 (US3) — Los módulos van PRIMERO: en una especialización son la
@@ -234,46 +235,69 @@ export function StudentCourseClient({ enrollmentId }: { enrollmentId: string }) 
   ];
 
   return (
-    <div className="space-y-7">
-      <div className="space-y-3">
-        <Volver />
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-2xl font-semibold tracking-tight">{course.courseName}</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {course.cohortName}
-              {course.teacherName && ` · ${course.teacherName}`}
-            </p>
-          </div>
-          <ApprovalBadge value={course.approval} />
-        </div>
-        <p className="text-sm text-text-3">
-          {formatDate(course.startDate)}
-          {course.endDate && ` – ${formatDate(course.endDate)}`}
-          {course.frequency && ` · ${course.frequency}`}
-          {course.classroom && ` · ${course.classroom}`}
-        </p>
-      </div>
+    <div className="space-y-6">
+      <EncabezadoDePagina
+        migas={[
+          { label: "Inicio", href: "/portal" },
+          { label: course.courseName, href: null },
+        ]}
+        titulo={course.courseName}
+        descripcion={
+          <>
+            {course.cohortName}
+            {course.teacherName && ` · ${course.teacherName}`}
+          </>
+        }
+        acciones={<ApprovalBadge value={course.approval} />}
+      />
 
-      {/*
-        024 — El recorrido va PRIMERO en celular y al costado en escritorio.
-        Es contexto permanente, no una sección que se lee una vez y se deja
-        atrás — y en el teléfono, al final, quedaba después de doce clases de
-        scroll.
-      */}
-      <div className="grid gap-5 lg:grid-cols-[1fr_21rem] lg:items-start">
+      <Tarjeta className="space-y-5">
+        <div className="grid grid-cols-2 gap-x-6 gap-y-4 lg:grid-cols-4">
+          {modulos.length === 0 && course.totalClasses > 0 && (
+            <Metrica
+              etiqueta="Avance"
+              valor={`${course.completedClasses} / ${course.totalClasses}`}
+              nota={
+                course.completedClasses >= course.totalClasses
+                  ? "clases dictadas: todas"
+                  : `faltan ${course.totalClasses - course.completedClasses} clases`
+              }
+            />
+          )}
+          <Metrica
+            etiqueta="Fechas"
+            valor={<span className="text-lg">{formatDate(course.startDate)}</span>}
+            nota={course.endDate ? `hasta el ${formatDate(course.endDate)}` : undefined}
+          />
+          {course.frequency && (
+            <Metrica etiqueta="Horario" valor={<span className="block text-base leading-snug">{course.frequency}</span>} />
+          )}
+          {course.classroom && (
+            <Metrica etiqueta="Aula" valor={<span className="text-lg">{course.classroom}</span>} />
+          )}
+        </div>
+        {modulos.length === 0 && (
+          <ProgresoDeClases
+            total={course.totalClasses}
+            done={course.completedClasses}
+            next={siguiente}
+          />
+        )}
+      </Tarjeta>
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start xl:grid-cols-[minmax(0,1fr)_26rem]">
         <div className="order-2 min-w-0 space-y-5 lg:order-1">
           {modulos.length > 0 ? (
             <ProgramCard course={course} modules={modulos} />
           ) : (
-            <ProgressCard course={course} />
+            <ProgressCard course={course} classes={data.classes} />
           )}
 
           <div>
             <div
               role="tablist"
-              aria-label="Secciones de la cursada"
-              className="flex gap-1 overflow-x-auto border-b border-border"
+              aria-label="Secciones del curso"
+              className="flex flex-wrap border-b border-border sm:gap-x-1"
             >
               {pestanas.map((p) => (
                 <button
@@ -284,7 +308,7 @@ export function StudentCourseClient({ enrollmentId }: { enrollmentId: string }) 
                   onClick={() => setTab(p.key)}
                   className={cn(
                     // 44px de alto: el portal se usa en el celular.
-                    "relative flex min-h-[44px] shrink-0 items-center gap-2 px-3.5 text-sm font-medium transition-colors",
+                    "relative flex min-h-[44px] items-center gap-1.5 px-2.5 text-sm font-semibold transition-colors sm:gap-2 sm:px-3",
                     activa === p.key
                       ? "text-foreground"
                       : "text-muted-foreground hover:text-foreground"
@@ -294,7 +318,8 @@ export function StudentCourseClient({ enrollmentId }: { enrollmentId: string }) 
                   {p.count !== null && (
                     <span
                       className={cn(
-                        "rounded-full px-1.5 py-0.5 text-[10.5px] font-semibold tabular-nums",
+                        // En el celular el contador no entra: sin él, las pestañas van en una línea.
+                        "hidden rounded-full px-1.5 py-0.5 text-[10.5px] font-semibold tabular-nums sm:inline",
                         activa === p.key
                           ? "bg-brand-soft text-brand-text"
                           : "bg-secondary text-text-3"
@@ -363,11 +388,26 @@ export function StudentCourseClient({ enrollmentId }: { enrollmentId: string }) 
  * Avance y asistencia, juntos
  * ============================================================ */
 
-function ProgressCard({ course }: { course: Detail["course"] }) {
-  const avance =
-    course.totalClasses > 0
-      ? Math.round((course.completedClasses / course.totalClasses) * 100)
-      : null;
+/**
+ * La asistencia. El avance ("clase N de M") ya está en la tarjeta de arriba:
+ * acá queda la otra pregunta, "¿voy bien?", con el mínimo marcado sobre el
+ * progreso.
+ */
+function ProgressCard({ course, classes }: { course: Detail["course"]; classes: ClassRow[] }) {
+  const ahora = Date.now();
+  const estados: TramoEstado[] = classes.map((c) =>
+    c.canceled
+      ? "cancelada"
+      : c.attendance === "presente" || c.attendance === "tarde"
+        ? "asistio"
+        : c.attendance === "ausente"
+          ? "falto"
+          : c.attendance === "justificado"
+            ? "justificada"
+            : new Date(c.startsAt ?? c.date).getTime() > ahora
+              ? "futura"
+              : "sin_registro"
+  );
   const alcanza =
     course.attendancePct === null ||
     course.minAttendancePct === null ||
@@ -375,25 +415,11 @@ function ProgressCard({ course }: { course: Detail["course"] }) {
 
   return (
     <PortalCard className="space-y-5">
-      {avance !== null && (
-        <div className="space-y-2">
-          <div className="flex items-baseline justify-between gap-2">
-            <p className="text-sm font-medium">
-              Clase {course.completedClasses} de {course.totalClasses}
-            </p>
-            <p className="text-xs text-text-3">
-              {course.completedClasses >= course.totalClasses
-                ? "cursada completa"
-                : `faltan ${course.totalClasses - course.completedClasses}`}
-            </p>
-          </div>
-          <Progress value={avance} label={`Avance del curso, ${avance}%`} />
-        </div>
-      )}
-
-      <div className="space-y-2 border-t border-border pt-4">
+      <div className="space-y-2">
         <div className="flex items-baseline justify-between gap-2">
-          <p className="text-sm font-medium">Mi asistencia</p>
+          <p className="text-lg font-semibold tracking-tight">
+            Mi asistencia
+          </p>
           {course.attendancePct !== null && (
             <p className="text-xs text-text-3">
               {course.attendedCount} de {course.eligibleCount} clases
@@ -406,24 +432,31 @@ function ProgressCard({ course }: { course: Detail["course"] }) {
           // DV-003 — no se dibuja una barra en cero: 0% porque nadie pasó
           // lista no es 0% porque no vino.
           <p className="text-sm text-text-3">
-            Todavía no se registró asistencia en esta cursada.
+            Aún no se registró asistencia en este curso.
           </p>
         ) : (
           <>
             <p
               className={cn(
-                "text-2xl font-semibold tabular-nums",
+                "text-4xl font-bold tabular-nums tracking-tight",
                 !alcanza && "text-danger"
               )}
             >
               {course.attendancePct}%
             </p>
-            <Progress
-              value={course.attendancePct}
-              marker={course.minAttendancePct}
-              tone={alcanza ? "success" : "danger"}
-              label={`Asistencia ${course.attendancePct}%`}
-            />
+            {classes.length > 0 && (
+              <div className="space-y-3 pb-5 pt-2">
+                <ProgresoDeClases
+                  total={classes.length}
+                  done={0}
+                  states={estados}
+                  minPct={course.minAttendancePct}
+                />
+                <div className="pt-4">
+                  <LeyendaDeProgreso estados={estados} />
+                </div>
+              </div>
+            )}
           </>
         )}
 
@@ -462,27 +495,38 @@ function ProgramCard({
   modules: Module[];
 }) {
   const aprobados = modules.filter((m) => m.approval === "aprobado").length;
-  const avance = Math.round((aprobados / modules.length) * 100);
+  /*
+    Los módulos como progreso: un segmento por módulo. Aprobado es lleno, no
+    aprobado es rojo, sin notas es punteado y en curso es lo que falta. La
+    misma notación que las clases de un curso.
+  */
+  const estados: TramoEstado[] = modules.map((m) =>
+    m.approval === "aprobado"
+      ? "asistio"
+      : m.approval === "reprobado"
+        ? "falto"
+        : m.approval === "sin_datos"
+          ? "sin_registro"
+          : "futura"
+  );
 
   return (
-    <PortalCard className="space-y-4">
-      <div className="space-y-2">
-        <div className="flex items-baseline justify-between gap-2">
-          <p className="text-sm font-medium">
-            {aprobados} de {modules.length} módulos aprobados
-          </p>
-          <p className="text-xs text-text-3">
-            {aprobados >= modules.length
-              ? "especialización completa"
-              : `faltan ${modules.length - aprobados}`}
-          </p>
-        </div>
-        <Progress value={avance} label={`Avance de la especialización, ${avance}%`} />
+    <PortalCard className="space-y-5">
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="text-lg font-semibold tracking-tight">
+          Módulos aprobados
+        </p>
+        <p className="text-xl font-bold tabular-nums">
+          {aprobados} / {modules.length}
+        </p>
       </div>
-
+      <ProgresoDeClases total={modules.length} done={0} states={estados} />
       <p className="text-xs text-text-3">
-        La asistencia y la aprobación son por módulo: entrá a cada uno para ver
-        sus clases y sus evaluaciones.
+        {aprobados >= modules.length
+          ? "Especialización completa."
+          : `Faltan ${modules.length - aprobados}.`}{" "}
+        La asistencia y la aprobación son por módulo: ingresá a cada módulo
+        para consultar sus clases y evaluaciones.
       </p>
 
       {course.approvalReasons.length > 0 && (
@@ -513,8 +557,8 @@ function ModulosTab({ modules }: { modules: Module[] }) {
   if (modules.length === 0) {
     return (
       <EmptyNote title="Esta especialización todavía no tiene módulos cargados">
-        Cuando la academia arme los módulos vas a ver acá cada uno con su
-        profesor, sus fechas y tu estado.
+        Cuando la academia defina los módulos, aquí verás cada uno con su
+        profesor, sus fechas y tu situación.
       </EmptyNote>
     );
   }
@@ -527,7 +571,7 @@ function ModulosTab({ modules }: { modules: Module[] }) {
             href={`/portal/cursadas/${m.enrollmentId}`}
             className="flex min-h-[64px] items-center gap-3.5 px-4 py-3 transition-colors hover:bg-accent"
           >
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold tabular-nums text-text-2">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-semibold tabular-nums text-text-2">
               {/*
                 El LUGAR en la lista, nunca la `position` guardada: es una clave
                 de orden, y una especialización cargada 10/20/30 diría "30".
@@ -553,9 +597,9 @@ function ModulosTab({ modules }: { modules: Module[] }) {
               </span>
               {/* US4 — el módulo que cursa con otra camada lo dice. */}
               {m.otraCamada && (
-                <span className="mt-1 inline-flex items-center rounded-full border border-warning-border bg-warning-soft px-2 py-0.5 text-[10.5px] font-medium text-warning">
-                  Lo cursás con {m.camadaName ?? "otra camada"}
-                </span>
+                <ChipDeEstado tono="curso" className="mt-1.5">
+                  Cursado con {m.camadaName ? `la cohorte ${m.camadaName}` : "otra cohorte"}
+                </ChipDeEstado>
               )}
             </span>
 
@@ -587,9 +631,8 @@ function ClasesTab({
 }) {
   if (classes.length === 0) {
     return (
-      <EmptyNote title="Esta cursada todavía no tiene cronograma">
-        Cuando la academia lo genere vas a ver acá cada clase, su tema y tu
-        asistencia.
+      <EmptyNote title="Este curso aún no tiene cronograma">
+        Una vez publicado, aquí verás cada clase, su tema y tu asistencia.
       </EmptyNote>
     );
   }
@@ -620,7 +663,7 @@ function ClassRowItem({ row, academyZone }: { row: ClassRow; academyZone: string
         row.canceled && "bg-subtle"
       )}
     >
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold tabular-nums text-text-2">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-semibold tabular-nums text-text-2">
         {row.number}
       </span>
 
@@ -649,7 +692,7 @@ function ClassRowItem({ row, academyZone }: { row: ClassRow; academyZone: string
             href={row.recordingUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex h-9 items-center gap-1.5 rounded-md border border-input px-2.5 text-xs font-medium transition-colors hover:bg-accent"
+            className="inline-flex h-9 items-center gap-1.5 rounded-md border border-input px-3 text-sm font-semibold transition-colors hover:bg-accent"
           >
             <Play className="h-3.5 w-3.5" strokeWidth={2} />
             Grabación
@@ -660,25 +703,22 @@ function ClassRowItem({ row, academyZone }: { row: ClassRow; academyZone: string
             href={row.meetingUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex h-9 items-center gap-1.5 rounded-md bg-brand px-2.5 text-xs font-semibold text-on-accent transition-colors hover:bg-brand-hover"
+            className="inline-flex h-9 items-center gap-1.5 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground transition-colors hover:bg-brand-hover"
           >
             <Video className="h-3.5 w-3.5" strokeWidth={2} />
-            Entrar
+            Ingresar
           </a>
         )}
         {marca && (
-          <span
-            className={cn(
-              "inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium",
-              marca.className
-            )}
-          >
+          <ChipDeEstado tono={marca.tone}>
             <marca.Icon className="h-3 w-3" strokeWidth={2.5} />
             {marca.label}
-          </span>
+          </ChipDeEstado>
         )}
         {!marca && !row.canceled && (
-          <span className="text-xs text-text-3">Sin registrar</span>
+          <span className="text-xs font-medium text-text-3">
+            Sin registrar
+          </span>
         )}
       </span>
     </li>
@@ -703,8 +743,8 @@ function MaterialTab({
   if (resources.length === 0) {
     return (
       <EmptyNote title="Todavía no hay material publicado">
-        Las guías, ejemplos y enlaces que suba la academia o tu profesor
-        aparecen acá.
+        Aquí se publicarán las guías, ejemplos y enlaces que compartan la
+        academia o tu profesor.
       </EmptyNote>
     );
   }
@@ -746,9 +786,9 @@ function AvisosTab({
 }) {
   if (announcements.length === 0) {
     return (
-      <EmptyNote title="No hay avisos de la camada">
-        Cuando la academia o tu profesor publiquen uno, lo vas a ver acá con su
-        autor y su fecha.
+      <EmptyNote title="No hay avisos para tu cohorte">
+        Los avisos de la academia o de tu profesor se publicarán aquí, con su
+        autor y fecha.
       </EmptyNote>
     );
   }
@@ -781,23 +821,21 @@ function CertificateCard({
   cert: { code: string; issuedAt: string; revokedAt: string | null };
 }) {
   return (
-    <PortalCard className="space-y-3">
-      <p className="text-[13px] font-semibold tracking-tight text-text-2">
-        Tu certificado
-      </p>
+    <Tarjeta as="article" className="space-y-4 border-brand-soft bg-brand-tint">
       <div>
-        <p className="text-sm font-medium">Emitido el {formatDate(cert.issuedAt)}</p>
+        <p className="text-lg font-semibold tracking-tight">Tu certificado</p>
+        <p className="mt-1 text-sm text-text-2">Emitido el {formatDate(cert.issuedAt)}</p>
         <p className="text-xs text-text-3">
           Código <span className="font-mono">{cert.code}</span>
         </p>
       </div>
       <Link
         href={`/verificar/${cert.code}`}
-        className="inline-flex h-10 w-full items-center justify-center rounded-md border border-input px-4 text-sm font-medium transition-colors hover:bg-accent"
+        className="inline-flex min-h-10 w-full items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-brand-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       >
         Ver y compartir
       </Link>
-    </PortalCard>
+    </Tarjeta>
   );
 }
 

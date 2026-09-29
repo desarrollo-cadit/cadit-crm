@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export default function PortalHoursPage() {
   return (
     <div className="space-y-5">
-      <h1 className="text-2xl font-semibold tracking-tight">Mis horas dictadas</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Horas dictadas</h1>
       <PortalHoursClient />
     </div>
   );

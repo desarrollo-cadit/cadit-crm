@@ -640,7 +640,7 @@ describe("028 — el recorrido de la especialización", () => {
     });
 
     expect(hitos.map((h) => h.label)).toEqual([
-      "Te inscribiste",
+      "Inscripción",
       "Módulo 1 — Revit Arquitectura",
       "Módulo 2 — Revit Estructura",
       "Certificado",
@@ -687,7 +687,7 @@ describe("028 — el recorrido de la especialización", () => {
     const hitos = buildMilestones({ ...base, attendancePct: 50, minAttendancePct: 80 });
     const asistencia = hitos.find((h) => h.key === "asistencia")!;
 
-    expect(asistencia).toMatchObject({ state: "no_alcanzado", detail: "Vas 50%" });
+    expect(asistencia).toMatchObject({ state: "no_alcanzado", detail: "Asistencia: 50%" });
   });
 
   it("un módulo reprobado sí se dice: ahí el dato existe", async () => {

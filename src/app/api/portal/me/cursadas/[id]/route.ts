@@ -19,7 +19,7 @@ export const GET = requireStudentPortal(
   async (ctx, _req: Request, routeCtx: Params) => {
     const { id } = await routeCtx.params;
     const data = await studentCourseDetail(ctx.organizationId, ctx.contactId, id);
-    if (!data) return apiError(404, "not_found", "Cursada no encontrada");
+    if (!data) return apiError(404, "not_found", "Curso no encontrado");
     return Response.json(data);
   }
 );

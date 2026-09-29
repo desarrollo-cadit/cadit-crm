@@ -59,7 +59,7 @@ export default function LoginPage() {
       <div className="space-y-1.5">
         <h1 className="text-2xl font-semibold tracking-tight">Iniciar sesión</h1>
         <p className="text-sm text-muted-foreground">
-          Entrá con el correo que le diste a la academia.
+          Ingresá con el correo que brindaste a la academia.
         </p>
       </div>
 

@@ -18,8 +18,8 @@ export const dynamic = "force-dynamic";
 export async function generateMetadata(): Promise<Metadata> {
   const branding = await getBranding().catch(() => DEFAULT_BRANDING);
   return {
-    title: `${branding.name} — Gestor académico`,
-    description: "Gestor académico para academia y centro de formación",
+    title: `${branding.name} — Campus de academia y centro de formación`,
+    description: "Campus de academia y centro de formación",
     /**
      * El isotipo como favicon. Hasta acá no había ninguno y la pestaña salía
      * con el ícono por defecto del navegador.

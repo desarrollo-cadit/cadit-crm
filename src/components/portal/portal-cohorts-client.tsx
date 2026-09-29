@@ -40,7 +40,7 @@ const ESTADO: Record<
   { label: string; variant: "success" | "warning" | "secondary" }
 > = {
   en_curso: { label: "En curso", variant: "success" },
-  planificada: { label: "Por empezar", variant: "warning" },
+  planificada: { label: "Por iniciar", variant: "warning" },
   finalizada: { label: "Finalizada", variant: "secondary" },
 };
 
@@ -68,7 +68,7 @@ export function PortalCohortsClient() {
     void (async () => {
       const res = await fetch("/api/portal/cohorts").catch(() => null);
       if (!res?.ok) {
-        setError("No se pudieron cargar tus cohortes.");
+        setError("No se pudieron cargar tus cohortes. Recargá la página o intentá nuevamente más tarde.");
         setCohorts([]);
         return;
       }
@@ -91,10 +91,10 @@ export function PortalCohortsClient() {
   if (cohorts.length === 0) {
     return (
       <div className="rounded-lg border border-dashed p-6 text-center">
-        <p className="text-sm font-medium">Todavía no tenés cohortes asignadas</p>
+        <p className="text-sm font-medium">No tenés cohortes asignadas</p>
         <p className="mt-2 text-sm text-muted-foreground">
-          Cuando la academia te asigne una, o cuando cubras una clase, va a
-          aparecer acá.
+          Las cohortes se mostrarán aquí cuando la academia te asigne una o te
+          designe como suplente en una clase.
         </p>
       </div>
     );
@@ -105,7 +105,7 @@ export function PortalCohortsClient() {
 
   return (
     <div className="space-y-6">
-      <Grupo titulo="Ahora" cohorts={activas} vacio="Ninguna cohorte abierta." />
+      <Grupo titulo="En curso" cohorts={activas} vacio="No hay cohortes en curso." />
       {cerradas.length > 0 && (
         <Grupo titulo={`Finalizadas (${cerradas.length})`} cohorts={cerradas} />
       )}
@@ -141,7 +141,7 @@ function Grupo({
                   <div className="min-w-0">
                     <p className="truncate text-base font-semibold">{c.courseName}</p>
                     <p className="truncate text-sm text-muted-foreground">
-                      {c.name ?? "Sin nombre de edición"}
+                      {c.name ?? "Cohorte sin nombre"}
                     </p>
                     {c.program && (
                       <p className="truncate text-xs text-text-3">

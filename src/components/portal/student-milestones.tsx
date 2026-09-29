@@ -4,6 +4,7 @@ import { Check, Circle, CircleDashed, Minus, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/components/portal/student-bits";
+import { ChipDeEstado } from "@/components/portal/campus";
 
 /**
  * 024 — El recorrido de la cursada: dónde estoy, qué logré, qué falta.
@@ -39,7 +40,7 @@ const ESTILO: Record<
 > = {
   cumplido: {
     Icon: Check,
-    punto: "border-success bg-success text-on-state",
+    punto: "border-brand bg-brand text-on-accent",
     texto: "text-foreground",
     rotulo: null,
   },
@@ -47,7 +48,7 @@ const ESTILO: Record<
     Icon: Circle,
     punto: "border-brand bg-background text-brand",
     texto: "font-semibold text-foreground",
-    rotulo: "Acá estás",
+    rotulo: "Etapa actual",
   },
   pendiente: {
     Icon: CircleDashed,
@@ -78,15 +79,21 @@ export function StudentMilestones({ milestones }: { milestones: Milestone[] }) {
   if (milestones.length === 0) return null;
 
   const logrados = milestones.filter((m) => m.state === "cumplido").length;
+  /**
+   * El último hito cumplido lleva un chip. Uno solo: un chip en cada renglón
+   * deja de celebrar, y "el último que lograste" es un hecho con fecha, no
+   * algo que el sistema tenga que inventar.
+   */
+  const ultimoLogrado = [...milestones].reverse().find((m) => m.state === "cumplido")?.key;
 
   return (
-    <section className="rounded-lg border border-border bg-card p-[var(--portal-card-pad)] shadow-sm">
+    <section className="rounded-lg border border-border bg-card p-5 shadow-sm sm:p-6">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-[13px] font-semibold tracking-tight text-text-2">
+        <h2 className="text-lg font-semibold tracking-tight">
           Tu recorrido
         </h2>
-        <p className="text-xs text-text-3">
-          {logrados} de {milestones.length} cumplidos
+        <p className="text-sm font-medium tabular-nums text-text-3">
+          {logrados} / {milestones.length}
         </p>
       </div>
 
@@ -104,8 +111,12 @@ export function StudentMilestones({ milestones }: { milestones: Milestone[] }) {
               {!ultimo && (
                 <span
                   className={cn(
-                    "absolute left-[13px] top-7 h-[calc(100%-1.75rem)] w-px",
-                    m.state === "cumplido" ? "bg-success" : "bg-border"
+                    // Lo recorrido, línea llena; lo que falta, de trazos: la
+                    // misma convención que ProgresoDeClases.
+                    "absolute left-[13px] top-7 h-[calc(100%-1.75rem)]",
+                    m.state === "cumplido"
+                      ? "w-0.5 -translate-x-[0.5px] bg-brand"
+                      : "w-0 border-l border-dashed border-border-strong"
                   )}
                   aria-hidden
                 />
@@ -126,10 +137,15 @@ export function StudentMilestones({ milestones }: { milestones: Milestone[] }) {
               <div className="min-w-0 flex-1 pt-0.5">
                 <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
                   <p className={cn("text-sm", estilo.texto)}>{m.label}</p>
+                  {m.key === ultimoLogrado && (
+                    <ChipDeEstado tono="curso">
+                      Último cumplido
+                    </ChipDeEstado>
+                  )}
                   {estilo.rotulo && (
-                    <span className="rounded-full border border-brand-soft bg-brand-tint px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-brand-text">
+                    <ChipDeEstado tono="atencion">
                       {estilo.rotulo}
-                    </span>
+                    </ChipDeEstado>
                   )}
                 </div>
                 {(m.detail || m.at) && (

@@ -86,7 +86,7 @@ export function AppNav({
   };
 
   return (
-    <aside className="flex w-56 shrink-0 flex-col border-r bg-subtle px-3 pb-3.5 pt-4">
+    <aside className="barra-marca flex w-56 shrink-0 flex-col border-r bg-subtle px-3 pb-3.5 pt-4">
       <Link href="/" className="mb-4 flex items-center gap-2.5 px-2">
         <IsotipoCadIT className="h-[30px] w-[30px] rounded-sm" />
         <span className="min-w-0">

@@ -19,7 +19,7 @@ const correccionSchema = z.object({
    * sin explicación no le sirve de nada al alumno**, que es textualmente lo que
    * pide US4. El mínimo de 3 evita el "ok" que no explica nada.
    */
-  feedback: z.string().trim().min(3, "Escribí la devolución").max(4000),
+  feedback: z.string().trim().min(3, "La devolución debe tener al menos 3 caracteres").max(4000),
 });
 
 /**

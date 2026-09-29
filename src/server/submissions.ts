@@ -590,6 +590,21 @@ export async function entregasDeCohorte(
  * ============================================================ */
 
 /**
+ * La misma respuesta para los DOS caminos que terminan en el mismo hecho: la
+ * reentrega sin reapertura (FR-013), y la entrega que pierde la carrera contra
+ * otra simultánea. Para el alumno es una sola cosa —"tu entrega ya está, para
+ * cambiarla pedí que la reabran"—, y dos códigos distintos obligarían a la
+ * pantalla a conocer los dos para decir la misma frase.
+ */
+const ENTREGA_CERRADA = {
+  ok: false,
+  status: 422,
+  code: "entrega_cerrada",
+  message:
+    "Esta entrega ya fue registrada. Para realizar una nueva entrega, tu profesor tiene que habilitar la reapertura.",
+} as const;
+
+/**
  * 016 (US1, FR-001..FR-004) — El alumno entrega el ENLACE de su trabajo.
  *
  * Tres cosas que esta función hace y conviene decir:
@@ -603,21 +618,6 @@ export async function entregasDeCohorte(
  * - **Inserta, no pisa** (FR-008). La reentrega es una fila nueva; la anterior
  *   queda con su fecha y su devolución.
  */
-/**
- * La misma respuesta para los DOS caminos que terminan en el mismo hecho: la
- * reentrega sin reapertura (FR-013), y la entrega que pierde la carrera contra
- * otra simultánea. Para el alumno es una sola cosa —"tu entrega ya está, para
- * cambiarla pedí que la reabran"—, y dos códigos distintos obligarían a la
- * pantalla a conocer los dos para decir la misma frase.
- */
-const ENTREGA_CERRADA = {
-  ok: false,
-  status: 422,
-  code: "entrega_cerrada",
-  message:
-    "Ya entregaste este trabajo. Para volver a entregar, tu profesor tiene que reabrir la entrega.",
-} as const;
-
 export async function estudianteEntregar(
   organizationId: string,
   contactId: string,
@@ -1049,7 +1049,7 @@ export async function fijarPlazoDeGrupo(
         ok: false,
         status: 422,
         code: "invalid_due_at",
-        message: "La fecha o la hora del plazo no se entienden",
+        message: "La fecha o la hora del plazo no son válidas",
       };
     }
   }
@@ -1130,7 +1130,7 @@ export async function otorgarProrroga(
       ok: false,
       status: 422,
       code: "invalid_due_at",
-      message: "La fecha o la hora de la prórroga no se entienden",
+      message: "La fecha o la hora de la prórroga no son válidas",
     };
   }
 

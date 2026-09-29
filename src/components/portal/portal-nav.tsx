@@ -144,20 +144,20 @@ export function PortalNav({
 
       <nav className="flex flex-col gap-4 overflow-y-auto">
         {audience.isStudent && (
-          <Grupo label="Mi cursada" items={ITEMS_ALUMNO} pathname={pathname} />
+          <Grupo label="Mis cursos" items={ITEMS_ALUMNO} pathname={pathname} />
         )}
 
         {audience.isStudent && cursadas.length > 0 && (
-          <ListaCursos titulo="Cursando" cursos={cursadas} pathname={pathname} />
+          <ListaCursos titulo="En curso" cursos={cursadas} pathname={pathname} />
         )}
 
         {audience.isTeacher && (
-          <Grupo label="Doy clase" items={ITEMS_PROFESOR} pathname={pathname} />
+          <Grupo label="Docencia" items={ITEMS_PROFESOR} pathname={pathname} />
         )}
 
         {audience.isStudent && cerradas.length > 0 && (
           <ListaCursos
-            titulo={`Terminadas (${cerradas.length})`}
+            titulo={`Finalizados (${cerradas.length})`}
             cursos={cerradas}
             pathname={pathname}
           />
@@ -201,7 +201,7 @@ export function PortalNav({
   return (
     <>
       {/* Escritorio: la barra, siempre presente. */}
-      <aside className="hidden w-60 shrink-0 flex-col border-r border-border bg-subtle px-3 pb-3.5 pt-4 md:flex">
+      <aside className="barra-marca hidden w-60 shrink-0 flex-col border-r border-border bg-subtle px-3 pb-3.5 pt-4 md:flex">
         {contenido}
       </aside>
 
@@ -209,7 +209,7 @@ export function PortalNav({
         Celular: encabezado fijo + cajón. El botón mide 44px porque es el
         mínimo para un pulgar, y el portal se usa parado en un aula.
       */}
-      <header className="sticky top-0 z-30 flex items-center gap-2 border-b border-border bg-subtle px-2 py-2 md:hidden">
+      <header className="barra-marca sticky top-0 z-30 flex items-center gap-2 border-b border-border bg-subtle px-2 py-2 md:hidden">
         <button
           type="button"
           onClick={() => setAbierto(true)}
@@ -235,7 +235,7 @@ export function PortalNav({
             className="absolute inset-0 bg-overlay"
             onClick={() => setAbierto(false)}
           />
-          <aside className="absolute inset-y-0 left-0 flex w-64 max-w-[85vw] flex-col border-r border-border bg-subtle px-3 pb-3.5 pt-4 shadow-pop">
+          <aside className="barra-marca absolute inset-y-0 left-0 flex w-64 max-w-[85vw] flex-col border-r border-border bg-subtle px-3 pb-3.5 pt-4 shadow-pop">
             <button
               type="button"
               onClick={() => setAbierto(false)}

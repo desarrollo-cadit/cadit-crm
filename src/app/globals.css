@@ -187,6 +187,15 @@
 
     /* Densidad de filas de conversación */
     --row-py: 11px;
+
+    /*
+      La barra lateral va en el navy de la marca CadIT (el del "IT" del logo),
+      no en el acento: el acento queda para lo que se HACE —botones, progreso,
+      enlaces— y así no compite con la navegación. Texto blanco: 16:1.
+    */
+    --barra-fondo: #001b5e;
+    --barra-tinta: #ffffff;
+
   }
 
   /*
@@ -250,6 +259,10 @@
     --danger-hover: #dc8f8b;
     /* Invertido: los rellenos de estado son claros en este tema. */
     --on-state: #141417;
+
+    /* La barra lateral es la misma en los dos temas: el navy se despega del fondo casi negro. */
+    --barra-fondo: #001b5e;
+    --barra-tinta: #ffffff;
 
     /* Más opaco que en claro: sobre fondo oscuro un velo tenue no separa nada. */
     --overlay: rgba(0, 0, 0, 0.7);
@@ -318,6 +331,38 @@
     /* El aire de las tarjetas, para que respiren en una pantalla de celular. */
     --portal-gap: 1rem;
     --portal-card-pad: 1.15rem;
+  }
+
+  /*
+    Portal del alumno — El mundo "campus".
+
+    Atlas es la mesa del staff, que la mira ocho horas por día y donde lo
+    apagado es una virtud. El alumno entra unos minutos dos veces por semana,
+    y el dueño pidió para él un portal de estudio moderno, con Coderhouse como
+    referencia: fondo gris claro, tarjetas blancas redondeadas con sombra
+    suave, y el acento de la organización como único color vivo.
+
+    Este bloque NO redefine los tokens de texto ni `--bg` (la tarjeta): el
+    acento white-label se deriva contra `--bg`, y las garantías de contraste
+    de Atlas siguen valiendo tal cual. Lo único nuevo es `--bg-page`, el gris
+    sobre el que apoyan las tarjetas, y `tests/unit/mundo-campus.test.ts`
+    exige que el texto también se lea sobre él.
+  */
+  [data-world="campus"] {
+    --bg-page: #f4f5f8;
+    --radius-sm: 8px;
+    --radius: 12px;
+    --radius-lg: 16px;
+    --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05), 0 1px 3px rgba(16, 24, 40, 0.07);
+    --shadow-md: 0 10px 28px -10px rgba(16, 24, 40, 0.18);
+    --shadow-pop: 0 18px 40px -12px rgba(16, 24, 40, 0.28);
+  }
+
+  :root[data-theme="dark"] [data-world="campus"] {
+    --bg-page: #0e0e11;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+    --shadow-md: 0 10px 28px -10px rgba(0, 0, 0, 0.65);
+    --shadow-pop: 0 18px 40px -12px rgba(0, 0, 0, 0.75);
   }
 }
 
@@ -435,6 +480,60 @@
     border-color: color-mix(in srgb, var(--on-accent) 28%, transparent);
     background-color: color-mix(in srgb, var(--on-accent) 12%, transparent);
   }
+
+  /*
+    La barra lateral en el navy de la marca (panel, profesor y alumno), en los
+    dos temas.
+
+    No se pinta elemento por elemento: la barra redefine los tokens que usan
+    sus hijos, y todo lo de adentro —ítems, íconos, contadores, el avatar, el
+    selector de tema— queda en tinta blanca sin tocar un solo `.tsx`. El
+    hover y el ítem activo aclaran apenas el navy con un velo blanco; el
+    contraste del texto blanco lo verifica `tests/unit/mundo-campus.test.ts`.
+  */
+  .barra-marca {
+    /* El texto sin clase propia hereda el color ya resuelto de la página: acá se fija. */
+    color: var(--barra-tinta);
+    --bg-subtle: var(--barra-fondo);
+    --text: var(--barra-tinta);
+    --text-2: var(--barra-tinta);
+    --text-3: var(--barra-tinta);
+    --text-4: var(--barra-tinta);
+    --border: rgba(255, 255, 255, 0.12);
+    --border-strong: rgba(255, 255, 255, 0.24);
+    --bg-hover: rgba(255, 255, 255, 0.08);
+    --accent-tint: rgba(255, 255, 255, 0.14);
+    --accent-soft: rgba(255, 255, 255, 0.16);
+    --accent-text: var(--barra-tinta);
+    --accent: var(--barra-tinta);
+    --on-accent: var(--barra-fondo);
+  }
+
+  /*
+    El progreso de un curso: los segmentos de las clases a las que el alumno
+    ya asistió aparecen uno tras otro al cargar la pantalla. Es el único
+    movimiento del portal.
+  */
+  .progreso-tramo {
+    transform-origin: left center;
+    animation: progreso-revelar 500ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: calc(var(--i, 0) * 35ms + 100ms);
+  }
+  @keyframes progreso-revelar {
+    from {
+      transform: scaleX(0);
+      opacity: 0;
+    }
+  }
+
+  /* El fondo de la página del alumno: gris, para que las tarjetas se lean. */
+  [data-world="campus"] .portal-contenido-fondo {
+    background-color: var(--bg-page);
+  }
+  /* Las pantallas del alumno usan el ancho de la pantalla, hasta un tope. */
+  [data-world="campus"] .portal-contenido {
+    max-width: 1440px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -443,5 +542,9 @@
   *::after {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
+  }
+  /* El retardo escalonado también se va: si no, el segmento queda oculto un rato. */
+  .progreso-tramo {
+    animation: none;
   }
 }
