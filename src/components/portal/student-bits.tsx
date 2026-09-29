@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
-import { Sello, TituloDeVista } from "@/components/portal/plano";
+import { ChipDeEstado, TituloDeSeccion, type TonoDeChip } from "@/components/portal/campus";
 
 /**
  * 015 — Las piezas compartidas de las pantallas del alumno.
@@ -148,43 +148,25 @@ export type ApprovalValue = "aprobado" | "reprobado" | "pendiente" | "sin_datos"
 
 const APROBACION: Record<
   ApprovalValue,
-  { label: string; tone: "ok" | "revision" | "curso" | "neutro" }
+  { label: string; tone: TonoDeChip }
 > = {
   aprobado: { label: "Aprobado", tone: "ok" },
-  reprobado: { label: "No aprobado", tone: "revision" },
+  reprobado: { label: "No aprobado", tone: "atencion" },
   pendiente: { label: "En curso", tone: "curso" },
   /**
    * DV-003 — La mayoría de las 41 cohortes importadas está acá. Decirle
    * "Aprobado" a alguien de quien no se cargó una sola nota es afirmar algo
    * que el sistema no puede respaldar; decirle "0%" es peor.
    *
-   * En el mundo Cianotipo es el único sello de trazo punteado: la misma
-   * convención que la línea de lo que todavía no existe.
+   * Por eso va en el tono neutro, de borde punteado: el de lo que todavía no
+   * tiene datos, igual que el segmento de una clase sin lista.
    */
   sin_datos: { label: "Sin registro", tone: "neutro" },
 };
 
-/**
- * El estado de una cursada, como sello sobre la hoja. Sobre una lámina azul
- * (`onSheet`) el sello va en tinta blanca, salvo "no alcanzado", que conserva
- * el rojo de revisión: es lo único que tiene que llamar la atención.
- */
-export function ApprovalBadge({
-  value,
-  onSheet = false,
-}: {
-  value: ApprovalValue;
-  onSheet?: boolean;
-}) {
+export function ApprovalBadge({ value }: { value: ApprovalValue }) {
   const { label, tone } = APROBACION[value];
-  return (
-    <Sello
-      tone={onSheet ? (value === "reprobado" ? "lamina-revision" : "lamina") : tone}
-      className={cn(onSheet && value === "sin_datos" && "border-dashed")}
-    >
-      {label}
-    </Sello>
-  );
+  return <ChipDeEstado tono={tone}>{label}</ChipDeEstado>;
 }
 
 /* ============================================================
@@ -199,7 +181,7 @@ export function PortalCard({
   return (
     <div
       className={cn(
-        "rounded-lg border border-border bg-card p-[var(--portal-card-pad)] shadow-sm",
+        "rounded-lg border border-border bg-card p-5 shadow-sm sm:p-6",
         className
       )}
       {...props}
@@ -208,7 +190,7 @@ export function PortalCard({
 }
 
 export function SectionTitle({ children }: { children: React.ReactNode }) {
-  return <TituloDeVista>{children}</TituloDeVista>;
+  return <TituloDeSeccion>{children}</TituloDeSeccion>;
 }
 
 /**

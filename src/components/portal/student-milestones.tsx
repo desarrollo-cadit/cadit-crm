@@ -4,7 +4,7 @@ import { Check, Circle, CircleDashed, Minus, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/components/portal/student-bits";
-import { Sello } from "@/components/portal/plano";
+import { ChipDeEstado } from "@/components/portal/campus";
 
 /**
  * 024 — El recorrido de la cursada: dónde estoy, qué logré, qué falta.
@@ -46,7 +46,7 @@ const ESTILO: Record<
   },
   en_curso: {
     Icon: Circle,
-    punto: "border-revision bg-background text-revision",
+    punto: "border-brand bg-background text-brand",
     texto: "font-semibold text-foreground",
     rotulo: "Etapa actual",
   },
@@ -58,7 +58,7 @@ const ESTILO: Record<
   },
   no_alcanzado: {
     Icon: X,
-    punto: "border-revision bg-background text-revision",
+    punto: "border-danger-border bg-danger-soft text-danger",
     texto: "text-foreground",
     rotulo: null,
   },
@@ -80,19 +80,19 @@ export function StudentMilestones({ milestones }: { milestones: Milestone[] }) {
 
   const logrados = milestones.filter((m) => m.state === "cumplido").length;
   /**
-   * El último hito cumplido lleva sello. Uno solo: un sello en cada renglón
+   * El último hito cumplido lleva un chip. Uno solo: un chip en cada renglón
    * deja de celebrar, y "el último que lograste" es un hecho con fecha, no
    * algo que el sistema tenga que inventar.
    */
   const ultimoLogrado = [...milestones].reverse().find((m) => m.state === "cumplido")?.key;
 
   return (
-    <section className="rounded-lg border border-border bg-card p-[var(--portal-card-pad)] shadow-sm">
+    <section className="rounded-lg border border-border bg-card p-5 shadow-sm sm:p-6">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="font-display text-base font-semibold uppercase tracking-[0.12em] text-foreground">
+        <h2 className="text-lg font-semibold tracking-tight">
           Tu recorrido
         </h2>
-        <p className="font-display text-sm font-semibold tabular-nums text-text-3">
+        <p className="text-sm font-medium tabular-nums text-text-3">
           {logrados} / {milestones.length}
         </p>
       </div>
@@ -112,7 +112,7 @@ export function StudentMilestones({ milestones }: { milestones: Milestone[] }) {
                 <span
                   className={cn(
                     // Lo recorrido, línea llena; lo que falta, de trazos: la
-                    // misma convención que la cadena de cotas.
+                    // misma convención que ProgresoDeClases.
                     "absolute left-[13px] top-7 h-[calc(100%-1.75rem)]",
                     m.state === "cumplido"
                       ? "w-0.5 -translate-x-[0.5px] bg-brand"
@@ -124,8 +124,7 @@ export function StudentMilestones({ milestones }: { milestones: Milestone[] }) {
 
               <span
                 className={cn(
-                  // Marcas cuadradas, como los puntos de replanteo de un plano.
-                  "relative z-10 flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-sm border-2",
+                  "relative z-10 flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full border-2",
                   estilo.punto
                 )}
               >
@@ -139,14 +138,14 @@ export function StudentMilestones({ milestones }: { milestones: Milestone[] }) {
                 <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
                   <p className={cn("text-sm", estilo.texto)}>{m.label}</p>
                   {m.key === ultimoLogrado && (
-                    <Sello tone="curso" className="text-[11px]">
+                    <ChipDeEstado tono="curso">
                       Último cumplido
-                    </Sello>
+                    </ChipDeEstado>
                   )}
                   {estilo.rotulo && (
-                    <Sello tone="revision" className="text-[11px]">
+                    <ChipDeEstado tono="atencion">
                       {estilo.rotulo}
-                    </Sello>
+                    </ChipDeEstado>
                   )}
                 </div>
                 {(m.detail || m.at) && (
