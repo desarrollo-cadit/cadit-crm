@@ -189,10 +189,13 @@
     --row-py: 11px;
 
     /*
-      La voz de los rótulos. En Atlas es la misma Geist del cuerpo; el mundo
-      del alumno la cambia por una condensada técnica (ver más abajo).
+      La barra lateral va en el navy de la marca CadIT (el del "IT" del logo),
+      no en el acento: el acento queda para lo que se HACE —botones, progreso,
+      enlaces— y así no compite con la navegación. Texto blanco: 16:1.
     */
-    --font-display: var(--font-geist), "Hanken Grotesk", sans-serif;
+    --barra-fondo: #001b5e;
+    --barra-tinta: #ffffff;
+
   }
 
   /*
@@ -256,6 +259,10 @@
     --danger-hover: #dc8f8b;
     /* Invertido: los rellenos de estado son claros en este tema. */
     --on-state: #141417;
+
+    /* La barra lateral es la misma en los dos temas: el navy se despega del fondo casi negro. */
+    --barra-fondo: #001b5e;
+    --barra-tinta: #ffffff;
 
     /* Más opaco que en claro: sobre fondo oscuro un velo tenue no separa nada. */
     --overlay: rgba(0, 0, 0, 0.7);
@@ -327,122 +334,34 @@
   }
 
   /*
-    Cursos-offline / portal del alumno — El mundo "Cianotipo de obra".
+    Portal del alumno — El mundo "campus".
 
-    El alumno deja de ver Atlas. Atlas es la mesa del staff, que la mira ocho
-    horas por día y donde lo apagado es una virtud; el alumno entra unos
-    minutos dos veces por semana y ahí ese mismo silencio se lee como que no
-    pasa nada. Decisión del dueño del producto (2026-09-28): el portal del
-    alumno tiene mundo propio. El panel del staff y el portal del profesor
-    quedan como estaban.
+    Atlas es la mesa del staff, que la mira ocho horas por día y donde lo
+    apagado es una virtud. El alumno entra unos minutos dos veces por semana,
+    y el dueño pidió para él un portal de estudio moderno, con Coderhouse como
+    referencia: fondo gris claro, tarjetas blancas redondeadas con sombra
+    suave, y el acento de la organización como único color vivo.
 
-    A diferencia de la intensidad de portal, este bloque SÍ redefine fondos y
-    texto, y por eso tiene su propia prueba de contraste
-    (`tests/unit/mundo-cianotipo.test.ts`), que lee estos valores y exige los
-    mismos umbrales que Atlas en los dos temas.
-
-    La idea: la cursada es un juego de láminas heliográficas. En claro, la
-    hoja es papel diazo frío con tinta azul de Prusia; en oscuro, el
-    escritorio es de noche y la tinta se aclara. La LÁMINA (`--sheet*`) es
-    azul de Prusia con línea blanca en los dos temas, igual que el plato de la
-    marca: es un objeto, no una superficie del tema.
-
-    El acento white-label no aplica acá: el mundo tiene su propio azul, y la
-    marca de CadIT ya es azul.
+    Este bloque NO redefine los tokens de texto ni `--bg` (la tarjeta): el
+    acento white-label se deriva contra `--bg`, y las garantías de contraste
+    de Atlas siguen valiendo tal cual. Lo único nuevo es `--bg-page`, el gris
+    sobre el que apoyan las tarjetas, y `tests/unit/mundo-campus.test.ts`
+    exige que el texto también se lea sobre él.
   */
-  [data-world="cianotipo"] {
-    --bg: #f6f8fc;
-    --bg-subtle: #eff3fa;
-    --bg-panel: #e9eff8;
-    --bg-hover: #e0e8f5;
-    --text: #0e1f45;
-    --text-2: #2c3f69;
-    --text-3: #475a80;
-    --text-4: #6c7fa3;
-    --border: #d5dfee;
-    --border-strong: #6f82a6;
-
-    --accent: #1f438f;
-    --accent-hover: #17346f;
-    --accent-soft: #d3e0f6;
-    --accent-tint: #e6eefa;
-    --accent-text: #17346f;
-    --on-accent: #ffffff;
-
-    --success: #2d6a4c;
-    --warning: #76571a;
-    --danger: #a3352a;
-    --success-soft: #e2f0e8;
-    --success-border: #b9d9c7;
-    --warning-soft: #f5ecd8;
-    --warning-border: #e2cf9f;
-    --danger-soft: #f8e4df;
-    --danger-border: #ebbdb3;
-    --on-state: #ffffff;
-
-    /* La lámina: constante en los dos temas. */
-    --sheet: #15397c;
-    --sheet-deep: #102d63;
-    --sheet-ink: #ffffff;
-    --sheet-ink-2: #c4d4f0;
-    --sheet-ink-3: #9fb6e0;
-    --sheet-line: #6f8fcb;
-    /* La nube de revisión: lo que pide atención. En la lámina y en la hoja. */
-    --revision: #b8321f;
-    --revision-on-sheet: #ff9a80;
-
-    --radius-sm: 2px;
-    --radius: 3px;
-    --radius-lg: 4px;
-    --shadow-sm: 0 1px 0 rgba(14, 31, 69, 0.06);
-    --shadow-md: 0 8px 24px -10px rgba(14, 31, 69, 0.25);
-    --shadow-pop: 0 18px 40px -12px rgba(14, 31, 69, 0.35);
-
-    --font-display: var(--font-barlow-condensed), "Barlow Condensed", var(--font-geist),
-      sans-serif;
+  [data-world="campus"] {
+    --bg-page: #f4f5f8;
+    --radius-sm: 8px;
+    --radius: 12px;
+    --radius-lg: 16px;
+    --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05), 0 1px 3px rgba(16, 24, 40, 0.07);
+    --shadow-md: 0 10px 28px -10px rgba(16, 24, 40, 0.18);
+    --shadow-pop: 0 18px 40px -12px rgba(16, 24, 40, 0.28);
   }
 
-  :root[data-theme="dark"] [data-world="cianotipo"] {
-    --bg: #0a1833;
-    --bg-subtle: #0d1d3c;
-    --bg-panel: #112346;
-    --bg-hover: #162b54;
-    --text: #eaf1fc;
-    --text-2: #b7c6e3;
-    --text-3: #93a6ca;
-    --text-4: #6d82aa;
-    --border: #1d3461;
-    --border-strong: #6379a4;
-
-    --accent: #7aa5f5;
-    --accent-hover: #9dbdf8;
-    --accent-soft: #1b3566;
-    --accent-tint: #13284f;
-    --accent-text: #b3cbf8;
-    --on-accent: #0a1833;
-
-    --success: #6fcb9d;
-    --warning: #e0b25c;
-    --danger: #f28f7d;
-    --success-soft: #12302a;
-    --success-border: #245443;
-    --warning-soft: #2d2716;
-    --warning-border: #57492a;
-    --danger-soft: #35201f;
-    --danger-border: #663a35;
-    --on-state: #0a1833;
-
-    --sheet: #15397c;
-    --sheet-deep: #102d63;
-    --sheet-ink: #ffffff;
-    --sheet-ink-2: #c4d4f0;
-    --sheet-ink-3: #9fb6e0;
-    --sheet-line: #6f8fcb;
-    --revision: #ff8f73;
-    --revision-on-sheet: #ff9a80;
-
-    --shadow-sm: 0 1px 0 rgba(0, 0, 0, 0.4);
-    --shadow-md: 0 8px 24px -10px rgba(0, 0, 0, 0.6);
+  :root[data-theme="dark"] [data-world="campus"] {
+    --bg-page: #0e0e11;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+    --shadow-md: 0 10px 28px -10px rgba(0, 0, 0, 0.65);
     --shadow-pop: 0 18px 40px -12px rgba(0, 0, 0, 0.75);
   }
 }
@@ -563,102 +482,57 @@
   }
 
   /*
-    La lámina del mundo Cianotipo: azul de Prusia con la retícula blanca de la
-    copia heliográfica. Misma grilla que la pantalla de acceso (28/140 px),
-    pero dibujada con la tinta de la lámina y no con el acento.
+    La barra lateral en el navy de la marca (panel, profesor y alumno), en los
+    dos temas.
+
+    No se pinta elemento por elemento: la barra redefine los tokens que usan
+    sus hijos, y todo lo de adentro —ítems, íconos, contadores, el avatar, el
+    selector de tema— queda en tinta blanca sin tocar un solo `.tsx`. El
+    hover y el ítem activo aclaran apenas el navy con un velo blanco; el
+    contraste del texto blanco lo verifica `tests/unit/mundo-campus.test.ts`.
   */
-  .lamina {
-    background-color: var(--sheet);
-    color: var(--sheet-ink);
-    background-image:
-      linear-gradient(
-        to right,
-        color-mix(in srgb, var(--sheet-ink) 13%, transparent) 1px,
-        transparent 1px
-      ),
-      linear-gradient(
-        to bottom,
-        color-mix(in srgb, var(--sheet-ink) 13%, transparent) 1px,
-        transparent 1px
-      ),
-      linear-gradient(
-        to right,
-        color-mix(in srgb, var(--sheet-ink) 5%, transparent) 1px,
-        transparent 1px
-      ),
-      linear-gradient(
-        to bottom,
-        color-mix(in srgb, var(--sheet-ink) 5%, transparent) 1px,
-        transparent 1px
-      );
-    background-size:
-      140px 140px,
-      140px 140px,
-      28px 28px,
-      28px 28px;
-    background-position: -1px -1px;
+  .barra-marca {
+    /* El texto sin clase propia hereda el color ya resuelto de la página: acá se fija. */
+    color: var(--barra-tinta);
+    --bg-subtle: var(--barra-fondo);
+    --text: var(--barra-tinta);
+    --text-2: var(--barra-tinta);
+    --text-3: var(--barra-tinta);
+    --text-4: var(--barra-tinta);
+    --border: rgba(255, 255, 255, 0.12);
+    --border-strong: rgba(255, 255, 255, 0.24);
+    --bg-hover: rgba(255, 255, 255, 0.08);
+    --accent-tint: rgba(255, 255, 255, 0.14);
+    --accent-soft: rgba(255, 255, 255, 0.16);
+    --accent-text: var(--barra-tinta);
+    --accent: var(--barra-tinta);
+    --on-accent: var(--barra-fondo);
   }
 
   /*
-    El trazado de la cadena de cotas: los tramos ya cursados se dibujan una
-    vez, de izquierda a derecha, como la línea que aparece al revelar la
-    copia. Es el único movimiento de la pantalla. Con movimiento reducido,
-    la regla global de abajo lo deja en su estado final.
+    El progreso de un curso: los segmentos de las clases a las que el alumno
+    ya asistió aparecen uno tras otro al cargar la pantalla. Es el único
+    movimiento del portal.
   */
-  .cota-tramo {
+  .progreso-tramo {
     transform-origin: left center;
-    animation: cota-revelar 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
-    animation-delay: calc(var(--i, 0) * 40ms + 120ms);
+    animation: progreso-revelar 500ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: calc(var(--i, 0) * 35ms + 100ms);
   }
-  @keyframes cota-revelar {
+  @keyframes progreso-revelar {
     from {
       transform: scaleX(0);
+      opacity: 0;
     }
   }
 
-  /*
-    La barra del portal dentro del mundo Cianotipo. La barra es la misma que
-    usa el profesor —un solo componente—, así que el mundo la ajusta desde acá
-    y no desde el `.tsx`: el profesor no ve ninguno de estos cambios.
-    El ítem activo se vuelve un recorte de lámina: azul de Prusia con tinta
-    blanca, el mismo objeto que domina la pantalla.
-  */
-  [data-world="cianotipo"] .portal-nav-label,
-  [data-world="cianotipo"] .portal-vista-label {
-    font-size: 12px;
-    letter-spacing: 0.16em;
+  /* El fondo de la página del alumno: gris, para que las tarjetas se lean. */
+  [data-world="campus"] .portal-contenido-fondo {
+    background-color: var(--bg-page);
   }
-  [data-world="cianotipo"] .portal-nav-brand {
-    font-family: var(--font-display);
-    font-size: 17px;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-  }
-  /*
-    El título de cada pantalla del alumno es el título de la lámina: la misma
-    condensada en mayúsculas. Va acá y no pantalla por pantalla para que una
-    pantalla nueva del alumno lo herede sin que nadie se acuerde.
-  */
-  [data-world="cianotipo"] main h1 {
-    font-family: var(--font-display);
-    text-transform: uppercase;
-    letter-spacing: 0.02em;
-  }
-  [data-world="cianotipo"] .portal-nav-item[aria-current="page"] {
-    background-color: var(--sheet);
-    color: var(--sheet-ink);
-  }
-  [data-world="cianotipo"] .portal-nav-item[aria-current="page"] svg {
-    color: var(--sheet-ink);
-  }
-
-  /* El sello de revisión: tinta que se apoya torcida sobre la hoja. */
-  .sello {
-    transform: rotate(-4deg);
-    border: 2px solid currentColor;
-    outline: 1px solid currentColor;
-    outline-offset: 2px;
+  /* Las pantallas del alumno usan el ancho de la pantalla, hasta un tope. */
+  [data-world="campus"] .portal-contenido {
+    max-width: 1440px;
   }
 }
 
@@ -669,8 +543,8 @@
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
   }
-  /* El retardo escalonado también se va: si no, el tramo queda oculto un rato. */
-  .cota-tramo {
+  /* El retardo escalonado también se va: si no, el segmento queda oculto un rato. */
+  .progreso-tramo {
     animation: none;
   }
 }

@@ -1,40 +1,14 @@
 import { describe, expect, it } from "vitest";
-import {
-  debeRotular,
-  estadoDeTramo,
-  resumenDeCadena,
-} from "@/components/portal/plano";
+import { estadoDeTramo, resumenDeCadena } from "@/components/portal/campus";
 
 /**
- * La cadena de cotas: el avance de una cursada contado clase por clase.
+ * El progreso de un curso, contado clase por clase.
  *
- * Lo que se prueba acá es lo que no se ve en una captura: qué números se
- * rotulan cuando no entran todos, qué estado toma un tramo sin lista, y qué
- * escucha quien usa un lector de pantalla. Un error en cualquiera de las tres
- * cosas le dice a una persona algo falso sobre su propia cursada.
+ * Lo que se prueba acá es lo que no se ve en una captura: qué estado toma una
+ * clase sin lista y qué escucha quien usa un lector de pantalla. Un error en
+ * cualquiera de las dos cosas le dice a una persona algo falso sobre su
+ * propio curso.
  */
-
-describe("debeRotular — qué números de clase se escriben", () => {
-  const rotulados = (total: number, next: number | null = null) =>
-    Array.from({ length: total }, (_, i) => i + 1).filter((n) => debeRotular(n, total, next));
-
-  it("hasta 16 clases, todas llevan su número", () => {
-    expect(rotulados(12)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
-  });
-
-  it("entre 17 y 32, van de a dos, más la primera y la última", () => {
-    expect(rotulados(20)).toEqual([1, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20]);
-  });
-
-  it("con muchas clases van de a cinco, sin pisar el último número", () => {
-    // 36 clases: el 35 quedaría pegado al 36 y se omite.
-    expect(rotulados(36)).toEqual([1, 5, 10, 15, 20, 25, 30, 36]);
-  });
-
-  it("la clase que sigue siempre lleva su número, aunque no le toque", () => {
-    expect(rotulados(36, 17)).toContain(17);
-  });
-});
 
 describe("estadoDeTramo — qué dibuja cada clase", () => {
   it("con lista, cada clase dice lo que pasó", () => {

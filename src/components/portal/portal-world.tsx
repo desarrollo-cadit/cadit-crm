@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 
 /**
  * Las rutas del portal que son del PROFESOR. Todo lo demás, si la persona es
- * alumno, se pinta en el mundo "Cianotipo de obra".
+ * alumno, se pinta en el mundo "campus".
  *
  * Es una lista de exclusión y no de inclusión a propósito: una pantalla nueva
  * del alumno entra al mundo sin que nadie se acuerde de sumarla, y una del
@@ -36,7 +36,7 @@ export function PortalWorld({
   children: React.ReactNode;
 }) {
   const pathname = usePathname() ?? "";
-  const world = isStudent && isStudentWorldPath(pathname) ? "cianotipo" : undefined;
+  const world = isStudent && isStudentWorldPath(pathname) ? "campus" : undefined;
 
   return (
     <div data-world={world} className="contents">

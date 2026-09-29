@@ -135,7 +135,7 @@ export function PortalNav({
       >
         <IsotipoCadIT className="h-[34px] w-[34px] rounded-md" />
         <span className="min-w-0">
-          <span className="portal-nav-brand block truncate text-[16px] font-[650] leading-tight tracking-tight">
+          <span className="block truncate text-[16px] font-[650] leading-tight tracking-tight">
             {branding.name}
           </span>
           <span className="block text-[11px] text-text-3">Mi portal</span>
@@ -201,7 +201,7 @@ export function PortalNav({
   return (
     <>
       {/* Escritorio: la barra, siempre presente. */}
-      <aside className="hidden w-60 shrink-0 flex-col border-r border-border bg-subtle px-3 pb-3.5 pt-4 md:flex">
+      <aside className="barra-marca hidden w-60 shrink-0 flex-col border-r border-border bg-subtle px-3 pb-3.5 pt-4 md:flex">
         {contenido}
       </aside>
 
@@ -209,7 +209,7 @@ export function PortalNav({
         Celular: encabezado fijo + cajón. El botón mide 44px porque es el
         mínimo para un pulgar, y el portal se usa parado en un aula.
       */}
-      <header className="sticky top-0 z-30 flex items-center gap-2 border-b border-border bg-subtle px-2 py-2 md:hidden">
+      <header className="barra-marca sticky top-0 z-30 flex items-center gap-2 border-b border-border bg-subtle px-2 py-2 md:hidden">
         <button
           type="button"
           onClick={() => setAbierto(true)}
@@ -221,7 +221,7 @@ export function PortalNav({
         </button>
         <Link href="/portal" className="flex min-w-0 items-center gap-2">
           <IsotipoCadIT className="h-7 w-7 rounded-sm" />
-          <span className="portal-nav-brand truncate text-sm font-semibold">{branding.name}</span>
+          <span className="truncate text-sm font-semibold">{branding.name}</span>
         </Link>
         <div className="flex-1" />
         <ThemeToggle initial={theme} />
@@ -235,7 +235,7 @@ export function PortalNav({
             className="absolute inset-0 bg-overlay"
             onClick={() => setAbierto(false)}
           />
-          <aside className="absolute inset-y-0 left-0 flex w-64 max-w-[85vw] flex-col border-r border-border bg-subtle px-3 pb-3.5 pt-4 shadow-pop">
+          <aside className="barra-marca absolute inset-y-0 left-0 flex w-64 max-w-[85vw] flex-col border-r border-border bg-subtle px-3 pb-3.5 pt-4 shadow-pop">
             <button
               type="button"
               onClick={() => setAbierto(false)}
@@ -263,7 +263,7 @@ function Grupo({
 }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="portal-nav-label px-2.5 pb-1 font-display text-[10.5px] font-semibold uppercase tracking-wide text-text-3">
+      <span className="px-2.5 pb-1 text-[10.5px] font-semibold uppercase tracking-wide text-text-3">
         {label}
       </span>
       {items.map((item) => {
@@ -276,7 +276,7 @@ function Grupo({
             className={cn(
               // 44px de alto en celular, 38 en escritorio: el pulgar necesita
               // el blanco, el mouse no.
-              "portal-nav-item flex min-h-[44px] items-center gap-[11px] rounded-sm px-2.5 py-2 text-sm font-medium transition-colors md:min-h-0",
+              "flex min-h-[44px] items-center gap-[11px] rounded-sm px-2.5 py-2 text-sm font-medium transition-colors md:min-h-0",
               active
                 ? "bg-brand-tint font-semibold text-brand-text"
                 : "text-text-2 hover:bg-accent"
@@ -305,7 +305,7 @@ function ListaCursos({
 }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="portal-nav-label px-2.5 pb-1 font-display text-[10.5px] font-semibold uppercase tracking-wide text-text-3">
+      <span className="px-2.5 pb-1 text-[10.5px] font-semibold uppercase tracking-wide text-text-3">
         {titulo}
       </span>
       {cursos.map((c) => {
@@ -317,7 +317,7 @@ function ListaCursos({
             href={href}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "portal-nav-item flex min-h-[44px] items-center gap-[11px] rounded-sm px-2.5 py-2 text-sm transition-colors md:min-h-0",
+              "flex min-h-[44px] items-center gap-[11px] rounded-sm px-2.5 py-2 text-sm transition-colors md:min-h-0",
               active
                 ? "bg-brand-tint font-semibold text-brand-text"
                 : "text-text-2 hover:bg-accent"

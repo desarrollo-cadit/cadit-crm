@@ -9,23 +9,9 @@ import {
 import { withOrganizationScope } from "@/lib/db/with-tenant";
 import { getBranding } from "@/server/branding";
 import { studentNavCourses } from "@/server/student-portal";
-import { Barlow_Condensed } from "next/font/google";
 import { PortalNav } from "@/components/portal/portal-nav";
 import { PortalWorld } from "@/components/portal/portal-world";
 import { parseThemeCookie, THEME_COOKIE } from "@/lib/theme";
-
-/**
- * La voz de los rótulos del mundo del alumno ("Cianotipo de obra"): una
- * condensada técnica, como la letra de un cajetín de plano. Se carga solo en
- * el portal —el panel del staff no la necesita— y, como Geist, next/font la
- * descarga en BUILD y la sirve self-hosted.
- */
-const barlowCondensed = Barlow_Condensed({
-  subsets: ["latin"],
-  weight: ["500", "600", "700"],
-  variable: "--font-barlow-condensed",
-  display: "swap",
-});
 
 /**
  * 021 — El caparazón del portal: **la misma forma que el panel**.
@@ -76,7 +62,7 @@ export default async function PortalLayout({
   return (
     <div
       data-surface="portal"
-      className={`${barlowCondensed.variable} flex min-h-screen flex-col bg-background md:h-screen md:flex-row md:overflow-hidden`}
+      className="flex min-h-screen flex-col bg-background md:h-screen md:flex-row md:overflow-hidden"
     >
       {/*
         El mundo del alumno se enciende adentro, por ruta: una misma persona
@@ -98,8 +84,8 @@ export default async function PortalLayout({
           por fuera en celular, donde el encabezado es pegajoso y el cajón vive
           sobre todo lo demás.
         */}
-        <main className="min-w-0 flex-1 bg-background md:overflow-y-auto">
-          <div className="mx-auto w-full max-w-5xl px-4 py-5 md:px-8 md:py-8">
+        <main className="portal-contenido-fondo min-w-0 flex-1 bg-background md:overflow-y-auto">
+          <div className="portal-contenido mx-auto w-full max-w-5xl px-4 py-5 md:px-8 md:py-8 lg:px-10">
             {children}
           </div>
         </main>
