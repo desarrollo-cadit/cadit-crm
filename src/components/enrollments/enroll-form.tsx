@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { CompanyDto, ContactDto } from "@/lib/types";
+import type { CohortDto, CompanyDto, ContactDto } from "@/lib/types";
 import { fullName } from "@/lib/utils";
+import { cohortesInscribibles, etiquetaDeCohorte } from "@/lib/cohortes-inscribibles";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -11,31 +12,64 @@ import { Textarea } from "@/components/ui/textarea";
 
 type MemberOption = { userId: string; name: string };
 
+/** Lo que el formulario le cuenta a quien lo abrió cuando la inscripción se creó. */
+export type EnrollSavedResult = {
+  cohortId: string;
+  /** Etiqueta legible de la cohorte, si el formulario la conoce (solo cuando la eligió acá). */
+  cohortLabel: string | null;
+};
+
+function fechaCorta(iso: string): string {
+  return new Date(iso).toLocaleDateString("es-UY", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 /**
  * 005 (T021, US2, contracts/enrollments.md) — alta comercial de una
  * inscripción para ventas: monto, cuotas, cédula, factura, recibo, vendedor
  * y empresa opcional, contra un contacto existente o uno nuevo. El dedup de
  * email/celular lo aplica el servidor (409 explicable, DV-002/DV-003).
+ *
+ * Inscribir desde el contacto — el mismo formulario sirve para arrancar desde
+ * una PERSONA (legajo, bandeja, listado de alumnos):
+ * - sin `cohortId`, pide la cohorte con un selector (solo las que se pueden
+ *   inscribir: ver `cohortesInscribibles`);
+ * - con `initialContact`, arranca con ese contacto elegido y bloqueado.
  */
 export function EnrollForm({
   cohortId,
+  initialContact,
   companies,
   members,
   onClose,
   onSaved,
   onCompanyCreated,
 }: {
-  cohortId: string;
+  /** Sin cohorte fija, el formulario muestra el selector de cohorte. */
+  cohortId?: string;
+  /** Contacto ya elegido: sin búsqueda ni cambio de modo. */
+  initialContact?: { id: string; name: string };
   companies: CompanyDto[];
   members: MemberOption[];
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (result: EnrollSavedResult) => void;
   onCompanyCreated: (company: CompanyDto) => void;
 }) {
-  const [mode, setMode] = useState<"existing" | "new">("new");
+  const [mode, setMode] = useState<"existing" | "new">(
+    initialContact ? "existing" : "new"
+  );
   const [contactQuery, setContactQuery] = useState("");
   const [contactResults, setContactResults] = useState<ContactDto[]>([]);
-  const [contactId, setContactId] = useState<string | null>(null);
+  const [contactId, setContactId] = useState<string | null>(
+    initialContact?.id ?? null
+  );
+
+  const [cohortOptions, setCohortOptions] = useState<CohortDto[] | null>(null);
+  const [cohortLoadFailed, setCohortLoadFailed] = useState(false);
+  const [selectedCohortId, setSelectedCohortId] = useState("");
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -57,8 +91,30 @@ export function EnrollForm({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Sin cohorte fija: se carga la lista una vez, al abrir.
   useEffect(() => {
-    if (mode !== "existing" || !contactQuery.trim()) {
+    if (cohortId) return;
+    let cancelled = false;
+    void (async () => {
+      const res = await fetch("/api/cohorts").catch(() => null);
+      if (cancelled) return;
+      if (!res?.ok) {
+        setCohortLoadFailed(true);
+        setCohortOptions([]);
+        return;
+      }
+      const data = (await res.json()) as { cohorts: CohortDto[] };
+      if (!cancelled) setCohortOptions(cohortesInscribibles(data.cohorts));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [cohortId]);
+
+  const contactLocked = Boolean(initialContact);
+
+  useEffect(() => {
+    if (contactLocked || mode !== "existing" || !contactQuery.trim()) {
       setContactResults([]);
       return;
     }
@@ -71,7 +127,7 @@ export function EnrollForm({
       setContactResults(data.contacts);
     }, 250);
     return () => clearTimeout(t);
-  }, [mode, contactQuery]);
+  }, [contactLocked, mode, contactQuery]);
 
   async function addCompany() {
     const legalName = newCompanyName.trim();
@@ -90,6 +146,11 @@ export function EnrollForm({
 
   async function submit() {
     setError(null);
+    const targetCohortId = cohortId ?? selectedCohortId;
+    if (!targetCohortId) {
+      setError("Falta elegir la cohorte.");
+      return;
+    }
     if (mode === "existing" && !contactId) {
       setError("Elegí un contacto existente o cambiá a 'Contacto nuevo'");
       return;
@@ -101,7 +162,7 @@ export function EnrollForm({
 
     setSaving(true);
     const payload = {
-      cohortId,
+      cohortId: targetCohortId,
       ...(mode === "existing"
         ? { contactId }
         : {
@@ -136,7 +197,11 @@ export function EnrollForm({
       setError(body?.error?.message ?? "No se pudo inscribir al alumno");
       return;
     }
-    onSaved();
+    const chosen = cohortOptions?.find((c) => c.id === targetCohortId);
+    onSaved({
+      cohortId: targetCohortId,
+      cohortLabel: chosen ? etiquetaDeCohorte(chosen) : null,
+    });
   }
 
   return (
@@ -150,97 +215,144 @@ export function EnrollForm({
       >
         <h3 className="mb-4 font-semibold">Inscribir alumno</h3>
 
-        <div className="mb-3 flex gap-2 text-xs">
-          <button
-            type="button"
-            className={`rounded-full px-3 py-1 ${mode === "new" ? "bg-primary text-primary-foreground" : "border"}`}
-            onClick={() => setMode("new")}
-          >
-            Contacto nuevo
-          </button>
-          <button
-            type="button"
-            className={`rounded-full px-3 py-1 ${mode === "existing" ? "bg-primary text-primary-foreground" : "border"}`}
-            onClick={() => setMode("existing")}
-          >
-            Contacto existente
-          </button>
-        </div>
-
-        {mode === "new" ? (
-          <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="enr-first-name">Nombre</Label>
-                <Input
-                  id="enr-first-name"
-                  value={firstName}
-                  onChange={(e) => setFirstName(e.target.value)}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="enr-last-name">Apellido</Label>
-                <Input
-                  id="enr-last-name"
-                  value={lastName}
-                  onChange={(e) => setLastName(e.target.value)}
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="enr-phone">Celular</Label>
-                <Input
-                  id="enr-phone"
-                  placeholder="5215512345678"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="enr-email">Email</Label>
-                <Input id="enr-email" value={email} onChange={(e) => setEmail(e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="enr-national-id">Cédula</Label>
-                <Input
-                  id="enr-national-id"
-                  value={nationalId}
-                  onChange={(e) => setNationalId(e.target.value)}
-                />
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-1.5">
-            <Label htmlFor="enr-contact-search">Buscar contacto</Label>
-            <Input
-              id="enr-contact-search"
-              placeholder="Nombre o teléfono…"
-              value={contactQuery}
-              onChange={(e) => {
-                setContactQuery(e.target.value);
-                setContactId(null);
-              }}
-            />
-            {contactResults.length > 0 && (
-              <ul className="max-h-40 overflow-y-auto rounded-md border">
-                {contactResults.map((c) => (
-                  <li key={c.id}>
-                    <button
-                      type="button"
-                      className={`block w-full px-3 py-1.5 text-left text-sm hover:bg-accent ${contactId === c.id ? "bg-accent" : ""}`}
-                      onClick={() => setContactId(c.id)}
-                    >
-                      {fullName(c)} · {c.phone}
-                    </button>
-                  </li>
-                ))}
-              </ul>
+        {!cohortId && (
+          <div className="mb-4 space-y-1.5">
+            <Label htmlFor="enr-cohort">Cohorte</Label>
+            <Select
+              id="enr-cohort"
+              value={selectedCohortId}
+              disabled={cohortOptions === null}
+              onChange={(e) => setSelectedCohortId(e.target.value)}
+            >
+              <option value="">
+                {cohortOptions === null ? "Cargando cohortes…" : "Elegí una cohorte"}
+              </option>
+              {(cohortOptions ?? []).map((c) => (
+                <option key={c.id} value={c.id}>
+                  {`${etiquetaDeCohorte(c)} · ${
+                    c.status === "en_curso"
+                      ? `en curso desde el ${fechaCorta(c.startDate)}`
+                      : `empieza el ${fechaCorta(c.startDate)}`
+                  }`}
+                </option>
+              ))}
+            </Select>
+            {cohortLoadFailed && (
+              <p className="text-xs text-destructive">
+                No pudimos cargar las cohortes. Podés cerrar el formulario y
+                volver a abrirlo en un rato.
+              </p>
+            )}
+            {!cohortLoadFailed && cohortOptions?.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                Por ahora no tenemos cohortes abiertas para inscribir.
+              </p>
             )}
           </div>
+        )}
+
+        {initialContact ? (
+          <div className="space-y-1.5">
+            <p className="text-sm font-medium">Alumno</p>
+            <p className="rounded-md border bg-subtle px-3 py-2 text-sm">
+              {initialContact.name}
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="mb-3 flex gap-2 text-xs">
+              <button
+                type="button"
+                className={`rounded-full px-3 py-1 ${mode === "new" ? "bg-primary text-primary-foreground" : "border"}`}
+                onClick={() => setMode("new")}
+              >
+                Contacto nuevo
+              </button>
+              <button
+                type="button"
+                className={`rounded-full px-3 py-1 ${mode === "existing" ? "bg-primary text-primary-foreground" : "border"}`}
+                onClick={() => setMode("existing")}
+              >
+                Contacto existente
+              </button>
+            </div>
+
+            {mode === "new" ? (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="enr-first-name">Nombre</Label>
+                    <Input
+                      id="enr-first-name"
+                      value={firstName}
+                      onChange={(e) => setFirstName(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="enr-last-name">Apellido</Label>
+                    <Input
+                      id="enr-last-name"
+                      value={lastName}
+                      onChange={(e) => setLastName(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="enr-phone">Celular</Label>
+                    <Input
+                      id="enr-phone"
+                      placeholder="5215512345678"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="enr-email">Email</Label>
+                    <Input id="enr-email" value={email} onChange={(e) => setEmail(e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="enr-national-id">Cédula</Label>
+                    <Input
+                      id="enr-national-id"
+                      value={nationalId}
+                      onChange={(e) => setNationalId(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <Label htmlFor="enr-contact-search">Buscar contacto</Label>
+                <Input
+                  id="enr-contact-search"
+                  placeholder="Nombre o teléfono…"
+                  value={contactQuery}
+                  onChange={(e) => {
+                    setContactQuery(e.target.value);
+                    setContactId(null);
+                  }}
+                />
+                {contactResults.length > 0 && (
+                  <ul className="max-h-40 overflow-y-auto rounded-md border">
+                    {contactResults.map((c) => (
+                      <li key={c.id}>
+                        <button
+                          type="button"
+                          className={`block w-full px-3 py-1.5 text-left text-sm hover:bg-accent ${contactId === c.id ? "bg-accent" : ""}`}
+                          onClick={() => setContactId(c.id)}
+                        >
+                          {fullName(c)} · {c.phone}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </>
         )}
 
         <div className="mt-4 space-y-3 border-t pt-3">

@@ -27,6 +27,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { EnrollLauncher } from "@/components/enrollments/enroll-launcher";
 
 const PAGE_SIZE = 20;
 
@@ -55,7 +56,7 @@ function formatDate(iso: string): string {
   });
 }
 
-export function ContactsClient() {
+export function ContactsClient({ canEnroll = false }: { canEnroll?: boolean }) {
   const [contacts, setContacts] = useState<ContactDto[]>([]);
   /** 014 — Qué pasó al dar de baja: borrado o archivado, y por qué. */
   const [avisoBaja, setAvisoBaja] = useState<string | null>(null);
@@ -191,6 +192,14 @@ export function ContactsClient() {
               className="w-72 pl-8"
             />
           </div>
+          {canEnroll && (
+            <EnrollLauncher
+              className="flex flex-col items-end"
+              label="Inscribir alumno"
+              variant="default"
+              onEnrolled={() => void refetch()}
+            />
+          )}
         </div>
       </header>
 

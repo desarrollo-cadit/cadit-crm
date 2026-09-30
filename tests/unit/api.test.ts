@@ -82,6 +82,37 @@ describe("withAuth: mapeo de errores (DV-002)", () => {
     expect(body.error.message).toBe("Ya existe un contacto con ese email");
   });
 
+  /**
+   * Inscribir desde el contacto — el mismo alumno dos veces en la misma
+   * cohorte choca con `enrollment_contact_cohort_uq`. Ahora que se puede
+   * inscribir desde el legajo, la bandeja y el listado, es un error que se va
+   * a ver más seguido: el texto habla de la persona, no del "contacto".
+   */
+  it("una inscripción repetida en la misma cohorte responde 409 con un mensaje claro", async () => {
+    const { requireSession } = await import("@/lib/auth/session");
+    vi.mocked(requireSession).mockResolvedValue({
+      userId: "usr_1",
+      organizationId: "org_1",
+      role: "member",
+    });
+
+    const { withAuth } = await import("@/lib/api");
+    const handler = withAuth(async () => {
+      const err = new Error("duplicate key value") as Error & {
+        code: string;
+        constraint_name: string;
+      };
+      err.code = "23505";
+      err.constraint_name = "enrollment_contact_cohort_uq";
+      throw err;
+    });
+
+    const res = await handler();
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: { message: string } };
+    expect(body.error.message).toBe("Esta persona ya está inscripta en esa cohorte.");
+  });
+
   it("una constraint 23505 sin nombre reconocido cae al mensaje genérico", async () => {
     const { requireSession } = await import("@/lib/auth/session");
     vi.mocked(requireSession).mockResolvedValue({

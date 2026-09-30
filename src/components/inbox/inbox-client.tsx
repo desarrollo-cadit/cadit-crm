@@ -12,7 +12,7 @@ import { MessageThread } from "./message-thread";
 import { Composer } from "./composer";
 import { ContactPanel } from "./contact-panel";
 
-export function InboxClient() {
+export function InboxClient({ canEnroll = false }: { canEnroll?: boolean }) {
   const [conversations, setConversations] = useState<ConversationDto[] | null>(
     null
   );
@@ -233,6 +233,7 @@ export function InboxClient() {
             <ContactPanel
               conversation={selected}
               refreshKey={detailRev}
+              canEnroll={canEnroll}
               onPatchConversation={patchConversation}
               onClose={() => togglePanel(false)}
             />

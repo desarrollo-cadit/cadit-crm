@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Award, GraduationCap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EnrollLauncher } from "@/components/enrollments/enroll-launcher";
 
 type RecordCourse = {
   enrollmentId: string;
@@ -59,7 +60,14 @@ const APROBACION: Record<RecordCourse["approval"], { label: string; variant: "de
  * arma esa clave y los montos nunca salieron. Esconderlos en el navegador
  * sería habérselos mandado igual.
  */
-export function StudentRecordClient({ contactId }: { contactId: string }) {
+export function StudentRecordClient({
+  contactId,
+  canEnroll = false,
+}: {
+  contactId: string;
+  /** Resuelto en el servidor: `inscripciones.editar`. */
+  canEnroll?: boolean;
+}) {
   const [data, setData] = useState<StudentRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -97,13 +105,22 @@ export function StudentRecordClient({ contactId }: { contactId: string }) {
 
   return (
     <div className="space-y-6 p-6">
-      <header>
-        <h2 className="text-lg font-semibold">{data.contact.name}</h2>
-        <p className="text-sm text-muted-foreground">
-          {[data.contact.email, data.contact.phone, data.contact.nationalId]
-            .filter(Boolean)
-            .join(" · ") || "Sin datos de contacto"}
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-semibold">{data.contact.name}</h2>
+          <p className="text-sm text-muted-foreground">
+            {[data.contact.email, data.contact.phone, data.contact.nationalId]
+              .filter(Boolean)
+              .join(" · ") || "Sin datos de contacto"}
+          </p>
+        </div>
+        {canEnroll && (
+          <EnrollLauncher
+            className="flex flex-col items-end"
+            initialContact={{ id: data.contact.id, name: data.contact.name }}
+            onEnrolled={() => void refetch()}
+          />
+        )}
       </header>
 
       <section className="space-y-3">

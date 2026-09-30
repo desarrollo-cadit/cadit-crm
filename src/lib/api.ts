@@ -141,7 +141,7 @@ const UNIQUE_VIOLATION_MESSAGES: Record<string, string> = {
   // enrollments), así que en la práctica esta constraint es la que salta por
   // celular duplicado — el mensaje habla en esos términos, no de jerga interna.
   contact_org_wa_identity_uq: "Ya existe un contacto con ese celular",
-  enrollment_contact_cohort_uq: "Ese contacto ya está inscripto en esa cohorte",
+  enrollment_contact_cohort_uq: "Esta persona ya está inscripta en esa cohorte.",
   enrollment_contact_general_uq: "Ese contacto ya tiene un lead general abierto",
   // 006 — el server ya sufija el slug para evitarlo; esto cubre la carrera de
   // dos altas simultáneas con el mismo nombre.

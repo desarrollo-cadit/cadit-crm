@@ -4890,6 +4890,78 @@ async function main() {
     `${desmarcarVacia.res.status} ${JSON.stringify(desmarcarVacia.json?.error)}`
   );
 
+  // Inscribir desde el contacto — el legajo, la bandeja y el listado de
+  // alumnos abren el mismo formulario SIN cohorte fija: la cohorte se elige
+  // de `/api/cohorts` y el contacto llega ya elegido (`contactId`). Lo que se
+  // prueba acá es el contrato del servidor que esas tres puertas usan.
+  console.log("\n== Inscribir desde el contacto ==");
+  const selloInsc = Date.now();
+  const cursoInsc = await api("/api/courses", {
+    method: "POST",
+    body: JSON.stringify({ name: `Curso Inscribir Desde Contacto ${selloInsc}` }),
+  });
+  const cursoInscId = cursoInsc.json?.course?.id ?? cursoInsc.json?.id;
+  const nuevaCohorteInsc = async (nombre) => {
+    const r = await api("/api/cohorts", {
+      method: "POST",
+      body: JSON.stringify({
+        courseId: cursoInscId,
+        name: `${nombre} ${selloInsc}`,
+        startDate: isoDia(15),
+        endDate: isoDia(60),
+      }),
+    });
+    return r.json?.cohort?.id ?? r.json?.id;
+  };
+  const cohInscA = await nuevaCohorteInsc("Origen");
+  const cohInscB = await nuevaCohorteInsc("Destino");
+  ok("cohortes para inscribir desde el contacto creadas", Boolean(cohInscA && cohInscB));
+
+  const listadoInsc = await api("/api/cohorts");
+  ok(
+    "el selector de cohorte las encuentra en /api/cohorts (no finalizadas)",
+    listadoInsc.res.ok &&
+      (listadoInsc.json?.cohorts ?? []).some(
+        (c) => c.id === cohInscB && c.status !== "finalizada"
+      ),
+    `${listadoInsc.res.status}`
+  );
+
+  // Un contacto que ya existe: nace con su primera inscripción.
+  const telInsc = `5989${String(selloInsc).slice(-7)}`;
+  const primeraInsc = await api("/api/enrollments", {
+    method: "POST",
+    body: JSON.stringify({
+      cohortId: cohInscA,
+      contact: { firstName: "Persona", lastName: `Desde Contacto ${selloInsc}`, phone: telInsc },
+    }),
+  });
+  const contactoInscId = primeraInsc.json?.enrollment?.contactId;
+  ok("contacto de prueba creado con su primera inscripción", Boolean(contactoInscId), JSON.stringify(primeraInsc.json));
+
+  const desdeContacto = await api("/api/enrollments", {
+    method: "POST",
+    body: JSON.stringify({ cohortId: cohInscB, contactId: contactoInscId }),
+  });
+  ok(
+    "inscribir un contacto existente en otra cohorte responde 201",
+    desdeContacto.res.status === 201 &&
+      desdeContacto.json?.enrollment?.contactId === contactoInscId &&
+      desdeContacto.json?.enrollment?.cohortId === cohInscB,
+    `${desdeContacto.res.status} ${JSON.stringify(desdeContacto.json)}`
+  );
+
+  const repetidaInsc = await api("/api/enrollments", {
+    method: "POST",
+    body: JSON.stringify({ cohortId: cohInscB, contactId: contactoInscId }),
+  });
+  ok(
+    "inscribir a la misma persona dos veces en la misma cohorte responde 409 con mensaje claro",
+    repetidaInsc.res.status === 409 &&
+      repetidaInsc.json?.error?.message === "Esta persona ya está inscripta en esa cohorte.",
+    `${repetidaInsc.res.status} ${JSON.stringify(repetidaInsc.json?.error)}`
+  );
+
   // 029 — Navegación, material en un pedido y agregados de la especialización.
   await seccion029({ api, ok, BASE, getCookie: () => cookie });
 

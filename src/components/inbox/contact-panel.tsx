@@ -8,6 +8,7 @@ import { cn, formatPhone } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { EnrollLauncher } from "@/components/enrollments/enroll-launcher";
 
 const HANDOFF_LABELS: Record<string, string> = {
   cliente: "El cliente pidió un humano",
@@ -20,12 +21,15 @@ const HANDOFF_LABELS: Record<string, string> = {
 export function ContactPanel({
   conversation,
   refreshKey = 0,
+  canEnroll = false,
   onPatchConversation,
   onClose,
 }: {
   conversation: ConversationDto;
   /** Aumenta con cada evento SSE relevante: dispara un refetch en vivo. */
   refreshKey?: number;
+  /** Inscribir desde el contacto — resuelto en el servidor: `inscripciones.editar`. */
+  canEnroll?: boolean;
   onPatchConversation: (patch: {
     aiEnabled?: boolean;
     reactivate?: boolean;
@@ -152,6 +156,15 @@ export function ContactPanel({
               </p>
             </div>
           </div>
+
+          {canEnroll && (
+            <EnrollLauncher
+              key={contactId}
+              className="mt-3"
+              initialContact={{ id: contactId, name: conversation.contact.name }}
+              onEnrolled={() => void refreshLive()}
+            />
+          )}
 
           {conversation.handoffAt && (
             <div className="mt-3 rounded-md border border-warning-border bg-warning-soft p-3">
