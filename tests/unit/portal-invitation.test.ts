@@ -70,7 +70,10 @@ vi.mock("@/lib/m365/client", () => ({ sendMail: (...a: unknown[]) => sendMail(..
 vi.mock("@/lib/env", () => ({
   getEnv: () => ({ APP_BASE_URL: "http://localhost:3000", M365_SENDER: "cursos@x.com" }),
 }));
-vi.mock("@/server/email/templates", () => ({ renderTemplate: () => "<p>hola</p>" }));
+const renderTemplate = vi.fn(() => "<p>hola</p>");
+vi.mock("@/server/email/templates", () => ({
+  renderTemplate: (...a: unknown[]) => renderTemplate(...(a as [])),
+}));
 
 vi.mock("@/lib/auth", () => ({
   getAuth: () => ({
@@ -221,7 +224,34 @@ describe("el correo caído no deja a nadie sin llave", () => {
   beforeEach(() => {
     selectQueue.length = 0;
     sendMail.mockReset();
+    renderTemplate.mockReset();
+    renderTemplate.mockReturnValue("<p>hola</p>");
     vi.resetModules();
+  });
+
+  /**
+   * Pasó en producción: la imagen no traía `docs/email-templates/` y armar el
+   * correo lanzaba ENOENT. La cuenta ya estaba creada, la excepción subía a un
+   * 500 y la contraseña temporal se perdía. Que falte la plantilla es otra
+   * forma de "el correo no salió", y se informa igual.
+   */
+  it("una plantilla que no se puede leer tampoco se lleva la contraseña", async () => {
+    selectQueue.push([{ id: "tch_1", name: "Ovidio Santos", email: "ovidio@x.com" }]);
+    selectQueue.push([]);
+    selectQueue.push([]);
+    renderTemplate.mockImplementation(() => {
+      throw new Error("ENOENT: no such file or directory, open 'acceso-portal.html'");
+    });
+
+    const { grantTeacherPortalAccess } = await import("@/server/access");
+    const r = await grantTeacherPortalAccess("org_1", "tch_1");
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.data.temporaryPassword).toBeTruthy();
+    expect(r.data.emailSentAt).toBeNull();
+    expect(r.data.emailError).toBeTruthy();
+    expect(sendMail).not.toHaveBeenCalled();
   });
 
   it("devuelve la contraseña igual, con el motivo de por qué no salió", async () => {

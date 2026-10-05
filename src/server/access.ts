@@ -478,13 +478,12 @@ export async function grantTeacherPortalAccess(
     .limit(1);
   const existing = existingUsers[0];
 
-  // Un profesor "contacto" para el correo: reusa `sendInvitationEmail`, que
-  // necesita nombre y correo. El apellido va vacío porque `teacher.name` ya
-  // es el nombre completo.
-  const comoContacto = {
+  // El correo solo necesita a quién saludar y adónde mandarlo. `teacher.name`
+  // ya es el nombre completo.
+  const comoContacto: DestinatarioDeInvitacion = {
     firstName: teacher.name,
     email: teacher.email,
-  } as typeof schema.contact.$inferSelect;
+  };
 
   if (existing) {
     const linked = await createAccountLink(organizationId, {
@@ -549,7 +548,7 @@ export async function grantTeacherPortalAccess(
 async function inviteExisting(
   organizationId: string,
   userId: string,
-  contact: typeof schema.contact.$inferSelect,
+  contact: DestinatarioDeInvitacion,
   link: AccountLinkDto
 ): Promise<AccessResult<GrantPortalAccessResult>> {
   const temporaryPassword = generateTemporaryPassword();
@@ -574,9 +573,16 @@ async function inviteExisting(
 /** Lo que pasó con el correo. **Nunca corta el alta**: ver `emailError`. */
 type EnvioDeInvitacion = { emailSentAt: string | null; emailError: string | null };
 
+/**
+ * Lo único que el correo de acceso lee de la persona. Un alumno (fila de
+ * `contact`) lo cumple tal cual; un profesor se arma con estos dos campos, sin
+ * hacerse pasar por una fila de `contact` entera.
+ */
+type DestinatarioDeInvitacion = { firstName: string; email: string | null };
+
 async function sendInvitationEmail(
   organizationId: string,
-  contact: typeof schema.contact.$inferSelect,
+  contact: DestinatarioDeInvitacion,
   temporaryPassword: string,
   kind: AccountLinkKind
 ): Promise<EnvioDeInvitacion> {
@@ -592,10 +598,16 @@ async function sendInvitationEmail(
    * fondo y el texto blanco sobre blanco—.
    */
   const branding = await getBranding(organizationId);
-  const sent = await sendMail({
-    to: contact.email ?? "",
-    subject: `Tu acceso al portal — ${branding.name}`,
-    html: renderTemplate("acceso-portal", {
+
+  /**
+   * Armar el correo también puede fallar, no solo enviarlo: en producción la
+   * imagen no traía la plantilla y esto lanzaba ENOENT. A esta altura la
+   * cuenta YA existe, así que una excepción acá se llevaba la contraseña
+   * temporal en un 500. Se informa como cualquier otro correo que no salió.
+   */
+  let html: string;
+  try {
+    html = renderTemplate("acceso-portal", {
       nombre: contact.firstName,
       academia: branding.name,
       // URL ABSOLUTA servida por la app (`public/`): el cliente de correo no
@@ -608,7 +620,19 @@ async function sendInvitationEmail(
       contrasenaTemporal: temporaryPassword,
       contactoSoporte: env.M365_SENDER ?? "",
       contenidoPortal: contenidoPortalPara(kind),
-    }),
+    });
+  } catch (err) {
+    console.error("[acceso-portal] no se pudo armar el correo:", err instanceof Error ? err.message : err);
+    return {
+      emailSentAt: null,
+      emailError: "No se pudo preparar el correo de acceso. Comunicale la contraseña a la persona por otro medio.",
+    };
+  }
+
+  const sent = await sendMail({
+    to: contact.email ?? "",
+    subject: `Tu acceso al portal — ${branding.name}`,
+    html,
     bcc: env.M365_BCC,
   });
 

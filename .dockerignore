@@ -6,7 +6,9 @@ node_modules
 *.log
 coverage
 .playwright-mcp
-docs
+docs/*
+# Las plantillas de correo SÍ viajan: el servidor las lee en runtime.
+!docs/email-templates
 specs
 memory
 tests

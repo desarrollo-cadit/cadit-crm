@@ -40,6 +40,10 @@ COPY --from=builder --chown=vocero:vocero /app/public ./public
 COPY --from=builder --chown=vocero:vocero /app/migrate.bundle.mjs ./migrate.mjs
 COPY --from=builder --chown=vocero:vocero /app/seed-demo.bundle.mjs ./seed-demo.mjs
 COPY --from=builder --chown=vocero:vocero /app/drizzle ./drizzle
+# Las plantillas de correo se leen con readFileSync en runtime y el trazado de
+# standalone no las detecta: sin esta línea, todo correo falla con ENOENT.
+# Ver tests/unit/imagen-docker.test.ts.
+COPY --from=builder --chown=vocero:vocero /app/docs/email-templates ./docs/email-templates
 
 USER vocero
 EXPOSE 3000
