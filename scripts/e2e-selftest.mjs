@@ -85,6 +85,14 @@ function bot(path, opts = {}) {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Un día relativo a hoy, como `YYYY-MM-DD`: lo que aceptan las altas de cohorte.
+ * Toda fecha que dependa de "antes o después de hoy" sale de acá: una escrita a
+ * mano funciona el día que se escribe y falla sola cuando el calendario la pasa.
+ */
+const isoDia = (desplazamiento) =>
+  new Date(Date.now() + desplazamiento * 86_400_000).toISOString().slice(0, 10);
 const PN = "PN-E2E-1";
 
 async function main() {
@@ -929,7 +937,7 @@ async function main() {
   // Rearmar el plan con un pago vigente debe rechazarse (409); sin pagos, no.
   const refi = await api(`/api/enrollments/${inscId}/installments`, {
     method: "POST",
-    body: JSON.stringify({ count: 6, firstDueDate: "2026-11-01", replace: true }),
+    body: JSON.stringify({ count: 6, firstDueDate: isoDia(30), replace: true }),
   });
   ok(
     "refinanciar sin pagos vigentes rearma el plan",
@@ -1110,13 +1118,17 @@ async function main() {
   const curso13Id = curso13.json?.course?.id ?? curso13.json?.id;
 
   // Cohorte con días declarados y fecha de fin: puede generar cronograma.
+  // EN CURSO a propósito: el portal del profesor (014) la reusa para cargar
+  // asistencia y notas, y una cohorte terminada las rechaza (`cohorte_finalizada`).
+  // Con "2026-09-25" escrito a mano, siete checks de 014 empezaron a fallar
+  // solos el día que esa fecha pasó.
   const coh13 = await api("/api/cohorts", {
     method: "POST",
     body: JSON.stringify({
       courseId: curso13Id,
       name: "Cronograma E2E",
-      startDate: "2026-09-07",
-      endDate: "2026-09-25",
+      startDate: isoDia(-14),
+      endDate: isoDia(14),
       daysOfWeek: "0,2",
       startTime: "18:30",
       endTime: "20:30",
@@ -1184,7 +1196,7 @@ async function main() {
 
   // El calendario ahora lee class_session, no los días teóricos.
   const cal = await api(
-    `/api/calendar?from=${encodeURIComponent("2026-09-01T00:00:00.000Z")}&to=${encodeURIComponent("2026-09-30T00:00:00.000Z")}`
+    `/api/calendar?from=${encodeURIComponent(`${isoDia(-30)}T00:00:00.000Z`)}&to=${encodeURIComponent(`${isoDia(30)}T00:00:00.000Z`)}`
   );
   ok(
     "el calendario trae las clases REALES de esa cohorte",
@@ -1303,8 +1315,8 @@ async function main() {
     body: JSON.stringify({
       courseId: curso13Id,
       name: "Cohorte de B",
-      startDate: "2026-10-05",
-      endDate: "2026-10-30",
+      startDate: isoDia(0),
+      endDate: isoDia(25),
       daysOfWeek: "0,2",
       startTime: "18:30",
       endTime: "20:30",
@@ -2555,7 +2567,10 @@ async function main() {
     );
     ok(
       "y le habla de lo suyo, sin una palabra del vocabulario del staff",
-      guiaAlumno.html.includes("Mientras cursás") &&
+      // Título de la sección del alumno en src/app/(portal)/portal/guia/page.tsx.
+      // Acoplado a la prosa a propósito (es lo que el alumno lee): si se
+      // reescribe ese título, este literal se actualiza con él.
+      guiaAlumno.html.includes("Como alumno") &&
         !guiaAlumno.html.includes("Esto lo hace otro rol") &&
         !guiaAlumno.html.includes("cobranza.ver")
     );
@@ -2564,10 +2579,6 @@ async function main() {
   // Se devuelve la sesión del operador: lo que venga después no tiene por qué
   // enterarse de que acá adentro se cambió de cuenta dos veces.
   cookie = cookieOperador;
-
-  /** Un día relativo a hoy, como `YYYY-MM-DD`: lo que aceptan las altas de cohorte. */
-  const isoDia = (desplazamiento) =>
-    new Date(Date.now() + desplazamiento * 86_400_000).toISOString().slice(0, 10);
 
   /**
    * El login está limitado a 10 intentos cada 10 minutos POR IP (FR-062), y el
