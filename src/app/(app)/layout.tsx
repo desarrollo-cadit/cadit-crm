@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { cookies, headers } from "next/headers";
 import { getAuth } from "@/lib/auth";
+import { forcedPasswordChangeRedirect } from "@/lib/auth/password-change";
 import { resolvePortalSession } from "@/lib/auth/portal";
 import { getSessionOrNull } from "@/lib/auth/session";
 import { sessionCapabilities } from "@/lib/capabilities";
@@ -26,10 +27,25 @@ export default async function AppLayout({
     const portal = await resolvePortalSession();
     redirect(portal ? "/portal" : "/login");
   }
-  const branding = await getBranding(session.organizationId);
   const authSession = await getAuth().api.getSession({
     headers: await headers(),
   });
+
+  /**
+   * Contraseña elegida por otra persona (alta del equipo, `reset-password`):
+   * antes de cualquier pantalla, a elegir la propia. `/cambiar-contrasena`
+   * vive en `(auth)`, fuera de este caparazón, así que no hay bucle.
+   *
+   * **Solo las pantallas, no la API, y es deliberado.** Quien tenga una
+   * contraseña filtrada puede cambiarla él mismo de todos modos, así que
+   * bloquear la API no protegería nada y sumaría riesgo a las tres puertas.
+   * Lo que el cambio forzado logra es que la contraseña que viajó por correo
+   * deje de servir en cuanto su dueño elige la suya.
+   */
+  const forced = forcedPasswordChangeRedirect(authSession?.user);
+  if (forced) redirect(forced);
+
+  const branding = await getBranding(session.organizationId);
 
   /**
    * 012 (T029) — El rótulo visible del rol sale de la base cuando existe.

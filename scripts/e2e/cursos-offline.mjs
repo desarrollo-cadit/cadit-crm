@@ -30,6 +30,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { alEntrar } from "./cambio-de-contrasena.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const FIXTURES = path.join(ROOT, "tests", "e2e", "fixtures", "cursos-offline");
@@ -246,22 +247,27 @@ export async function seccionCursosOffline({ api, ok, BASE, getCookie }) {
     const acceso = await api(`/api/enrollments/${enrollmentId}/access`, { method: "POST" });
     const jar = { cookie: "" };
     const como = conJar(BASE, jar);
+    const ip = otraIp();
     const login = await como("/api/auth/sign-in/email", {
       method: "POST",
-      headers: otraIp(),
+      headers: ip,
       body: JSON.stringify({ email, password: acceso.json?.temporaryPassword }),
     });
+    // With the assigned password every portal page redirects to /cambiar-contrasena.
+    await alEntrar(como, login, email, acceso.json?.temporaryPassword, ip);
     return { como, entro: login.res.ok, motivo: `${acceso.res.status} / login ${login.res.status}` };
   };
   const loginProfe = async (teacherId, email) => {
     const inv = await api(`/api/teachers/${teacherId}/access`, { method: "POST", body: "{}" });
     const jar = { cookie: "" };
     const como = conJar(BASE, jar);
+    const ip = otraIp();
     const login = await como("/api/auth/sign-in/email", {
       method: "POST",
-      headers: otraIp(),
+      headers: ip,
       body: JSON.stringify({ email, password: inv.json?.temporaryPassword }),
     });
+    await alEntrar(como, login, email, inv.json?.temporaryPassword, ip);
     return { como, entro: login.res.ok, motivo: `${inv.res.status} / login ${login.res.status}` };
   };
 
@@ -914,11 +920,14 @@ async function seccionEditor({ api, ok, BASE, getCookie, cohId, A, alumno, otraI
     body: JSON.stringify({ name: "Administración Offline E2E", email, password, roleKey: "administracion" }),
   });
   const como = conJar(BASE, { cookie: "" });
+  const ipAdmin = otraIp();
   const login = await como("/api/auth/sign-in/email", {
     method: "POST",
-    headers: otraIp(),
+    headers: ipAdmin,
     body: JSON.stringify({ email, password }),
   });
+  // The password was typed by whoever created the account: pick an own one first.
+  await alEntrar(como, login, email, password, ipAdmin);
   const leeBiblioteca = await como(base);
   const escribe = await como(`${cBase}/lessons`, { method: "POST", body: JSON.stringify({ title: "No debería" }) });
   const paginaLectura = await como(`/cursos-offline/${C}`);

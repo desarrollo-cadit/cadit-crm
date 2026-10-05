@@ -38,6 +38,14 @@ export const user = pgTable("user", {
   image: text("image"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  /**
+   * La contraseña vigente la eligió OTRA persona (una invitación, el alta del
+   * equipo, `reset-password`). Mientras sea así, las pantallas mandan a
+   * `/cambiar-contrasena`: la que viajó por correo deja de servir en cuanto la
+   * persona elige la suya. Se enciende en `src/server/auth/assigned-password.ts`
+   * y se apaga en `POST /api/account/password`.
+   */
+  mustChangePassword: boolean("must_change_password").notNull().default(false),
 });
 
 export const session = pgTable("session", {

@@ -1,6 +1,5 @@
 import { and, eq } from "drizzle-orm";
 import { customAlphabet } from "nanoid";
-import { getAuth, runInternalSignup } from "@/lib/auth";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
@@ -9,6 +8,7 @@ import { getEnv } from "@/lib/env";
 import { sendMail } from "@/lib/m365/client";
 import { PORTAL_NO_EMAIL_REASON } from "@/lib/portal-access";
 import { fullName } from "@/lib/utils";
+import { assignPassword, signUpWithAssignedPassword } from "@/server/auth/assigned-password";
 import { resolveMembership } from "@/server/auth/on-signup";
 import { getBranding } from "@/server/branding";
 import { contenidoPortalPara } from "@/server/email/portal-access-copy";
@@ -208,7 +208,11 @@ export function serializeAccountLink(
  */
 const nanoPassword = customAlphabet("23456789ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz", 14);
 
-/** Contraseña temporal legible. Se manda por correo y se cambia al entrar. */
+/**
+ * Contraseña temporal legible. Se manda por correo y deja de servir cuando la
+ * persona elige la suya: al entrar, las pantallas la mandan a
+ * `/cambiar-contrasena` (`mustChangePassword`).
+ */
 export function generateTemporaryPassword(): string {
   return nanoPassword();
 }
@@ -394,12 +398,11 @@ export async function grantPortalAccess(
   const temporaryPassword = generateTemporaryPassword();
   let userId: string;
   try {
-    const created = await runInternalSignup(() =>
-      getAuth().api.signUpEmail({
-        body: { name: fullName(contact), email, password: temporaryPassword },
-      })
-    );
-    userId = created.user.id;
+    ({ userId } = await signUpWithAssignedPassword({
+      name: fullName(contact),
+      email,
+      password: temporaryPassword,
+    }));
   } catch (err) {
     const message = err instanceof Error ? err.message : "No se pudo crear la cuenta";
     return { ok: false, status: 422, code: "signup_failed", message };
@@ -512,12 +515,11 @@ export async function grantTeacherPortalAccess(
   const temporaryPassword = generateTemporaryPassword();
   let userId: string;
   try {
-    const created = await runInternalSignup(() =>
-      getAuth().api.signUpEmail({
-        body: { name: teacher.name, email, password: temporaryPassword },
-      })
-    );
-    userId = created.user.id;
+    ({ userId } = await signUpWithAssignedPassword({
+      name: teacher.name,
+      email,
+      password: temporaryPassword,
+    }));
   } catch (err) {
     const message = err instanceof Error ? err.message : "No se pudo crear la cuenta";
     return { ok: false, status: 422, code: "signup_failed", message };
@@ -552,14 +554,9 @@ async function inviteExisting(
 ): Promise<AccessResult<GrantPortalAccessResult>> {
   const temporaryPassword = generateTemporaryPassword();
 
-  // La MISMA ruta que usa el login para hashear (scrypt configurado en Better
-  // Auth). Escribir el hash a mano en `account.password` genera una cuenta que
-  // no puede iniciar sesión nunca más — ver scripts/reset-password.ts.
-  const authCtx = await getAuth().$context;
-  await authCtx.internalAdapter.updatePassword(
-    userId,
-    await authCtx.password.hash(temporaryPassword)
-  );
+  // Contraseña y marca de "asignada" en el mismo paso: al entrar, la persona
+  // elige la suya y esta deja de servir (ver assigned-password.ts).
+  await assignPassword(userId, temporaryPassword);
 
   const envio = await sendInvitationEmail(
     organizationId,

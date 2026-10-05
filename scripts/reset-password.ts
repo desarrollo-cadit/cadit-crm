@@ -13,8 +13,8 @@
  */
 
 import { eq } from "drizzle-orm";
-import { getAuth } from "@/lib/auth";
 import { getDb, getSql, schema } from "@/lib/db";
+import { assignPassword } from "@/server/auth/assigned-password";
 
 // pnpm interpone un "--" propio al reenviar argumentos: se descarta.
 const args = process.argv.slice(2).filter((a) => a !== "--");
@@ -70,12 +70,12 @@ if (!user) {
   process.exit(1);
 }
 
-// `$context` expone el hasher configurado y el adaptador interno: la MISMA
-// ruta que usa el login, así que el hash queda con el formato que espera.
-const ctx = await getAuth().$context;
-const hash = await ctx.password.hash(password);
-await ctx.internalAdapter.updatePassword(user.id, hash);
+// El hasher de Better Auth (la MISMA ruta que usa el login) y la marca de
+// "asignada" en un solo paso: al entrar, la persona elige la suya y esta deja
+// de servir.
+await assignPassword(user.id, password);
 
 console.log(`Contraseña actualizada para ${user.email} (${user.name}).`);
+console.log("Al entrar se le va a pedir que elija una contraseña propia.");
 await getSql().end();
 process.exit(0);

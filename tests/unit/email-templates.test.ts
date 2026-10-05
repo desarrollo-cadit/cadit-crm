@@ -87,4 +87,18 @@ describe("correo de acceso al portal", () => {
     );
     expect(html).toContain("ya tenés acceso al portal de CAD IT");
   });
+
+  /**
+   * El primer ingreso lleva a elegir una contraseña propia
+   * (`mustChangePassword`). El correo lo anticipa para que la pantalla no
+   * sorprenda a nadie, y lo dice para las dos audiencias.
+   */
+  it("anticipa que al entrar se le va a pedir una contraseña propia", () => {
+    for (const kind of ["alumno", "profesor"] as const) {
+      const html = visible(
+        renderTemplate("acceso-portal", { ...base, contenidoPortal: contenidoPortalPara(kind) })
+      );
+      expect(html).toContain("te vamos a pedir que elijas una contraseña propia");
+    }
+  });
 });

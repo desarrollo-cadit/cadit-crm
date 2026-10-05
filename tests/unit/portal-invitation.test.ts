@@ -14,6 +14,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  */
 
 const selectQueue: unknown[][] = [];
+const flagWrites: { table: unknown; values: unknown }[] = [];
+const updatePassword = vi.fn();
 
 function thenableChain(rows: unknown[]) {
   const chain: Record<string, unknown> = {};
@@ -33,6 +35,16 @@ vi.mock("@/lib/db", () => ({
   getRootDb: () => ({
     transaction: async (fn: (tx: unknown) => unknown) =>
       fn({ execute: async () => [] }),
+    // La marca de "contraseña asignada" se escribe en la raíz, junto con la
+    // contraseña que Better Auth ya guardó fuera de la transacción.
+    update: (table: unknown) => ({
+      set: (values: unknown) => ({
+        where: () => {
+          flagWrites.push({ table, values });
+          return Promise.resolve([]);
+        },
+      }),
+    }),
   }),
   getDb: () => ({
     select: () => thenableChain(selectQueue.shift() ?? []),
@@ -66,7 +78,10 @@ vi.mock("@/lib/auth", () => ({
     // alta termina en `signup_failed` antes de llegar a mandar el correo —
     // que es justamente lo que varios de estos casos quieren observar.
     api: { signUpEmail: async () => ({ user: { id: "usr_nuevo" } }) },
-    $context: Promise.resolve({}),
+    $context: Promise.resolve({
+      password: { hash: async (p: string) => `hash(${p})` },
+      internalAdapter: { updatePassword: (...a: unknown[]) => updatePassword(...a) },
+    }),
   }),
   runInternalSignup: (fn: () => Promise<unknown>) => fn(),
 }));
@@ -315,5 +330,108 @@ describe("T017b — no se puede invitar a todos", () => {
     // El identificador viene de la ruta, no de una lista en el body.
     expect(src).toContain("ctx.params");
     expect(src).not.toMatch(/enrollmentIds|contactIds|cohortId/);
+  });
+});
+
+/**
+ * La contraseña que se manda por correo la eligió la academia, no la persona.
+ * Por eso cada camino que la fija enciende `mustChangePassword`, y el único
+ * que NO la fija —el de alguien del staff que además cursa o dicta— tampoco
+ * la enciende: esa persona entra con la suya.
+ */
+describe("la contraseña asignada obliga a elegir una propia", () => {
+  const marcas = () =>
+    flagWrites.filter(
+      (w) => JSON.stringify(w.values) === JSON.stringify({ mustChangePassword: true })
+    );
+
+  const CON_CORREO = { ...CONTACTO_SIN_CORREO, email: "ana@x.com" };
+  const STAFF = { organizationId: "org_1", role: "coordinacion" };
+
+  beforeEach(() => {
+    selectQueue.length = 0;
+    flagWrites.length = 0;
+    sendMail.mockReset();
+    sendMail.mockResolvedValue({ ok: true, data: "msg_1" });
+    updatePassword.mockReset();
+    vi.resetModules();
+  });
+
+  it("alumno nuevo: la cuenta nace marcada", async () => {
+    selectQueue.push([{ enrollment: { id: "enr_1" }, contact: CON_CORREO }]);
+    selectQueue.push([]); // no hay usuario con ese correo
+    selectQueue.push([{ id: "enr_1" }]); // tiene inscripción
+    selectQueue.push([]); // no hay vínculo previo
+
+    const { grantPortalAccess } = await import("@/server/access");
+    const r = await grantPortalAccess("org_1", "enr_1");
+
+    expect(r.ok).toBe(true);
+    expect(marcas()).toHaveLength(1);
+  });
+
+  it("profesor nuevo: la cuenta nace marcada", async () => {
+    selectQueue.push([{ id: "tch_1", name: "Ovidio Santos", email: "ovidio@x.com" }]);
+    selectQueue.push([]);
+    selectQueue.push([]);
+
+    const { grantTeacherPortalAccess } = await import("@/server/access");
+    const r = await grantTeacherPortalAccess("org_1", "tch_1");
+
+    expect(r.ok).toBe(true);
+    expect(marcas()).toHaveLength(1);
+  });
+
+  it("reinvitar una cuenta de portal: contraseña nueva y marca encendida", async () => {
+    selectQueue.push([{ enrollment: { id: "enr_1" }, contact: CON_CORREO }]);
+    selectQueue.push([{ id: "usr_portal" }]); // la cuenta ya existe
+    selectQueue.push([{ id: "enr_1" }]);
+    selectQueue.push([]);
+    const { resolveMembership } = await import("@/server/auth/on-signup");
+    vi.mocked(resolveMembership).mockResolvedValue(null);
+
+    const { grantPortalAccess } = await import("@/server/access");
+    const r = await grantPortalAccess("org_1", "enr_1");
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(updatePassword).toHaveBeenCalledWith(
+      "usr_portal",
+      `hash(${r.data.temporaryPassword})`
+    );
+    expect(marcas()).toHaveLength(1);
+  });
+
+  it("alguien del staff que además cursa: ni contraseña nueva ni marca", async () => {
+    selectQueue.push([{ enrollment: { id: "enr_1" }, contact: CON_CORREO }]);
+    selectQueue.push([{ id: "usr_staff" }]);
+    selectQueue.push([{ id: "enr_1" }]);
+    selectQueue.push([]);
+    const { resolveMembership } = await import("@/server/auth/on-signup");
+    vi.mocked(resolveMembership).mockResolvedValue(STAFF as never);
+
+    const { grantPortalAccess } = await import("@/server/access");
+    const r = await grantPortalAccess("org_1", "enr_1");
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.data.temporaryPassword).toBeNull();
+    expect(updatePassword).not.toHaveBeenCalled();
+    expect(flagWrites).toEqual([]);
+  });
+
+  it("lo mismo para un profesor que es del staff", async () => {
+    selectQueue.push([{ id: "tch_1", name: "Ovidio Santos", email: "ovidio@x.com" }]);
+    selectQueue.push([{ id: "usr_staff" }]);
+    selectQueue.push([]);
+    const { resolveMembership } = await import("@/server/auth/on-signup");
+    vi.mocked(resolveMembership).mockResolvedValue(STAFF as never);
+
+    const { grantTeacherPortalAccess } = await import("@/server/access");
+    const r = await grantTeacherPortalAccess("org_1", "tch_1");
+
+    expect(r.ok).toBe(true);
+    expect(updatePassword).not.toHaveBeenCalled();
+    expect(flagWrites).toEqual([]);
   });
 });

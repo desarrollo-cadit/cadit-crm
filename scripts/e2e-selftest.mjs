@@ -32,6 +32,11 @@
 import { createHmac } from "node:crypto";
 import { seccion029 } from "./e2e/navegacion-029.mjs";
 import { seccionCursosOffline } from "./e2e/cursos-offline.mjs";
+import {
+  alEntrar,
+  claveVigente,
+  seccionCambioDeContrasena,
+} from "./e2e/cambio-de-contrasena.mjs";
 
 const BASE = process.env.APP_BASE_URL ?? "http://localhost:3000";
 const BOT_KEY = process.env.BOT_API_KEY;
@@ -1684,6 +1689,9 @@ async function main() {
     loginAlumnoA.res.ok,
     `${loginAlumnoA.res.status}`
   );
+  // Elige su contraseña, como en la vida real: con la asignada, cada pantalla
+  // del portal la mandaría a /cambiar-contrasena.
+  await alEntrar(comoA, loginAlumnoA, "alumno-a@e2e.test", accesoA.json?.temporaryPassword);
   await comoB("/api/auth/sign-in/email", {
     method: "POST",
     body: JSON.stringify({
@@ -2193,6 +2201,8 @@ async function main() {
     body: JSON.stringify({ email: adminEmail, password: adminPass }),
   });
   ok("administración entra al panel", loginAdmin.res.ok, JSON.stringify(loginAdmin.json));
+  // La contraseña la escribió quien dio el alta: elige la suya antes de abrir pantallas.
+  await alEntrar(api, loginAdmin, adminEmail, adminPass);
   const cookieAdmin = cookie;
 
   // Sin `mes`: el período por defecto es el ANTERIOR (DV-002), que es el que
@@ -2366,9 +2376,15 @@ async function main() {
   cookie = "";
   const loginSoporte026 = await api("/api/auth/sign-in/email", {
     method: "POST",
-    body: JSON.stringify({ email: soporteEmail026, password: soportePass026 }),
+    body: JSON.stringify({
+      email: soporteEmail026,
+      password: claveVigente(soporteEmail026, soportePass026),
+    }),
   });
   ok("la cuenta sin cobranza entra al panel", loginSoporte026.res.ok);
+  // Sin esto, `/finanzas` respondería 307 a /cambiar-contrasena y el check del
+  // 403 de pantalla pasaría por la razón equivocada.
+  await alEntrar(api, loginSoporte026, soporteEmail026, soportePass026);
   const cierre403 = await api("/api/finanzas/cierre");
   ok(
     "y recibe 403 del endpoint de finanzas (SC-007)",
@@ -2442,9 +2458,11 @@ async function main() {
   cookie = "";
   const loginSoporte = await api("/api/auth/sign-in/email", {
     method: "POST",
-    body: JSON.stringify({ email: soporteEmail, password: soportePass }),
+    // La 026 ya dio de alta esta cuenta y eligió su contraseña.
+    body: JSON.stringify({ email: soporteEmail, password: claveVigente(soporteEmail, soportePass) }),
   });
   ok("la segunda cuenta entra", loginSoporte.res.ok, JSON.stringify(loginSoporte.json));
+  await alEntrar(api, loginSoporte, soporteEmail, soportePass);
   const guiaSoporte = await pagina("/guia", cookie);
   ok(
     "y también le responde la guía",
@@ -2528,6 +2546,7 @@ async function main() {
       }),
     });
     ok("el alumno entra al portal", loginAlumno.res.ok, JSON.stringify(loginAlumno.json));
+    await alEntrar(api, loginAlumno, "portal.e2e@example.com", claveAlumno);
     const guiaAlumno = await pagina("/portal/guia", cookie);
     ok(
       "la guía del portal responde",
@@ -2574,11 +2593,19 @@ async function main() {
       body: JSON.stringify({}),
     });
     const jar = { cookie: "" };
+    const ip = otraIp();
     const login = await comoProfesor(jar, "/api/auth/sign-in/email", {
       method: "POST",
-      headers: otraIp(),
+      headers: ip,
       body: JSON.stringify({ email: correo, password: invitacion.json?.temporaryPassword }),
     });
+    await alEntrar(
+      (p, o) => comoProfesor(jar, p, o),
+      login,
+      correo,
+      invitacion.json?.temporaryPassword,
+      ip
+    );
     return {
       id,
       jar,
@@ -2592,11 +2619,13 @@ async function main() {
     const acceso = await api(`/api/enrollments/${enrollmentId}/access`, { method: "POST" });
     const jar = { cookie: "" };
     const como = conJar(jar);
+    const ip = otraIp();
     const login = await como("/api/auth/sign-in/email", {
       method: "POST",
-      headers: otraIp(),
+      headers: ip,
       body: JSON.stringify({ email: correo, password: acceso.json?.temporaryPassword }),
     });
+    await alEntrar(como, login, correo, acceso.json?.temporaryPassword, ip);
     return {
       como,
       jar,
@@ -4967,6 +4996,9 @@ async function main() {
 
   // cursos-offline — Biblioteca importada de LearnDash, acceso y cuestionarios.
   await seccionCursosOffline({ api, ok, BASE, getCookie: () => cookie });
+
+  // Cambio de contraseña forzado en el primer ingreso, y voluntario después.
+  await seccionCambioDeContrasena({ api, ok, BASE, getCookie: () => cookie });
 
   console.log(`\n===== ${checks - failures}/${checks} checks OK, ${failures} fallos =====`);
   process.exit(failures > 0 ? 1 : 0);

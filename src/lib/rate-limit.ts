@@ -47,7 +47,13 @@ export function resetRateLimit(): void {
 /** 10 intentos / 10 minutos por IP en login y registro (FR-062). */
 export const AUTH_RATE_LIMIT = { windowMs: 10 * 60 * 1000, max: 10 };
 
-const AUTH_RATE_LIMITED_PATHS = new Set(["/sign-in/email", "/sign-up/email"]);
+/**
+ * `/change-password` está porque verifica la contraseña actual: sin límite,
+ * quien tuviera una sesión ajena podría probar contraseñas contra esa puerta
+ * a su gusto. Cuenta en su propio balde (la llave lleva la ruta), así que no
+ * le resta intentos al login.
+ */
+const AUTH_RATE_LIMITED_PATHS = new Set(["/sign-in/email", "/sign-up/email", "/change-password"]);
 
 /**
  * FR-062 — ¿Se deja pasar este intento de login/registro? Cuenta el intento

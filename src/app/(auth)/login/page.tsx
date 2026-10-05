@@ -132,6 +132,8 @@ export default function LoginPage() {
         todavía, y un enlace que no lleva a ningún lado es peor que su ausencia:
         enseña a desconfiar de lo que dice la pantalla. Lo que sí se puede
         hacer —pedirle a la academia que la regenere— se dice con esas palabras.
+        Una vez adentro, en cambio, sí se puede cambiar: `/cambiar-contrasena`,
+        que además es obligatorio la primera vez con una contraseña asignada.
       */}
       <p className="text-sm text-muted-foreground">
         ¿Problemas para entrar? Escribinos y te generamos un acceso nuevo.

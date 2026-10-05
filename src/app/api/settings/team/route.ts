@@ -1,10 +1,10 @@
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { apiError, parseBody, requireCapability } from "@/lib/api";
-import { getAuth, runInternalSignup } from "@/lib/auth";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
+import { signUpWithAssignedPassword } from "@/server/auth/assigned-password";
 import { listRoles } from "@/server/roles";
 
 export const dynamic = "force-dynamic";
@@ -72,19 +72,15 @@ export const POST = requireCapability(
     return apiError(422, "invalid_role", "Ese rol no existe en la organización");
   }
 
-  const auth = getAuth();
+  // La contraseña la escribe quien da el alta, no la persona: al entrar por
+  // primera vez se le pide que elija la suya (`mustChangePassword`).
   let newUserId: string;
   try {
-    const result = await runInternalSignup(() =>
-      auth.api.signUpEmail({
-        body: {
-          name: body.data.name,
-          email: body.data.email,
-          password: body.data.password,
-        },
-      })
-    );
-    newUserId = result.user.id;
+    ({ userId: newUserId } = await signUpWithAssignedPassword({
+      name: body.data.name,
+      email: body.data.email,
+      password: body.data.password,
+    }));
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "No se pudo crear la cuenta";

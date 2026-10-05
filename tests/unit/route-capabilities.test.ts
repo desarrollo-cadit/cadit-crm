@@ -48,6 +48,11 @@ const SIN_CAPACIDAD: Record<string, string> = {
   // eso el archivo pasaba el chequeo de abajo sin que nadie mirara el GET.
   // Queda declarado acá para que la excepción sea visible, no accidental.
   "settings/branding/route.ts": "marca del login, antes de autenticarse",
+  // Cambiar la contraseña PROPIA no es una capacidad del staff ni algo del
+  // portal: lo necesita cualquier cuenta. Cualquiera de las tres puertas
+  // dejaría afuera a alguna audiencia. Exige sesión de Better Auth (401 sin
+  // ella) y solo toca la cuenta de esa sesión; no lee datos de dominio.
+  "account/password/route.ts": "contraseña propia, cualquier sesión",
   // Infraestructura sin datos de dominio.
   "health/route.ts": "healthcheck",
   "auth/[...all]/route.ts": "Better Auth",

@@ -73,6 +73,26 @@ function createAuth() {
         invitation: schema.invitation,
       },
     }),
+    user: {
+      additionalFields: {
+        /**
+         * La contraseña vigente la eligió otra persona (ver
+         * `src/server/auth/assigned-password.ts`). Se declara para que viaje
+         * en `getSession()` y los caparazones puedan redirigir sin otra
+         * consulta.
+         *
+         * `input: false` no es un detalle: sin eso, cualquiera podría
+         * registrarse o editarse a sí mismo mandando el campo en el cuerpo y
+         * decidir si lo obligan o no a cambiar la contraseña.
+         */
+        mustChangePassword: {
+          type: "boolean",
+          required: false,
+          defaultValue: false,
+          input: false,
+        },
+      },
+    },
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: false,

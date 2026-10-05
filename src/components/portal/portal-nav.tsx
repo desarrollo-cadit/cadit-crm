@@ -3,10 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { GraduationCap, LogOut, Menu, X } from "lucide-react";
+import { GraduationCap, KeyRound, LogOut, Menu, X } from "lucide-react";
 import type { Branding } from "@/lib/branding";
 import { cn, initials } from "@/lib/utils";
 import { signOut } from "@/lib/auth/client";
+import { PASSWORD_CHANGE_PATH } from "@/lib/auth/password-change";
 import { ThemeToggle } from "@/components/theme-toggle";
 import type { ThemePreference } from "@/lib/theme";
 import { IsotipoCadIT } from "@/components/logo-cadit";
@@ -181,6 +182,17 @@ export function PortalNav({
           <span className="block text-[11px] text-text-3">{rol}</span>
         </span>
         <ThemeToggle initial={theme} size="compact" />
+        {/* Cambiar la contraseña propia no es un permiso: lo ve todo el mundo,
+            igual que el tema. Va junto a "Cerrar sesión" porque las dos son
+            cosas de la CUENTA, no de la academia. */}
+        <Link
+          href={PASSWORD_CHANGE_PATH}
+          aria-label="Cambiar contraseña"
+          title="Cambiar contraseña"
+          className="rounded p-1 text-text-3 transition-colors hover:text-foreground"
+        >
+          <KeyRound className="h-4 w-4" strokeWidth={1.7} />
+        </Link>
         <button
           type="button"
           aria-label="Cerrar sesión"

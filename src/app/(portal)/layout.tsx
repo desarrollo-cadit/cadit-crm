@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { cookies, headers } from "next/headers";
 import { getAuth } from "@/lib/auth";
+import { forcedPasswordChangeRedirect } from "@/lib/auth/password-change";
 import {
   portalTeacherId,
   resolvePortalSession,
@@ -33,6 +34,22 @@ export default async function PortalLayout({
   const portal = await resolvePortalSession();
   if (!portal) redirect("/login");
 
+  const authSession = await getAuth().api.getSession({ headers: await headers() });
+
+  /**
+   * La contraseña llegó por correo y la eligió la academia: antes de
+   * cualquier pantalla, a elegir la propia. `/cambiar-contrasena` vive en
+   * `(auth)`, fuera de este caparazón, así que no hay bucle.
+   *
+   * **Solo las pantallas, no la API, y es deliberado.** Quien tenga una
+   * contraseña filtrada puede cambiarla él mismo de todos modos, así que
+   * bloquear la API no protegería nada y sumaría riesgo a las tres puertas.
+   * Lo que el cambio forzado logra es que la contraseña del correo deje de
+   * servir en cuanto su dueño elige la suya.
+   */
+  const forced = forcedPasswordChangeRedirect(authSession?.user);
+  if (forced) redirect(forced);
+
   const teacherId = portalTeacherId(portal);
   const contactId = studentContactId(portal);
 
@@ -46,7 +63,6 @@ export default async function PortalLayout({
   }
 
   const branding = await getBranding(portal.organizationId);
-  const authSession = await getAuth().api.getSession({ headers: await headers() });
 
   /**
    * Las cursadas del menú se leen adentro del alcance de la organización: el
