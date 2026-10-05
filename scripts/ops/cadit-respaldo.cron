@@ -1,0 +1,7 @@
+# Respaldo diario de la base de producción. Va en /etc/cron.d/cadit-respaldo
+# (sin extensión: cron ignora los archivos de /etc/cron.d con punto en el nombre).
+# El host está en UTC: 06:00 UTC = 03:00 de Montevideo. Ver docs/respaldos.md.
+DB_CONTAINER=qkzop8ox5iqdmtjnajqrqwr2
+REMOTE=sharepoint:Respaldos/campus
+RCLONE_CONFIG=/root/.config/rclone/rclone.conf
+0 6 * * * root flock -n /run/cadit-respaldo.lock /opt/cadit/respaldo-sharepoint.sh >> /var/log/cadit-respaldo.log 2>&1

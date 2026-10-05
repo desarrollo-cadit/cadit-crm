@@ -1,0 +1,4 @@
+# Los scripts de shell corren en Linux (host de Coolify, contenedores): con CRLF
+# fallan con "/bin/sh^M: bad interpreter".
+*.sh text eol=lf
+*.cron text eol=lf
