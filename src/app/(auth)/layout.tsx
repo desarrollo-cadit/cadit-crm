@@ -43,7 +43,7 @@ export default async function AuthLayout({
               <span className="block truncate text-lg font-semibold leading-tight tracking-tight">
                 {branding.name}
               </span>
-              <span className="block text-xs text-text-3">Gestión Academia</span>
+              <span className="block text-xs text-text-3">Campus Académico</span>
             </span>
           </div>
 
