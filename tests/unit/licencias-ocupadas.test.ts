@@ -118,12 +118,20 @@ describe("lo que nunca se asignó no ocupa nada", () => {
     ).toBe(false);
   });
 
-  /**
-   * Sin cohorte, la inscripción es un lead general del pipeline: no está
-   * cursando nada, así que su licencia —si alguien se la asignó— no debería
-   * seguir descontando del inventario.
-   */
-  it("una inscripción sin cohorte no ocupa", () => {
-    expect(licenciaOcupada({ assigned: true, expiresAt: null }, null, HOY)).toBe(false);
+});
+
+/**
+ * Cambio de decisión (2026-10-05). 023 decía que una inscripción sin cohorte
+ * era un lead y su licencia no ocupaba. Pero alguien SE LA ASIGNÓ: tratarla
+ * como libre inflaba el stock en silencio. Solo libera lo que se sabe
+ * terminado o vencido; fechas desconocidas = no terminó.
+ */
+describe("fechas desconocidas no liberan la licencia", () => {
+  it("una inscripción sin cohorte, con licencia asignada, ocupa", () => {
+    expect(licenciaOcupada({ assigned: true, expiresAt: null }, null, HOY)).toBe(true);
+  });
+
+  it("pero si está vencida, no ocupa", () => {
+    expect(licenciaOcupada({ assigned: true, expiresAt: ANTES }, null, HOY)).toBe(false);
   });
 });

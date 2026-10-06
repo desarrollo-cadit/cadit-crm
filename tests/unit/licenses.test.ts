@@ -227,6 +227,72 @@ describe("countAssignedLicenses (T031, FR-004)", () => {
   });
 });
 
+/**
+ * 2026-10-05 — Una licencia asignada cuya inscripción NO tiene cohorte (o
+ * cuya cohorte no tiene fechas conocidas) dejaba de contar, y el stock
+ * disponible se inflaba en silencio. La intención de 023 es más angosta: solo
+ * se libera la licencia de una cohorte que se SABE terminada, o la vencida.
+ * Fechas desconocidas = no terminó.
+ */
+describe("licenciaOcupada — fechas desconocidas no liberan (2026-10-05)", () => {
+  const AHORA = new Date("2026-10-05T12:00:00.000Z");
+  const asignada = { assigned: true, expiresAt: null };
+
+  it("asignada y sin cohorte → ocupa", async () => {
+    const { licenciaOcupada } = await import("@/server/licenses");
+    expect(licenciaOcupada(asignada, null, AHORA)).toBe(true);
+  });
+
+  it("asignada y cohorte sin fechas → ocupa", async () => {
+    const { licenciaOcupada } = await import("@/server/licenses");
+    expect(licenciaOcupada(asignada, { startDate: null, endDate: null }, AHORA)).toBe(true);
+  });
+
+  it("cohorte terminada → no ocupa", async () => {
+    const { licenciaOcupada } = await import("@/server/licenses");
+    expect(
+      licenciaOcupada(asignada, { startDate: TERMINADA, endDate: TERMINADA }, AHORA)
+    ).toBe(false);
+  });
+
+  it("vencida → no ocupa aunque la cohorte siga en curso", async () => {
+    const { licenciaOcupada } = await import("@/server/licenses");
+    expect(
+      licenciaOcupada(
+        { assigned: true, expiresAt: TERMINADA },
+        { startDate: TERMINADA, endDate: VIVA },
+        AHORA
+      )
+    ).toBe(false);
+  });
+
+  it("no asignada → no ocupa", async () => {
+    const { licenciaOcupada } = await import("@/server/licenses");
+    expect(licenciaOcupada({ assigned: false, expiresAt: null }, null, AHORA)).toBe(false);
+  });
+
+  it("contarOcupadas cuenta la asignada de una inscripción sin cohorte", async () => {
+    const { countAssignedLicenses } = await import("@/server/licenses");
+    selectQueue.push([
+      ocupada("sw_1"),
+      { softwareId: "sw_1", assigned: true, expiresAt: null, startDate: null, endDate: null },
+      liberada("sw_1"),
+    ]);
+    expect(await countAssignedLicenses("org_1", "sw_1")).toBe(2);
+  });
+
+  it("el inventario del home aplica la misma regla", async () => {
+    selectQueue.push(
+      [{ id: "sw_1", name: "Revit", totalLicenses: 3 }],
+      [{ softwareId: "sw_1", assigned: true, expiresAt: null, startDate: null, endDate: null }]
+    );
+    const { listLicenseInventory } = await import("@/server/licenses");
+    expect(await listLicenseInventory("org_1")).toEqual([
+      { softwareId: "sw_1", softwareName: "Revit", total: 3, assignedCount: 1, available: 2 },
+    ]);
+  });
+});
+
 describe("updateSoftware (T031, FR-004)", () => {
   it("rechaza bajar totalLicenses por debajo de las asignadas", async () => {
     const { updateSoftware } = await import("@/server/software");

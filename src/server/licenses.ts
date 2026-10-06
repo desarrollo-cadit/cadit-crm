@@ -184,12 +184,6 @@ export async function unassignLicense(
 }
 
 /**
- * 005 iteración 2 (home, widget de licencias, pedido en vivo del dueño) —
- * total vs. disponibles por cada software de la organización. Consulta
- * propia (no reusa `listSoftware` de `@/server/software`, que a su vez
- * importa `countAssignedLicenses` de este módulo — evita el ciclo).
- */
-/**
  * 023 — ¿Esta licencia está ocupando un lugar del inventario?
  *
  * **Se DERIVA, no se marca.** El booleano `assigned` decía "alguien se la
@@ -197,11 +191,16 @@ export async function unassignLicense(
  * licencia de un curso terminado hace un año seguía descontando del pool para
  * siempre.
  *
- * Ahora ocupa mientras su cohorte esté **planificada o en curso**, y se libera
- * sola cuando termina. Eso vale por sí mismo, pero además tiene una
- * consecuencia que importa: **no hace falta un scheduler**. El estado de la
- * cohorte ya se calcula de sus fechas en cada consulta, así que el día que el
- * curso termina la licencia aparece libre sin que corra ningún proceso.
+ * Ahora ocupa hasta que su cohorte se SABE terminada, y se libera sola cuando
+ * termina. Eso vale por sí mismo, pero además tiene una consecuencia que
+ * importa: **no hace falta un scheduler**. El estado de la cohorte ya se
+ * calcula de sus fechas en cada consulta, así que el día que el curso termina
+ * la licencia aparece libre sin que corra ningún proceso.
+ *
+ * **Fechas desconocidas = no terminó** (2026-10-05). Una inscripción sin
+ * cohorte, o una cohorte sin fechas, no prueba que el curso haya terminado:
+ * tratarla como libre inflaba el stock disponible en silencio, y el error caía
+ * del lado de prometer una licencia que no existe.
  *
  * `expiresAt` gana sobre todo lo demás: una licencia vencida no vuelve a
  * estar disponible por quererlo — Autodesk ya la dio de baja.
@@ -210,15 +209,23 @@ export async function unassignLicense(
  */
 export function licenciaOcupada(
   licencia: { assigned: boolean; expiresAt: Date | null },
-  cohorte: { startDate: Date; endDate: Date | null } | null,
+  cohorte: { startDate: Date | null; endDate: Date | null } | null,
   now: Date = new Date()
 ): boolean {
   if (!licencia.assigned) return false;
-  // Vencida: libre, sin importar en qué anda la cohorte.
   if (licencia.expiresAt && licencia.expiresAt <= now) return false;
-  // Sin cohorte es un lead del pipeline, no alguien cursando.
+  return !cohorteTerminada(cohorte, now);
+}
+
+function cohorteTerminada(
+  cohorte: { startDate: Date | null; endDate: Date | null } | null,
+  now: Date
+): boolean {
   if (!cohorte) return false;
-  return computeCohortStatus(cohorte.startDate, cohorte.endDate, now) !== "finalizada";
+  if (cohorte.startDate) {
+    return computeCohortStatus(cohorte.startDate, cohorte.endDate, now) === "finalizada";
+  }
+  return cohorte.endDate !== null && now > cohorte.endDate;
 }
 
 /**
@@ -259,7 +266,9 @@ export async function contarOcupadas(
   for (const l of licencias) {
     const ocupada = licenciaOcupada(
       { assigned: l.assigned, expiresAt: l.expiresAt },
-      l.startDate ? { startDate: l.startDate, endDate: l.endDate } : null,
+      // El leftJoin trae fechas nulas cuando la inscripción no tiene cohorte:
+      // eso es "fechas desconocidas", no "terminó".
+      { startDate: l.startDate, endDate: l.endDate },
       ahora
     );
     if (ocupada) salida.set(l.softwareId, (salida.get(l.softwareId) ?? 0) + 1);
@@ -267,6 +276,12 @@ export async function contarOcupadas(
   return salida;
 }
 
+/**
+ * 005 iteración 2 (home, widget de licencias, pedido en vivo del dueño) —
+ * total vs. disponibles por cada software de la organización. Consulta
+ * propia (no reusa `listSoftware` de `@/server/software`, que a su vez
+ * importa `countAssignedLicenses` de este módulo — evita el ciclo).
+ */
 export async function listLicenseInventory(
   organizationId: string
 ): Promise<LicenseAvailability[]> {
