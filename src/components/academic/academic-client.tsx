@@ -236,24 +236,6 @@ export function AcademicClient() {
   const [avisoCohorte, setAvisoCohorte] = useState<string | null>(null);
   const [avisoProfesor, setAvisoProfesor] = useState<string | null>(null);
 
-  /**
-   * 014 (T011) — Da acceso al portal a UN profesor.
-   *
-   * La contraseña temporal se muestra una sola vez, igual que con los alumnos:
-   * sirve para dictarla si el correo demora, y no se puede volver a consultar.
-   */
-  /**
-   * 023 — Borra una cohorte creada por error.
-   *
-   * **La regla vive en el servidor**, no acá: con inscripciones, clases,
-   * asistencia, evaluaciones o pagos responde 409 y dice qué la ata. El
-   * navegador solo muestra ese mensaje. Duplicar la regla en la pantalla es
-   * cómo las dos se desincronizan y una termina ofreciendo lo que la otra
-   * rechaza.
-   *
-   * La confirmación es del navegador a propósito: un diálogo propio para una
-   * acción que el servidor ya puede rechazar es ceremonia sobre ceremonia.
-   */
   async function borrarCohorte(cohort: CohortDto) {
     const nombre = cohort.name ?? cohort.courseName;
     if (!confirm(`¿Borrar "${nombre}"? Si tiene inscripciones o clases, no se va a poder.`)) {
@@ -363,13 +345,6 @@ export function AcademicClient() {
     });
   }
 
-  /**
-   * Cada recurso se lee por separado y un fallo NO se traga en silencio: si
-   * alguno falla, se marca `loadError`, porque una lista vacía por un 500 es
-   * indistinguible de una organización sin datos. `setLoading(false)` va en
-   * `finally` — un body malformado tiraba dentro del callback y dejaba el
-   * esqueleto de carga para siempre.
-   */
   const refetch = useCallback(async () => {
     setLoading(true);
     let failed = false;
@@ -501,14 +476,6 @@ export function AcademicClient() {
           <Button variant="ghost" size="sm" onClick={() => setCohortForm({ mode: "edit", cohort })}>
             Editar
           </Button>
-          {/*
-            023 — Borrar una cohorte creada por error. El servidor
-            decide: con inscripciones, clases, asistencia,
-            evaluaciones o pagos responde 409 y dice QUÉ la ata.
-            Acá no hay ninguna regla — mostrar el botón solo
-            cuando "parece" borrable sería una segunda regla que
-            se desincroniza con la del servidor.
-          */}
           <Button
             variant="ghost"
             size="icon"
@@ -630,35 +597,6 @@ export function AcademicClient() {
               Ninguna cohorte coincide con el filtro.
             </p>
           ) : (
-            /**
-             * 021 — La tarjeta de cohorte, rediseñada.
-             *
-             * Tenía CUATRO párrafos apilados, todos en `text-xs
-             * text-muted-foreground`: la fecha, el profesor, el costo, el aula
-             * y el horario pesaban exactamente lo mismo, así que la lista se
-             * leía como un bloque de texto gris y había que leerla entera para
-             * encontrar cualquier cosa. Con 41 cohortes eso es inservible.
-             *
-             * Ahora: el CURSO manda (es por lo que se busca), la edición va
-             * abajo, y los datos se separan en piezas con ícono — se escanean
-             * en vez de leerse.
-             *
-             * Se probó una franja de color a la izquierda para el estado y se
-             * descartó: un borde de color de más de 1px en una tarjeta es
-             * decoración, y el estado YA lo dice el badge.
-             */
-            /**
-             * 021 — Agrupada por estado.
-             *
-             * Con 41 cohortes, una lista plana obliga a leerla entera para
-             * saber cuáles están cursando HOY — que es la única pregunta que
-             * se hace todos los días. El filtro de arriba sigue estando para
-             * esconder grupos; esto ORDENA lo que quedó.
-             *
-             * 028 (seguimiento) — Y los módulos van DENTRO de su
-             * especialización, plegados: sueltos, una EBIM de cuatro módulos
-             * eran cinco filas sin relación a la vista.
-             */
             <div className="space-y-6">
               {(["en_curso", "planificada", "finalizada"] as const).map((estado) => {
                 const grupo = grupos.filter((g) => g.seccion === estado);
@@ -677,8 +615,8 @@ export function AcademicClient() {
                             className="rounded-lg border bg-card transition-colors hover:border-brand-soft"
                           >
                             {ficha(cohort, {
-                              titulo: cohort.courseName,
-                              subtitulo: cohort.name,
+                              titulo: cohort.name || 'Cohorte sin nombre',
+                              subtitulo: cohort.courseName,
                               insignia: cohort.isSpecialization ? (
                                 <button
                                   type="button"
