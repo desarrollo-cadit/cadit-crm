@@ -335,15 +335,24 @@ describe("T017c — vincular no manda correo", () => {
 });
 
 /**
- * 012 (T017b) — **NO existe el envío masivo, y este test lo mantiene así.**
+ * 012 (T017b) decía: **no existe el envío masivo**, porque era la única
+ * barrera entre los 340 alumnos y un correo que nadie quiso mandar.
  *
- * No es una comprobación de estilo: es la única barrera que queda entre los
- * 340 alumnos y un correo que nadie quiso mandar. Si alguien agrega un
- * "invitar a toda la cohorte" con la mejor intención, esto falla y lo obliga a
- * hablarlo antes.
+ * **Cambio de decisión (2026-10-05).** El dueño pide el envío masivo por
+ * cohorte, con salvaguardas. Estos tests ya no prueban que no exista: prueban
+ * las salvaguardas, que son lo que hacía falta proteger.
+ *
+ * 1. El botón es explícito y está en OTRO módulo (`bulk-sends.ts`): el de
+ *    accesos sigue invitando de a una persona, y no exporta nada masivo.
+ * 2. Pide la misma capacidad que la invitación individual (`accesos.gestionar`).
+ * 3. Saltea a quien ya tiene acceso: reinvitar genera una contraseña nueva y
+ *    lo deja afuera de la cuenta que ya usa.
+ * 4. Manda de a uno, con pausa (el buzón de Exchange admite ~30 por minuto).
+ * 5. Invitar de nuevo a quien ya tiene acceso, también de a uno, exige
+ *    confirmarlo (`force`).
  */
-describe("T017b — no se puede invitar a todos", () => {
-  it("el módulo de accesos no exporta ninguna invitación masiva", async () => {
+describe("T017b revertido (2026-10-05) — el masivo existe con salvaguardas", () => {
+  it("el módulo de accesos sigue sin exportar ninguna invitación masiva", async () => {
     const mod = await import("@/server/access");
     const masivos = Object.keys(mod).filter((k) =>
       /(bulk|masiv|todos|todas|all|every|cohort)/i.test(k)
@@ -351,15 +360,60 @@ describe("T017b — no se puede invitar a todos", () => {
     expect(masivos, `exports sospechosos: ${masivos.join(", ")}`).toEqual([]);
   });
 
-  it("la ruta de acceso invita de a UNA inscripción", () => {
-    const file = path.join(
-      process.cwd(),
-      "src/app/api/enrollments/[id]/access/route.ts"
+  it("la ruta individual sigue invitando de a UNA inscripción", () => {
+    const src = readFileSync(
+      path.join(process.cwd(), "src/app/api/enrollments/[id]/access/route.ts"),
+      "utf8"
     );
-    const src = readFileSync(file, "utf8");
-    // El identificador viene de la ruta, no de una lista en el body.
     expect(src).toContain("ctx.params");
     expect(src).not.toMatch(/enrollmentIds|contactIds|cohortId/);
+  });
+
+  it("la ruta masiva pide la misma capacidad que la individual", () => {
+    const src = readFileSync(
+      path.join(process.cwd(), "src/app/api/cohorts/[id]/access/bulk/route.ts"),
+      "utf8"
+    );
+    expect(src).toContain('requireCapability(\n  "accesos.gestionar"');
+  });
+
+  it("el masivo manda de a uno con una pausa con nombre, y saltea a quien ya tiene acceso", () => {
+    const src = readFileSync(path.join(process.cwd(), "src/server/bulk-sends.ts"), "utf8");
+    expect(src).toContain("BULK_SEND_PAUSE_MS");
+    expect(src).toContain("skipped_has_access");
+    // Nada de `Promise.all` sobre los destinatarios: de a uno.
+    expect(src).not.toMatch(/Promise\.all\(/);
+  });
+
+  it("invitar a quien ya tiene vínculo, sin confirmar, no le toca la contraseña", async () => {
+    vi.resetModules();
+    selectQueue.length = 0;
+    sendMail.mockReset();
+    updatePassword.mockReset();
+    selectQueue.push([
+      { enrollment: { id: "enr_1" }, contact: { ...CONTACTO_SIN_CORREO, email: "ana@x.com" } },
+    ]);
+    selectQueue.push([
+      {
+        id: "alk_1",
+        userId: "usr_1",
+        kind: "alumno",
+        contactId: "ct_1",
+        teacherId: null,
+        suspendedAt: null,
+        invitationEmailSentAt: new Date("2026-10-01T13:00:00.000Z"),
+      },
+    ]);
+
+    const { grantPortalAccess } = await import("@/server/access");
+    const r = await grantPortalAccess("org_1", "enr_1");
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect("skipped" in r.data && r.data.skipped).toBe(true);
+    expect(r.data.emailSentAt).toBe("2026-10-01T13:00:00.000Z");
+    expect(sendMail).not.toHaveBeenCalled();
+    expect(updatePassword).not.toHaveBeenCalled();
   });
 });
 
@@ -389,6 +443,7 @@ describe("la contraseña asignada obliga a elegir una propia", () => {
 
   it("alumno nuevo: la cuenta nace marcada", async () => {
     selectQueue.push([{ enrollment: { id: "enr_1" }, contact: CON_CORREO }]);
+    selectQueue.push([]); // todavía sin vínculo de portal (2026-10-05)
     selectQueue.push([]); // no hay usuario con ese correo
     selectQueue.push([{ id: "enr_1" }]); // tiene inscripción
     selectQueue.push([]); // no hay vínculo previo
@@ -414,6 +469,7 @@ describe("la contraseña asignada obliga a elegir una propia", () => {
 
   it("reinvitar una cuenta de portal: contraseña nueva y marca encendida", async () => {
     selectQueue.push([{ enrollment: { id: "enr_1" }, contact: CON_CORREO }]);
+    selectQueue.push([]); // todavía sin vínculo de portal (2026-10-05)
     selectQueue.push([{ id: "usr_portal" }]); // la cuenta ya existe
     selectQueue.push([{ id: "enr_1" }]);
     selectQueue.push([]);
@@ -424,7 +480,7 @@ describe("la contraseña asignada obliga a elegir una propia", () => {
     const r = await grantPortalAccess("org_1", "enr_1");
 
     expect(r.ok).toBe(true);
-    if (!r.ok) return;
+    if (!r.ok || r.data.skipped) throw new Error("se esperaba una invitación");
     expect(updatePassword).toHaveBeenCalledWith(
       "usr_portal",
       `hash(${r.data.temporaryPassword})`
@@ -432,8 +488,32 @@ describe("la contraseña asignada obliga a elegir una propia", () => {
     expect(marcas()).toHaveLength(1);
   });
 
+  /**
+   * 2026-10-05 — Con `force` (el staff lo confirmó) se reinvita aunque ya
+   * tenga vínculo: es como se resuelve una contraseña perdida.
+   */
+  it("con force, quien ya tiene vínculo recibe contraseña nueva", async () => {
+    selectQueue.push([{ enrollment: { id: "enr_1" }, contact: CON_CORREO }]);
+    // Sin consulta de vínculo previo: `force` la saltea.
+    selectQueue.push([{ id: "usr_portal" }]);
+    selectQueue.push([{ id: "enr_1" }]);
+    selectQueue.push([{ id: "alk_1", userId: "usr_portal", kind: "alumno", contactId: "ct_1" }]);
+    const { resolveMembership } = await import("@/server/auth/on-signup");
+    vi.mocked(resolveMembership).mockResolvedValue(null);
+
+    const { grantPortalAccess } = await import("@/server/access");
+    const r = await grantPortalAccess("org_1", "enr_1", { force: true, sentBy: "usr_staff" });
+
+    expect(r.ok).toBe(true);
+    if (!r.ok || r.data.skipped) return;
+    expect(r.data.temporaryPassword).toBeTruthy();
+    expect(updatePassword).toHaveBeenCalled();
+    expect(sendMail).toHaveBeenCalledTimes(1);
+  });
+
   it("alguien del staff que además cursa: ni contraseña nueva ni marca", async () => {
     selectQueue.push([{ enrollment: { id: "enr_1" }, contact: CON_CORREO }]);
+    selectQueue.push([]); // todavía sin vínculo de portal (2026-10-05)
     selectQueue.push([{ id: "usr_staff" }]);
     selectQueue.push([{ id: "enr_1" }]);
     selectQueue.push([]);
@@ -444,7 +524,7 @@ describe("la contraseña asignada obliga a elegir una propia", () => {
     const r = await grantPortalAccess("org_1", "enr_1");
 
     expect(r.ok).toBe(true);
-    if (!r.ok) return;
+    if (!r.ok || r.data.skipped) throw new Error("se esperaba una invitación");
     expect(r.data.temporaryPassword).toBeNull();
     expect(updatePassword).not.toHaveBeenCalled();
     expect(flagWrites).toEqual([]);

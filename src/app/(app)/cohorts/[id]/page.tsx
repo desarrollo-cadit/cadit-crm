@@ -87,6 +87,7 @@ export default async function CohortPage({
           canEditGrading={caps.includes("evaluacion.editar")}
           canEditEnrollments={caps.includes("inscripciones.editar")}
           canIssueCertificates={caps.includes("certificados.emitir")}
+          canManageAccess={caps.includes("accesos.gestionar")}
           esEspecializacion={isSpecialization}
         />
       </div>

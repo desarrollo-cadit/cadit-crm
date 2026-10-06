@@ -55,6 +55,12 @@ const envSchema = z.object({
   M365_SENDER: z.string().email().optional(),
   /** Copia oculta de cada correo enviado, para registro del equipo. */
   M365_BCC: z.string().email().optional(),
+  /**
+   * 2026-10-05 — Pausa entre dos correos de un envío masivo por cohorte.
+   * Exchange Online limita un buzón a unos 30 mensajes por minuto: 2 s deja
+   * margen. 0 solo en pruebas.
+   */
+  BULK_SEND_PAUSE_MS: z.coerce.number().int().min(0).default(2000),
   /** 007 — Envíos del formulario público permitidos por IP y ventana. */
   PUBLIC_FORM_RATE_LIMIT: z.coerce.number().int().min(1).default(5),
   PUBLIC_FORM_RATE_WINDOW_MS: z.coerce.number().int().min(1000).default(600_000),

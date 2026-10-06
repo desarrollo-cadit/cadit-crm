@@ -99,6 +99,15 @@ infraestructura y su riesgo está en el orden.
       Construir el botón es invitar a que alguien lo apriete. **Hay test que
       lo mantiene así**: falla si el módulo exporta algo masivo o si la ruta
       empieza a aceptar una lista de inscripciones.
+      **Cambio de decisión (2026-10-05):** el dueño pide el envío masivo por
+      cohorte y esta tarea se revierte. Existe en `src/server/bulk-sends.ts`
+      (`/api/cohorts/:id/access/bulk`, misma capacidad `accesos.gestionar`), con
+      salvaguardas: botón explícito y confirmación con los números, de a uno con
+      pausa, saltea a quien ya tiene vínculo de portal (reinvitarlo le cambiaría
+      la contraseña) y deja registrado cada resultado. La ruta individual sigue
+      invitando de a una inscripción, y reinvitar a quien ya tiene acceso exige
+      confirmarlo (`force`). Los tests de T017b ahora prueban esas salvaguardas
+      (`tests/unit/portal-invitation.test.ts`). Ver `specs/ROADMAP.md`.
 - [x] T017c [TEST] Desplegar la fase NO dispara ningún correo. La migración de
       T029 crea vínculos si corresponde, pero jamás invitaciones. **Fijado**:
       `createAccountLink` no llama a `sendMail`; invitar es otra función.

@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { getEnv } from "@/lib/env";
@@ -66,6 +66,43 @@ async function loadContext(organizationId: string, enrollmentId: string) {
     )
     .limit(1);
   return rows[0] ?? null;
+}
+
+/**
+ * 2026-10-05 — Las licencias de los MÓDULOS de una especialización.
+ *
+ * La inscripción madre no tiene licencia propia: el software es de cada
+ * módulo, y la licencia se asigna a la inscripción hija (ver
+ * `buildModuleLicenseLines`). Sin esto, los términos de un alumno de
+ * especialización decían "a confirmar" aunque tuviera Revit y Navisworks
+ * asignados.
+ */
+async function moduleLicenseNames(
+  organizationId: string,
+  parentEnrollmentId: string
+): Promise<string[]> {
+  const rows = await getDb()
+    .selectDistinct({ name: schema.software.name })
+    .from(schema.enrollment)
+    .innerJoin(schema.license, eq(schema.license.enrollmentId, schema.enrollment.id))
+    .innerJoin(schema.software, eq(schema.license.softwareId, schema.software.id))
+    .where(
+      scoped(
+        schema.enrollment.organizationId,
+        organizationId,
+        eq(schema.enrollment.parentEnrollmentId, parentEnrollmentId),
+        eq(schema.license.assigned, true)
+      )
+    )
+    .orderBy(asc(schema.software.name));
+  return rows.map((r) => r.name);
+}
+
+/** "Revit", "Revit y Navisworks", "AutoCAD, Revit y Navisworks". */
+function listaEnPalabras(nombres: string[]): string | null {
+  if (nombres.length === 0) return null;
+  if (nombres.length === 1) return nombres[0]!;
+  return `${nombres.slice(0, -1).join(", ")} y ${nombres[nombres.length - 1]}`;
 }
 
 function formatDate(d: Date | null): string {
@@ -142,6 +179,11 @@ export async function sendEnrollmentEmail(
   const logoUrl = `${env.APP_BASE_URL}/logo-cadit.png`;
   const soporte = env.M365_SENDER ?? "";
   const courseName = cohort.name ?? course.name;
+  const licencias =
+    kind === "terms"
+      ? (softwareName ??
+        listaEnPalabras(await moduleLicenseNames(organizationId, enrollmentId)))
+      : null;
 
   const html =
     kind === "terms"
@@ -160,7 +202,7 @@ export async function sendEnrollmentEmail(
           // Sin licencia cargada el documento no puede nombrar el producto.
           // Se declara la falta en vez de inventar un genérico: un préstamo
           // que no dice qué se presta no documenta nada.
-          licencias: softwareName ?? "a confirmar",
+          licencias: licencias ?? "a confirmar",
           academia,
           acento,
           logoUrl,

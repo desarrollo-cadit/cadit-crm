@@ -330,6 +330,13 @@
       "when": 1791221344658,
       "tag": "0046_cambio_de_contrasena",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1791231995140,
+      "tag": "0047_envios_masivos",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import type { Currency } from "@/lib/db/schema";
 import { newId } from "@/lib/db/ids";
@@ -7,7 +7,11 @@ import { normalizePhoneOrRaw } from "@/lib/phone";
 import { fullName } from "@/lib/utils";
 import { PORTAL_NO_EMAIL_REASON } from "@/lib/portal-access";
 import type { Capability } from "@/lib/capabilities";
-import { verificarVinculoDeInscripcion } from "@/server/program-modules";
+import {
+  listarHijasDeVarias,
+  listarModulos,
+  verificarVinculoDeInscripcion,
+} from "@/server/program-modules";
 
 /** 005 (US2, contracts/enrollments.md) — alta comercial de una inscripción. */
 export type CreateEnrollmentInput = {
@@ -263,14 +267,43 @@ export type CohortRosterDto = {
     software: { id: string; name: string }[];
     /** 007 — sin enlace no se puede mandar la bienvenida; la UI lo avisa. */
     whatsappGroupLink: string | null;
+    /**
+     * 2026-10-05 — La especialización no tiene software propio: las licencias
+     * se asignan por módulo (`RosterEntryDto.moduleLicenses`).
+     */
+    isSpecialization: boolean;
   };
   enrollments: RosterEntryDto[];
+};
+
+/**
+ * 2026-10-05 (decisión del dueño) — Una línea de licencia por módulo, en el
+ * roster de una especialización.
+ *
+ * La licencia se asigna a la inscripción HIJA del módulo (`enrollmentId`), con
+ * el software de ESE módulo: una persona puede necesitar Revit en uno y
+ * Navisworks en otro, y `license.enrollment_id` es UNIQUE. `enrollmentId`
+ * null = no cursa ese módulo; la pantalla lo dice sin ofrecer nada.
+ */
+export type ModuleLicenseLine = {
+  moduleName: string;
+  enrollmentId: string | null;
+  software: { id: string; name: string }[];
+  licenseAssigned: boolean;
+  licenseSoftwareId: string | null;
 };
 
 export type RosterEntryDto = {
   id: string;
   /** 013 — `id` para enlazar al legajo desde el roster. */
-  contact: { id: string; name: string; phone: string | null; email: string | null };
+  contact: {
+    id: string;
+    name: string;
+    phone: string | null;
+    email: string | null;
+    /** Dado de baja: el contacto se archivó y la inscripción quedó en la cohorte. */
+    archived: boolean;
+  };
   checklist: {
     /** 005 (DV-004) — leído de license.assigned, NO se duplica en enrollment. */
     licenseAssigned: boolean;
@@ -294,7 +327,11 @@ export type RosterEntryDto = {
     granted: boolean;
     suspended: boolean;
     blockedReason: string | null;
+    /** 2026-10-05 — último correo de acceso aceptado por Graph; null = sin registro. */
+    emailSentAt: string | null;
   };
+  /** 2026-10-05 — Solo en el roster de una especialización: una línea por módulo. */
+  moduleLicenses?: ModuleLicenseLine[];
   // Campos financieros — SOLO presentes con `cobranza.ver` (FR-016).
   amount?: number | null;
   currency?: Currency;
@@ -334,12 +371,14 @@ export function buildRosterEntry(
       name: fullName(contact),
       phone: contact.phone,
       email: contact.email,
+      archived: contact.archivedAt !== null,
     },
     portalAccess: {
       granted: Boolean(accountLink),
       suspended: Boolean(accountLink?.suspendedAt),
       // Ya tiene acceso → no hay nada que desbloquear. Sin correo → el motivo.
       blockedReason: accountLink || contact.email ? null : PORTAL_NO_EMAIL_REASON,
+      emailSentAt: accountLink?.invitationEmailSentAt?.toISOString() ?? null,
     },
     checklist: {
       licenseAssigned: license?.assigned ?? false,
@@ -383,6 +422,7 @@ export async function getCohortRoster(
       startDate: schema.cohort.startDate,
       endDate: schema.cohort.endDate,
       whatsappGroupLink: schema.cohort.whatsappGroupLink,
+      isSpecialization: schema.cohort.isSpecialization,
     })
     .from(schema.cohort)
     .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
@@ -435,6 +475,19 @@ export async function getCohortRoster(
     )
     .orderBy(asc(schema.contact.firstName));
 
+  const enrollments = rows.map((r) =>
+    buildRosterEntry(capabilities, r.enrollment, r.contact, r.license, r.accountLink)
+  );
+
+  if (cohort.isSpecialization) {
+    const lineas = await moduleLicensesFor(
+      organizationId,
+      cohortId,
+      enrollments.map((e) => e.id)
+    );
+    for (const e of enrollments) e.moduleLicenses = lineas.get(e.id) ?? [];
+  }
+
   return {
     cohort: {
       id: cohort.id,
@@ -445,11 +498,159 @@ export async function getCohortRoster(
       endDate: cohort.endDate?.toISOString() ?? null,
       software: softwareRows,
       whatsappGroupLink: cohort.whatsappGroupLink,
+      isSpecialization: cohort.isSpecialization,
     },
-    enrollments: rows.map((r) =>
-      buildRosterEntry(capabilities, r.enrollment, r.contact, r.license, r.accountLink)
-    ),
+    enrollments,
   };
+}
+
+type ModuloDeEspecializacion = {
+  id: string;
+  name: string | null;
+  courseId: string;
+  courseName: string;
+};
+
+type InscripcionHija = {
+  id: string;
+  cohortId: string | null;
+  courseId: string | null;
+  cohortName: string | null;
+  courseName: string | null;
+};
+
+/**
+ * 2026-10-05 — Las líneas de licencia de UN alumno de especialización. Pura.
+ *
+ * Una por módulo, en el orden del recorrido. La hija que cubre un módulo es la
+ * de esa cohorte o, si no, la de otra corrida del MISMO curso: una recursada
+ * en la camada siguiente (028, FR-008). La línea muestra lo que la persona
+ * realmente cursa —el nombre y el software de la cohorte de la hija—, porque
+ * la licencia es para esa cursada.
+ */
+export function buildModuleLicenseLines(
+  modules: readonly ModuloDeEspecializacion[],
+  children: readonly InscripcionHija[],
+  softwareByCohort: ReadonlyMap<string, { id: string; name: string }[]>,
+  licenseByEnrollment: ReadonlyMap<string, { assigned: boolean; softwareId: string }>
+): ModuleLicenseLine[] {
+  const usadas = new Set<string>();
+  return modules.map((m) => {
+    const hija =
+      children.find((c) => !usadas.has(c.id) && c.cohortId === m.id) ??
+      children.find((c) => !usadas.has(c.id) && c.courseId === m.courseId);
+    if (!hija) {
+      return {
+        moduleName: m.name ?? m.courseName,
+        enrollmentId: null,
+        software: [],
+        licenseAssigned: false,
+        licenseSoftwareId: null,
+      };
+    }
+    usadas.add(hija.id);
+    const licencia = licenseByEnrollment.get(hija.id);
+    return {
+      moduleName: hija.cohortName ?? hija.courseName ?? m.name ?? m.courseName,
+      enrollmentId: hija.id,
+      software: (hija.cohortId && softwareByCohort.get(hija.cohortId)) || [],
+      licenseAssigned: licencia?.assigned ?? false,
+      licenseSoftwareId: licencia?.assigned ? licencia.softwareId : null,
+    };
+  });
+}
+
+/** Las líneas de licencia por módulo de todos los alumnos de una especialización. */
+async function moduleLicensesFor(
+  organizationId: string,
+  specializationCohortId: string,
+  motherEnrollmentIds: readonly string[]
+): Promise<Map<string, ModuleLicenseLine[]>> {
+  const db = getDb();
+  const modulos = await listarModulos(organizationId, specializationCohortId);
+  const hijas = await listarHijasDeVarias(organizationId, motherEnrollmentIds);
+
+  const courseIds = [...new Set(modulos.map((m) => m.courseId))];
+  const cursos = courseIds.length
+    ? await db
+        .select({ id: schema.course.id, name: schema.course.name })
+        .from(schema.course)
+        .where(scoped(schema.course.organizationId, organizationId, inArray(schema.course.id, courseIds)))
+    : [];
+  const nombreCurso = new Map(cursos.map((c) => [c.id, c.name]));
+
+  const cohortIds = [
+    ...new Set(hijas.map((h) => h.cohortId).filter((id): id is string => Boolean(id))),
+  ];
+  const software = cohortIds.length
+    ? await db
+        .select({
+          cohortId: schema.cohortSoftware.cohortId,
+          id: schema.software.id,
+          name: schema.software.name,
+        })
+        .from(schema.cohortSoftware)
+        .innerJoin(schema.software, eq(schema.software.id, schema.cohortSoftware.softwareId))
+        .where(
+          scoped(
+            schema.cohortSoftware.organizationId,
+            organizationId,
+            inArray(schema.cohortSoftware.cohortId, cohortIds)
+          )
+        )
+    : [];
+  const softwareByCohort = new Map<string, { id: string; name: string }[]>();
+  for (const s of software) {
+    const lista = softwareByCohort.get(s.cohortId) ?? [];
+    lista.push({ id: s.id, name: s.name });
+    softwareByCohort.set(s.cohortId, lista);
+  }
+
+  const hijaIds = hijas.map((h) => h.id);
+  const licencias = hijaIds.length
+    ? await db
+        .select({
+          enrollmentId: schema.license.enrollmentId,
+          assigned: schema.license.assigned,
+          softwareId: schema.license.softwareId,
+        })
+        .from(schema.license)
+        .where(
+          scoped(
+            schema.license.organizationId,
+            organizationId,
+            inArray(schema.license.enrollmentId, hijaIds)
+          )
+        )
+    : [];
+  const licenseByEnrollment = new Map(
+    licencias.map((l) => [l.enrollmentId, { assigned: l.assigned, softwareId: l.softwareId }])
+  );
+
+  const modules = modulos.map((m) => ({
+    id: m.id,
+    name: m.name,
+    courseId: m.courseId,
+    courseName: nombreCurso.get(m.courseId) ?? "Módulo",
+  }));
+
+  const salida = new Map<string, ModuleLicenseLine[]>();
+  for (const madreId of motherEnrollmentIds) {
+    const suyas = hijas
+      .filter((h) => h.parentEnrollmentId === madreId)
+      .map((h) => ({
+        id: h.id,
+        cohortId: h.cohortId,
+        courseId: h.courseId,
+        cohortName: h.cohortName,
+        courseName: h.courseName,
+      }));
+    salida.set(
+      madreId,
+      buildModuleLicenseLines(modules, suyas, softwareByCohort, licenseByEnrollment)
+    );
+  }
+  return salida;
 }
 
 export function csvField(value: string | null): string {

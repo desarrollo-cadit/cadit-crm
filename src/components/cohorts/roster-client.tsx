@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { ChevronRight, Download, KeyRound, Mail, UserPlus } from "lucide-react";
-import type { CohortRosterDto, RosterEntryDto } from "@/server/enrollments";
+import type { CohortRosterDto, ModuleLicenseLine, RosterEntryDto } from "@/server/enrollments";
 import type { CompanyDto } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -23,15 +23,29 @@ import { OfflineCoursesPanel } from "@/components/offline-courses/offline-course
 import { EnrollForm } from "@/components/enrollments/enroll-form";
 import { EnrollmentCommercialForm } from "@/components/enrollments/enrollment-commercial-form";
 import { Skeleton } from "@/components/ui/skeleton";
+import { BulkSendsPanel } from "@/components/cohorts/bulk-sends-panel";
+import { ConfirmSendDialog } from "@/components/cohorts/confirm-send-dialog";
+import { formatSentAt } from "@/lib/schedule-time";
 
 type MemberOption = { userId: string; name: string };
 
+/**
+ * 2026-10-05 (decisión del dueño) — "Software instalado" y "Licencia" son
+ * independientes: tildar la instalación NO consume licencia; solo asignarla
+ * descuenta del stock. Como en pantalla están uno al lado del otro, el `hint`
+ * lo dice donde surge la duda.
+ */
 const CHECKLIST_ITEMS: {
   key: "termsEmailSentAt" | "softwareInstalledAt" | "academiaOnlineAccessAt";
   label: string;
+  hint?: string;
 }[] = [
   { key: "termsEmailSentAt", label: "Correo de T&C enviado" },
-  { key: "softwareInstalledAt", label: "Software instalado" },
+  {
+    key: "softwareInstalledAt",
+    label: "Software instalado",
+    hint: "Registra la instalación; no descuenta licencias del stock.",
+  },
   { key: "academiaOnlineAccessAt", label: "Acceso a Academia Online" },
 ];
 
@@ -52,7 +66,10 @@ function formatDate(iso: string | null) {
  */
 function checklistProgress(e: RosterEntryDto): { done: number; total: number } {
   const steps = [
-    e.checklist.licenseAssigned || e.checklist.hadOwnLicense,
+    e.checklist.licenseAssigned ||
+      e.checklist.hadOwnLicense ||
+      // 2026-10-05 — En una especialización la licencia es de los módulos.
+      Boolean(e.moduleLicenses?.some((l) => l.licenseAssigned)),
     Boolean(e.checklist.termsEmailSentAt),
     Boolean(e.checklist.softwareInstalledAt),
     Boolean(e.checklist.academiaOnlineAccessAt),
@@ -86,8 +103,11 @@ export function RosterClient({
   canEnroll = true,
   canViewOfflineCourses = false,
   canEditOfflineCourses = false,
+  canManageAccess = false,
 }: {
   cohortId: string;
+  /** 2026-10-05 — `accesos.gestionar`: ofrecer el acceso al portal a toda la cohorte. */
+  canManageAccess?: boolean;
   /** cursos-offline — `academico.ver`: draw the per-student library panel. */
   canViewOfflineCourses?: boolean;
   /** cursos-offline — `academico.editar`: add / remove / reset per student. */
@@ -121,6 +141,17 @@ export function RosterClient({
     label: string;
     contactName: string;
     next: boolean;
+  } | null>(null);
+  /**
+   * 2026-10-05 — Reenviar algo que ya salió pide confirmación, diciendo
+   * cuándo salió. `sentAt` null = el sistema no tiene registro del envío
+   * (accesos dados antes de que existiera la marca).
+   */
+  const [resend, setResend] = useState<{
+    enrollmentId: string;
+    kind: "terms" | "welcome" | "portal";
+    contactName: string;
+    sentAt: string | null;
   } | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -197,35 +228,45 @@ export function RosterClient({
    * DESPUÉS de que M365 acepta el envío. Si falla, el tilde no queda puesto y
    * el error se muestra: lo peor sería que el equipo crea que se mandó.
    */
-  async function sendEmail(enrollmentId: string, kind: "terms" | "welcome") {
+  async function sendEmail(
+    enrollmentId: string,
+    kind: "terms" | "welcome",
+    contactName: string,
+    force = false
+  ) {
     setSendingEmail(enrollmentId + kind);
     const res = await fetch(`/api/enrollments/${enrollmentId}/emails`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ kind }),
+      body: JSON.stringify(force ? { kind, force: true } : { kind }),
     }).catch(() => null);
     setSendingEmail(null);
     if (!res?.ok) {
       setActionError(await errorMessage(res, "No se pudo enviar el correo"));
     } else {
-      const data = (await res.json()) as { skipped: boolean };
-      setActionError(
-        data.skipped ? "Ese correo ya se había enviado; no se reenvió." : null
-      );
+      const data = (await res.json()) as { skipped: boolean; sentAt: string };
+      setActionError(null);
+      // 2026-10-05 — Ya había salido (quizás en un envío a toda la cohorte):
+      // en vez de un aviso suelto, se pregunta si reenviarlo, diciendo cuándo.
+      if (data.skipped) setResend({ enrollmentId, kind, contactName, sentAt: data.sentAt });
     }
     void refetch();
   }
   /**
-   * 012 (T017, T017b) — Invita a UN alumno al portal.
+   * 012 (T017) — Invita a UN alumno al portal.
    *
-   * De a uno y a pedido: no hay "invitar a toda la cohorte" ni lo va a haber.
-   * Son 340 alumnos reales y un correo no se puede desenviar.
+   * 2026-10-05 — El envío a toda la cohorte existe (T017b revertido) en
+   * `BulkSendsPanel`. Acá sigue siendo de a uno, y a quien ya tiene acceso
+   * solo se lo reinvita con `force` después de confirmarlo: reinvitar le
+   * genera una contraseña nueva.
    */
-  async function invitePortal(enrollmentId: string) {
+  async function invitePortal(enrollmentId: string, contactName: string, force = false) {
     setInvitingPortal(enrollmentId);
     setTemporaryPassword(null);
     const res = await fetch(`/api/enrollments/${enrollmentId}/access`, {
       method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(force ? { force: true } : {}),
     }).catch(() => null);
     setInvitingPortal(null);
 
@@ -233,11 +274,16 @@ export function RosterClient({
       setActionError(await errorMessage(res, "No se pudo dar el acceso al portal"));
     } else {
       const data = (await res.json()) as {
+        skipped?: boolean;
+        emailSentAt: string | null;
         existingAccount: boolean;
         temporaryPassword: string | null;
         emailError: string | null;
       };
-      if (data.temporaryPassword) {
+      if (data.skipped) {
+        setActionError(null);
+        setResend({ enrollmentId, kind: "portal", contactName, sentAt: data.emailSentAt });
+      } else if (data.temporaryPassword) {
         setTemporaryPassword({
           enrollmentId,
           password: data.temporaryPassword,
@@ -354,6 +400,13 @@ export function RosterClient({
             {showFinance && (
               <BillingBulkPanel cohortId={cohortId} onDone={() => void refetch()} />
             )}
+            {/* 2026-10-05 — Términos, bienvenida y acceso al portal a toda
+                la cohorte, con confirmación y de a uno. */}
+            <BulkSendsPanel
+              cohortId={cohortId}
+              canManageAccess={canManageAccess}
+              onProgress={refetch}
+            />
             <div className="rounded-lg border">
               <Table>
                 <TableHeader className="bg-subtle">
@@ -414,7 +467,18 @@ export function RosterClient({
                             </TableCell>
                           )}
                           <TableCell className="text-xs">
-                            {e.checklist.licenseAssigned ? (
+                            {e.moduleLicenses?.some((l) => l.licenseAssigned) ? (
+                              <Badge variant="success">
+                                {e.moduleLicenses
+                                  .filter((l) => l.licenseAssigned)
+                                  .map(
+                                    (l) =>
+                                      l.software.find((s) => s.id === l.licenseSoftwareId)?.name ??
+                                      "Asignada"
+                                  )
+                                  .join(", ")}
+                              </Badge>
+                            ) : e.checklist.licenseAssigned ? (
                               <Badge variant="success">
                                 {roster.cohort.software.find(
                                   (s) => s.id === e.checklist.licenseSoftwareId
@@ -447,7 +511,13 @@ export function RosterClient({
                   {/* Licencia asignada — leída de license.assigned (DV-004), con
                       acción propia (PUT/DELETE /api/enrollments/:id/license) en
                       vez de un checkbox del checklist genérico. */}
-                  {e.checklist.licenseAssigned ? (
+                  {roster.cohort.isSpecialization ? (
+                    <ModuleLicenses
+                      lines={e.moduleLicenses ?? []}
+                      onAssign={(childId, softwareId) => void assignLicense(childId, softwareId)}
+                      onUnassign={(childId) => void unassignLicense(childId)}
+                    />
+                  ) : e.checklist.licenseAssigned ? (
                     <span className="flex items-center gap-1.5">
                       <Checkbox checked readOnly />
                       Licencia:{" "}
@@ -488,7 +558,8 @@ export function RosterClient({
                     </span>
                   )}
                   {CHECKLIST_ITEMS.map((item) => (
-                    <label key={item.key} className="flex items-center gap-1.5">
+                    <Fragment key={item.key}>
+                    <label className="flex items-center gap-1.5" title={item.hint}>
                       <Checkbox
                         checked={Boolean(e.checklist[item.key])}
                         onChange={(ev) =>
@@ -508,6 +579,25 @@ export function RosterClient({
                         </span>
                       )}
                     </label>
+                    {/* 2026-10-05 — Reenviar los términos: con confirmación y
+                        diciendo cuándo salieron. */}
+                    {item.key === "termsEmailSentAt" && e.checklist.termsEmailSentAt && (
+                      <button
+                        type="button"
+                        className="-ml-1.5 text-muted-foreground underline"
+                        onClick={() =>
+                          setResend({
+                            enrollmentId: e.id,
+                            kind: "terms",
+                            contactName: e.contact.name,
+                            sentAt: e.checklist.termsEmailSentAt,
+                          })
+                        }
+                      >
+                        reenviar
+                      </button>
+                    )}
+                    </Fragment>
                   ))}
                   <label className="flex items-center gap-1.5">
                     <Checkbox
@@ -518,6 +608,14 @@ export function RosterClient({
                     />
                     Tenía licencia propia
                   </label>
+                  {(roster.cohort.software.length > 0 ||
+                    (e.moduleLicenses ?? []).some((l) => l.software.length > 0)) && (
+                    <p className="basis-full text-muted-foreground">
+                      Solo asignar una licencia descuenta del stock; marcar
+                      «Software instalado» registra la instalación y no consume
+                      licencias.
+                    </p>
+                  )}
                               </div>
 
                               {/* 007 — Bienvenida + invitación al grupo. Separado del
@@ -528,16 +626,27 @@ export function RosterClient({
                                   variant="outline"
                                   size="sm"
                                   disabled={sendingEmail === e.id + "welcome"}
-                                  onClick={() => void sendEmail(e.id, "welcome")}
+                                  onClick={() =>
+                                    e.welcomeEmailSentAt
+                                      ? setResend({
+                                          enrollmentId: e.id,
+                                          kind: "welcome",
+                                          contactName: e.contact.name,
+                                          sentAt: e.welcomeEmailSentAt,
+                                        })
+                                      : void sendEmail(e.id, "welcome", e.contact.name)
+                                  }
                                 >
                                   <Mail className="h-4 w-4" />
                                   {sendingEmail === e.id + "welcome"
                                     ? "Enviando…"
-                                    : "Enviar bienvenida + grupo"}
+                                    : e.welcomeEmailSentAt
+                                      ? "Reenviar bienvenida + grupo"
+                                      : "Enviar bienvenida + grupo"}
                                 </Button>
                                 {e.welcomeEmailSentAt ? (
                                   <span className="text-muted-foreground">
-                                    Enviada el {formatDate(e.welcomeEmailSentAt)}
+                                    Enviada el {formatSentAt(e.welcomeEmailSentAt)}
                                   </span>
                                 ) : !roster.cohort.whatsappGroupLink ? (
                                   <span className="text-muted-foreground">
@@ -547,15 +656,40 @@ export function RosterClient({
                               </div>
 
                               {/* 012 (T017) — Acceso al portal del alumno.
-                                  De a uno y explícito: inscribir NO habilita
-                                  nada, y no existe la versión masiva. */}
+                                  Explícito: inscribir NO habilita nada. El
+                                  envío a toda la cohorte vive en el panel de
+                                  arriba (2026-10-05). */}
                               <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-                                {e.portalAccess.granted ? (
+                                {e.portalAccess.granted && e.portalAccess.suspended ? (
                                   <span className="text-muted-foreground">
-                                    {e.portalAccess.suspended
-                                      ? "Acceso al portal suspendido."
-                                      : "Tiene acceso al portal."}
+                                    Acceso al portal suspendido.
                                   </span>
+                                ) : e.portalAccess.granted ? (
+                                  <>
+                                    <span className="text-muted-foreground">
+                                      Tiene acceso al portal.{" "}
+                                      {e.portalAccess.emailSentAt
+                                        ? `El correo de acceso se envió el ${formatSentAt(e.portalAccess.emailSentAt)}.`
+                                        : "No hay registro del envío del correo de acceso."}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      className="text-muted-foreground underline"
+                                      disabled={invitingPortal === e.id}
+                                      onClick={() =>
+                                        setResend({
+                                          enrollmentId: e.id,
+                                          kind: "portal",
+                                          contactName: e.contact.name,
+                                          sentAt: e.portalAccess.emailSentAt,
+                                        })
+                                      }
+                                    >
+                                      {invitingPortal === e.id
+                                        ? "Reenviando…"
+                                        : "Reenviar acceso con una contraseña nueva"}
+                                    </button>
+                                  </>
                                 ) : e.portalAccess.blockedReason ? (
                                   /* T017d — el motivo, en vez de un botón que
                                      va a fallar: son 6 de los 340 alumnos. */
@@ -567,7 +701,7 @@ export function RosterClient({
                                     variant="outline"
                                     size="sm"
                                     disabled={invitingPortal === e.id}
-                                    onClick={() => void invitePortal(e.id)}
+                                    onClick={() => void invitePortal(e.id, e.contact.name)}
                                   >
                                     <KeyRound className="h-4 w-4" />
                                     {invitingPortal === e.id
@@ -750,7 +884,11 @@ export function RosterClient({
                   // Marcar "T&C enviado" MANDA el correo; desmarcar es una
                   // corrección manual y no dispara nada.
                   if (confirmChecklist.key === "termsEmailSentAt" && confirmChecklist.next) {
-                    void sendEmail(confirmChecklist.enrollmentId, "terms");
+                    void sendEmail(
+                      confirmChecklist.enrollmentId,
+                      "terms",
+                      confirmChecklist.contactName
+                    );
                   } else {
                     void patchChecklist(
                       confirmChecklist.enrollmentId,
@@ -767,6 +905,133 @@ export function RosterClient({
           </div>
         </div>
       )}
+
+      {resend && (
+        <ConfirmSendDialog
+          title={RESEND_COPY[resend.kind].title}
+          confirmLabel={RESEND_COPY[resend.kind].confirm}
+          busy={
+            resend.kind === "portal"
+              ? invitingPortal === resend.enrollmentId
+              : sendingEmail === resend.enrollmentId + resend.kind
+          }
+          onClose={() => setResend(null)}
+          onConfirm={() => {
+            const r = resend;
+            setResend(null);
+            if (r.kind === "portal") void invitePortal(r.enrollmentId, r.contactName, true);
+            else void sendEmail(r.enrollmentId, r.kind, r.contactName, true);
+          }}
+        >
+          <p className="text-foreground">{resendSentence(resend)}</p>
+          <p>{RESEND_COPY[resend.kind].effect}</p>
+        </ConfirmSendDialog>
+      )}
     </div>
+  );
+}
+
+const RESEND_COPY: Record<
+  "terms" | "welcome" | "portal",
+  { title: string; confirm: string; effect: string }
+> = {
+  terms: {
+    title: "Reenviar los términos de la licencia",
+    confirm: "Reenviar los términos",
+    effect: "Se le enviará otra copia. Un correo enviado no se puede deshacer.",
+  },
+  welcome: {
+    title: "Reenviar la bienvenida",
+    confirm: "Reenviar la bienvenida",
+    effect: "Se le enviará otra copia. Un correo enviado no se puede deshacer.",
+  },
+  portal: {
+    title: "Reenviar el acceso al portal",
+    confirm: "Reenviar con una contraseña nueva",
+    effect:
+      "Se generará una contraseña temporal nueva y la anterior dejará de servir: si la persona ya entraba al portal, va a tener que usar la nueva.",
+  },
+};
+
+/** "Ya se envió el 5 oct. 2026, 14:32 a Ana Pérez." — o que no hay registro. */
+function resendSentence(r: { contactName: string; sentAt: string | null }) {
+  return r.sentAt
+    ? `Ya se envió el ${formatSentAt(r.sentAt)} a ${r.contactName}.`
+    : `${r.contactName} ya tiene acceso al portal; no hay registro de cuándo se le envió el correo de acceso.`;
+}
+
+/**
+ * 2026-10-05 (decisión del dueño) — Licencias en el roster de una
+ * especialización: una línea por módulo.
+ *
+ * La especialización no tiene software propio (es de cada módulo), así que
+ * acá la licencia se asigna a la inscripción del MÓDULO, con el software de
+ * ese módulo, usando la misma ruta que el roster del módulo. Antes no había
+ * dónde asignarla y el equipo tildaba "Software instalado" creyendo que
+ * descontaba stock.
+ */
+function ModuleLicenses({
+  lines,
+  onAssign,
+  onUnassign,
+}: {
+  lines: ModuleLicenseLine[];
+  onAssign: (childEnrollmentId: string, softwareId: string) => void;
+  onUnassign: (childEnrollmentId: string) => void;
+}) {
+  if (lines.length === 0) {
+    return (
+      <span className="basis-full text-muted-foreground">
+        La especialización todavía no tiene módulos.
+      </span>
+    );
+  }
+  return (
+    <ul className="basis-full space-y-1" aria-label="Licencias por módulo">
+      {lines.map((l, i) => (
+        <li key={l.enrollmentId ?? `sin-${i}`} className="flex flex-wrap items-center gap-1.5">
+          <span className="font-medium text-foreground">{l.moduleName}:</span>
+          {!l.enrollmentId ? (
+            <span className="text-muted-foreground">no está inscripto en este módulo.</span>
+          ) : l.licenseAssigned ? (
+            <>
+              <Checkbox checked readOnly aria-label={`Licencia asignada en ${l.moduleName}`} />
+              Licencia:{" "}
+              {l.software.find((s) => s.id === l.licenseSoftwareId)?.name ?? l.licenseSoftwareId}
+              <button
+                type="button"
+                className="text-muted-foreground underline"
+                onClick={() => onUnassign(l.enrollmentId!)}
+              >
+                liberar
+              </button>
+            </>
+          ) : l.software.length > 0 ? (
+            <label className="flex items-center gap-1.5">
+              Licencia:
+              <Select
+                className="h-7 w-auto px-1.5 py-0.5 text-xs"
+                defaultValue=""
+                aria-label={`Asignar licencia en ${l.moduleName}`}
+                onChange={(ev) => {
+                  if (ev.target.value) onAssign(l.enrollmentId!, ev.target.value);
+                }}
+              >
+                <option value="" disabled>
+                  asignar…
+                </option>
+                {l.software.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </Select>
+            </label>
+          ) : (
+            <span className="text-muted-foreground">el módulo no tiene software declarado.</span>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }

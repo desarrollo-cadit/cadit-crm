@@ -26,6 +26,7 @@ export function CohortTabs({
   canEditGrading,
   canEditEnrollments,
   canIssueCertificates,
+  canManageAccess,
   esEspecializacion,
 }: {
   cohortId: string;
@@ -46,6 +47,8 @@ export function CohortTabs({
   canEditEnrollments: boolean;
   /** 024 — `certificados.emitir`: emitir y anular son la MISMA capacidad. */
   canIssueCertificates: boolean;
+  /** 2026-10-05 — `accesos.gestionar`: el acceso al portal a toda la cohorte. */
+  canManageAccess: boolean;
   /**
    * 028 (seguimiento) — ¿Esta cohorte está MARCADA como especialización?
    *
@@ -119,6 +122,7 @@ export function CohortTabs({
             canEnroll={canEnroll}
             canViewOfflineCourses={canViewAcademic}
             canEditOfflineCourses={canEditAcademic}
+            canManageAccess={canManageAccess}
           />
         ) : tab === "program" ? (
           <ProgramClient

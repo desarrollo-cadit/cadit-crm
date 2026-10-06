@@ -234,6 +234,25 @@ Estas atraviesan varias fases y ya están tomadas.
   (`CAPABILITIES` + `NAV_GROUPS`), de modo que agregar una capacidad la haga
   aparecer sola.
 
+### Del 2026-10-05
+
+- **Existe el envío masivo por cohorte**: términos de la licencia ATC,
+  bienvenida al grupo y acceso al portal. Revierte la T017b de
+  [012](012-identidad-y-permisos/tasks.md) ("no existe envío masivo"), por
+  pedido del dueño. Queda registrado como cambio de decisión, con las
+  salvaguardas que lo hacen seguro: botón explícito y confirmación con los
+  números; de a uno con pausa (Exchange admite ~30 por minuto); las marcas por
+  persona deciden quién ya lo recibió, así que reanudar manda solo lo pendiente;
+  y **el acceso al portal saltea a quien ya tiene vínculo**, porque reinvitar
+  genera una contraseña nueva. Reenviar a una persona sigue siendo posible, con
+  confirmación que dice cuándo salió el anterior.
+- **Licencias: fechas desconocidas = no terminó.** 023 liberaba la licencia de
+  una inscripción sin cohorte; eso inflaba el stock en silencio. Ahora solo
+  libera lo que se sabe terminado o vencido.
+- **"Software instalado" no consume licencia**; solo "Licencia: asignar…" lo
+  hace. En una especialización la licencia se asigna por módulo, desde el roster
+  de la especialización, a la inscripción hija.
+
 ## Principios que gobiernan la cadena
 
 1. **Defensa en profundidad, no en su lugar.** RLS en Postgres se agrega

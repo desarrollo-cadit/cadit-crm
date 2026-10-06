@@ -32,6 +32,7 @@
 import { createHmac } from "node:crypto";
 import { seccion029 } from "./e2e/navegacion-029.mjs";
 import { seccionCursosOffline } from "./e2e/cursos-offline.mjs";
+import { seccionEnviosMasivos } from "./e2e/envios-masivos.mjs";
 import {
   alEntrar,
   claveVigente,
@@ -133,6 +134,36 @@ async function main() {
     JSON.stringify(conn.json)
   );
   await api("/api/dev/wa-mock/outbox", { method: "DELETE" });
+
+  /**
+   * `E2E_SECCIONES=envios-masivos,cambio-de-contrasena` corre SOLO esos
+   * bloques (los que viven en módulo propio) después del setup. El arnés
+   * entero tarda más de diez minutos y ya tumbó el dev server por memoria:
+   * para verificar un cambio acotado alcanza con sus bloques.
+   */
+  const soloSecciones = (process.env.E2E_SECCIONES ?? "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+  if (soloSecciones.length > 0) {
+    const contexto = { api, ok, BASE, getCookie: () => cookie };
+    const SECCIONES = {
+      "navegacion-029": seccion029,
+      "cursos-offline": seccionCursosOffline,
+      "cambio-de-contrasena": seccionCambioDeContrasena,
+      "envios-masivos": seccionEnviosMasivos,
+    };
+    for (const nombre of soloSecciones) {
+      const seccion = SECCIONES[nombre];
+      if (!seccion) {
+        ok(`sección conocida: ${nombre}`, false, Object.keys(SECCIONES).join(", "));
+        continue;
+      }
+      await seccion(contexto);
+    }
+    console.log(`\n===== ${checks - failures}/${checks} checks OK, ${failures} fallos =====`);
+    process.exit(failures > 0 ? 1 : 0);
+  }
 
   console.log("\n== us-bsuid: inbound sin wa_id ==");
   const inb1 = await api("/api/dev/wa-mock/inbound", {
@@ -1093,10 +1124,12 @@ async function main() {
     JSON.stringify(filaCon?.portalAccess)
   );
 
-  // T017b — la puerta masiva no existe: la ruta invita de a UNA inscripción.
+  // T017b (revertido el 2026-10-05) — el envío masivo existe, pero en
+  // `/api/cohorts/:id/access/bulk` y con salvaguardas (lo conduce la sección
+  // envios-masivos). `/access` a secas sigue sin existir.
   const masivo = await api(`/api/cohorts/${cohortePId}/access`, { method: "POST" });
   ok(
-    "no existe una ruta para invitar a toda la cohorte (T017b)",
+    "la cohorte no tiene una ruta `/access` suelta; el masivo vive en `/access/bulk`",
     masivo.res.status === 404 || masivo.res.status === 405,
     `${masivo.res.status}`
   );
@@ -5010,6 +5043,9 @@ async function main() {
 
   // Cambio de contraseña forzado en el primer ingreso, y voluntario después.
   await seccionCambioDeContrasena({ api, ok, BASE, getCookie: () => cookie });
+
+  // 2026-10-05 — Envío masivo por cohorte y licencias por módulo.
+  await seccionEnviosMasivos({ api, ok, BASE, getCookie: () => cookie });
 
   console.log(`\n===== ${checks - failures}/${checks} checks OK, ${failures} fallos =====`);
   process.exit(failures > 0 ? 1 : 0);

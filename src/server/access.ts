@@ -124,6 +124,8 @@ export type AccountLinkDto = {
   contactId: string | null;
   teacherId: string | null;
   suspendedAt: string | null;
+  /** 2026-10-05 — cuándo Graph aceptó el último correo de acceso; null = sin registro. */
+  invitationEmailSentAt: string | null;
 };
 
 /**
@@ -195,6 +197,7 @@ export function serializeAccountLink(
     contactId: row.contactId,
     teacherId: row.teacherId,
     suspendedAt: row.suspendedAt?.toISOString() ?? null,
+    invitationEmailSentAt: row.invitationEmailSentAt?.toISOString() ?? null,
   };
 }
 
@@ -317,15 +320,42 @@ export type GrantPortalAccessResult = {
    * produce exactamente el mismo agujero.
    */
   emailError: string | null;
+  skipped?: false;
+};
+
+/**
+ * 2026-10-05 — La persona YA tenía acceso y nadie confirmó reinvitarla: no se
+ * tocó nada. `emailSentAt` es el último correo de acceso registrado, para que
+ * la pantalla diga "Ya se envió el …" antes de ofrecer reenviar.
+ */
+export type PortalAccessAlreadyGranted = {
+  skipped: true;
+  link: AccountLinkDto;
+  emailSentAt: string | null;
+};
+
+export type GrantPortalAccessOptions = {
+  /**
+   * Reinvitar aunque ya tenga acceso. Genera una contraseña temporal NUEVA y
+   * la anterior deja de servir: es como el staff resuelve una contraseña
+   * perdida, y por eso exige que alguien lo confirme.
+   */
+  force?: boolean;
+  /** Quién pidió el envío, para la marca del correo de acceso. */
+  sentBy?: string | null;
 };
 
 /**
  * 012 (T017, DV-004/DV-008) — Habilita el portal de UN alumno y le avisa.
  *
  * Es un paso EXPLÍCITO del staff: inscribir a alguien no dispara esto ni nada
- * parecido. Y no existe la versión masiva — ver T017b: el botón de "invitar a
- * todos" no se construye, porque construirlo es invitar a que alguien lo
- * apriete y les llegue un correo a los 340 de una.
+ * parecido. La versión masiva existe desde 2026-10-05 (T017b revertido) en
+ * `bulk-sends.ts`, con sus salvaguardas; este módulo sigue invitando de a una
+ * persona.
+ *
+ * **Quien ya tiene acceso no se reinvita sin `force`.** Reinvitar genera una
+ * contraseña nueva y deja a la persona afuera de la cuenta que ya usa: un
+ * doble click no puede hacer eso.
  *
  * El orden es deliberado: primero se crea el acceso, después se avisa. Si el
  * correo falla, el acceso queda creado y el staff reintenta —lo que genera una
@@ -334,8 +364,9 @@ export type GrantPortalAccessResult = {
  */
 export async function grantPortalAccess(
   organizationId: string,
-  enrollmentId: string
-): Promise<AccessResult<GrantPortalAccessResult>> {
+  enrollmentId: string,
+  opts: GrantPortalAccessOptions = {}
+): Promise<AccessResult<GrantPortalAccessResult | PortalAccessAlreadyGranted>> {
   const ctx = await loadEnrollmentContact(organizationId, enrollmentId);
   if (!ctx) {
     return { ok: false, status: 404, code: "not_found", message: "Inscripción no encontrada" };
@@ -347,6 +378,28 @@ export async function grantPortalAccess(
   }
 
   const db = getDb();
+
+  if (!opts.force) {
+    const links = await db
+      .select()
+      .from(schema.accountLink)
+      .where(
+        scoped(
+          schema.accountLink.organizationId,
+          organizationId,
+          and(eq(schema.accountLink.kind, "alumno"), eq(schema.accountLink.contactId, contact.id))
+        )
+      )
+      .limit(1);
+    const yaTiene = links[0];
+    if (yaTiene) {
+      const link = serializeAccountLink(yaTiene);
+      return {
+        ok: true,
+        data: { skipped: true, link, emailSentAt: link.invitationEmailSentAt },
+      };
+    }
+  }
   const email = contact.email.toLowerCase();
 
   const existingUsers = await db
@@ -392,7 +445,7 @@ export async function grantPortalAccess(
       };
     }
 
-    return inviteExisting(organizationId, existing.id, contact, linked.data);
+    return inviteExisting(organizationId, existing.id, contact, linked.data, opts.sentBy ?? null);
   }
 
   const temporaryPassword = generateTemporaryPassword();
@@ -415,7 +468,13 @@ export async function grantPortalAccess(
   });
   if (!linked.ok) return linked;
 
-  const envio = await sendInvitationEmail(organizationId, contact, temporaryPassword, "alumno");
+  const envio = await sendInvitationEmail(
+    organizationId,
+    contact,
+    temporaryPassword,
+    linked.data,
+    opts.sentBy ?? null
+  );
 
   return {
     ok: true,
@@ -435,8 +494,9 @@ export async function grantPortalAccess(
  * inscripción** (FR-005b es solo para alumnos), así que no hubo que tocar la
  * regla.
  *
- * Sin envío masivo, igual que con los alumnos (T017b de 012): son 7 personas
- * y un correo no se puede desenviar.
+ * Sin envío masivo: son 7 personas y un correo no se puede desenviar. (El de
+ * alumnos existe desde 2026-10-05, por cohorte y con salvaguardas; ver
+ * `bulk-sends.ts`.)
  */
 export async function grantTeacherPortalAccess(
   organizationId: string,
@@ -508,7 +568,7 @@ export async function grantTeacherPortalAccess(
         },
       };
     }
-    return inviteExisting(organizationId, existing.id, comoContacto, linked.data);
+    return inviteExisting(organizationId, existing.id, comoContacto, linked.data, null);
   }
 
   const temporaryPassword = generateTemporaryPassword();
@@ -535,7 +595,8 @@ export async function grantTeacherPortalAccess(
     organizationId,
     comoContacto,
     temporaryPassword,
-    "profesor"
+    linked.data,
+    null
   );
 
   return {
@@ -549,7 +610,8 @@ async function inviteExisting(
   organizationId: string,
   userId: string,
   contact: DestinatarioDeInvitacion,
-  link: AccountLinkDto
+  link: AccountLinkDto,
+  sentBy: string | null
 ): Promise<AccessResult<GrantPortalAccessResult>> {
   const temporaryPassword = generateTemporaryPassword();
 
@@ -561,7 +623,8 @@ async function inviteExisting(
     organizationId,
     contact,
     temporaryPassword,
-    link.kind
+    link,
+    sentBy
   );
 
   return {
@@ -584,9 +647,11 @@ async function sendInvitationEmail(
   organizationId: string,
   contact: DestinatarioDeInvitacion,
   temporaryPassword: string,
-  kind: AccountLinkKind
+  link: AccountLinkDto,
+  sentBy: string | null
 ): Promise<EnvioDeInvitacion> {
   const env = getEnv();
+  const kind: AccountLinkKind = link.kind;
   /**
    * El nombre y el color salen de la marca de la organización que invita, no
    * de un texto fijo: estaban escritos a mano acá mientras el real vivía en
@@ -642,5 +707,15 @@ async function sendInvitationEmail(
     // se la dicta. Fallar acá dejaría la cuenta creada y sin llave.
     return { emailSentAt: null, emailError: sent.message };
   }
-  return { emailSentAt: new Date().toISOString(), emailError: null };
+
+  // 2026-10-05 — La marca, recién ahora: dice "Graph lo aceptó", no "lo
+  // intenté". Es lo que deja a la pantalla decir "Ya se envió el …".
+  const sentAt = new Date();
+  await getDb()
+    .update(schema.accountLink)
+    .set({ invitationEmailSentAt: sentAt, invitationEmailSentBy: sentBy, updatedAt: sentAt })
+    .where(
+      scoped(schema.accountLink.organizationId, organizationId, eq(schema.accountLink.id, link.id))
+    );
+  return { emailSentAt: sentAt.toISOString(), emailError: null };
 }

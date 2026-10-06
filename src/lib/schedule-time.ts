@@ -106,6 +106,28 @@ export function classInstant(
   }
 }
 
+/** La zona de la academia; la de `organization.timezone` por defecto. */
+export const ACADEMY_TIME_ZONE = "America/Montevideo";
+
+/**
+ * 2026-10-05 — Cuándo salió un correo, para "Ya se envió el 5 oct. 2026,
+ * 14:32". En la hora de la academia, no en la del navegador: el equipo lee la
+ * hora de la oficina.
+ */
+export function formatSentAt(iso: string, timeZone: string = ACADEMY_TIME_ZONE): string {
+  const instante = new Date(iso);
+  if (Number.isNaN(instante.getTime())) return "una fecha sin registrar";
+  return new Intl.DateTimeFormat("es-UY", {
+    timeZone,
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(instante);
+}
+
 /** El horario de pared (`"18:30"`) de un instante, en la zona dada. */
 export function formatInZone(instant: Date, timeZone: string): string {
   return new Intl.DateTimeFormat("en-GB", {

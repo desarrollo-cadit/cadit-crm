@@ -419,6 +419,9 @@ describe("0046 — la marca y su relleno", () => {
     };
     expect(snaps.length).toBe(sqls.length);
     expect(journal.entries.length).toBe(sqls.length);
-    expect(journal.entries.at(-1)?.tag).toBe("0046_cambio_de_contrasena");
+    // Ya no es la última (0047 vino después): lo que importa es que esté y
+    // que cada entrada del journal tenga su archivo.
+    expect(journal.entries.map((e) => e.tag)).toContain("0046_cambio_de_contrasena");
+    expect(journal.entries.map((e) => `${e.tag}.sql`).sort()).toEqual([...sqls].sort());
   });
 });

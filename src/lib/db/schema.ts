@@ -881,6 +881,72 @@ export const license = pgTable(
 );
 
 /**
+ * 2026-10-05 — Envío masivo por cohorte: términos ATC, bienvenida al grupo o
+ * acceso al portal, a todos los alumnos de la cohorte de una vez.
+ *
+ * **La fuente de verdad de "ya se le mandó" NO es esta tabla**: son las
+ * marcas por persona (`enrollment.terms_email_sent_at`,
+ * `welcome_email_sent_at`, `account_link`). Esta tabla es el registro de la
+ * corrida —quién la pidió, a quién alcanzó y qué pasó con cada uno— para que
+ * la pantalla muestre el avance y, después de recargar, los fallos.
+ *
+ * El estado no se guarda: `finished_at` NULL con el proceso vivo es "en
+ * curso"; con el proceso reiniciado, "interrumpida". Apretar de nuevo manda
+ * solo a quien todavía no tiene la marca.
+ */
+export const BULK_SEND_KINDS = ["terms", "welcome", "portal_access"] as const;
+export type BulkSendKind = (typeof BULK_SEND_KINDS)[number];
+
+export const bulkSendRun = pgTable(
+  "bulk_send_run",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    cohortId: text("cohort_id")
+      .notNull()
+      .references(() => cohort.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: BULK_SEND_KINDS }).notNull(),
+    startedBy: text("started_by").references(() => user.id, { onDelete: "set null" }),
+    startedAt: timestamp("started_at").notNull().defaultNow(),
+    finishedAt: timestamp("finished_at"),
+  },
+  (t) => [index("bulk_send_run_org_cohort_idx").on(t.organizationId, t.cohortId, t.kind)]
+);
+
+export const BULK_SEND_OUTCOMES = [
+  "pending",
+  "sent",
+  "skipped_already_sent",
+  "skipped_has_access",
+  "failed",
+] as const;
+export type BulkSendOutcome = (typeof BULK_SEND_OUTCOMES)[number];
+
+export const bulkSendRecipient = pgTable(
+  "bulk_send_recipient",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    runId: text("run_id")
+      .notNull()
+      .references(() => bulkSendRun.id, { onDelete: "cascade" }),
+    enrollmentId: text("enrollment_id")
+      .notNull()
+      .references(() => enrollment.id, { onDelete: "cascade" }),
+    position: integer("position").notNull(),
+    outcome: text("outcome", { enum: BULK_SEND_OUTCOMES }).notNull().default("pending"),
+    /** El motivo de un fallo o de un salteo, en palabras para la pantalla. */
+    message: text("message"),
+    processedAt: timestamp("processed_at"),
+  },
+  (t) => [index("bulk_send_recipient_org_run_idx").on(t.organizationId, t.runId, t.position)]
+);
+
+/**
  * 004 — Regla de automatización (evento → canal → plantilla). Solo modelo en
  * esta fase; sin lógica de disparo (Fase 4/7).
  */
@@ -1769,6 +1835,24 @@ export const accountLink = pgTable(
     teacherId: text("teacher_id").references(() => teacher.id, { onDelete: "cascade" }),
     /** DV-007 — acceso suspendido. La fila NO se borra. */
     suspendedAt: timestamp("suspended_at"),
+    /**
+     * 2026-10-05 — Cuándo Graph aceptó el último correo de acceso (usuario y
+     * contraseña temporal) de ESTA cuenta, y quién lo pidió.
+     *
+     * Vive acá y no en `enrollment` aunque el envío se dispare desde una
+     * inscripción: el correo entrega las credenciales de una CUENTA, y una
+     * persona con tres inscripciones tiene una sola. Marcado por inscripción,
+     * las otras dos dirían "nunca se envió" y ofrecerían reenviar — que
+     * genera una contraseña nueva y deja afuera a quien ya entraba.
+     *
+     * NULL no prueba que nunca se mandó: los vínculos anteriores a esta
+     * columna no tienen marca. Por eso el envío masivo saltea a quien ya
+     * tiene vínculo, con marca o sin ella.
+     */
+    invitationEmailSentAt: timestamp("invitation_email_sent_at"),
+    invitationEmailSentBy: text("invitation_email_sent_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
