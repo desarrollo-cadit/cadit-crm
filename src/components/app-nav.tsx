@@ -25,6 +25,14 @@ import { ITEM_AJUSTES, ITEM_GUIA, NAV_GROUPS } from "@/lib/nav";
  * componente, que es donde se sabe qué puede la sesión.
  */
 
+/**
+ * Los botones de la cuenta, al pie de la barra. Mismo tamaño que el de tema
+ * compacto (32px): con el nombre en su propio piso ya no compiten por el
+ * ancho, así que pueden tener un blanco cómodo para el mouse.
+ */
+const ACCION_DE_CUENTA =
+  "flex h-8 w-8 shrink-0 items-center justify-center rounded-sm text-text-3 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
 export function AppNav({
   branding,
   userName,
@@ -204,44 +212,56 @@ export function AppNav({
       </Link>
       )}
 
-      <div className="mt-1 flex items-center gap-2.5 rounded-sm px-2.5 py-2 hover:bg-accent">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-soft text-xs font-semibold text-brand-text">
-          {initials(userName)}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] font-semibold">{userName}</span>
-          <span className="block text-[11px] text-text-3">
-            {/* 012 (T029) — El rótulo del rol viene de la base, así que dice
-                "Dirección" o "Coordinación" en vez de un genérico "Equipo". */}
-            {roleLabel} · En línea
+      {/*
+        La cuenta en dos pisos: quién sos arriba, qué podés hacer con tu
+        cuenta abajo. En una sola fila, tres íconos le dejaban al nombre unos
+        90px y "María Fernanda Rodríguez" se volvía "María Fern…".
+      */}
+      <div className="mt-2 border-t pt-3">
+        <div className="flex items-center gap-2.5 px-2.5" title={userName}>
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-soft text-xs font-semibold text-brand-text">
+            {initials(userName)}
           </span>
-        </span>
-        {/* 020 (T014) — El tema es una preferencia de la persona, no un
-            permiso: no lleva capacidad y lo ve todo el mundo. */}
-        <ThemeToggle initial={theme} size="compact" />
-        {/* Cambiar la contraseña propia no es un permiso: lo ve todo el mundo,
-            igual que el tema. Va junto a "Cerrar sesión" porque las dos son
-            cosas de la CUENTA, no de la academia. */}
-        <Link
-          href={PASSWORD_CHANGE_PATH}
-          aria-label="Cambiar contraseña"
-          title="Cambiar contraseña"
-          className="rounded p-1 text-text-3 transition-colors hover:text-foreground"
-        >
-          <KeyRound className="h-4 w-4" strokeWidth={1.7} />
-        </Link>
-        <button
-          aria-label="Cerrar sesión"
-          title="Cerrar sesión"
-          className="rounded p-1 text-text-3 hover:text-foreground"
-          onClick={async () => {
-            await signOut();
-            router.push("/login");
-            router.refresh();
-          }}
-        >
-          <LogOut className="h-4 w-4" strokeWidth={1.7} />
-        </button>
+          <span className="min-w-0 flex-1">
+            <span className="line-clamp-2 break-words text-[13px] font-semibold leading-snug">
+              {userName}
+            </span>
+            <span className="block truncate text-[11px] text-text-3">
+              {/* 012 (T029) — El rótulo del rol viene de la base, así que dice
+                  "Dirección" o "Coordinación" en vez de un genérico "Equipo". */}
+              {roleLabel} · En línea
+            </span>
+          </span>
+        </div>
+
+        <div className="mt-2 flex items-center gap-0.5 px-1">
+          {/* 020 (T014) — El tema es una preferencia de la persona, no un
+              permiso: no lleva capacidad y lo ve todo el mundo. */}
+          <ThemeToggle initial={theme} size="compact" />
+          {/* Cambiar la contraseña propia no es un permiso: lo ve todo el
+              mundo, igual que el tema. Son cosas de la CUENTA, no de la
+              academia, y por eso viven acá abajo y no en el menú. */}
+          <Link
+            href={PASSWORD_CHANGE_PATH}
+            aria-label="Cambiar contraseña"
+            title="Cambiar contraseña"
+            className={ACCION_DE_CUENTA}
+          >
+            <KeyRound className="h-4 w-4" strokeWidth={1.7} />
+          </Link>
+          <button
+            type="button"
+            className={cn(ACCION_DE_CUENTA, "ml-auto w-auto gap-1.5 px-2 text-xs font-medium")}
+            onClick={async () => {
+              await signOut();
+              router.push("/login");
+              router.refresh();
+            }}
+          >
+            <LogOut className="h-4 w-4" strokeWidth={1.7} />
+            Cerrar sesión
+          </button>
+        </div>
       </div>
     </aside>
   );

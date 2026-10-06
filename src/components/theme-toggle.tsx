@@ -24,9 +24,9 @@ export function ThemeToggle({
   initial: ThemePreference;
   /**
    * 020 — `touch` da 44px, el mínimo para un pulgar: es lo que corresponde en
-   * el portal, que se usa en el celular. `compact` es para la barra lateral
-   * del panel, que mide 224px de ancho — meter ahí un blanco de 44px le come
-   * el lugar al nombre de la persona.
+   * el portal, que se usa en el celular. `compact` (32px) es para la barra
+   * lateral del panel, que mide 224px y se usa con mouse. Tiene que medir lo
+   * mismo que los otros botones de la cuenta en `app-nav.tsx`.
    */
   size?: "touch" | "compact";
 }) {
@@ -48,7 +48,7 @@ export function ThemeToggle({
       title={tema === "dark" ? "Tema claro" : "Tema oscuro"}
       className={
         compacto
-          ? "shrink-0 rounded p-1 text-text-3 transition-colors hover:text-foreground"
+          ? "flex h-8 w-8 shrink-0 items-center justify-center rounded-sm text-text-3 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           : "flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-text-3 transition-colors hover:bg-accent hover:text-foreground"
       }
     >
