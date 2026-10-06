@@ -64,6 +64,8 @@ const prefixes = {
   offlineQuizAttempt: "oatt",
   offlineCourseAccess: "oacc",
   offlineTopicProgress: "otpg",
+  // A course or lesson completed in the previous LMS, recognized by staff.
+  offlineRecognition: "orec",
   // 2026-10-05 — envío masivo por cohorte: la corrida y cada destinatario.
   bulkSendRun: "bsr",
   bulkSendRecipient: "bsrr",

@@ -120,14 +120,15 @@ export function planAnswerSet(existingIds: string[], answers: AnswerInput[]): Ed
  * Deletion
  * ============================================================ */
 
-export type HistoryCounts = { attempts: number; progress: number };
+/** `recognitions`: `offline_recognition` rows (active or revoked) under the content. */
+export type HistoryCounts = { attempts: number; progress: number; recognitions?: number };
 export type DeletableKind = "course" | "lesson" | "topic" | "quiz";
 
 const HISTORY_MESSAGE: Record<DeletableKind, string> = {
   course:
-    "El curso tiene historial de alumnos (intentos o progreso) y no se puede eliminar. Pasalo a borrador para ocultarlo.",
+    "El curso tiene historial de alumnos (intentos, progreso o reconocimientos) y no se puede eliminar. Pasalo a borrador para ocultarlo.",
   lesson:
-    "La lección tiene temas con progreso de alumnos y no se puede eliminar. Pasá el curso a borrador si querés ocultarlo.",
+    "La lección tiene progreso o reconocimientos de alumnos y no se puede eliminar. Pasá el curso a borrador si querés ocultarlo.",
   topic:
     "El tema tiene progreso de alumnos y no se puede eliminar. Pasá el curso a borrador si querés ocultarlo.",
   quiz: "El cuestionario tiene intentos de alumnos y no se puede eliminar. Pasá el curso a borrador si querés ocultarlo.",
@@ -138,14 +139,19 @@ const HISTORY_MESSAGE: Record<DeletableKind, string> = {
  * (attempts and progress rows reference the content). So: a course is blocked
  * by any attempt or progress below it, a lesson/topic by progress, a quiz by
  * attempts. Questions are not guarded: attempts keep their own snapshot.
+ * Recognitions cascade with their course or lesson as well, so they block
+ * those two (a topic or a quiz carries none of its own).
  */
 export function deleteGuard(kind: DeletableKind, history: HistoryCounts): EditorError | null {
+  const recognized = (history.recognitions ?? 0) > 0;
   const blocked =
     kind === "course"
-      ? history.attempts > 0 || history.progress > 0
+      ? history.attempts > 0 || history.progress > 0 || recognized
       : kind === "quiz"
         ? history.attempts > 0
-        : history.progress > 0;
+        : kind === "lesson"
+          ? history.progress > 0 || recognized
+          : history.progress > 0;
   return blocked ? fail(409, "has_history", HISTORY_MESSAGE[kind]) : null;
 }
 

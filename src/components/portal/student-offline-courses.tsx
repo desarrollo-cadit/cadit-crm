@@ -43,6 +43,10 @@ import type {
  * when its video is really watched (≥ 90%, reported by the player) or, if it
  * has no video, when it is opened. A course is finished when every topic is
  * complete and every quiz passed.
+ *
+ * What the academy recognized from the previous one (a whole course or some
+ * lessons) counts as done and reads "Reconocido" — never "Completado", which
+ * is what the student did here. It stays open to review.
  */
 
 export const OFFLINE_BASE = "/portal/cursos-offline";
@@ -125,8 +129,17 @@ export function BackLink({ href, children }: { href: string; children: React.Rea
  * Quiz status
  * ============================================================ */
 
+/**
+ * What the academy recognized from the previous one: counts as done, with its
+ * own word so it is never mistaken for something done here.
+ */
+export function RecognizedChip({ children = "Reconocido" }: { children?: React.ReactNode }) {
+  return <ChipDeEstado tono="curso">{children}</ChipDeEstado>;
+}
+
 export function QuizStatusBadge({ quiz }: { quiz: Pick<StudentQuizSummary, "status" | "attemptsRemaining"> }) {
   if (quiz.status === "aprobado") return <ChipDeEstado tono="ok">Aprobado</ChipDeEstado>;
+  if (quiz.status === "reconocido") return <RecognizedChip />;
   if (quiz.status === "sin_intentos") return <ChipDeEstado tono="atencion">Sin intentos</ChipDeEstado>;
   if (quiz.attemptsRemaining === null)
     return (
@@ -198,7 +211,7 @@ function CourseProgress({ card }: { card: StudentOfflineCourseCard }) {
   const { completion } = card;
   return (
     <div className="mt-auto space-y-1.5">
-      <CompletionLine completion={completion} />
+      <CompletionLine completion={completion} recognized={card.recognized} />
       <CompletionChain completion={completion} />
     </div>
   );
@@ -220,7 +233,7 @@ function CompletionChain({ completion }: { completion: Completion }) {
 }
 
 /** "3 de 10 temas · 1 de 2 cuestionarios" + the finished stamp. */
-function CompletionLine({ completion }: { completion: Completion }) {
+function CompletionLine({ completion, recognized }: { completion: Completion; recognized: boolean }) {
   const temas = `${completion.topicsDone} de ${completion.topicsTotal} ${
     completion.topicsTotal === 1 ? "tema" : "temas"
   }`;
@@ -235,7 +248,12 @@ function CompletionLine({ completion }: { completion: Completion }) {
       <span>
         {temas} · {cuestionarios}
       </span>
-      {completion.completed && <ChipDeEstado tono="curso">Curso completado</ChipDeEstado>}
+      {completion.completed &&
+        (recognized ? (
+          <RecognizedChip>Curso reconocido</RecognizedChip>
+        ) : (
+          <ChipDeEstado tono="curso">Curso completado</ChipDeEstado>
+        ))}
     </p>
   );
 }
@@ -271,7 +289,12 @@ function CourseBody({ course }: { course: StudentOfflineCourse }) {
         ]}
         titulo={course.title}
         acciones={
-          course.completion.completed && <ChipDeEstado tono="ok">Curso completado</ChipDeEstado>
+          course.completion.completed &&
+          (course.recognized ? (
+            <RecognizedChip>Curso reconocido</RecognizedChip>
+          ) : (
+            <ChipDeEstado tono="ok">Curso completado</ChipDeEstado>
+          ))
         }
       />
       <GrillaDeMetricas
@@ -307,9 +330,12 @@ function CourseBody({ course }: { course: StudentOfflineCourse }) {
         ) : (
           course.lessons.map((lesson) => (
             <PortalCard key={lesson.id} className="space-y-2">
-              <h2 className="text-lg font-semibold tracking-tight">
-                {lesson.title}
-              </h2>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-lg font-semibold tracking-tight">{lesson.title}</h2>
+                {lesson.recognized && !course.recognized && (
+                  <RecognizedChip>Lección reconocida</RecognizedChip>
+                )}
+              </div>
               {lesson.topics.length === 0 ? (
                 <p className="text-xs text-text-3">Sin temas</p>
               ) : (
@@ -325,12 +351,13 @@ function CourseBody({ course }: { course: StudentOfflineCourse }) {
                             <CheckCircle2
                               className="h-4 w-4 shrink-0 text-brand"
                               strokeWidth={1.7}
-                              aria-label="Completado"
+                              aria-label={t.recognized ? "Reconocido" : "Completado"}
                             />
                           ) : (
                             <FileText className="h-4 w-4 shrink-0 text-text-3" strokeWidth={1.7} />
                           )}
                           <span className="flex-1">{t.title}</span>
+                          {t.recognized && <RecognizedChip />}
                           <ChevronRight className="h-4 w-4 shrink-0 text-text-3" />
                         </Link>
                       ) : (
@@ -432,6 +459,8 @@ function TopicBody({ data, courseId }: { data: StudentOfflineTopic; courseId: st
       if (!json) return setSave("error");
       setProgress((p) => ({
         completed: p.completed || json.progress.completed,
+        // Watched here after all: from now on it is the student's own completion.
+        recognized: p.recognized && !json.progress.completed,
         watchedRatio: Math.max(p.watchedRatio, json.progress.watchedRatio),
       }));
       setSave("idle");
@@ -451,9 +480,11 @@ function TopicBody({ data, courseId }: { data: StudentOfflineTopic; courseId: st
     <PortalCard className="space-y-2">
       <VimeoPlayer video={video} title={`Video: ${topic.title}`} onProgress={send} />
       <p className="text-xs text-text-3">
-        {progress.completed
-          ? "Video completado."
-          : `Visto: ${Math.floor(progress.watchedRatio * 100)}%. El tema se completa al ver al menos el 90%.`}
+        {progress.recognized
+          ? "Este tema está reconocido. Podés volver a ver el video cuando quieras."
+          : progress.completed
+            ? "Video completado."
+            : `Visto: ${Math.floor(progress.watchedRatio * 100)}%. El tema se completa al ver al menos el 90%.`}
       </p>
     </PortalCard>
   ) : null;
@@ -469,7 +500,13 @@ function TopicBody({ data, courseId }: { data: StudentOfflineTopic; courseId: st
         ]}
         titulo={topic.title}
         descripcion={lessonTitle || undefined}
-        acciones={progress.completed && <ChipDeEstado tono="ok">Tema completado</ChipDeEstado>}
+        acciones={
+          progress.recognized ? (
+            <RecognizedChip />
+          ) : (
+            progress.completed && <ChipDeEstado tono="ok">Tema completado</ChipDeEstado>
+          )
+        }
       />
 
       {video?.shown === "before" && player}

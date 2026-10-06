@@ -81,3 +81,21 @@ inicie sesión como staff y llame a `seccionCursosOffline({ api, ok, BASE, getCo
 
 1. `/portal/cursos-offline` y `/portal/cursos-offline/<A>` responden 200 al alumno
    (la lista se pide del lado del cliente; el contenido ya se verificó por la API).
+
+## 8. Reconocimientos (lo completado en la academia anterior)
+
+1. Un alumno 3 de la cohorte (A heredado) ve la mitad del video del tema 1.1.
+2. Staff, con `academico.editar`: sin motivo, con una lección de otro curso o sobre
+   un curso que la inscripción no lee → **422**, y no se escribe nada.
+3. Reconocer la lección 1 → `created 1`; repetirlo → `created 0`.
+4. Portal: la lección 1 figura reconocida (temas `completed` + `recognized`), el
+   primer tema de la lección 2 abre (200) y el siguiente no; el cuestionario de la
+   lección 1 dice `reconocido`, el del curso sigue `disponible`. El JSON crudo no
+   trae el motivo ni el autor. El tema reconocido sigue abierto para repasar.
+5. Staff: el reconocimiento trae motivo y autor; el tema figura reconocido, no
+   completado.
+6. Reconocer el curso completo → terminado y `recognized` en el curso, la lista y
+   el panel del staff.
+7. Quitar el del curso (dos veces: idempotente; uno inventado → 404) → vuelve a la
+   lección 1 reconocida. Quitar el de la lección → el tema 2.1 vuelve a 404 y el
+   50 % visto del tema 1.1 sigue intacto.

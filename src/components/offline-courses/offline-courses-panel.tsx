@@ -12,6 +12,7 @@ import type {
 } from "@/server/offline-courses/logic";
 import type { StaffCourseProgress } from "@/server/offline-courses/progress";
 import { OfflineAttemptsTable } from "@/components/offline-courses/attempts-table";
+import { RecognitionActions, recognitionLabel } from "@/components/offline-courses/recognition-panel";
 
 const STATE_LABEL: Record<AccessState, string> = {
   inherited: "Heredado de la cohorte",
@@ -65,27 +66,62 @@ function completedLabel(t: StaffCourseProgress["topics"][number]): string {
  * list behind a disclosure: 270 topics would bury the roster otherwise.
  * "Marcar como completado" is the fallback when the player cannot play for
  * this person; it records who did it.
+ *
+ * Recognitions (course or lessons completed in the previous academy) count in
+ * the totals and show as "Reconocido" with reason, author and date — a state
+ * of their own, never confused with what the student did here.
  */
 function CourseProgressRow({
+  enrollmentId,
   progress,
   canEdit,
   busy,
+  onBusy,
   onComplete,
+  onRecognitionChange,
 }: {
+  enrollmentId: string;
   progress: StaffCourseProgress;
   canEdit: boolean;
   busy: boolean;
+  onBusy: (busy: boolean) => void;
   onComplete: (topicId: string) => void;
+  onRecognitionChange: (error: string | null) => void;
 }) {
   const c = progress.completion;
+  const recognitionById = new Map(progress.recognitions.map((r) => [r.id, r]));
+  const courseRecognized = progress.recognitions.some((r) => r.lessonId === null);
   return (
     <details className="w-full text-xs">
       <summary className="cursor-pointer select-none text-muted-foreground">
         {c.topicsDone}/{c.topicsTotal} temas · {c.quizzesPassed}/{c.quizzesTotal} cuestionarios ·{" "}
         <span className={c.completed ? "font-medium text-success" : "text-text-2"}>
-          {c.completed ? "Terminado" : "En curso"}
+          {c.completed ? (courseRecognized ? "Reconocido" : "Terminado") : "En curso"}
         </span>
       </summary>
+      {canEdit ? (
+        <RecognitionActions
+          enrollmentId={enrollmentId}
+          progress={progress}
+          busy={busy}
+          onBusy={onBusy}
+          onDone={onRecognitionChange}
+        />
+      ) : (
+        progress.recognitions.length > 0 && (
+          <ul className="mt-1 space-y-0.5 text-brand-text">
+            {progress.recognitions.map((r) => (
+              <li key={r.id}>
+                {r.lessonId === null
+                  ? "Curso completo"
+                  : (progress.lessons.find((l) => l.id === r.lessonId)?.title ?? "Lección")}
+                {": "}
+                {recognitionLabel(r)}
+              </li>
+            ))}
+          </ul>
+        )
+      )}
       {progress.topics.length === 0 ? (
         <p className="mt-1 text-muted-foreground">El curso no tiene temas.</p>
       ) : (
@@ -98,6 +134,8 @@ function CourseProgressRow({
               </span>
               {t.completed ? (
                 <span className="text-success">{completedLabel(t)}</span>
+              ) : t.recognitionId && recognitionById.get(t.recognitionId) ? (
+                <span className="text-brand-text">{recognitionLabel(recognitionById.get(t.recognitionId)!)}</span>
               ) : (
                 <>
                   <span className="text-muted-foreground">
@@ -262,10 +300,16 @@ export function OfflineCoursesPanel({
                 )}
                 {courseProgress && (
                   <CourseProgressRow
+                    enrollmentId={enrollmentId}
                     progress={courseProgress}
                     canEdit={canEdit}
                     busy={busy !== null}
+                    onBusy={(b) => setBusy(b ? c.courseId : null)}
                     onComplete={(topicId) => void completeTopic(topicId)}
+                    onRecognitionChange={(message) => {
+                      setError(message);
+                      void refetch();
+                    }}
                   />
                 )}
               </li>

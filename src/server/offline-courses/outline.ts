@@ -1,13 +1,20 @@
-import { asc, eq, inArray } from "drizzle-orm";
+import { asc, eq, inArray, isNull } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import type { OfflineVideoShown } from "@/lib/db/schema";
-import type { CompletionSource, StoredProgress } from "./logic";
+import {
+  courseProgressState,
+  type CompletionSource,
+  type CourseProgressState,
+  type RecognitionRef,
+  type StoredProgress,
+} from "./logic";
 
 /**
  * cursos-offline (T9) — The reads that the student side (`student.ts`), the
  * progress writes (`progress.ts`) and the staff panel share: a course's
- * topics in reading order, a person's progress rows and passed quizzes.
+ * topics in reading order, a person's progress rows, passed quizzes and
+ * active recognitions, and the completion derived from all of them.
  *
  * No access decision here: every caller has already answered "can this
  * person / this enrollment read the course". Keeping ONE definition of the
@@ -19,7 +26,8 @@ import type { CompletionSource, StoredProgress } from "./logic";
  * `tests/unit/cursos-offline-portal.test.ts`).
  */
 
-const { offlineLesson, offlineTopic, offlineQuiz, offlineQuizAttempt, offlineTopicProgress } = schema;
+const { offlineLesson, offlineTopic, offlineQuiz, offlineQuizAttempt, offlineTopicProgress, offlineRecognition } =
+  schema;
 
 export type OutlineTopic = {
   id: string;
@@ -121,20 +129,131 @@ export async function progressRowsFor(
 export const completedIds = (rows: ProgressRow[]) =>
   new Set(rows.filter((r) => r.completedAt !== null).map((r) => r.topicId));
 
-/** The quizzes of these courses, per course, in quiz order. */
-export async function quizIdsByCourse(
+export type QuizRef = { id: string; lessonId: string | null };
+
+/** The quizzes of these courses, per course, in quiz order, with the lesson they hang from. */
+export async function quizRefsByCourse(
   orgId: string,
   courseIds: string[]
-): Promise<Map<string, string[]>> {
-  const out = new Map<string, string[]>(courseIds.map((id) => [id, []]));
+): Promise<Map<string, QuizRef[]>> {
+  const out = new Map<string, QuizRef[]>(courseIds.map((id) => [id, []]));
   if (courseIds.length === 0) return out;
   const rows = await getDb()
-    .select({ id: offlineQuiz.id, courseId: offlineQuiz.courseId })
+    .select({ id: offlineQuiz.id, courseId: offlineQuiz.courseId, lessonId: offlineQuiz.lessonId })
     .from(offlineQuiz)
     .where(scoped(offlineQuiz.organizationId, orgId, inArray(offlineQuiz.courseId, courseIds)))
     .orderBy(asc(offlineQuiz.position), asc(offlineQuiz.title));
-  for (const r of rows) out.get(r.courseId)?.push(r.id);
+  for (const r of rows) out.get(r.courseId)?.push({ id: r.id, lessonId: r.lessonId });
   return out;
+}
+
+/**
+ * This person's ACTIVE recognitions in these courses — scope only. The
+ * reason and the author are staff data and are not selected here: this read
+ * also feeds the student portal.
+ */
+export async function recognitionsFor(
+  orgId: string,
+  contactId: string,
+  courseIds: string[]
+): Promise<Map<string, RecognitionRef[]>> {
+  const out = new Map<string, RecognitionRef[]>(courseIds.map((id) => [id, []]));
+  if (courseIds.length === 0) return out;
+  const rows = await getDb()
+    .select({
+      courseId: offlineRecognition.courseId,
+      lessonId: offlineRecognition.lessonId,
+      revokedAt: offlineRecognition.revokedAt,
+    })
+    .from(offlineRecognition)
+    .where(
+      scoped(
+        offlineRecognition.organizationId,
+        orgId,
+        eq(offlineRecognition.contactId, contactId),
+        inArray(offlineRecognition.courseId, courseIds),
+        isNull(offlineRecognition.revokedAt)
+      )
+    );
+  for (const r of rows) out.get(r.courseId)?.push({ lessonId: r.lessonId, revokedAt: r.revokedAt });
+  return out;
+}
+
+export type ContactCourseProgress = {
+  outline: CourseOutline;
+  quizzes: QuizRef[];
+  /** This person's progress rows for the course's topics. */
+  rows: ProgressRow[];
+  state: CourseProgressState;
+};
+
+/**
+ * Per course: the outline, the quizzes, this person's rows and THE derived
+ * state (`courseProgressState`). Every completion read — staff panel, student
+ * portal, the sequential gate of the progress writes — starts here, so they
+ * cannot count a recognized lesson differently.
+ */
+export async function contactCourseProgress(
+  orgId: string,
+  contactId: string,
+  courseIds: string[]
+): Promise<Map<string, ContactCourseProgress>> {
+  const [outlines, quizzes, recognitions] = await Promise.all([
+    courseOutlines(orgId, courseIds),
+    quizRefsByCourse(orgId, courseIds),
+    recognitionsFor(orgId, contactId, courseIds),
+  ]);
+  const topicIds = [...outlines.values()].flatMap((o) => o.topics.map((t) => t.id));
+  const [rows, passed] = await Promise.all([
+    progressRowsFor(orgId, contactId, topicIds),
+    passedQuizIdsFor(
+      orgId,
+      contactId,
+      [...quizzes.values()].flat().map((q) => q.id)
+    ),
+  ]);
+  const done = completedIds(rows);
+
+  const out = new Map<string, ContactCourseProgress>();
+  for (const courseId of courseIds) {
+    const outline = outlines.get(courseId) ?? { lessons: [], topics: [] };
+    const courseQuizzes = quizzes.get(courseId) ?? [];
+    const ids = new Set(outline.topics.map((t) => t.id));
+    out.set(courseId, {
+      outline,
+      quizzes: courseQuizzes,
+      rows: rows.filter((r) => ids.has(r.topicId)),
+      state: courseProgressState({
+        topics: outline.topics,
+        quizzes: courseQuizzes,
+        completedTopicIds: done,
+        passedQuizIds: passed,
+        recognitions: recognitions.get(courseId) ?? [],
+      }),
+    });
+  }
+  return out;
+}
+
+const emptyProgress = (): ContactCourseProgress => ({
+  outline: { lessons: [], topics: [] },
+  quizzes: [],
+  rows: [],
+  state: courseProgressState({
+    topics: [],
+    quizzes: [],
+    completedTopicIds: [],
+    passedQuizIds: [],
+    recognitions: [],
+  }),
+});
+
+export async function contactCourseProgressOne(
+  orgId: string,
+  contactId: string,
+  courseId: string
+): Promise<ContactCourseProgress> {
+  return (await contactCourseProgress(orgId, contactId, [courseId])).get(courseId) ?? emptyProgress();
 }
 
 /** Quizzes this person passed at least once (attempts count per contact). */

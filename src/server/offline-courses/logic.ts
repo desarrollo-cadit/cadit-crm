@@ -364,6 +364,165 @@ export function courseCompletion(input: CourseCompletionInput): CourseCompletion
 }
 
 /* ============================================================
+ * Recognitions: what the student completed in the previous LMS
+ * ============================================================ */
+
+/**
+ * A recognition as the derivation needs it. `lessonId` null = the whole
+ * course. Revoked ones are passed along and ignored here, so no caller has to
+ * remember the filter.
+ */
+export interface RecognitionRef {
+  lessonId: string | null;
+  revokedAt: Date | null;
+}
+
+export interface CourseProgressInput {
+  /** Reading order (lesson position, then topic position). */
+  topics: Array<{ id: string; lessonId: string }>;
+  quizzes: Array<{ id: string; lessonId: string | null }>;
+  completedTopicIds: Iterable<string>;
+  passedQuizIds: Iterable<string>;
+  recognitions: RecognitionRef[];
+}
+
+export interface CourseProgressState {
+  orderedTopicIds: string[];
+  /** Real completion ∪ covered by an active recognition. */
+  doneTopicIds: Set<string>;
+  passedQuizIds: Set<string>;
+  /** Done ONLY because of a recognition: what the screens label "Reconocido". */
+  recognizedTopicIds: Set<string>;
+  recognizedQuizIds: Set<string>;
+  /** Lessons of this course covered by a lesson- or course-scope recognition. */
+  recognizedLessonIds: Set<string>;
+  courseRecognized: boolean;
+  completion: CourseCompletion;
+}
+
+/**
+ * THE one derivation of "what counts as done" for a person in a course. The
+ * staff panel, the student portal and the sequential gate all read it, so a
+ * recognized lesson cannot be complete in one screen and locked in another.
+ *
+ * Recognitions never become progress rows or attempts: those keep meaning
+ * "what the student did here", and revoking a recognition must leave them
+ * exactly as they were. A course-scope recognition covers every topic and
+ * every quiz; a lesson-scope one covers that lesson's topics and the quizzes
+ * hung from that lesson. A course-level quiz (no lesson) is only covered by a
+ * course-scope recognition — no lesson can speak for it.
+ */
+export function courseProgressState(input: CourseProgressInput): CourseProgressState {
+  const lessonIds = new Set(input.topics.map((t) => t.lessonId));
+  for (const q of input.quizzes) if (q.lessonId) lessonIds.add(q.lessonId);
+
+  const active = input.recognitions.filter((r) => r.revokedAt === null);
+  const courseRecognized = active.some((r) => r.lessonId === null);
+  const recognizedLessonIds = new Set(
+    courseRecognized
+      ? lessonIds
+      : active.flatMap((r) => (r.lessonId && lessonIds.has(r.lessonId) ? [r.lessonId] : []))
+  );
+
+  const realTopics = new Set(input.completedTopicIds);
+  const realQuizzes = new Set(input.passedQuizIds);
+  const doneTopicIds = new Set<string>();
+  const recognizedTopicIds = new Set<string>();
+  for (const t of input.topics) {
+    if (realTopics.has(t.id)) doneTopicIds.add(t.id);
+    else if (recognizedLessonIds.has(t.lessonId)) {
+      doneTopicIds.add(t.id);
+      recognizedTopicIds.add(t.id);
+    }
+  }
+  const passedQuizIds = new Set<string>();
+  const recognizedQuizIds = new Set<string>();
+  for (const q of input.quizzes) {
+    const covered = courseRecognized || (q.lessonId !== null && recognizedLessonIds.has(q.lessonId));
+    if (realQuizzes.has(q.id)) passedQuizIds.add(q.id);
+    else if (covered) {
+      passedQuizIds.add(q.id);
+      recognizedQuizIds.add(q.id);
+    }
+  }
+
+  const orderedTopicIds = input.topics.map((t) => t.id);
+  return {
+    orderedTopicIds,
+    doneTopicIds,
+    passedQuizIds,
+    recognizedTopicIds,
+    recognizedQuizIds,
+    recognizedLessonIds,
+    courseRecognized,
+    completion: courseCompletion({
+      topicIds: orderedTopicIds,
+      completedTopicIds: doneTopicIds,
+      quizIds: input.quizzes.map((q) => q.id),
+      passedQuizIds,
+    }),
+  };
+}
+
+export const RECOGNITION_REASON_MAX = 500;
+
+const recognitionId = z.string().min(1).max(64);
+const recognitionReason = z
+  .string()
+  .trim()
+  .min(1, "Falta el motivo del reconocimiento")
+  .max(RECOGNITION_REASON_MAX, `El motivo puede tener hasta ${RECOGNITION_REASON_MAX} caracteres`);
+
+/** The staff POST: the whole course, or some of its lessons — always with a reason. */
+export const validateRecognitionRequest = z.discriminatedUnion("scope", [
+  z.object({ scope: z.literal("course"), courseId: recognitionId, reason: recognitionReason }).strict(),
+  z
+    .object({
+      scope: z.literal("lessons"),
+      courseId: recognitionId,
+      lessonIds: z.array(recognitionId).min(1, "Falta elegir al menos una lección").max(500),
+      reason: recognitionReason,
+    })
+    .strict(),
+]);
+
+export type RecognitionRequest = z.infer<typeof validateRecognitionRequest>;
+
+export type RecognitionPlan =
+  | { ok: true; lessonIds: Array<string | null> }
+  | { ok: false; status: 422; code: "lesson_not_in_course"; message: string };
+
+/**
+ * What to insert (`null` = the course-scope row). Idempotent: an active
+ * recognition that already covers the request means nothing to write, so a
+ * double click or a retry never duplicates rows. A lesson of another course
+ * rejects the whole request — partially applying it would leave the person
+ * wondering which part went through.
+ */
+export function planRecognition(
+  request: { scope: "course" } | { scope: "lessons"; lessonIds: string[] },
+  courseLessonIds: string[],
+  active: Array<{ lessonId: string | null }>
+): RecognitionPlan {
+  if (request.scope === "lessons") {
+    const known = new Set(courseLessonIds);
+    if (request.lessonIds.some((id) => !known.has(id))) {
+      return {
+        ok: false,
+        status: 422,
+        code: "lesson_not_in_course",
+        message: "Alguna de las lecciones elegidas no pertenece a este curso",
+      };
+    }
+  }
+  if (active.some((r) => r.lessonId === null)) return { ok: true, lessonIds: [] };
+  if (request.scope === "course") return { ok: true, lessonIds: [null] };
+
+  const already = new Set(active.map((r) => r.lessonId));
+  return { ok: true, lessonIds: [...new Set(request.lessonIds)].filter((id) => !already.has(id)) };
+}
+
+/* ============================================================
  * Progress writes (T9): what a report may change
  * ============================================================ */
 

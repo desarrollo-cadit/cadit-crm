@@ -2435,3 +2435,49 @@ export const offlineTopicProgress = pgTable(
     ),
   ]
 );
+
+/**
+ * Staff recognizes that a CONTACT already completed a whole course
+ * (`lesson_id` NULL) or one of its lessons elsewhere — students moved from the
+ * previous LMS. Its own record ON PURPOSE: progress rows and attempts keep
+ * meaning "what the student did here", so nothing is fabricated there, and
+ * revoking a recognition leaves real progress untouched. Completion is
+ * DERIVED from both (`courseProgressState` in offline-courses/logic.ts).
+ *
+ * Revoked rows stay (who revoked, when) for review; the partial unique
+ * indexes allow one ACTIVE row per (contact, course) and per (contact,
+ * lesson), so recognizing twice is a no-op.
+ */
+export const offlineRecognition = pgTable(
+  "offline_recognition",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    contactId: text("contact_id")
+      .notNull()
+      .references(() => contact.id, { onDelete: "cascade" }),
+    courseId: text("course_id")
+      .notNull()
+      .references(() => offlineCourse.id, { onDelete: "cascade" }),
+    lessonId: text("lesson_id").references(() => offlineLesson.id, { onDelete: "cascade" }),
+    reason: text("reason").notNull(),
+    recognizedBy: text("recognized_by").references(() => user.id, { onDelete: "set null" }),
+    recognizedAt: timestamp("recognized_at").notNull().defaultNow(),
+    revokedAt: timestamp("revoked_at"),
+    revokedBy: text("revoked_by").references(() => user.id, { onDelete: "set null" }),
+  },
+  (t) => [
+    uniqueIndex("offline_recognition_course_active_uq")
+      .on(t.contactId, t.courseId)
+      .where(sql`lesson_id is null and revoked_at is null`),
+    uniqueIndex("offline_recognition_lesson_active_uq")
+      .on(t.contactId, t.lessonId)
+      .where(sql`lesson_id is not null and revoked_at is null`),
+    index("offline_recognition_org_contact_idx").on(t.organizationId, t.contactId, t.courseId),
+    index("offline_recognition_org_course_idx").on(t.organizationId, t.courseId),
+    index("offline_recognition_org_lesson_idx").on(t.organizationId, t.lessonId),
+    check("offline_recognition_reason_present", sql`length(trim(${t.reason})) between 1 and 500`),
+  ]
+);

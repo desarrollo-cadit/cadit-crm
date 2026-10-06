@@ -47,7 +47,7 @@ import {
  */
 
 const { offlineCourse, offlineLesson, offlineTopic, offlineQuiz, offlineQuestion, offlineAnswer } = schema;
-const { offlineQuizAttempt, offlineTopicProgress, mediaAsset } = schema;
+const { offlineQuizAttempt, offlineTopicProgress, offlineRecognition, mediaAsset } = schema;
 
 /** The route's answer: `{ ...data }` with `successStatus`, or the error envelope. */
 export function editorResponse<T extends object>(result: EditorResult<T>, successStatus = 200): Response {
@@ -164,6 +164,15 @@ async function progressWhere(orgId: string, condition: SQL): Promise<number> {
   return Number(row?.n ?? 0);
 }
 
+/** Active or revoked: a revoked recognition is still the record of who decided what. */
+async function recognitionsWhere(orgId: string, condition: SQL): Promise<number> {
+  const [row] = await getDb()
+    .select({ n: count() })
+    .from(offlineRecognition)
+    .where(scoped(offlineRecognition.organizationId, orgId, condition));
+  return Number(row?.n ?? 0);
+}
+
 const noHistory: HistoryCounts = { attempts: 0, progress: 0 };
 
 /* ============================================================
@@ -246,12 +255,13 @@ export async function updateCourse(
   return ok({ id: courseId });
 }
 
-/** Blocked (409) with any attempt or progress below it; otherwise everything cascades. */
+/** Blocked (409) with any attempt, progress or recognition below it; otherwise everything cascades. */
 export async function deleteCourse(orgId: string, courseId: string): Promise<EditorResult<{ id: string }>> {
   if (!(await courseExists(orgId, courseId))) return notFound("Curso no encontrado");
   const blocked = deleteGuard("course", {
     attempts: await attemptsWhere(orgId, eq(offlineQuiz.courseId, courseId)),
     progress: await progressWhere(orgId, eq(offlineLesson.courseId, courseId)),
+    recognitions: await recognitionsWhere(orgId, eq(offlineRecognition.courseId, courseId)),
   });
   if (blocked) return blocked;
   await getDb().delete(offlineCourse).where(scoped(offlineCourse.organizationId, orgId, eq(offlineCourse.id, courseId)));
@@ -358,6 +368,7 @@ export async function deleteLesson(
   const blocked = deleteGuard("lesson", {
     ...noHistory,
     progress: await progressWhere(orgId, eq(offlineLesson.id, lessonId)),
+    recognitions: await recognitionsWhere(orgId, eq(offlineRecognition.lessonId, lessonId)),
   });
   if (blocked) return blocked;
   await getDb().delete(offlineLesson).where(scoped(offlineLesson.organizationId, orgId, eq(offlineLesson.id, lessonId)));

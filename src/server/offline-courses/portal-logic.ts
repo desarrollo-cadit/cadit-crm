@@ -103,11 +103,16 @@ export function toStudentQuestions(
   }));
 }
 
-export type QuizStatus = "aprobado" | "disponible" | "sin_intentos";
+export type QuizStatus = "aprobado" | "reconocido" | "disponible" | "sin_intentos";
 
-/** Passed wins: once approved, the remaining attempts are not the news. */
-export function quizStatus(passed: boolean, remaining: number | null): QuizStatus {
+/**
+ * Passed wins: once approved, the remaining attempts are not the news. A quiz
+ * covered by a recognition (and not passed here) reads "reconocido" — still
+ * open to take, but nothing pending.
+ */
+export function quizStatus(passed: boolean, remaining: number | null, recognized = false): QuizStatus {
   if (passed) return "aprobado";
+  if (recognized) return "reconocido";
   return remaining === null || remaining > 0 ? "disponible" : "sin_intentos";
 }
 

@@ -6,7 +6,6 @@ import { parseVimeoUrl } from "@/lib/vimeo";
 import { enrollmentCourseStates } from "./access";
 import {
   accumulateVideoProgress,
-  courseCompletion,
   decideCompletion,
   nextUnlockedTopicId,
   topicUnlocked,
@@ -18,14 +17,12 @@ import {
   type StoredProgress,
 } from "./logic";
 import {
-  completedIds,
-  courseOutline,
-  courseOutlines,
-  passedQuizIdsFor,
+  contactCourseProgress,
+  contactCourseProgressOne,
   progressRowsFor,
-  quizIdsByCourse,
   type OutlineTopic,
 } from "./outline";
+import { recognitionDetailsFor, type StaffRecognition } from "./recognition";
 import { canReadCourse } from "./student";
 
 /**
@@ -174,23 +171,30 @@ async function lockedPlayback(
 /** Course readable, topic in it and unlocked — or the 404 that hides all three. */
 async function studentTopic(orgId: string, contactId: string, courseId: string, topicId: string) {
   if (!(await canReadCourse(orgId, contactId, courseId))) return null;
-  const outline = await courseOutline(orgId, courseId);
+  const { outline, rows, state } = await contactCourseProgressOne(orgId, contactId, courseId);
   const topic = outline.topics.find((t) => t.id === topicId);
   if (!topic) return null;
-  const orderedIds = outline.topics.map((t) => t.id);
-  const rows = await progressRowsFor(orgId, contactId, orderedIds);
-  if (!topicUnlocked(orderedIds, completedIds(rows), topicId)) return null;
+  if (!topicUnlocked(state.orderedTopicIds, state.doneTopicIds, topicId)) return null;
   const existing: StoredProgress | null = rows.find((r) => r.topicId === topicId) ?? null;
-  return { topic, orderedIds, existing };
+  return {
+    topic,
+    orderedIds: state.orderedTopicIds,
+    existing,
+    recognized: state.recognizedTopicIds.has(topicId),
+  };
 }
 
+/**
+ * `completed` is what the student did here; a recognized topic already opens
+ * the next one, so the successor is computed over both.
+ */
 const answer = (
-  orderedIds: string[],
+  found: { orderedIds: string[]; recognized: boolean },
   topicId: string,
   stored: { watchedRatio: number; completed: boolean }
 ): TopicProgressAnswer => ({
   ...stored,
-  nextTopicId: nextUnlockedTopicId(orderedIds, topicId, stored.completed),
+  nextTopicId: nextUnlockedTopicId(found.orderedIds, topicId, stored.completed || found.recognized),
 });
 
 /** The player's report: played ranges + duration of a topic WITH a video. */
@@ -225,7 +229,7 @@ export async function recordVideoProgress(
     completedBy: null,
     playback: { playedRanges: decision.playedRanges, videoDuration: decision.videoDuration },
   });
-  return { ok: true, data: answer(found.orderedIds, topicId, stored) };
+  return { ok: true, data: answer(found, topicId, stored) };
 }
 
 /** A topic without an embeddable video completes when the student opens it. */
@@ -254,7 +258,7 @@ export async function completeTopicWithoutVideo(
         completedBy: null,
       })
     : { watchedRatio: found.existing?.watchedRatio ?? 0, completed: true };
-  return { ok: true, data: answer(found.orderedIds, topicId, stored) };
+  return { ok: true, data: answer(found, topicId, stored) };
 }
 
 /* ============================================================
@@ -325,23 +329,32 @@ export async function staffCompleteTopic(
 export type StaffTopicProgress = {
   id: string;
   title: string;
+  lessonId: string;
   lessonTitle: string;
+  /** Completed HERE (video, no video or the staff override). */
   completed: boolean;
   completionSource: CompletionSource | null;
   completedAt: string | null;
   watchedRatio: number;
+  /** Not completed here but covered by this active recognition (lesson first, then course). */
+  recognitionId: string | null;
 };
 
 export type StaffCourseProgress = {
   courseId: string;
+  /** Derived: real progress + active recognitions (`courseProgressState`). */
   completion: CourseCompletion;
+  lessons: Array<{ id: string; title: string; recognized: boolean }>;
+  recognitions: StaffRecognition[];
   topics: StaffTopicProgress[];
 };
 
 /**
  * Per course this enrollment reads: the completion and every topic's state.
- * Progress and passed quizzes count per CONTACT, the same way the student
- * sees them. `null` → the enrollment is not in this organization (404).
+ * Progress, passed quizzes and recognitions count per CONTACT, the same way
+ * the student sees them — through the same derivation
+ * (`contactCourseProgress`). `null` → the enrollment is not in this
+ * organization (404).
  *
  * `states` are the enrollment's course states the caller already has
  * (`enrollmentCourseStates`): the route needs them for its own answer, and
@@ -357,41 +370,46 @@ export async function enrollmentCourseProgress(
   const courseIds = effectiveCourses(states).map((c) => c.courseId);
   if (courseIds.length === 0) return [];
 
-  const [outlines, quizzes] = await Promise.all([
-    courseOutlines(orgId, courseIds),
-    quizIdsByCourse(orgId, courseIds),
+  const [progress, details] = await Promise.all([
+    contactCourseProgress(orgId, found.contactId, courseIds),
+    recognitionDetailsFor(orgId, found.contactId, courseIds),
   ]);
-  const topicIds = [...outlines.values()].flatMap((o) => o.topics.map((t) => t.id));
-  const [rows, passed] = await Promise.all([
-    progressRowsFor(orgId, found.contactId, topicIds),
-    passedQuizIdsFor(orgId, found.contactId, [...quizzes.values()].flat()),
-  ]);
-  const byTopic = new Map(rows.map((r) => [r.topicId, r]));
-  const done = completedIds(rows);
 
-  return courseIds.map((courseId) => {
-    const outline = outlines.get(courseId) ?? { lessons: [], topics: [] };
+  return courseIds.flatMap((courseId) => {
+    const p = progress.get(courseId);
+    if (!p) return [];
+    const { outline, rows, state } = p;
+    const recognitions = details.get(courseId) ?? [];
+    const byTopic = new Map(rows.map((r) => [r.topicId, r]));
     const lessonTitle = new Map(outline.lessons.map((l) => [l.id, l.title]));
-    return {
-      courseId,
-      completion: courseCompletion({
-        topicIds: outline.topics.map((t) => t.id),
-        completedTopicIds: done,
-        quizIds: quizzes.get(courseId) ?? [],
-        passedQuizIds: passed,
-      }),
-      topics: outline.topics.map((t) => {
-        const row = byTopic.get(t.id);
-        return {
-          id: t.id,
-          title: t.title,
-          lessonTitle: lessonTitle.get(t.lessonId) ?? "",
-          completed: Boolean(row?.completedAt),
-          completionSource: row?.completionSource ?? null,
-          completedAt: row?.completedAt?.toISOString() ?? null,
-          watchedRatio: row?.watchedRatio ?? 0,
-        };
-      }),
-    };
+    const courseScope = recognitions.find((r) => r.lessonId === null) ?? null;
+    const covering = (lessonId: string) =>
+      recognitions.find((r) => r.lessonId === lessonId) ?? courseScope;
+    return [
+      {
+        courseId,
+        completion: state.completion,
+        lessons: outline.lessons.map((l) => ({
+          id: l.id,
+          title: l.title,
+          recognized: state.recognizedLessonIds.has(l.id),
+        })),
+        recognitions,
+        topics: outline.topics.map((t) => {
+          const row = byTopic.get(t.id);
+          return {
+            id: t.id,
+            title: t.title,
+            lessonId: t.lessonId,
+            lessonTitle: lessonTitle.get(t.lessonId) ?? "",
+            completed: Boolean(row?.completedAt),
+            completionSource: row?.completionSource ?? null,
+            completedAt: row?.completedAt?.toISOString() ?? null,
+            watchedRatio: row?.watchedRatio ?? 0,
+            recognitionId: state.recognizedTopicIds.has(t.id) ? (covering(t.lessonId)?.id ?? null) : null,
+          };
+        }),
+      },
+    ];
   });
 }

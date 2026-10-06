@@ -4,20 +4,8 @@ import { scoped } from "@/lib/db/tenant";
 import { effectiveCourseIdsForContact } from "./access";
 import type { OfflineVideoShown } from "@/lib/db/schema";
 import { parseVimeoUrl } from "@/lib/vimeo";
-import {
-  attemptsRemaining,
-  courseCompletion,
-  topicUnlocked,
-  type CourseCompletion,
-} from "./logic";
-import {
-  completedIds,
-  courseOutline,
-  courseOutlines,
-  progressRowsFor,
-  quizIdsByCourse,
-  type OutlineTopic,
-} from "./outline";
+import { attemptsRemaining, topicUnlocked, type CourseCompletion } from "./logic";
+import { contactCourseProgress, contactCourseProgressOne, type OutlineTopic } from "./outline";
 import {
   quizStatus,
   thumbnailAssetId,
@@ -52,6 +40,11 @@ import {
  * in the UI, because a hidden link is still a typed URL away. Quizzes are NOT
  * gated (owner decision). T11: a topic the student already completed stays
  * open even if staff later inserts a new topic before it.
+ *
+ * Recognitions (a course or lessons completed in the previous LMS) count as
+ * done through the shared derivation (`contactCourseProgress` →
+ * `courseProgressState`). The student gets only the `recognized` flag — the
+ * reason and who recognized it are staff data and are never read here.
  */
 
 const {
@@ -71,6 +64,8 @@ export type StudentOfflineCourseCard = {
   quizzesTotal: number;
   quizzesPassed: number;
   completion: CourseCompletion;
+  /** The whole course was recognized (completed in the previous academy). */
+  recognized: boolean;
 };
 
 export type StudentQuizSummary = {
@@ -81,7 +76,10 @@ export type StudentQuizSummary = {
   attemptsUsed: number;
   /** `null` = unlimited. */
   attemptsRemaining: number | null;
+  /** Passed HERE, by an attempt. */
   passed: boolean;
+  /** Not passed here, but covered by a recognition: nothing pending. */
+  recognized: boolean;
   status: QuizStatus;
 };
 
@@ -93,10 +91,20 @@ export type StudentOfflineCourse = {
   lessons: Array<{
     id: string;
     title: string;
-    topics: Array<{ id: string; title: string; completed: boolean; unlocked: boolean }>;
+    recognized: boolean;
+    topics: Array<{
+      id: string;
+      title: string;
+      /** Done: completed here OR recognized. */
+      completed: boolean;
+      /** Done only because of a recognition — shown as "Reconocido". */
+      recognized: boolean;
+      unlocked: boolean;
+    }>;
   }>;
   quizzes: StudentQuizSummary[];
   completion: CourseCompletion;
+  recognized: boolean;
 };
 
 export type StudentOfflineTopic = {
@@ -105,7 +113,8 @@ export type StudentOfflineTopic = {
   topic: { id: string; title: string; contentMd: string };
   /** `null` = no embeddable video: the topic completes on open. */
   video: { id: string; hash: string | null; shown: OfflineVideoShown } | null;
-  progress: { completed: boolean; watchedRatio: number };
+  /** `completed` includes a recognition; `recognized` = done only because of one. */
+  progress: { completed: boolean; recognized: boolean; watchedRatio: number };
   prev: { id: string; title: string } | null;
   next: { id: string; title: string } | null;
 };
@@ -224,11 +233,13 @@ type QuizRow = {
 
 function summarize(
   quiz: QuizRow,
-  attempts: Array<{ quizId: string; passed: boolean }>
+  attempts: Array<{ quizId: string; passed: boolean }>,
+  recognizedQuizIds: Set<string>
 ): StudentQuizSummary {
   const mine = attempts.filter((a) => a.quizId === quiz.id);
   const remaining = attemptsRemaining(quiz.retriesAllowed, mine.length);
   const passed = mine.some((a) => a.passed);
+  const recognized = !passed && recognizedQuizIds.has(quiz.id);
   return {
     id: quiz.id,
     title: quiz.title,
@@ -237,7 +248,8 @@ function summarize(
     attemptsUsed: mine.length,
     attemptsRemaining: remaining,
     passed,
-    status: quizStatus(passed, remaining),
+    recognized,
+    status: quizStatus(passed, remaining, recognized),
   };
 }
 
@@ -261,7 +273,7 @@ export async function myCourses(
   const ids = await readableCourseIds(orgId, contactId);
   if (ids.length === 0) return [];
 
-  const [courses, outlines, quizzesByCourse] = await Promise.all([
+  const [courses, progress] = await Promise.all([
     getDb()
       .select({
         id: offlineCourse.id,
@@ -271,35 +283,27 @@ export async function myCourses(
       .from(offlineCourse)
       .where(scoped(offlineCourse.organizationId, orgId, inArray(offlineCourse.id, ids)))
       .orderBy(asc(offlineCourse.title)),
-    courseOutlines(orgId, ids),
-    quizIdsByCourse(orgId, ids),
+    contactCourseProgress(orgId, contactId, ids),
   ]);
-
-  const allTopicIds = [...outlines.values()].flatMap((o) => o.topics.map((t) => t.id));
-  const allQuizIds = [...quizzesByCourse.values()].flat();
-  const [progress, attempts] = await Promise.all([
-    progressRowsFor(orgId, contactId, allTopicIds),
-    ownAttempts(orgId, contactId, allQuizIds),
-  ]);
-  const done = completedIds(progress);
-  const passedQuizIds = new Set(attempts.filter((a) => a.passed).map((a) => a.quizId));
 
   return courses.map((c) => {
-    const topicIds = outlines.get(c.id)?.topics.map((t) => t.id) ?? [];
-    const completion = courseCompletion({
-      topicIds,
-      completedTopicIds: done,
-      quizIds: quizzesByCourse.get(c.id) ?? [],
-      passedQuizIds,
-    });
+    const p = progress.get(c.id);
+    const completion = p?.state.completion ?? {
+      topicsDone: 0,
+      topicsTotal: 0,
+      quizzesPassed: 0,
+      quizzesTotal: 0,
+      completed: false,
+    };
     return {
       id: c.id,
       title: c.title,
       hasThumbnail: thumbnailAssetId(c.thumbnailUrl) !== null,
-      topics: topicIds.length,
+      topics: completion.topicsTotal,
       quizzesTotal: completion.quizzesTotal,
       quizzesPassed: completion.quizzesPassed,
       completion,
+      recognized: p?.state.courseRecognized ?? false,
     };
   });
 }
@@ -313,25 +317,19 @@ export async function myCourse(
   const course = await readableCourse(orgId, contactId, courseId);
   if (!course) return null;
 
-  const [outline, quizzes] = await Promise.all([
-    courseOutline(orgId, courseId),
+  const [{ outline, state }, quizzes] = await Promise.all([
+    contactCourseProgressOne(orgId, contactId, courseId),
     getDb()
       .select(quizColumns)
       .from(offlineQuiz)
       .where(scoped(offlineQuiz.organizationId, orgId, eq(offlineQuiz.courseId, courseId)))
       .orderBy(asc(offlineQuiz.position), asc(offlineQuiz.title)),
   ]);
-
-  const orderedIds = outline.topics.map((t) => t.id);
-  const [progress, attempts] = await Promise.all([
-    progressRowsFor(orgId, contactId, orderedIds),
-    ownAttempts(
-      orgId,
-      contactId,
-      quizzes.map((q) => q.id)
-    ),
-  ]);
-  const done = completedIds(progress);
+  const attempts = await ownAttempts(
+    orgId,
+    contactId,
+    quizzes.map((q) => q.id)
+  );
 
   return {
     id: course.id,
@@ -341,22 +339,20 @@ export async function myCourse(
     lessons: outline.lessons.map((l) => ({
       id: l.id,
       title: l.title,
+      recognized: state.recognizedLessonIds.has(l.id),
       topics: outline.topics
         .filter((t) => t.lessonId === l.id)
         .map((t) => ({
           id: t.id,
           title: t.title,
-          completed: done.has(t.id),
-          unlocked: topicUnlocked(orderedIds, done, t.id),
+          completed: state.doneTopicIds.has(t.id),
+          recognized: state.recognizedTopicIds.has(t.id),
+          unlocked: topicUnlocked(state.orderedTopicIds, state.doneTopicIds, t.id),
         })),
     })),
-    quizzes: quizzes.map((q) => summarize(q, attempts)),
-    completion: courseCompletion({
-      topicIds: orderedIds,
-      completedTopicIds: done,
-      quizIds: quizzes.map((q) => q.id),
-      passedQuizIds: attempts.filter((a) => a.passed).map((a) => a.quizId),
-    }),
+    quizzes: quizzes.map((q) => summarize(q, attempts, state.recognizedQuizIds)),
+    completion: state.completion,
+    recognized: state.courseRecognized,
   };
 }
 
@@ -370,16 +366,13 @@ export async function myTopic(
   const course = await readableCourse(orgId, contactId, courseId);
   if (!course) return null;
 
-  const outline = await courseOutline(orgId, courseId);
+  const { outline, rows, state } = await contactCourseProgressOne(orgId, contactId, courseId);
   const current = outline.topics.find((t) => t.id === topicId);
   // A topic of ANOTHER course is "not found", even if that course is readable.
   if (!current) return null;
 
-  const orderedIds = outline.topics.map((t) => t.id);
-  const progress = await progressRowsFor(orgId, contactId, orderedIds);
-  const done = completedIds(progress);
   // Locked = not found: the content does not travel before its turn.
-  if (!topicUnlocked(orderedIds, done, current.id)) return null;
+  if (!topicUnlocked(state.orderedTopicIds, state.doneTopicIds, current.id)) return null;
 
   const [content] = await getDb()
     .select({ contentMd: offlineTopic.contentMd })
@@ -393,8 +386,9 @@ export async function myTopic(
     topic: { id: current.id, title: current.title, contentMd: content?.contentMd ?? "" },
     video: topicVideo(current),
     progress: {
-      completed: done.has(current.id),
-      watchedRatio: progress.find((p) => p.topicId === current.id)?.watchedRatio ?? 0,
+      completed: state.doneTopicIds.has(current.id),
+      recognized: state.recognizedTopicIds.has(current.id),
+      watchedRatio: rows.find((p) => p.topicId === current.id)?.watchedRatio ?? 0,
     },
     ...topicNeighbors(outline.topics, current.id),
   };
@@ -421,7 +415,7 @@ export async function myQuiz(
     .limit(1);
   if (!quiz || quiz.courseId !== courseId) return null;
 
-  const [questions, attempts] = await Promise.all([
+  const [questions, attempts, { state }] = await Promise.all([
     db
       .select({
         id: offlineQuestion.id,
@@ -432,6 +426,7 @@ export async function myQuiz(
       .where(scoped(offlineQuestion.organizationId, orgId, eq(offlineQuestion.quizId, quizId)))
       .orderBy(asc(offlineQuestion.position)),
     ownAttempts(orgId, contactId, [quizId]),
+    contactCourseProgressOne(orgId, contactId, courseId),
   ]);
 
   const answers = questions.length
@@ -456,7 +451,7 @@ export async function myQuiz(
     : [];
 
   return {
-    ...summarize(quiz, attempts),
+    ...summarize(quiz, attempts, state.recognizedQuizIds),
     descriptionMd: quiz.descriptionMd,
     course: { id: course.id, title: course.title },
     // Remaining with zero used IS the maximum; one rule, one place.

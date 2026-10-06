@@ -17,6 +17,9 @@
  *    ranges vs. the 90% rule, topics without video, the staff override and
  *    course completion (every topic AND every quiz); viewing split across
  *    reports accumulates over the union of ranges (T9b);
+ *  - recognitions of a course or lessons completed in the previous academy:
+ *    the student sees "recognized" (never the reason) and continues from the
+ *    first pending lesson; revoking leaves real progress untouched;
  *  - teacher portal and staff attempt history, with their 404s;
  *  - the staff and portal pages render;
  *  - T11 editor: a course built through the staff editing API (validation,
@@ -616,6 +619,9 @@ export async function seccionCursosOffline({ api, ok, BASE, getCookie }) {
     JSON.stringify({ curso: despues?.completion, tarjeta: tarjeta?.completion, staff: pAFinal?.completion })
   );
 
+  // ---- 7c. Recognitions: what a student completed in the previous academy.
+  await seccionReconocimientos({ api, ok, A, B, al1, inscribir, loginAlumno, e2, sello, tail, topicsA, progreso, topicUrl });
+
   // ---- 8. Teacher portal and staff history.
   const profe = await loginProfe(profeId, emailProfe);
   const otro = await loginProfe(otroId, emailOtro);
@@ -682,6 +688,186 @@ export async function seccionCursosOffline({ api, ok, BASE, getCookie }) {
 
   // ---- 10. Editor (T11): the whole course built from the staff API.
   await seccionEditor({ api, ok, BASE, getCookie, cohId, A, alumno: al1, otraIp, sello });
+}
+
+/**
+ * Recognitions — a third student of the cohort (course A inherited, nothing
+ * done yet) gets lesson 1 recognized, then the whole course, then both are
+ * revoked. Checks what the student sees ("recognized", the next lesson open,
+ * never the reason), what staff sees (reason, author) and that the student's
+ * own progress survives every step untouched.
+ */
+async function seccionReconocimientos({
+  api,
+  ok,
+  A,
+  B,
+  al1,
+  inscribir,
+  loginAlumno,
+  e2,
+  sello,
+  tail,
+  topicsA,
+  progreso,
+  topicUrl,
+}) {
+  const [t1, t2, t3] = topicsA;
+  const email3 = `alumno3-offline-${sello}@example.com`;
+  const e3 = await inscribir("Tres", email3, `59893${tail}`);
+  const al3 = await loginAlumno(e3, email3);
+  const verCurso = async () => {
+    const r = await al3.como(`/api/portal/me/offline-courses/${A.id}`);
+    return { course: r.json?.course, text: r.text };
+  };
+  const staffA = async () =>
+    ((await api(`/api/enrollments/${e3}/offline-courses`)).json?.progress ?? []).find((p) => p.courseId === A.id);
+  const reconocer = (enr, body) =>
+    api(`/api/enrollments/${enr}/offline-courses/recognitions`, { method: "POST", body: JSON.stringify(body) });
+  const revocar = (id) => api(`/api/enrollments/${e3}/offline-courses/recognitions/${id}`, { method: "DELETE" });
+  const MOTIVO = `Completado en la academia anterior E2E ${sello}`;
+
+  const inicial = (await verCurso()).course;
+  const L1 = inicial?.lessons?.[0]?.id;
+  const L2 = inicial?.lessons?.[1]?.id;
+  const quiz = (course, title) => course?.quizzes?.find((q) => q.title === title);
+  // The student's own progress before anything is recognized: half of topic 1.
+  const mitad = await progreso(al3.como, t1?.id, { playedRanges: [{ start: 0, end: 50 }], duration: 100 });
+  ok(
+    "reconocimiento: el alumno 3 entra, solo el tema 1 está habilitado y ve la mitad del video",
+    al3.entro &&
+      Boolean(L1 && L2) &&
+      inicial?.lessons?.[1]?.topics?.[0]?.unlocked === false &&
+      inicial?.completion?.topicsDone === 0 &&
+      mitad.json?.progress?.watchedRatio === 0.5,
+    `${al3.motivo} ${JSON.stringify(inicial?.completion)} ${mitad.text}`
+  );
+
+  // 422s, before any write.
+  const lessonB = (await al1.como(`/api/portal/me/offline-courses/${B.id}`)).json?.course?.lessons?.[0]?.id;
+  const sinMotivo = await reconocer(e3, { scope: "lessons", courseId: A.id, lessonIds: [L1], reason: "   " });
+  const leccionAjena = await reconocer(e3, { scope: "lessons", courseId: A.id, lessonIds: [L1, lessonB], reason: MOTIVO });
+  const cursoSinAcceso = await reconocer(e2, { scope: "course", courseId: A.id, reason: MOTIVO });
+  const sinNada = await staffA();
+  ok(
+    "reconocimiento: sin motivo, lección de otro curso o curso sin acceso → 422 y no se escribe nada",
+    sinMotivo.res.status === 422 &&
+      leccionAjena.res.status === 422 &&
+      leccionAjena.json?.error?.code === "lesson_not_in_course" &&
+      cursoSinAcceso.res.status === 422 &&
+      cursoSinAcceso.json?.error?.code === "course_not_assigned" &&
+      (sinNada?.recognitions ?? []).length === 0,
+    `${sinMotivo.res.status} | ${leccionAjena.res.status} ${leccionAjena.text} | ${cursoSinAcceso.res.status} ${cursoSinAcceso.text}`
+  );
+
+  // Lesson 1 recognized (twice: the second writes nothing).
+  const rec1 = await reconocer(e3, { scope: "lessons", courseId: A.id, lessonIds: [L1], reason: MOTIVO });
+  const rec1bis = await reconocer(e3, { scope: "lessons", courseId: A.id, lessonIds: [L1], reason: MOTIVO });
+  ok(
+    "reconocimiento: reconocer la lección 1 crea una fila; repetirlo no duplica",
+    rec1.res.status === 200 && rec1.json?.created === 1 && rec1bis.res.status === 200 && rec1bis.json?.created === 0,
+    `${rec1.res.status} ${rec1.text} | ${rec1bis.text}`
+  );
+  const conLeccion = await verCurso();
+  const c1 = conLeccion.course;
+  const temas1 = (c1?.lessons ?? []).flatMap((l) => l.topics);
+  ok(
+    "portal: la lección 1 figura Reconocida, la lección 2 queda habilitada desde su primer tema",
+    c1?.lessons?.[0]?.recognized === true &&
+      temas1[0]?.completed === true &&
+      temas1[0]?.recognized === true &&
+      temas1[1]?.recognized === true &&
+      temas1[2]?.unlocked === true &&
+      temas1[2]?.completed === false &&
+      temas1[3]?.unlocked === false &&
+      quiz(c1, SIMPLE)?.status === "reconocido" &&
+      quiz(c1, MULTIPLE)?.status === "disponible" &&
+      c1?.completion?.topicsDone === 2 &&
+      c1?.completion?.quizzesPassed === 1 &&
+      c1?.completion?.completed === false,
+    JSON.stringify({ lessons: c1?.lessons, quizzes: c1?.quizzes, completion: c1?.completion })
+  );
+  ok(
+    "portal: el alumno no recibe el motivo ni quién lo reconoció",
+    conLeccion.text.length > 0 && !conLeccion.text.includes(MOTIVO) && !/reason|recognizedBy/i.test(conLeccion.text),
+    conLeccion.text.slice(0, 300)
+  );
+  const abreT3 = await al3.como(topicUrl(t3?.id));
+  const repasoT1 = await al3.como(topicUrl(t1?.id));
+  const reporteReconocido = await progreso(al3.como, t1?.id, { playedRanges: [{ start: 0, end: 10 }], duration: 100 });
+  ok(
+    "portal: el primer tema de la lección 2 abre; el tema reconocido sigue abierto y habilita el siguiente",
+    abreT3.res.status === 200 &&
+      repasoT1.res.status === 200 &&
+      repasoT1.json?.topic?.progress?.recognized === true &&
+      repasoT1.json?.topic?.progress?.completed === true &&
+      !repasoT1.text.includes(MOTIVO) &&
+      reporteReconocido.json?.progress?.completed === false &&
+      reporteReconocido.json?.progress?.nextTopicId === t2?.id,
+    `${abreT3.res.status} ${repasoT1.res.status} ${repasoT1.text.slice(0, 200)} | ${reporteReconocido.text}`
+  );
+  const staff1 = await staffA();
+  const recLeccion = staff1?.recognitions?.find((r) => r.lessonId === L1);
+  const t1Staff = staff1?.topics?.find((t) => t.id === t1?.id);
+  ok(
+    "staff: ve el reconocimiento con motivo y autor; el tema figura reconocido, no completado",
+    recLeccion?.reason === MOTIVO &&
+      typeof recLeccion?.recognizedByName === "string" &&
+      t1Staff?.completed === false &&
+      t1Staff?.recognitionId === recLeccion?.id &&
+      staff1?.completion?.topicsDone === 2,
+    JSON.stringify(staff1)
+  );
+
+  // The whole course.
+  const recCurso = await reconocer(e3, { scope: "course", courseId: A.id, reason: MOTIVO });
+  const conCurso = (await verCurso()).course;
+  const tarjeta = ((await al3.como("/api/portal/me/offline-courses")).json?.courses ?? []).find((c) => c.id === A.id);
+  const staff2 = await staffA();
+  ok(
+    "reconocer el curso completo: terminado y Reconocido en el portal, la lista y el staff",
+    recCurso.json?.created === 1 &&
+      conCurso?.completion?.completed === true &&
+      conCurso?.recognized === true &&
+      (conCurso?.quizzes ?? []).every((q) => q.status === "reconocido") &&
+      tarjeta?.completion?.completed === true &&
+      tarjeta?.recognized === true &&
+      staff2?.completion?.completed === true,
+    JSON.stringify({ rec: recCurso.text, curso: conCurso?.completion, tarjeta, staff: staff2?.completion })
+  );
+
+  // Revoke the course, then the lesson.
+  const idCurso = staff2?.recognitions?.find((r) => r.lessonId === null)?.id;
+  const quitarCurso = await revocar(idCurso);
+  const quitarOtraVez = await revocar(idCurso);
+  const quitarInventado = await revocar("orec_no_existe");
+  const sinCurso = (await verCurso()).course;
+  ok(
+    "quitar el reconocimiento del curso vuelve a la lección 1 reconocida (idempotente; 404 si no existe)",
+    quitarCurso.res.status === 200 &&
+      quitarOtraVez.res.status === 200 &&
+      quitarInventado.res.status === 404 &&
+      sinCurso?.completion?.completed === false &&
+      sinCurso?.recognized === false &&
+      sinCurso?.completion?.topicsDone === 2 &&
+      quiz(sinCurso, MULTIPLE)?.status === "disponible",
+    `${quitarCurso.res.status} ${quitarOtraVez.res.status} ${quitarInventado.res.status} ${JSON.stringify(sinCurso?.completion)}`
+  );
+  const quitarLeccion = await revocar(recLeccion?.id);
+  const sinNadaOtraVez = (await verCurso()).course;
+  const t3Cerrado = await al3.como(topicUrl(t3?.id));
+  const t1Propio = (await al3.como(topicUrl(t1?.id))).json?.topic?.progress;
+  ok(
+    "quitar el de la lección: el tema 3 vuelve a 404 y el avance propio del tema 1 sigue intacto",
+    quitarLeccion.res.status === 200 &&
+      sinNadaOtraVez?.completion?.topicsDone === 0 &&
+      sinNadaOtraVez?.lessons?.[1]?.topics?.[0]?.unlocked === false &&
+      t3Cerrado.res.status === 404 &&
+      t1Propio?.completed === false &&
+      t1Propio?.recognized === false &&
+      t1Propio?.watchedRatio === 0.5,
+    `${quitarLeccion.res.status} ${JSON.stringify(sinNadaOtraVez?.completion)} ${t3Cerrado.res.status} ${JSON.stringify(t1Propio)}`
+  );
 }
 
 /**
