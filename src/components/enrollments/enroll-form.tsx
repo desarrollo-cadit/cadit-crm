@@ -9,8 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-
-type MemberOption = { userId: string; name: string };
+import { SellerField } from "@/components/enrollments/seller-field";
+import type { SellerOption } from "@/lib/vendedores";
 
 /** Lo que el formulario le cuenta a quien lo abrió cuando la inscripción se creó. */
 export type EnrollSavedResult = {
@@ -43,7 +43,8 @@ export function EnrollForm({
   cohortId,
   initialContact,
   companies,
-  members,
+  sellers,
+  sellersLoaded,
   onClose,
   onSaved,
   onCompanyCreated,
@@ -53,7 +54,9 @@ export function EnrollForm({
   /** Contacto ya elegido: sin búsqueda ni cambio de modo. */
   initialContact?: { id: string; name: string };
   companies: CompanyDto[];
-  members: MemberOption[];
+  /** 2026-10-06 — de `/api/sellers` (activos y archivados; el campo filtra). */
+  sellers: SellerOption[];
+  sellersLoaded: boolean;
   onClose: () => void;
   onSaved: (result: EnrollSavedResult) => void;
   onCompanyCreated: (company: CompanyDto) => void;
@@ -157,6 +160,12 @@ export function EnrollForm({
     }
     if (mode === "new" && (!firstName.trim() || !phone.trim())) {
       setError("Nombre y celular son obligatorios para un contacto nuevo");
+      return;
+    }
+    // 2026-10-06 — Toda inscripción en una cohorte es una venta: el servidor
+    // la rechaza sin vendedor, y acá se anticipa para no perder lo cargado.
+    if (!sellerId) {
+      setError("Falta indicar el vendedor: toda inscripción en una cohorte es una venta.");
       return;
     }
 
@@ -422,22 +431,15 @@ export function EnrollForm({
             />
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="enr-seller">Vendedor</Label>
-            <select
-              id="enr-seller"
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-              value={sellerId}
-              onChange={(e) => setSellerId(e.target.value)}
-            >
-              <option value="">Sin asignar</option>
-              {members.map((m) => (
-                <option key={m.userId} value={m.userId}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          <SellerField
+            id="enr-seller"
+            value={sellerId}
+            onChange={setSellerId}
+            sellers={sellers}
+            loaded={sellersLoaded}
+            required
+            permiteVacio={false}
+          />
 
           <div className="space-y-1.5">
             <Label htmlFor="enr-company">Empresa (facturación B2B)</Label>

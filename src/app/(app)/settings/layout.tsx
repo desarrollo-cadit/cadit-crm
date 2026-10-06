@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSessionOrNull } from "@/lib/auth/session";
 import { sessionCapabilities } from "@/lib/capabilities";
+import { primerDestinoDeSettings } from "@/lib/nav";
 import { SettingsNav } from "@/components/settings/settings-nav";
 
 export default async function SettingsLayout({
@@ -12,8 +13,10 @@ export default async function SettingsLayout({
   const capabilities = sessionCapabilities(session);
 
   /**
-   * 012 (T029) — Quien no puede configurar NI gestionar accesos no entra a
-   * esta sección. El corte va acá, en el servidor, y no solo escondiendo el
+   * 012 (T029) — Quien no puede abrir ninguna pestaña no entra a esta
+   * sección. Desde 2026-10-06 se DERIVA de `SETTINGS_TABS` (Vendedores pide
+   * `inscripciones.editar`, una tercera capacidad): una lista escrita a mano
+   * acá dejaría afuera a quien la barra le muestra una pestaña. El corte va acá, en el servidor, y no solo escondiendo el
    * enlace del menú: un enlace oculto sigue siendo una URL que se puede
    * escribir a mano.
    *
@@ -21,10 +24,7 @@ export default async function SettingsLayout({
    * segunda red — pero es la que decide qué VE la persona, y por eso importa
    * que sea consistente con lo que el servidor le va a permitir.
    */
-  const puedeEntrar =
-    capabilities.includes("configuracion.editar") ||
-    capabilities.includes("accesos.gestionar");
-  if (!puedeEntrar) redirect("/");
+  if (primerDestinoDeSettings(capabilities) === null) redirect("/");
 
   return (
     <div className="flex h-full flex-col">

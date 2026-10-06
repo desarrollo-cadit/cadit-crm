@@ -109,7 +109,7 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
     donde: "/pipeline",
   },
   "inscripciones.editar": {
-    que: "anotar a alguien en una cohorte, moverlo de etapa y acordar el precio de su cursada",
+    que: "anotar a alguien en una cohorte, moverlo de etapa, acordar el precio de su cursada e indicar quién la vendió; también cargar y archivar vendedores en Ajustes → Vendedores",
     donde: "/pipeline",
   },
   /**
@@ -128,7 +128,7 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
    * dos destinos no indica nada.
    */
   "cobranza.ver": {
-    que: "ver el cierre de un período —lo que se cobró y lo que se devengó, con su moneda— y el estado de cuenta de cada alumno",
+    que: "ver el cierre de un período —lo que se cobró y lo que se devengó, con su moneda—, las ventas de cada vendedor y el estado de cuenta de cada alumno",
     donde: "/finanzas",
   },
   "cobranza.editar": {

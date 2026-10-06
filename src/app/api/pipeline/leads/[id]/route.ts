@@ -4,6 +4,7 @@ import { apiError, parseBody, requireCapability } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { publish } from "@/server/events/bus";
+import { exigeVendedor } from "@/server/sellers";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +65,31 @@ export const PATCH = requireCapability(
       )
       .limit(1);
     if (!cohort[0]) return apiError(422, "invalid_cohort", "Cohorte inexistente");
+
+    /**
+     * 2026-10-06 — Pasar un lead a una cohorte lo convierte en una VENTA, y
+     * toda venta lleva vendedor. Esta ruta no recibe vendedor (es la del
+     * tablero, con `inscripciones.ver`): el camino para cargarlo es el
+     * formulario de inscripción, que lo pide.
+     */
+    const leads = await db
+      .select({
+        sellerId: schema.enrollment.sellerId,
+        parentEnrollmentId: schema.enrollment.parentEnrollmentId,
+      })
+      .from(schema.enrollment)
+      .where(scoped(schema.enrollment.organizationId, session.organizationId, eq(schema.enrollment.id, id)))
+      .limit(1);
+    const lead = leads[0];
+    if (!lead) return apiError(404, "not_found", "Inscripción no encontrada");
+    const venta = { cohortId: body.data.cohortId, parentEnrollmentId: lead.parentEnrollmentId };
+    if (exigeVendedor(venta) && !lead.sellerId) {
+      return apiError(
+        422,
+        "seller_required",
+        "Para pasar a esta persona a una cohorte hace falta saber quién hizo la venta. Se puede inscribir desde su ficha, con el formulario de inscripción, que pide el vendedor."
+      );
+    }
   }
 
   const updated = await db

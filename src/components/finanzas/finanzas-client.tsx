@@ -14,6 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { VentasPorVendedor } from "@/components/finanzas/ventas-por-vendedor";
 
 /**
  * 026 — Administración y finanzas: el cierre de un mes, para transcribir.
@@ -178,7 +179,7 @@ export function FinanzasClient() {
   const [cierre, setCierre] = useState<Cierre | null>(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [vista, setVista] = useState<"caja" | "devengado">("caja");
+  const [vista, setVista] = useState<"caja" | "devengado" | "ventas">("caja");
   const [busqueda, setBusqueda] = useState("");
 
   const meses = mesesDisponibles();
@@ -311,6 +312,8 @@ export function FinanzasClient() {
               [
                 { key: "caja", label: "Caja" },
                 { key: "devengado", label: "Devengado" },
+                // 2026-10-06 — para pagar comisiones; otra pregunta, otra pestaña.
+                { key: "ventas", label: "Ventas por vendedor" },
               ] as const
             ).map((t) => (
               <button
@@ -332,7 +335,9 @@ export function FinanzasClient() {
             </span>
           </div>
 
-          {vista === "caja" ? (
+          {vista === "ventas" ? (
+            <VentasPorVendedor mes={cierre.periodo.mes} busqueda={busqueda} />
+          ) : vista === "caja" ? (
             <section className="space-y-6">
               <p className="text-xs text-text-3">
                 Cobros recibidos en el período, por fecha de cobro. Los pagos
@@ -478,7 +483,7 @@ export function FinanzasClient() {
             para que un pago que ya se transcribió y después se anuló se pueda
             encontrar, en vez de desaparecer sin explicación.
           */}
-          {cierre.anulados.length > 0 && (
+          {vista !== "ventas" && cierre.anulados.length > 0 && (
             <section className="rounded-md border border-dashed border-border">
               <div className="flex items-center gap-2 border-b border-border px-4 py-2">
                 <Ban className="h-4 w-4 text-text-3" />

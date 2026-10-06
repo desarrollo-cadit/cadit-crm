@@ -344,6 +344,13 @@
       "when": 1791295131147,
       "tag": "0048_cursos_offline_reconocimientos",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1791299267905,
+      "tag": "0049_vendedores",
+      "breakpoints": true
     }
   ]
 }

@@ -677,6 +677,43 @@ export const cohortSoftware = pgTable(
 );
 
 /**
+ * 2026-10-06 (decisión del dueño) — Quien vende, use o no el sistema.
+ *
+ * Hasta la 0049 el vendedor de una inscripción era un `user`: sólo podía
+ * figurar quien tenía cuenta en el panel, y la academia tiene vendedores que
+ * nunca entran. `user_id` queda como vínculo OPCIONAL para los que sí.
+ *
+ * No se borra: se archiva. Un vendedor archivado no se ofrece para una venta
+ * nueva, pero sigue en las ventas que hizo y en el reporte de comisiones —
+ * borrarlo dejaría esas ventas como "Sin vendedor", que es justo lo que el
+ * reporte existe para corregir.
+ */
+export const seller = pgTable(
+  "seller",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    email: text("email"),
+    userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
+    archivedAt: timestamp("archived_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("seller_org_idx").on(t.organizationId),
+    // Una persona del equipo es UN vendedor: dos filas para el mismo usuario
+    // partirían sus ventas en dos grupos del reporte.
+    uniqueIndex("seller_org_user_uq")
+      .on(t.organizationId, t.userId)
+      .where(sql`${t.userId} IS NOT NULL`),
+    check("seller_name_present", sql`length(trim(${t.name})) between 1 and 120`),
+  ]
+);
+
+/**
  * 004 — Reemplaza a `lead`. `cohort_id` NULL = lead general de ventas de la
  * academia (mismo rol que el `lead` de antes, sin cambio de comportamiento);
  * con `cohort_id` asignada, es la inscripción a esa cohorte puntual. Un mismo
@@ -742,8 +779,14 @@ export const enrollment = pgTable(
     nationalId: text("national_id"),
     invoiceNumber: text("invoice_number"),
     receiptNumber: text("receipt_number"),
-    /** 005 — vendedor; validado en servidor como miembro de la org (DV-008). */
-    sellerId: text("seller_id").references(() => user.id, {
+    /**
+     * 2026-10-06 — Quién hizo la venta, para pagar la comisión. Apunta a
+     * `seller`, no a `user`: hay vendedores que nunca entran al panel (antes
+     * de la 0049 apuntaba a `user.id`). Obligatorio en servidor para toda
+     * inscripción MADRE con cohorte (`exigeVendedor`); la columna sigue
+     * aceptando NULL porque las ventas viejas sin vendedor no se bloquean.
+     */
+    sellerId: text("seller_id").references(() => seller.id, {
       onDelete: "set null",
     }),
     /** 005 — facturación B2B opcional (DV-009). */

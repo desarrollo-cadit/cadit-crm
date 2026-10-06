@@ -33,6 +33,7 @@ import { createHmac } from "node:crypto";
 import { seccion029 } from "./e2e/navegacion-029.mjs";
 import { seccionCursosOffline } from "./e2e/cursos-offline.mjs";
 import { seccionEnviosMasivos } from "./e2e/envios-masivos.mjs";
+import { seccionVendedores } from "./e2e/vendedores.mjs";
 import {
   alEntrar,
   claveVigente,
@@ -56,7 +57,37 @@ function ok(name, cond, extra = "") {
   }
 }
 
+/**
+ * 2026-10-06 — Toda inscripción en una cohorte lleva vendedor. Los bloques
+ * escritos antes de esa regla dan de alta inscripciones sin `sellerId`; en vez
+ * de tocar las ~25 altas, el arnés les pone un vendedor de prueba cuando el
+ * cuerpo NO trae la clave (ni madre). Quien manda `sellerId` explícito —null
+ * incluido— llega tal cual: así prueba el rechazo el bloque `vendedores`.
+ */
+let vendedorE2E = null;
+async function conVendedor(path, opts) {
+  if (path !== "/api/enrollments" || opts.method !== "POST" || typeof opts.body !== "string") {
+    return opts;
+  }
+  const cuerpo = JSON.parse(opts.body);
+  if ("sellerId" in cuerpo || cuerpo.parentEnrollmentId) return opts;
+  if (!vendedorE2E) {
+    const lista = (await api("/api/sellers")).json?.sellers ?? [];
+    vendedorE2E =
+      lista.find((s) => s.name === "Vendedor E2E" && !s.archived)?.id ??
+      (
+        await api("/api/sellers", {
+          method: "POST",
+          body: JSON.stringify({ name: "Vendedor E2E" }),
+        })
+      ).json?.seller?.id ??
+      null;
+  }
+  return { ...opts, body: JSON.stringify({ ...cuerpo, sellerId: vendedorE2E }) };
+}
+
 async function api(path, opts = {}) {
+  opts = await conVendedor(path, opts);
   const res = await fetch(`${BASE}${path}`, {
     ...opts,
     headers: {
@@ -152,6 +183,7 @@ async function main() {
       "cursos-offline": seccionCursosOffline,
       "cambio-de-contrasena": seccionCambioDeContrasena,
       "envios-masivos": seccionEnviosMasivos,
+      vendedores: seccionVendedores,
     };
     for (const nombre of soloSecciones) {
       const seccion = SECCIONES[nombre];
@@ -5046,6 +5078,9 @@ async function main() {
 
   // 2026-10-05 — Envío masivo por cohorte y licencias por módulo.
   await seccionEnviosMasivos({ api, ok, BASE, getCookie: () => cookie });
+
+  // 2026-10-06 — Vendedores y ventas por vendedor.
+  await seccionVendedores({ api, ok, BASE, getCookie: () => cookie });
 
   console.log(`\n===== ${checks - failures}/${checks} checks OK, ${failures} fallos =====`);
   process.exit(failures > 0 ? 1 : 0);

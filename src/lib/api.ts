@@ -147,6 +147,7 @@ const UNIQUE_VIOLATION_MESSAGES: Record<string, string> = {
   // dos altas simultáneas con el mismo nombre.
   course_org_slug_uq: "Ya existe un curso con esa dirección web (slug)",
   course_category_org_slug_uq: "Ya existe una categoría con esa dirección web (slug)",
+  seller_org_user_uq: "Esa persona del equipo ya está cargada como vendedor",
 };
 
 function describeUniqueViolation(constraintName: string): string {

@@ -69,6 +69,8 @@ const prefixes = {
   // 2026-10-05 — envío masivo por cohorte: la corrida y cada destinatario.
   bulkSendRun: "bsr",
   bulkSendRecipient: "bsrr",
+  // 2026-10-06 — quien vende, use o no el panel (comisiones).
+  seller: "sel",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

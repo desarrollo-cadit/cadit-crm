@@ -7,8 +7,7 @@ import type { CompanyDto } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { EnrollForm, type EnrollSavedResult } from "@/components/enrollments/enroll-form";
-
-type MemberOption = { userId: string; name: string };
+import type { SellerOption } from "@/lib/vendedores";
 
 /**
  * Inscribir desde el contacto — botón + formulario de inscripción para las
@@ -21,7 +20,7 @@ type MemberOption = { userId: string; name: string };
  * que la persona VE, no la barrera.
  *
  * Empresas y vendedores salen de los mismos endpoints que usa el roster de la
- * cohorte (`/api/companies`, `/api/settings/team`) y se piden recién al abrir:
+ * cohorte (`/api/companies`, `/api/sellers`) y se piden recién al abrir:
  * quien nunca inscribe a nadie no paga esas consultas.
  */
 export function EnrollLauncher({
@@ -40,24 +39,24 @@ export function EnrollLauncher({
 }) {
   const [open, setOpen] = useState(false);
   const [companies, setCompanies] = useState<CompanyDto[]>([]);
-  const [members, setMembers] = useState<MemberOption[]>([]);
+  const [sellers, setSellers] = useState<SellerOption[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [done, setDone] = useState<EnrollSavedResult | null>(null);
 
   useEffect(() => {
     if (!open || loaded) return;
     void (async () => {
-      const [companiesRes, teamRes] = await Promise.all([
+      const [companiesRes, sellersRes] = await Promise.all([
         fetch("/api/companies").catch(() => null),
-        fetch("/api/settings/team").catch(() => null),
+        fetch("/api/sellers").catch(() => null),
       ]);
       if (companiesRes?.ok) {
         const data = (await companiesRes.json()) as { companies: CompanyDto[] };
         setCompanies(data.companies);
       }
-      if (teamRes?.ok) {
-        const data = (await teamRes.json()) as { members: MemberOption[] };
-        setMembers(data.members);
+      if (sellersRes?.ok) {
+        const data = (await sellersRes.json()) as { sellers: SellerOption[] };
+        setSellers(data.sellers);
       }
       setLoaded(true);
     })();
@@ -96,7 +95,8 @@ export function EnrollLauncher({
         <EnrollForm
           initialContact={initialContact}
           companies={companies}
-          members={members}
+          sellers={sellers}
+          sellersLoaded={loaded}
           onClose={() => setOpen(false)}
           onSaved={(result) => {
             setOpen(false);

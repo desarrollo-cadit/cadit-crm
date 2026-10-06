@@ -63,6 +63,27 @@ describe("primerDestinoDeSettings — a dónde entra cada quien", () => {
   });
 });
 
+/**
+ * 2026-10-06 — Vendedores vive en Configuración con `inscripciones.editar`:
+ * quien carga ventas es quien sabe que entró un vendedor nuevo. Con eso, la
+ * puerta de la sección deja de ser "configurar o gestionar accesos" y pasa a
+ * ser "puede abrir ALGUNA pestaña". Si el layout y la barra siguieran con la
+ * lista vieja escrita a mano, quien sólo tiene `inscripciones.editar` vería
+ * la pestaña en la lista pero rebotaría en la puerta.
+ */
+describe("Vendedores en Configuración", () => {
+  it("con sólo `inscripciones.editar` entra a Vendedores", () => {
+    expect(primerDestinoDeSettings(["inscripciones.editar"])).toBe("/settings/vendedores");
+  });
+
+  it("la puerta del layout y el ítem del menú se derivan de las pestañas", () => {
+    const layout = leer("src/app/(app)/settings/layout.tsx");
+    expect(layout).toContain("primerDestinoDeSettings");
+    const menu = leer("src/components/app-nav.tsx");
+    expect(menu).toContain("primerDestinoDeSettings");
+  });
+});
+
 describe("guardas estructurales de Configuración", () => {
   /**
    * El índice no puede volver a nombrar una pestaña. Si alguien escribe

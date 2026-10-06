@@ -230,6 +230,13 @@ export const SETTINGS_TABS = [
   // 012 (T020) — Va después de Equipo a propósito: primero se ve QUIÉN está,
   // y después qué puede hacer cada rol.
   { href: "/settings/roles", label: "Roles", capability: "configuracion.editar" },
+  /**
+   * 2026-10-06 — Vendedores, con la capacidad de quien carga las ventas y no
+   * con `configuracion.editar`: Coordinación inscribe todos los días y no
+   * configura la instancia. Al final de la lista a propósito: no cambia a
+   * dónde entra nadie que ya entraba.
+   */
+  { href: "/settings/vendedores", label: "Vendedores", capability: "inscripciones.editar" },
 ] as const;
 
 /**

@@ -12,7 +12,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import type { ThemePreference } from "@/lib/theme";
 import { IsotipoCadIT } from "@/components/logo-cadit";
 import { useEvents } from "@/components/use-events";
-import { ITEM_AJUSTES, ITEM_GUIA, NAV_GROUPS } from "@/lib/nav";
+import { ITEM_AJUSTES, ITEM_GUIA, NAV_GROUPS, primerDestinoDeSettings } from "@/lib/nav";
 
 /**
  * 027 (FR-004) — La declaración del menú se mudó a `src/lib/nav.ts`.
@@ -187,11 +187,10 @@ export function AppNav({
         {ITEM_GUIA.label}
       </Link>
 
-      {/* 012 (T029) — Configuración solo para quien puede configurar o
-          gestionar accesos. Ambas pestañas de adentro (Roles, Equipo) tienen
-          su propio gate en el servidor; esto evita ofrecer la puerta. */}
-      {(capabilities.includes("configuracion.editar") ||
-        capabilities.includes("accesos.gestionar")) && (
+      {/* 012 (T029) — Configuración solo para quien puede abrir alguna de sus
+          pestañas; la misma derivación que la puerta del layout. Cada
+          pestaña tiene además su propio gate en el servidor. */}
+      {primerDestinoDeSettings(capabilities) !== null && (
       <Link
         href={ITEM_AJUSTES.href}
         className={cn(

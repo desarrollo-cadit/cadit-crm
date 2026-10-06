@@ -110,12 +110,14 @@ describe("createEnrollment (005 US2)", () => {
   it("alta con contacto inline: crea el contacto y la inscripción", async () => {
     selectQueue.push(
       [{ id: "coh_1" }], // cohort existe
+      [{ id: "sel_1", archivedAt: null }], // 2026-10-06 — vendedor activo
       [{ id: "stg_lead" }] // primera etapa abierta
     );
 
     const { createEnrollment } = await import("@/server/enrollments");
     const result = await createEnrollment("org_1", {
       cohortId: "coh_1",
+      sellerId: "sel_1",
       contact: { firstName: "Diego", phone: "59899123456", email: "diego@example.com" },
       amount: 76000,
       installments: 12,
@@ -139,6 +141,7 @@ describe("createEnrollment (005 US2)", () => {
   it("alta con contactId existente: NO crea un contacto nuevo", async () => {
     selectQueue.push(
       [{ id: "coh_1" }], // cohort existe
+      [{ id: "sel_1", archivedAt: null }], // 2026-10-06 — vendedor activo
       [{ id: "ct_1", nationalId: "1.234.567-8" }], // contacto existente
       [{ id: "stg_lead" }] // primera etapa abierta
     );
@@ -147,6 +150,7 @@ describe("createEnrollment (005 US2)", () => {
     const result = await createEnrollment("org_1", {
       cohortId: "coh_1",
       contactId: "ct_1",
+      sellerId: "sel_1",
     });
 
     expect(result.ok).toBe(true);
@@ -162,6 +166,7 @@ describe("createEnrollment (005 US2)", () => {
   it("companyId queda asociado a la inscripción sin tocar los datos del contacto", async () => {
     selectQueue.push(
       [{ id: "coh_1" }], // cohort existe
+      [{ id: "sel_1", archivedAt: null }], // 2026-10-06 — vendedor activo
       [{ id: "cia_1" }], // companyId: pertenece a la organización (hallazgo del reviewer)
       [{ id: "ct_1", nationalId: null }], // contactId existente
       [{ id: "stg_lead" }]
@@ -171,6 +176,7 @@ describe("createEnrollment (005 US2)", () => {
     await createEnrollment("org_1", {
       cohortId: "coh_1",
       contactId: "ct_1",
+      sellerId: "sel_1",
       companyId: "cia_1",
     });
 
@@ -179,10 +185,10 @@ describe("createEnrollment (005 US2)", () => {
     expect(inserts).toHaveLength(1); // ningún insert/update sobre contact
   });
 
-  it("sellerId que no es miembro de la organización → 422 invalid_body", async () => {
+  it("2026-10-06 — sellerId que no es un vendedor de la organización → 422 invalid_body", async () => {
     selectQueue.push(
       [{ id: "coh_1" }], // cohort existe
-      [] // sellerId: sin membresía
+      [] // sellerId: no es un vendedor de esta organización
     );
 
     const { createEnrollment } = await import("@/server/enrollments");
@@ -202,6 +208,7 @@ describe("createEnrollment (005 US2)", () => {
   it("companyId que no pertenece a la organización → 422 invalid_body (hallazgo del reviewer)", async () => {
     selectQueue.push(
       [{ id: "coh_1" }], // cohort existe
+      [{ id: "sel_1", archivedAt: null }], // 2026-10-06 — vendedor activo
       [] // companyId: ninguna fila en esta organización
     );
 
@@ -209,6 +216,7 @@ describe("createEnrollment (005 US2)", () => {
     const result = await createEnrollment("org_1", {
       cohortId: "coh_1",
       contactId: "ct_1",
+      sellerId: "sel_1",
       companyId: "cia_de_otra_org",
     });
 
@@ -234,13 +242,14 @@ describe("createEnrollment (005 US2)", () => {
   });
 
   it("duplicado de email/celular: el error del INSERT sube sin capturar (DV-002)", async () => {
-    selectQueue.push([{ id: "coh_1" }]); // cohort existe
+    selectQueue.push([{ id: "coh_1" }], [{ id: "sel_1", archivedAt: null }]); // cohort + vendedor
     insertContactShouldThrowDuplicate = true;
 
     const { createEnrollment } = await import("@/server/enrollments");
     await expect(
       createEnrollment("org_1", {
         cohortId: "coh_1",
+        sellerId: "sel_1",
         contact: { firstName: "Otro", phone: "59899999999", email: "ya@existe.com" },
       })
     ).rejects.toMatchObject({ code: "23505" });
@@ -279,12 +288,15 @@ describe("updateEnrollmentCommercial (005 iteración 2)", () => {
     expect(set.companyId).toBeNull();
   });
 
-  it("sellerId que no es miembro de la organización → 422 invalid_body, sin actualizar", async () => {
-    selectQueue.push([]); // sellerId: sin membresía
+  it("sellerId que no es un vendedor de la organización → 422 invalid_body, sin actualizar", async () => {
+    selectQueue.push(
+      [{ cohortId: "coh_1", parentEnrollmentId: null, sellerId: null }], // la inscripción
+      [] // sellerId: no es un vendedor de esta organización
+    );
 
     const { updateEnrollmentCommercial } = await import("@/server/enrollments");
     const result = await updateEnrollmentCommercial("org_1", "enr_1", {
-      sellerId: "usr_ajeno",
+      sellerId: "sel_ajeno",
     });
 
     expect(result.ok).toBe(false);

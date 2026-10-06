@@ -8,6 +8,12 @@ import { fullName } from "@/lib/utils";
 import { PORTAL_NO_EMAIL_REASON } from "@/lib/portal-access";
 import type { Capability } from "@/lib/capabilities";
 import {
+  exigeVendedor,
+  reglaDeVendedorAlEditar,
+  verificarVendedorParaVenta,
+  VENDEDOR_OBLIGATORIO,
+} from "@/server/sellers";
+import {
   listarHijasDeVarias,
   listarModulos,
   verificarVinculoDeInscripcion,
@@ -49,7 +55,7 @@ export type CreateEnrollmentInput = {
 
 export type CreateEnrollmentResult =
   | { ok: true; enrollment: EnrollmentCommercialDto }
-  | { ok: false; status: 422; code: "invalid_body"; message: string };
+  | { ok: false; status: 422; code: "invalid_body" | "seller_required"; message: string };
 
 /**
  * Crea (o reutiliza) el contacto y la inscripción en una sola llamada
@@ -110,25 +116,20 @@ export async function createEnrollment(
     return { ok: false, status: 422, code: "invalid_body", message: treeError.message };
   }
 
+  /**
+   * 2026-10-06 — Toda inscripción en una cohorte es una venta y lleva
+   * vendedor; la hija de una especialización no (la venta es la madre). Antes
+   * de crear nada: un 422 después de insertar el contacto dejaría un contacto
+   * suelto, porque devolver un error no revierte la transacción.
+   */
+  const nueva = { cohortId: input.cohortId, parentEnrollmentId: input.parentEnrollmentId ?? null };
+  if (exigeVendedor(nueva) && !input.sellerId) {
+    return { ok: false, status: 422, code: "seller_required", message: VENDEDOR_OBLIGATORIO };
+  }
   if (input.sellerId) {
-    const memberRows = await db
-      .select({ id: schema.member.id })
-      .from(schema.member)
-      .where(
-        scoped(
-          schema.member.organizationId,
-          organizationId,
-          eq(schema.member.userId, input.sellerId)
-        )
-      )
-      .limit(1);
-    if (!memberRows[0]) {
-      return {
-        ok: false,
-        status: 422,
-        code: "invalid_body",
-        message: "sellerId no es miembro de la organización",
-      };
+    const sellerError = await verificarVendedorParaVenta(organizationId, input.sellerId);
+    if (sellerError) {
+      return { ok: false, status: 422, code: "invalid_body", message: sellerError };
     }
   }
 
@@ -341,6 +342,14 @@ export type RosterEntryDto = {
   invoiceNumber?: string | null;
   receiptNumber?: string | null;
   sellerId?: string | null;
+  /**
+   * 2026-10-06 — El vendedor, con nombre, para mostrarlo en el roster.
+   * `null` = la venta no tiene vendedor ("Sin vendedor"). Va con los campos
+   * comerciales y no suelto: es el dato con el que se paga una comisión.
+   */
+  seller?: { id: string; name: string; archived: boolean } | null;
+  /** Falso en la hija de un módulo: el vendedor lo lleva la madre. */
+  sellerRequired?: boolean;
   companyId?: string | null;
 };
 
@@ -362,7 +371,9 @@ export function buildRosterEntry(
   contact: typeof schema.contact.$inferSelect,
   license: typeof schema.license.$inferSelect | null,
   /** 012 — vínculo de portal del alumno; `null` = todavía no tiene acceso. */
-  accountLink: typeof schema.accountLink.$inferSelect | null = null
+  accountLink: typeof schema.accountLink.$inferSelect | null = null,
+  /** 2026-10-06 — el vendedor de la inscripción; `null` = sin vendedor. */
+  seller: Pick<typeof schema.seller.$inferSelect, "id" | "name" | "archivedAt"> | null = null
 ): RosterEntryDto {
   const base: RosterEntryDto = {
     id: enrollment.id,
@@ -401,6 +412,10 @@ export function buildRosterEntry(
     invoiceNumber: enrollment.invoiceNumber,
     receiptNumber: enrollment.receiptNumber,
     sellerId: enrollment.sellerId,
+    seller: seller
+      ? { id: seller.id, name: seller.name, archived: seller.archivedAt !== null }
+      : null,
+    sellerRequired: exigeVendedor(enrollment),
     companyId: enrollment.companyId,
   };
 }
@@ -451,10 +466,16 @@ export async function getCohortRoster(
       contact: schema.contact,
       license: schema.license,
       accountLink: schema.accountLink,
+      seller: {
+        id: schema.seller.id,
+        name: schema.seller.name,
+        archivedAt: schema.seller.archivedAt,
+      },
     })
     .from(schema.enrollment)
     .innerJoin(schema.contact, eq(schema.enrollment.contactId, schema.contact.id))
     .leftJoin(schema.license, eq(schema.license.enrollmentId, schema.enrollment.id))
+    .leftJoin(schema.seller, eq(schema.seller.id, schema.enrollment.sellerId))
     // 012 — el acceso al portal es del CONTACTO, no de la inscripción: la
     // misma persona puede cursar tres veces y entra con una sola cuenta. Va
     // como join y no como consulta por fila para no volver la lista un N+1.
@@ -476,7 +497,7 @@ export async function getCohortRoster(
     .orderBy(asc(schema.contact.firstName));
 
   const enrollments = rows.map((r) =>
-    buildRosterEntry(capabilities, r.enrollment, r.contact, r.license, r.accountLink)
+    buildRosterEntry(capabilities, r.enrollment, r.contact, r.license, r.accountLink, r.seller)
   );
 
   if (cohort.isSpecialization) {
@@ -787,7 +808,7 @@ export type UpdateEnrollmentCommercialInput = Partial<{
 export type UpdateEnrollmentCommercialResult =
   | { ok: true; enrollment: EnrollmentCommercialDto }
   | { ok: false; status: 404; code: "not_found"; message: string }
-  | { ok: false; status: 422; code: "invalid_body"; message: string };
+  | { ok: false; status: 422; code: "invalid_body" | "seller_required"; message: string };
 
 /**
  * 005 iteración 2 — edita los datos comerciales de una inscripción YA
@@ -805,25 +826,40 @@ export async function updateEnrollmentCommercial(
 ): Promise<UpdateEnrollmentCommercialResult> {
   const db = getDb();
 
-  if (input.sellerId) {
-    const memberRows = await db
-      .select({ id: schema.member.id })
-      .from(schema.member)
+  /**
+   * 2026-10-06 — El vendedor sólo se mira si el pedido lo trae. Una venta
+   * vieja sin vendedor se sigue pudiendo editar sin cargarlo; lo que no se
+   * puede es dejar sin vendedor una venta que lo tiene. Y un vendedor que hoy
+   * está archivado se conserva en la venta que ya hizo: se verifica que esté
+   * activo sólo cuando CAMBIA.
+   */
+  if (input.sellerId !== undefined) {
+    const filas = await db
+      .select({
+        cohortId: schema.enrollment.cohortId,
+        parentEnrollmentId: schema.enrollment.parentEnrollmentId,
+        sellerId: schema.enrollment.sellerId,
+      })
+      .from(schema.enrollment)
       .where(
-        scoped(
-          schema.member.organizationId,
-          organizationId,
-          eq(schema.member.userId, input.sellerId)
-        )
+        scoped(schema.enrollment.organizationId, organizationId, eq(schema.enrollment.id, enrollmentId))
       )
       .limit(1);
-    if (!memberRows[0]) {
-      return {
-        ok: false,
-        status: 422,
-        code: "invalid_body",
-        message: "sellerId no es miembro de la organización",
-      };
+    const actual = filas[0];
+    if (!actual) {
+      return { ok: false, status: 404, code: "not_found", message: "Inscripción no encontrada" };
+    }
+    const regla = reglaDeVendedorAlEditar({
+      exige: exigeVendedor(actual),
+      actual: actual.sellerId,
+      nuevo: input.sellerId,
+    });
+    if (regla) return { ok: false, status: 422, code: "seller_required", message: regla };
+    if (input.sellerId && input.sellerId !== actual.sellerId) {
+      const sellerError = await verificarVendedorParaVenta(organizationId, input.sellerId);
+      if (sellerError) {
+        return { ok: false, status: 422, code: "invalid_body", message: sellerError };
+      }
     }
   }
 

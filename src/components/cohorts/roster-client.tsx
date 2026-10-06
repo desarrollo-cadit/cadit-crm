@@ -26,8 +26,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { BulkSendsPanel } from "@/components/cohorts/bulk-sends-panel";
 import { ConfirmSendDialog } from "@/components/cohorts/confirm-send-dialog";
 import { formatSentAt } from "@/lib/schedule-time";
-
-type MemberOption = { userId: string; name: string };
+import type { SellerOption } from "@/lib/vendedores";
 
 /**
  * 2026-10-05 (decisión del dueño) — "Software instalado" y "Licencia" son
@@ -119,7 +118,8 @@ export function RosterClient({
 }) {
   const [roster, setRoster] = useState<CohortRosterDto | null>(null);
   const [companies, setCompanies] = useState<CompanyDto[]>([]);
-  const [members, setMembers] = useState<MemberOption[]>([]);
+  const [sellers, setSellers] = useState<SellerOption[]>([]);
+  const [sellersLoaded, setSellersLoaded] = useState(false);
   const [showEnrollForm, setShowEnrollForm] = useState(false);
   /** 007 — paginación de la tabla y fila desplegada (una a la vez). */
   const [page, setPage] = useState(0);
@@ -173,20 +173,21 @@ export function RosterClient({
 
   useEffect(() => {
     void (async () => {
-      const [companiesRes, teamRes] = await Promise.all([
+      // 2026-10-06 — Vendedores de `/api/sellers` (`inscripciones.editar`),
+      // no del equipo: hay quien vende sin usar el panel.
+      const [companiesRes, sellersRes] = await Promise.all([
         fetch("/api/companies").catch(() => null),
-        fetch("/api/settings/team").catch(() => null),
+        fetch("/api/sellers").catch(() => null),
       ]);
       if (companiesRes?.ok) {
         const data = (await companiesRes.json()) as { companies: CompanyDto[] };
         setCompanies(data.companies);
       }
-      if (teamRes?.ok) {
-        const data = (await teamRes.json()) as {
-          members: { userId: string; name: string }[];
-        };
-        setMembers(data.members);
+      if (sellersRes?.ok) {
+        const data = (await sellersRes.json()) as { sellers: SellerOption[] };
+        setSellers(data.sellers);
       }
+      setSellersLoaded(true);
     })();
   }, []);
 
@@ -415,6 +416,7 @@ export function RosterClient({
                     <TableHead>Alumno</TableHead>
                     <TableHead>Contacto</TableHead>
                     {showFinance && <TableHead className="text-right">Monto</TableHead>}
+                    {showFinance && <TableHead>Vendedor</TableHead>}
                     <TableHead>Licencia</TableHead>
                     <TableHead>Onboarding</TableHead>
                   </TableRow>
@@ -464,6 +466,15 @@ export function RosterClient({
                                   {e.installments} cuotas
                                 </span>
                               ) : null}
+                            </TableCell>
+                          )}
+                          {showFinance && (
+                            <TableCell className="text-xs">
+                              <SellerCell
+                                entry={e}
+                                canEdit={canEnroll}
+                                onEdit={() => setEditingCommercial(e)}
+                              />
                             </TableCell>
                           )}
                           <TableCell className="text-xs">
@@ -831,7 +842,8 @@ export function RosterClient({
         <EnrollForm
           cohortId={cohortId}
           companies={companies}
-          members={members}
+          sellers={sellers}
+          sellersLoaded={sellersLoaded}
           onClose={() => setShowEnrollForm(false)}
           onSaved={() => {
             setShowEnrollForm(false);
@@ -846,7 +858,8 @@ export function RosterClient({
           enrollmentId={editingCommercial.id}
           entry={editingCommercial}
           companies={companies}
-          members={members}
+          sellers={sellers}
+          sellersLoaded={sellersLoaded}
           onClose={() => setEditingCommercial(null)}
           onSaved={() => {
             setEditingCommercial(null);
@@ -1033,5 +1046,52 @@ function ModuleLicenses({
         </li>
       ))}
     </ul>
+  );
+}
+
+/**
+ * 2026-10-06 — El vendedor de cada venta, al lado del alumno.
+ *
+ * Viaja sólo con `cobranza.ver` (es el dato con el que se paga una comisión),
+ * igual que el monto de la columna de al lado. "Sin vendedor" se ve a simple
+ * vista y, para quien puede editar datos comerciales, abre la edición: es la
+ * pantalla donde se corrige.
+ */
+function SellerCell({
+  entry,
+  canEdit,
+  onEdit,
+}: {
+  entry: RosterEntryDto;
+  canEdit: boolean;
+  onEdit: () => void;
+}) {
+  if (entry.sellerRequired === false) {
+    return (
+      <span className="text-muted-foreground" title="El vendedor figura en la inscripción de la especialización">
+        —
+      </span>
+    );
+  }
+  if (entry.seller) {
+    return (
+      <span className="whitespace-nowrap">
+        {entry.seller.name}
+        {entry.seller.archived && <span className="ml-1 text-muted-foreground">(archivado)</span>}
+      </span>
+    );
+  }
+  if (!canEdit) return <Badge variant="warning">Sin vendedor</Badge>;
+  return (
+    <button
+      type="button"
+      onClick={onEdit}
+      title="Indicar el vendedor de esta venta"
+      className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <Badge variant="warning" className="cursor-pointer underline-offset-2 hover:underline">
+        Sin vendedor
+      </Badge>
+    </button>
   );
 }

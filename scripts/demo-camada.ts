@@ -31,6 +31,7 @@ import { withOrganizationScope } from "@/lib/db/with-tenant";
 import { scoped } from "@/lib/db/tenant";
 import { createCohort, createCourse } from "@/server/courses";
 import { createEnrollment } from "@/server/enrollments";
+import { createSeller } from "@/server/sellers";
 import { createTeacher } from "@/server/teachers";
 import { generateSchedule, markAttendance } from "@/server/attendance";
 import { createAssessment, recordResults } from "@/server/grading";
@@ -211,8 +212,14 @@ async function crear() {
   const cohortId = cohorte.id;
 
   /* -- El alumno ------------------------------------------- */
+  // 2026-10-06 — Toda inscripción en una cohorte es una venta y lleva vendedor.
+  const vendedor = await createSeller(org!.id, { name: `${MARCA} Vendedor` });
+  paso("vendedor", vendedor.ok);
+  if (!vendedor.ok) return false;
+
   const insc = await createEnrollment(org!.id, {
     cohortId,
+    sellerId: vendedor.seller.id,
     contact: {
       firstName: `${MARCA} Alumno`,
       lastName: "Demo",
@@ -540,6 +547,13 @@ async function borrar() {
       .returning({ id: schema.enrollment.id });
     contar("inscripciones", e.length);
   }
+  // El vendedor del demo es dato de prueba: se va con el resto (el producto
+  // archiva vendedores; esto es la limpieza del demo, no una baja real).
+  const vend = await db
+    .delete(schema.seller)
+    .where(scoped(schema.seller.organizationId, org!.id, like(schema.seller.name, `${MARCA}%`)))
+    .returning({ id: schema.seller.id });
+  contar("vendedores", vend.length);
   if (contactIds.length) {
     const c = await db
       .delete(schema.contact)

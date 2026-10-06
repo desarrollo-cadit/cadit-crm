@@ -7,8 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-
-type MemberOption = { userId: string; name: string };
+import { SellerField } from "@/components/enrollments/seller-field";
+import type { SellerOption } from "@/lib/vendedores";
 
 /**
  * 005 iteración 2 — edita los datos comerciales de una inscripción YA
@@ -21,14 +21,16 @@ export function EnrollmentCommercialForm({
   enrollmentId,
   entry,
   companies,
-  members,
+  sellers,
+  sellersLoaded,
   onClose,
   onSaved,
 }: {
   enrollmentId: string;
   entry: RosterEntryDto;
   companies: CompanyDto[];
-  members: MemberOption[];
+  sellers: SellerOption[];
+  sellersLoaded: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -40,6 +42,13 @@ export function EnrollmentCommercialForm({
   const [receiptNumber, setReceiptNumber] = useState(entry.receiptNumber ?? "");
   const [sellerId, setSellerId] = useState(entry.sellerId ?? "");
   const [companyId, setCompanyId] = useState(entry.companyId ?? "");
+  /**
+   * 2026-10-06 — Una venta que ya tiene vendedor no puede quedar sin él; una
+   * venta vieja que nunca lo tuvo se sigue pudiendo guardar sin cargarlo
+   * (no se bloquea lo existente). La hija de un módulo no lo exige.
+   */
+  const sellerRequired = entry.sellerRequired ?? true;
+  const permiteVacio = !sellerRequired || !entry.sellerId;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -135,22 +144,15 @@ export function EnrollmentCommercialForm({
                 onChange={(e) => setReceiptNumber(e.target.value)}
               />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="ec-seller">Vendedor</Label>
-              <select
-                id="ec-seller"
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-                value={sellerId}
-                onChange={(e) => setSellerId(e.target.value)}
-              >
-                <option value="">Sin asignar</option>
-                {members.map((m) => (
-                  <option key={m.userId} value={m.userId}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <SellerField
+              id="ec-seller"
+              value={sellerId}
+              onChange={setSellerId}
+              sellers={sellers}
+              loaded={sellersLoaded}
+              required={sellerRequired}
+              permiteVacio={permiteVacio}
+            />
           </div>
 
           <div className="space-y-1.5">
