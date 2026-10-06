@@ -33,6 +33,10 @@ RUN addgroup -S vocero && adduser -S vocero -G vocero
 # app — el volumen nombrado hereda este dueño al montarse vacío (sin esto,
 # monta como root y el guardado de adjuntos falla con EACCES).
 RUN mkdir -p /data/media && chown -R vocero:vocero /data
+# Sin esto la app cae al default de desarrollo (./.dev-media, ADENTRO del
+# contenedor) y cada deploy borra fotos y adjuntos. Persistir de verdad exige
+# además montar un volumen en /data/media (Coolify: Storages; compose: abajo).
+ENV MEDIA_DIR=/data/media
 
 COPY --from=builder --chown=vocero:vocero /app/.next/standalone ./
 COPY --from=builder --chown=vocero:vocero /app/.next/static ./.next/static
