@@ -123,12 +123,17 @@ describe("SYSTEM_ROLES — la semilla de la fase 4", () => {
       .toEqual([]);
   });
 
-  /** Coordinación gestiona la academia; configurar la instancia no es su tarea. */
-  it("`coordinacion` es todo menos configurar la instancia", () => {
+  /**
+   * Coordinación gestiona la academia; configurar la instancia no es su
+   * tarea. 2026-10-07 — tampoco la auditoría de alumnos (IPs y dispositivos
+   * de ingreso): es de dirección, y el dueño la reparte si quiere.
+   */
+  it("`coordinacion` es todo menos configurar la instancia y la auditoría de alumnos", () => {
     const coord = byKey("coordinacion");
     expect(coord?.capabilities).not.toContain("configuracion.editar");
+    expect(coord?.capabilities).not.toContain("alumnos.auditoria");
     expect(coord?.capabilities).toContain("cobranza.ver");
-    expect(CAPABILITIES.length - coord!.capabilities.length).toBe(1);
+    expect(CAPABILITIES.length - coord!.capabilities.length).toBe(2);
   });
 
   /**

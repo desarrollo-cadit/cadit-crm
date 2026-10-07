@@ -33,6 +33,14 @@ export const CAPABILITIES = [
   // Plataforma
   "configuracion.editar",
   "accesos.gestionar",
+  /**
+   * 2026-10-07 — La pestaña «Administración» del legajo: ingresos al portal
+   * (fecha, IP, dispositivo), progreso en cursos offline, la línea de tiempo
+   * de interacciones y el registro de actividad. Es AUDITORÍA sobre una
+   * persona, no gestión de la cursada: por eso no la heredan coordinación ni
+   * soporte (ver `sinAuditoria`).
+   */
+  "alumnos.auditoria",
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -55,6 +63,16 @@ export const FINANCIAL_CAPABILITIES: readonly Capability[] = [
 ];
 
 /**
+ * 2026-10-07 — `alumnos.auditoria` solo se otorga a quien dirige.
+ *
+ * Muestra desde qué IP y qué dispositivo entra cada alumno. No hace falta
+ * para dar clases ni para cobrar, así que entra solo en `direccion` (y en
+ * `owner`/`member` del respaldo, que hoy pueden todo). Quien la necesite en
+ * otro rol se la otorga el dueño desde `/settings/roles`.
+ */
+const sinAuditoria = (c: Capability) => c !== "alumnos.auditoria";
+
+/**
  * Mapeo rol → capacidades, FIEL al comportamiento actual.
  *
  * Cuidado con `member`: el data-model de la fase lo proyectaba como
@@ -70,7 +88,7 @@ export const FINANCIAL_CAPABILITIES: readonly Capability[] = [
 export const ROLE_CAPABILITIES: Record<string, readonly Capability[]> = {
   owner: CAPABILITIES,
   member: CAPABILITIES,
-  soporte: CAPABILITIES.filter((c) => !FINANCIAL_CAPABILITIES.includes(c)),
+  soporte: CAPABILITIES.filter((c) => !FINANCIAL_CAPABILITIES.includes(c) && sinAuditoria(c)),
 };
 
 /**
@@ -106,12 +124,14 @@ export const SYSTEM_ROLES: readonly {
   {
     key: "coordinacion",
     name: "Coordinación",
-    capabilities: CAPABILITIES.filter((c) => c !== "configuracion.editar"),
+    capabilities: CAPABILITIES.filter((c) => c !== "configuracion.editar" && sinAuditoria(c)),
   },
   {
     key: "soporte",
     name: "Soporte",
-    capabilities: CAPABILITIES.filter((c) => !FINANCIAL_CAPABILITIES.includes(c)),
+    capabilities: CAPABILITIES.filter(
+      (c) => !FINANCIAL_CAPABILITIES.includes(c) && sinAuditoria(c)
+    ),
   },
   /**
    * 026 (FR-001) — Administración: 4 de las 17, y cada exclusión tiene motivo.

@@ -446,7 +446,7 @@ export function RosterClient({
                                 alumno: el roster es la pantalla en la que
                                 surge la pregunta "¿cómo viene esta persona?". */}
                             <a
-                              href={`/contacts/${e.contact.id}/legajo`}
+                              href={`/contacts/${e.contact.id}/legajo?cohort=${encodeURIComponent(cohortId)}`}
                               className="underline decoration-dotted underline-offset-2 hover:decoration-solid"
                             >
                               {e.contact.name}

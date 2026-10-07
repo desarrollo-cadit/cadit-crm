@@ -105,15 +105,19 @@ export function StudentRecordClient({
 
   return (
     <div className="space-y-6 p-6">
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-semibold">{data.contact.name}</h2>
-          <p className="text-sm text-muted-foreground">
-            {[data.contact.email, data.contact.phone, data.contact.nationalId]
-              .filter(Boolean)
-              .join(" · ") || "Sin datos de contacto"}
-          </p>
-        </div>
+      {/* 2026-10-07 — El nombre, el correo y el teléfono ya los dice el
+          encabezado de la página (`StudentHeader`). Acá queda lo que solo
+          está en el legajo: la cédula, y la acción de inscribir. */}
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <p className="text-sm text-muted-foreground">
+          {data.contact.nationalId ? (
+            <>
+              Documento: <span className="text-foreground">{data.contact.nationalId}</span>
+            </>
+          ) : (
+            "Sin documento cargado"
+          )}
+        </p>
         {canEnroll && (
           <EnrollLauncher
             className="flex flex-col items-end"
@@ -121,13 +125,13 @@ export function StudentRecordClient({
             onEnrolled={() => void refetch()}
           />
         )}
-      </header>
+      </div>
 
       <section className="space-y-3">
-        <h3 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+        <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           <GraduationCap className="h-4 w-4" />
           Cursadas ({data.courses.length})
-        </h3>
+        </h2>
 
         {data.courses.length === 0 && (
           <p className="text-sm text-muted-foreground">
@@ -136,7 +140,7 @@ export function StudentRecordClient({
         )}
 
         {data.courses.map((c) => (
-          <article key={c.enrollmentId} className="rounded-md border p-4">
+          <article key={c.enrollmentId} className="rounded-lg border bg-card p-4">
             <div className="flex flex-wrap items-center gap-2">
               <p className="font-medium">{c.cohortName}</p>
               <Badge variant={APROBACION[c.approval].variant}>
@@ -202,9 +206,9 @@ export function StudentRecordClient({
       {/* Solo existe si el servidor la mandó (FR-010). */}
       {data.account && (
         <section className="space-y-2">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
             Estado de cuenta
-          </h3>
+          </h2>
           {data.account.length === 0 ? (
             <p className="text-sm text-muted-foreground">Sin plan de cuotas cargado.</p>
           ) : (

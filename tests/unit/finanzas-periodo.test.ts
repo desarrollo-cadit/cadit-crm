@@ -636,7 +636,10 @@ describe("FR-007/FR-008 — la vista se gobierna con `cobranza.ver` y se declara
   });
 
   it("no se agregó ninguna capacidad nueva a la lista cerrada", () => {
-    expect(CAPABILITIES).toHaveLength(17);
+    // 2026-10-07 — La única que se sumó después de la 026 es
+    // `alumnos.auditoria` (la pestaña «Administración» del legajo), que no
+    // tiene nada que ver con finanzas.
+    expect(CAPABILITIES.filter((c) => c !== "alumnos.auditoria")).toHaveLength(17);
     expect(CAPABILITIES).not.toContain("finanzas.ver" as Capability);
   });
 

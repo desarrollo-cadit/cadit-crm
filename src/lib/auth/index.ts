@@ -11,6 +11,7 @@ import {
   resolveActiveOrganizationId,
 } from "@/server/auth/on-signup";
 import { isPublicSignupAllowed } from "@/server/auth/registration";
+import { recordPortalSignIn } from "@/server/activity-log";
 
 /**
  * Contexto interno del proceso: permite que el alta de cuentas de equipo
@@ -144,6 +145,19 @@ function createAuth() {
             return {
               data: { ...session, activeOrganizationId: organizationId },
             };
+          },
+          /**
+           * 2026-10-07 — Cada ingreso al portal queda en `activity_log` (la
+           * pestaña «Administración» del legajo). `recordPortalSignIn` decide
+           * si es un login de verdad (por la ruta), si la cuenta es de portal,
+           * y NUNCA lanza: la bitácora no puede dejar a nadie afuera.
+           *
+           * El alta interna (invitar al portal) también crea una sesión, con
+           * la IP de quien invita: por eso se saltea explícitamente.
+           */
+          after: async (session, context) => {
+            if (isInternalSignup()) return;
+            await recordPortalSignIn(session, context?.path);
           },
         },
       },

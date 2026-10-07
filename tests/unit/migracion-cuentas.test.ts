@@ -24,10 +24,20 @@ import {
  * la única verificación de permisos en todo el código era `role === "soporte"`.
  * `owner` y `member` eran indistinguibles y podían todo.
  */
+/**
+ * 2026-10-07 — Capacidades que NACIERON después de la 0028. Nadie las tenía
+ * antes del ciclo, así que no pueden contarse como "perdidas" por migrar:
+ * se descuentan del punto de partida. `alumnos.auditoria` se otorga solo a
+ * dirección (ver `capabilities.ts`).
+ */
+const POSTERIORES: readonly Capability[] = ["alumnos.auditoria"];
+const deEntonces = (caps: readonly Capability[]) =>
+  caps.filter((c) => !POSTERIORES.includes(c));
+
 const ANTES: Record<string, readonly Capability[]> = {
-  owner: CAPABILITIES,
-  member: CAPABILITIES,
-  soporte: capabilitiesFor("soporte"),
+  owner: deEntonces(CAPABILITIES),
+  member: deEntonces(CAPABILITIES),
+  soporte: deEntonces(capabilitiesFor("soporte")),
 };
 
 /** El destino de cada cuenta según la migración 0028. */

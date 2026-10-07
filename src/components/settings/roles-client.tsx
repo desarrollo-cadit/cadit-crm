@@ -42,13 +42,14 @@ const CAPABILITY_LABELS: Record<string, string> = {
   "inbox.responder": "Responder conversaciones",
   "configuracion.editar": "Configurar la instancia",
   "accesos.gestionar": "Dar acceso al portal y al equipo",
+  "alumnos.auditoria": "Ver ingresos y actividad de cada alumno",
 };
 
 const GROUPS: { title: string; match: (c: string) => boolean }[] = [
   { title: "Académico", match: (c) => /^(academico|asistencia|evaluacion|certificados)\./.test(c) },
   { title: "Comercial y financiero", match: (c) => /^(contactos|inscripciones|cobranza)\./.test(c) },
   { title: "Conversaciones", match: (c) => c.startsWith("inbox.") },
-  { title: "Plataforma", match: (c) => /^(configuracion|accesos)\./.test(c) },
+  { title: "Plataforma", match: (c) => /^(configuracion|accesos|alumnos)\./.test(c) },
 ];
 
 export function RolesClient() {

@@ -1777,6 +1777,58 @@ async function main() {
     }),
   });
 
+  /**
+   * 2026-10-07 — La pestaña «Administración» del legajo.
+   *
+   * El ingreso que se acaba de hacer tiene que aparecer en la ruta propia
+   * (`alumnos.auditoria`), y NO en el legajo: las IPs no viajan con
+   * `contactos.ver`. Y una cuenta de portal no puede leer la ruta del staff.
+   */
+  const contactoAlumnoA = alumnoA.json?.enrollment?.contactId;
+  const actividad = await api(`/api/contacts/${contactoAlumnoA}/admin-activity`);
+  ok(
+    "Administración: la actividad del alumno responde con alumnos.auditoria",
+    actividad.res.status === 200,
+    `${actividad.res.status}`
+  );
+  ok(
+    "Administración: el ingreso al portal quedó registrado, con su «último inicio»",
+    (actividad.json?.signIns?.items ?? []).length >= 1 &&
+      typeof actividad.json?.signIns?.lastAt === "string",
+    JSON.stringify(actividad.json?.signIns)
+  );
+  ok(
+    "Administración: el dispositivo llega dicho en palabras",
+    typeof actividad.json?.signIns?.items?.[0]?.device === "string" &&
+      !actividad.json.signIns.items[0].device.includes("Mozilla/"),
+    JSON.stringify(actividad.json?.signIns?.items?.[0])
+  );
+  ok(
+    "Administración: la línea de tiempo incluye el ingreso",
+    (actividad.json?.timeline ?? []).some((e) => e.kind === "actividad"),
+    JSON.stringify((actividad.json?.timeline ?? []).slice(0, 3))
+  );
+  const legajoAlumnoA = await api(`/api/contacts/${contactoAlumnoA}/record`);
+  ok(
+    "Administración: el legajo NO trae ingresos ni IPs",
+    legajoAlumnoA.res.ok &&
+      !("signIns" in (legajoAlumnoA.json ?? {})) &&
+      !JSON.stringify(legajoAlumnoA.json ?? {}).includes("sign_in"),
+    Object.keys(legajoAlumnoA.json ?? {}).join(",")
+  );
+  const actividadComoAlumno = await comoA(`/api/contacts/${contactoAlumnoA}/admin-activity`);
+  ok(
+    "Administración: una cuenta de portal no entra a la ruta del staff",
+    actividadComoAlumno.res.status === 401 || actividadComoAlumno.res.status === 403,
+    `${actividadComoAlumno.res.status}`
+  );
+  const actividadAjena = await api(`/api/contacts/ct_no_existe/admin-activity`);
+  ok(
+    "Administración: un contacto inexistente es 404",
+    actividadAjena.res.status === 404,
+    `${actividadAjena.res.status}`
+  );
+
   // --- US1..US7: todo lo suyo, en un pedido ---
   const mio = await comoA("/api/portal/me");
   ok("ve su propio panel", mio.res.ok, `${mio.res.status}`);

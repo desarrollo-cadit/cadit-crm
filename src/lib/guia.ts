@@ -155,6 +155,10 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
     que: "dar de alta una cuenta del equipo, y darle acceso al portal a un alumno o a un profesor",
     donde: "Ajustes → Equipo",
   },
+  "alumnos.auditoria": {
+    que: "ver cuándo y desde qué dispositivo entró un alumno al portal, cómo avanza en los cursos offline y sus últimas interacciones con la academia",
+    donde: "Alumnos → el alumno → Administración",
+  },
 };
 
 /**
@@ -182,7 +186,7 @@ export const GRUPOS_CAPACIDADES: readonly {
     incluye: (c) => /^(contactos|inscripciones|cobranza)\./.test(c),
   },
   { titulo: "Conversaciones", incluye: (c) => c.startsWith("inbox.") },
-  { titulo: "Plataforma", incluye: (c) => /^(configuracion|accesos)\./.test(c) },
+  { titulo: "Plataforma", incluye: (c) => /^(configuracion|accesos|alumnos)\./.test(c) },
 ];
 
 /**

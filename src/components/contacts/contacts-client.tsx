@@ -267,9 +267,16 @@ export function ContactsClient({ canEnroll = false }: { canEnroll?: boolean }) {
                         <ContactAvatar name={fullName(c)} seed={c.id} size="sm" />
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="truncate text-sm font-medium">
+                            {/* 2026-10-07 — Al legajo desde el listado: la
+                                guía promete "buscar a un alumno y abrir su
+                                legajo", y hasta acá solo se llegaba desde
+                                el roster de una cohorte. */}
+                            <Link
+                              href={`/contacts/${c.id}/legajo`}
+                              className="truncate text-sm font-medium hover:underline"
+                            >
                               {fullName(c)}
-                            </span>
+                            </Link>
                             {c.archivedAt && (
                               <Badge variant="secondary">Archivado</Badge>
                             )}

@@ -71,6 +71,8 @@ const prefixes = {
   bulkSendRecipient: "bsrr",
   // 2026-10-06 — quien vende, use o no el panel (comisiones).
   seller: "sel",
+  // 2026-10-07 — el registro de actividad (hoy: ingresos al portal).
+  activityLog: "act",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

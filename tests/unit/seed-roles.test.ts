@@ -34,6 +34,26 @@ const SQL = [
   migracion("0036_seed_rol_administracion.sql"),
 ].join("\n");
 
+/**
+ * 2026-10-07 — Las capacidades que una migración POSTERIOR suma a un rol ya
+ * sembrado (`update "role" … || jsonb_build_array('x') … where "key" = 'y'`).
+ *
+ * Una capacidad nueva no se agrega editando la 0024 (ya está aplicada): se
+ * agrega con un `update` propio. Sin leerlo acá, este archivo exigiría que la
+ * 0024 traiga una capacidad que no existía cuando se escribió.
+ */
+const GRANTS = [migracion("0050_registro_de_actividad.sql")].join("\n");
+
+function grantsPosteriores(key: string): string[] {
+  return [
+    ...GRANTS.matchAll(
+      /update "role"[\s\S]*?\|\| jsonb_build_array\('([^']+)'\)[\s\S]*?where "key" = '([^']+)'/g
+    ),
+  ]
+    .filter((m) => m[2] === key)
+    .map((m) => m[1]!);
+}
+
 /** Extrae las listas `jsonb` de las migraciones, en el orden en que aparecen. */
 function seededLists(): string[][] {
   return [...SQL.matchAll(/'(\[[^\]]*\])'::jsonb/g)].map(
@@ -72,7 +92,7 @@ describe("la semilla SQL de roles no puede desviarse del código", () => {
   it.each(SYSTEM_ROLES.map((r, i) => [r.key, i] as const))(
     "el rol %s sembrado coincide con SYSTEM_ROLES",
     (key, index) => {
-      const sembrado = seededLists()[index]!;
+      const sembrado = [...seededLists()[index]!, ...grantsPosteriores(key)];
       const esperado = SYSTEM_ROLES.find((r) => r.key === key)!.capabilities;
       expect([...sembrado].sort()).toEqual([...esperado].sort());
     }

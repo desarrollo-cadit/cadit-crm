@@ -2524,3 +2524,52 @@ export const offlineRecognition = pgTable(
     check("offline_recognition_reason_present", sql`length(trim(${t.reason})) between 1 and 500`),
   ]
 );
+
+/* ============================================================
+ * 2026-10-07 — Registro de actividad
+ * ============================================================ */
+
+/**
+ * Lo que una persona HIZO, anotado en el momento: hoy, cada ingreso al portal
+ * (`portal.sign_in`). La pestaña «Administración» del legajo lo lee con
+ * `alumnos.auditoria`.
+ *
+ * `contact_id` y `user_id` son opcionales a propósito: un profesor que entra
+ * al portal no es un contacto, y una acción del sistema no tiene usuario. Los
+ * dos se ponen en NULL —no se borra la fila— si la persona se da de baja: un
+ * registro que desaparece con su sujeto no sirve para auditar.
+ *
+ * `kind` es texto y no un enum de Postgres: la lista cerrada vive en
+ * `lib/activity-kinds.ts`, y sumar un tipo no debería pedir una migración.
+ *
+ * No hay datos históricos: la tabla empieza vacía y la pantalla lo dice. Un
+ * «último ingreso» reconstruido a partir de `session` mentiría, porque Better
+ * Auth borra las sesiones vencidas.
+ */
+export const activityLog = pgTable(
+  "activity_log",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    contactId: text("contact_id").references(() => contact.id, { onDelete: "set null" }),
+    userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
+    kind: text("kind").notNull(),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    // La única lectura: «lo último de esta persona».
+    index("activity_log_org_contact_created_idx").on(
+      t.organizationId,
+      t.contactId,
+      t.createdAt.desc()
+    ),
+  ]
+);
