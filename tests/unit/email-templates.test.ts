@@ -3,6 +3,7 @@ import { renderTemplate } from "@/server/email/templates";
 import { contenidoPortalPara } from "@/server/email/portal-access-copy";
 // 023 — `escapeHtml` se unificó en `@/lib/utils`: había tres copias divergentes.
 import { escapeHtml } from "@/lib/utils";
+import { htmlRows } from "@/server/areas/email";
 
 /**
  * 007 — Las plantillas se leen de `docs/email-templates/*.html` y el servidor
@@ -100,5 +101,44 @@ describe("correo de acceso al portal", () => {
       );
       expect(html).toContain("te vamos a pedir que elijas una contraseña propia");
     }
+  });
+});
+
+/**
+ * 029 — Plantilla `derivacion-area` y el marcador `{{{x}}}` para bloques.
+ *
+ * `{{{x}}}` inserta HTML SIN escapar, así que solo acepta un `SafeHtml`: el
+ * tipo marcado que produce `htmlRows()` escapando cada celda. Un `string`
+ * crudo no compila — es la diferencia entre "acordarse de escapar" y "no
+ * poder olvidarse".
+ */
+describe("renderTemplate — 029 derivacion-area y bloques {{{x}}}", () => {
+  it("`derivacion-area` existe y `{{x}}` sigue escapando", () => {
+    const html = renderTemplate("derivacion-area", { area: "<Ventas>" });
+    expect(html).toContain("&lt;Ventas&gt;");
+  });
+
+  it("`{{{x}}}` inserta un SafeHtml sin re-escapar", () => {
+    const html = renderTemplate(
+      "derivacion-area",
+      {},
+      { transcripcion: htmlRows([["Cliente", "hola"]]) }
+    );
+    expect(html).toContain("<td");
+    expect(html).not.toContain("&lt;td");
+  });
+
+  it("un string crudo en `{{{x}}}` no compila", () => {
+    renderTemplate(
+      "derivacion-area",
+      {},
+      // @ts-expect-error — solo SafeHtml: un string crudo sería HTML sin escapar.
+      { transcripcion: "<script>alert(1)</script>" }
+    );
+  });
+
+  it("un bloque ausente queda vacío, sin llaves a la vista", () => {
+    const html = renderTemplate("derivacion-area", {});
+    expect(html).not.toMatch(/\{\{\{?\w+\}?\}\}/);
   });
 });

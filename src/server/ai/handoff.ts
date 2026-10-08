@@ -10,3 +10,23 @@ export const HANDOFF_BACKUP_REGEX =
 export function matchesHandoffIntent(text: string): boolean {
   return HANDOFF_BACKUP_REGEX.test(text);
 }
+
+/**
+ * 029 (DV-006) — Nombra un área EXTERNA (Ventas/Soporte). Con el ruteo
+ * encendido, "quiero hablar con alguien de ventas" no es un pedido de humano
+ * de la academia —que no vende licencias—: llega al modelo y se deriva.
+ */
+export const EXTERNAL_AREA_REGEX = /ventas|comercial|soporte|licencia/i;
+
+/**
+ * ¿Dispara el respaldo de handoff ANTES del LLM? Con el ruteo apagado es
+ * exactamente `matchesHandoffIntent` (riesgo R3: el comportamiento de hoy).
+ */
+export function shouldBackupHandoff(
+  text: string,
+  opts: { routingEnabled: boolean }
+): boolean {
+  if (!matchesHandoffIntent(text)) return false;
+  if (opts.routingEnabled && EXTERNAL_AREA_REGEX.test(text)) return false;
+  return true;
+}

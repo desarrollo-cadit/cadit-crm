@@ -73,6 +73,10 @@ const prefixes = {
   seller: "sel",
   // 2026-10-07 — el registro de actividad (hoy: ingresos al portal).
   activityLog: "act",
+  // 029 — agente por áreas: configuración, caso derivado y cada correo del caso.
+  areaConfig: "ac",
+  areaHandoff: "ah",
+  areaHandoffEmail: "ahe",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

@@ -41,6 +41,14 @@ export const CAPABILITIES = [
    * soporte (ver `sinAuditoria`).
    */
   "alumnos.auditoria",
+  /**
+   * 029 (DV-003) — Configurar las áreas de derivación del agente: a qué
+   * casilla van las consultas de Ventas y Soporte, con qué copias y qué se le
+   * dice al cliente. Es decisión de quien dirige, no de quien configura
+   * WhatsApp: por eso es propia y no reusa `configuracion.editar`. Solo la
+   * recibe `direccion` (ver `sinAreas`).
+   */
+  "areas.configurar",
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -73,6 +81,13 @@ export const FINANCIAL_CAPABILITIES: readonly Capability[] = [
 const sinAuditoria = (c: Capability) => c !== "alumnos.auditoria";
 
 /**
+ * 029 (DV-003) — `areas.configurar` también es solo de quien dirige: decide a
+ * qué casilla van las consultas comerciales y quién va en copia. Coordinación,
+ * soporte y administración no la reciben; el dueño la reparte si quiere.
+ */
+const sinAreas = (c: Capability) => c !== "areas.configurar";
+
+/**
  * Mapeo rol → capacidades, FIEL al comportamiento actual.
  *
  * Cuidado con `member`: el data-model de la fase lo proyectaba como
@@ -88,7 +103,9 @@ const sinAuditoria = (c: Capability) => c !== "alumnos.auditoria";
 export const ROLE_CAPABILITIES: Record<string, readonly Capability[]> = {
   owner: CAPABILITIES,
   member: CAPABILITIES,
-  soporte: CAPABILITIES.filter((c) => !FINANCIAL_CAPABILITIES.includes(c) && sinAuditoria(c)),
+  soporte: CAPABILITIES.filter(
+    (c) => !FINANCIAL_CAPABILITIES.includes(c) && sinAuditoria(c) && sinAreas(c)
+  ),
 };
 
 /**
@@ -124,13 +141,15 @@ export const SYSTEM_ROLES: readonly {
   {
     key: "coordinacion",
     name: "Coordinación",
-    capabilities: CAPABILITIES.filter((c) => c !== "configuracion.editar" && sinAuditoria(c)),
+    capabilities: CAPABILITIES.filter(
+      (c) => c !== "configuracion.editar" && sinAuditoria(c) && sinAreas(c)
+    ),
   },
   {
     key: "soporte",
     name: "Soporte",
     capabilities: CAPABILITIES.filter(
-      (c) => !FINANCIAL_CAPABILITIES.includes(c) && sinAuditoria(c)
+      (c) => !FINANCIAL_CAPABILITIES.includes(c) && sinAuditoria(c) && sinAreas(c)
     ),
   },
   /**

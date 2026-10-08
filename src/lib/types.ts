@@ -13,6 +13,8 @@ export type ConversationDto = {
   windowOpen: boolean;
   windowRemainingMs: number;
   preview: string | null;
+  /** 029 — la última derivación a un área (chip de la lista), o null. */
+  lastAreaHandoff?: { area: "ventas" | "soporte"; status: string } | null;
 };
 
 /** 008 — Adjunto de un mensaje, para previsualización en el hilo. */

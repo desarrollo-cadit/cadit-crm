@@ -21,6 +21,8 @@ export function serializeMessage(
     status: m.status,
     aiGenerated: m.aiGenerated,
     origin: m.origin,
+    /** 029 — tema que clasificó el agente (solo salientes de la IA con ruteo). */
+    aiTopic: m.aiTopic ?? null,
     media: media
       ? {
           assetId: media.id,

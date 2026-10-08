@@ -253,10 +253,22 @@ export const teacher = pgTable(
      * cohorte en la web quiere saber quién se la dicta.
      */
     title: text("title"),
+    /**
+     * 029 (DV-002) — Celular de WhatsApp del profesor, normalizado con la
+     * misma regla que `contact.wa_identity` (`normalizeMx`). Es lo único que
+     * permite reconocerlo cuando escribe: `teacher` no tiene vínculo con
+     * `contact`. NULL = no se lo reconoce por WhatsApp (riesgo R1).
+     */
+    waIdentity: text("wa_identity"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
-  (t) => [index("teacher_org_idx").on(t.organizationId)]
+  (t) => [
+    index("teacher_org_idx").on(t.organizationId),
+    uniqueIndex("teacher_org_wa_identity_uq")
+      .on(t.organizationId, t.waIdentity)
+      .where(sql`${t.waIdentity} IS NOT NULL`),
+  ]
 );
 
 /**
@@ -1083,9 +1095,21 @@ export const message = pgTable(
       onDelete: "set null",
     }),
     waTimestamp: timestamp("wa_timestamp"),
+    /**
+     * 029 — Tema que el agente clasificó en el turno que produjo este
+     * saliente. Solo en salientes `origin = "ai"` con el ruteo encendido; lo
+     * leen el Laboratorio y el inbox.
+     */
+    aiTopic: text("ai_topic", {
+      enum: ["ventas", "soporte", "academia", "sin_determinar"],
+    }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [
+    check(
+      "message_ai_topic_valid",
+      sql`${t.aiTopic} IS NULL OR ${t.aiTopic} IN ('ventas','soporte','academia','sin_determinar')`
+    ),
     index("message_org_conv_idx").on(
       t.organizationId,
       t.conversationId,
@@ -1183,6 +1207,11 @@ export const agentProfile = pgTable(
     instructions: text("instructions"),
     escalationRules: text("escalation_rules"),
     greeting: text("greeting"),
+    /**
+     * 029 (DV-012) — Interruptor del ruteo por áreas. Apagado (default), el
+     * prompt, el esquema y el comportamiento del agente son los de siempre.
+     */
+    areaRoutingEnabled: boolean("area_routing_enabled").notNull().default(false),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -1282,6 +1311,8 @@ export const agentTestCase = pgTable(
     })
       .notNull()
       .default("pending"),
+    /** 029 (DV-007) — Ruteo esperado vs. detectado: juez + hechos calculados en código. */
+    routing: jsonb("routing").$type<Record<string, unknown>>(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [index("test_case_run_idx").on(t.runId)]
@@ -2570,6 +2601,159 @@ export const activityLog = pgTable(
       t.organizationId,
       t.contactId,
       t.createdAt.desc()
+    ),
+  ]
+);
+
+/* ============================================================
+ * 029 — Agente por áreas: configuración, caso y correos de derivación.
+ * ============================================================ */
+
+/**
+ * Una fila por organización y área externa (Ventas, Soporte): a qué casilla
+ * va el correo, con qué copias y qué se le dice al cliente.
+ *
+ * Las copias de vendedores se guardan como IDS y se resuelven a correo al
+ * enviar: un vendedor que cambia de correo no deja la configuración vieja, y
+ * uno archivado se omite (DV-003).
+ */
+export const areaConfig = pgTable(
+  "area_config",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    area: text("area", { enum: ["ventas", "soporte"] }).notNull(),
+    enabled: boolean("enabled").notNull().default(false),
+    mailbox: text("mailbox"),
+    ccEmails: text("cc_emails").array().notNull().default(sql`'{}'::text[]`),
+    ccSellerIds: text("cc_seller_ids").array().notNull().default(sql`'{}'::text[]`),
+    contactText: text("contact_text"),
+    officeHours: jsonb("office_hours").$type<{ days: number[]; from: string; to: string }>(),
+    updatedBy: text("updated_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("area_config_org_area_uq").on(t.organizationId, t.area),
+    check("area_config_area_valid", sql`${t.area} IN ('ventas','soporte')`),
+    check(
+      "area_config_sellers_only_ventas",
+      sql`${t.area} = 'ventas' OR cardinality(${t.ccSellerIds}) = 0`
+    ),
+  ]
+);
+
+/**
+ * El CASO: una consulta de un contacto derivada a un área. Mientras tenga
+ * actividad en los últimos 7 días está abierto y los datos nuevos salen como
+ * seguimiento del mismo caso, no como otro correo de apertura.
+ */
+export const areaHandoff = pgTable(
+  "area_handoff",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversation.id, { onDelete: "cascade" }),
+    contactId: text("contact_id")
+      .notNull()
+      .references(() => contact.id, { onDelete: "cascade" }),
+    area: text("area", { enum: ["ventas", "soporte"] }).notNull(),
+    caseRef: text("case_ref").notNull(),
+    summary: text("summary").notNull(),
+    collected: jsonb("collected")
+      .$type<Record<string, string>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    missing: text("missing").array().notNull().default(sql`'{}'::text[]`),
+    /** Estado del ÚLTIMO correo del caso. */
+    status: text("status", {
+      enum: ["pendiente", "enviado", "fallido", "sin_configurar", "simulado"],
+    }).notNull(),
+    subject: text("subject").notNull(),
+    /** Reservado para el hilo real de correo (DV-005: hoy solo `Mail.Send`). */
+    graphConversationId: text("graph_conversation_id"),
+    isTest: boolean("is_test").notNull().default(false),
+    lastActivityAt: timestamp("last_activity_at").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("area_handoff_open_idx").on(
+      t.organizationId,
+      t.contactId,
+      t.area,
+      t.lastActivityAt.desc()
+    ),
+    index("area_handoff_conv_idx").on(t.organizationId, t.conversationId, t.createdAt.desc()),
+    uniqueIndex("area_handoff_case_ref_uq").on(t.organizationId, t.caseRef),
+    check("area_handoff_area_valid", sql`${t.area} IN ('ventas','soporte')`),
+    check("area_handoff_summary_present", sql`length(trim(${t.summary})) > 0`),
+    check(
+      "area_handoff_status_valid",
+      sql`${t.status} IN ('pendiente','enviado','fallido','sin_configurar','simulado')`
+    ),
+  ]
+);
+
+/**
+ * Cada correo del caso (apertura o seguimiento). El HTML no se persiste: se
+ * re-arma al enviar desde la conversación y el caso.
+ *
+ * `UNIQUE (handoff_id, source_message_id)`: re-ejecutar el turno del mismo
+ * mensaje entrante no duplica el correo (constitución IV).
+ */
+export const areaHandoffEmail = pgTable(
+  "area_handoff_email",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    handoffId: text("handoff_id")
+      .notNull()
+      .references(() => areaHandoff.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: ["apertura", "seguimiento"] }).notNull(),
+    sourceMessageId: text("source_message_id")
+      .notNull()
+      .references(() => message.id, { onDelete: "cascade" }),
+    status: text("status", {
+      enum: ["pendiente", "enviado", "fallido", "sin_configurar", "simulado"],
+    }).notNull(),
+    recipients: jsonb("recipients")
+      .$type<{
+        to: string[];
+        cc: string[];
+        replyTo: string | null;
+        omitted: { sellerId: string; reason: string }[];
+      }>()
+      .notNull(),
+    collectedDelta: jsonb("collected_delta")
+      .$type<Record<string, string>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    renderedSubject: text("rendered_subject").notNull(),
+    /** Motivo de Graph o "M365 no configurado"; jamás secretos. */
+    error: text("error"),
+    graphMessageId: text("graph_message_id"),
+    internetMessageId: text("internet_message_id"),
+    /** Solo cuando Graph respondió 202. */
+    sentAt: timestamp("sent_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("area_handoff_email_source_uq").on(t.handoffId, t.sourceMessageId),
+    index("area_handoff_email_status_idx").on(t.organizationId, t.status),
+    check("area_handoff_email_kind_valid", sql`${t.kind} IN ('apertura','seguimiento')`),
+    check(
+      "area_handoff_email_status_valid",
+      sql`${t.status} IN ('pendiente','enviado','fallido','sin_configurar','simulado')`
     ),
   ]
 );

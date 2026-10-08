@@ -8,6 +8,40 @@ import { ContactAvatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatTime, previewText } from "./helpers";
+import { AREA_LABELS } from "@/lib/areas";
+
+/**
+ * 029 — Chip de la última derivación a un área. Solo los dos estados que el
+ * staff tiene que mirar se pintan como alerta: falló el correo, o el área no
+ * tiene casilla (el cliente recibió un cierre genérico).
+ */
+function AreaHandoffChip({
+  handoff,
+}: {
+  handoff: { area: "ventas" | "soporte"; status: string };
+}) {
+  const failed = handoff.status === "fallido";
+  const unconfigured = handoff.status === "sin_configurar";
+  const label = failed
+    ? "Derivación fallida"
+    : unconfigured
+      ? "Área sin configurar"
+      : `Derivado a ${AREA_LABELS[handoff.area]}`;
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]",
+        failed
+          ? "border-danger-border bg-danger-soft text-danger"
+          : unconfigured
+            ? "border-warning-border bg-warning-soft text-warning"
+            : "bg-secondary text-text-2"
+      )}
+    >
+      {label}
+    </span>
+  );
+}
 
 /**
  * 021 — Eran cinco hex escritos a mano: los colores del tema claro y de nadie
@@ -240,6 +274,7 @@ export function ConversationList({
                             Atención humana
                           </span>
                         )}
+                        {c.lastAreaHandoff && <AreaHandoffChip handoff={c.lastAreaHandoff} />}
                       </span>
                     </span>
                   </button>

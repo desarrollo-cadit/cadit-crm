@@ -74,6 +74,10 @@ const SIN_CAPACIDAD: Record<string, string> = {
   "dev/wa-mock/outbox/route.ts": "mockGuard",
   "dev/wa-mock/status/route.ts": "mockGuard",
   "dev/wa-mock/template-status/route.ts": "mockGuard",
+  // 029 — m365-mock (Entra ID + Graph falsos para el correo de derivación).
+  "dev/m365-mock/[...path]/route.ts": "mockGuard",
+  "dev/m365-mock/outbox/route.ts": "mockGuard",
+  "dev/m365-mock/fail/route.ts": "mockGuard",
 };
 
 describe("cobertura de permisos en las rutas de API", () => {

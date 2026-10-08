@@ -6,12 +6,26 @@
  * se agrega acá con su rótulo.
  */
 
-export const ACTIVITY_KINDS = ["portal.sign_in"] as const;
+export const ACTIVITY_KINDS = [
+  "portal.sign_in",
+  /**
+   * 029 (DV-011) — El agente consultó datos del contacto por WhatsApp.
+   * metadata: `{ query, result, conversationId }` — NUNCA los datos devueltos.
+   */
+  "agente.consulta",
+  /**
+   * 029 (DV-011) — El agente derivó la consulta a un área por correo.
+   * metadata: `{ area, caseRef, kind: apertura|seguimiento, status }`.
+   */
+  "agente.derivacion",
+] as const;
 
 export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
 
 export const ACTIVITY_LABELS: Record<ActivityKind, string> = {
   "portal.sign_in": "Inició sesión en el portal",
+  "agente.consulta": "Consultó sus datos por WhatsApp",
+  "agente.derivacion": "El asistente derivó su consulta a un área",
 };
 
 /**

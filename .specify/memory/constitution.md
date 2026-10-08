@@ -1,7 +1,18 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Versión: 1.3.0 → 1.4.0
+Versión: 1.4.0 → 1.5.0
+
+Cambios (1.5.0, 2026-10-08):
+  - Principio II, ítem 3: el alcance de Microsoft 365 / Graph se AMPLÍA del
+    correo transaccional a alumnos al correo de derivación interna a áreas
+    del staff que no usan el CRM (feature 029-agente-por-areas). Sin servicio
+    externo nuevo; mismo adaptador. Se nombra a los profesores (ya recibían
+    el acceso al portal desde 014) y se fija que `is_test` no envía correo.
+    Permisos: Q1 resuelta por el dueño (2026-10-08) — solo `Mail.Send`, sin
+    `Mail.ReadWrite`; sin permisos nuevos en Entra ID.
+  Bump: MINOR — amplía el alcance de una dependencia ya permitida sin
+  redefinir principios.
 
 Cambios (1.4.0, 2026-09-25):
   - Principio II: se AGREGA el reproductor embebido de Vimeo como cuarta
@@ -90,13 +101,18 @@ dependencias externas en runtime es CERRADA:
   2. **El proveedor LLM**, opcional, accedido EXCLUSIVAMENTE a través del adaptador
      OpenRouter-compatible (`OPENROUTER_BASE_URL` / `OPENROUTER_MODEL`). Sin token
      configurado, el producto funciona como CRM sin agente de IA.
-  3. **Microsoft 365 / Microsoft Graph**, para el envío de correo transaccional
-     a los alumnos (términos de licencia ATC, bienvenida a la cohorte), accedido
-     EXCLUSIVAMENTE a través del adaptador `src/lib/m365`. Autenticación por
-     client credentials contra Entra ID; el buzón emisor DEBE estar acotado con
-     una `ApplicationAccessPolicy` de Exchange Online, porque el permiso de
-     aplicación `Mail.Send` sin acotar habilita enviar como CUALQUIER buzón del
-     tenant.
+  3. **Microsoft 365 / Microsoft Graph**, para el envío de correo
+     transaccional a alumnos y profesores (términos de licencia ATC,
+     bienvenida a la cohorte, acceso al portal) **y para el correo de
+     derivación interna que el agente de IA envía a las áreas del propio
+     negocio que no operan el CRM (p. ej. Ventas y Soporte), con el resumen
+     del caso y la transcripción de la conversación**, accedido EXCLUSIVAMENTE
+     a través del adaptador `src/lib/m365`. Autenticación por client
+     credentials contra Entra ID; el buzón emisor DEBE estar acotado con una
+     `ApplicationAccessPolicy` de Exchange Online, porque los permisos de
+     aplicación de correo (`Mail.Send`) sin
+     acotar habilitan operar sobre CUALQUIER buzón del tenant. Las
+     conversaciones de prueba (`is_test`) JAMÁS envían correo.
   4. **El reproductor embebido de Vimeo**, para los videos de los cursos offline
      que la academia ya aloja en Vimeo. ÚNICAMENTE el navegador carga el iframe
      oficial del reproductor (`player.vimeo.com`): el servidor NO llama a Vimeo,
@@ -297,4 +313,4 @@ práctica, convención o preferencia; ante un conflicto, gana la constitución.
 - **Propagación**: al enmendar la constitución se revisan y, si procede, se actualizan
   las plantillas dependientes (plan, spec, tasks).
 
-**Version**: 1.4.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-09-25
+**Version**: 1.5.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-10-08

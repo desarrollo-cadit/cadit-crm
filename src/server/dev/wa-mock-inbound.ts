@@ -3,6 +3,17 @@ import { getEnv } from "@/lib/env";
 import { nextN } from "@/server/dev/wa-mock-state";
 
 /**
+ * 029 — El contador del mock se reinicia con cada `DELETE` del outbox y con
+ * cada arranque del servidor, pero la base guarda los ids de corridas
+ * anteriores: sin el sello de tiempo, un entrante nuevo choca con uno viejo,
+ * la ingesta lo trata como duplicado (idempotencia por `wa_message_id`) y el
+ * mensaje se pierde en silencio.
+ */
+function mockIdSuffix(): string {
+  return `${nextN()}.${Date.now().toString(36)}`;
+}
+
+/**
  * Construye un payload real de Meta y lo entrega al webhook público por
  * loopback (127.0.0.1: mismo proceso, sin salir a la red). Se firma con el
  * META_APP_SECRET real si está configurado — así el self-test ejercita la
@@ -78,7 +89,7 @@ export function buildInboundPayload(input: {
 } & MockMediaInput) {
   const type = input.type ?? "text";
   const message: Record<string, unknown> = {
-    id: input.waMessageId ?? `wamid.mock.in.${nextN()}`,
+    id: input.waMessageId ?? `wamid.mock.in.${mockIdSuffix()}`,
     timestamp: String(input.timestamp ?? Math.floor(Date.now() / 1000)),
     type,
   };
@@ -136,7 +147,7 @@ export function buildEchoPayload(input: {
 } & MockMediaInput) {
   const type = input.type ?? "text";
   const message: Record<string, unknown> = {
-    id: input.waMessageId ?? `wamid.mock.echo.${nextN()}`,
+    id: input.waMessageId ?? `wamid.mock.echo.${mockIdSuffix()}`,
     timestamp: String(input.timestamp ?? Math.floor(Date.now() / 1000)),
     type,
     from: input.from ?? "5215500000000",

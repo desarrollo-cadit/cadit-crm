@@ -56,6 +56,13 @@ const envSchema = z.object({
   /** Copia oculta de cada correo enviado, para registro del equipo. */
   M365_BCC: z.string().email().optional(),
   /**
+   * 029 — Bases de Entra ID y de Graph. Vacías en producción (se usan
+   * https://login.microsoftonline.com y https://graph.microsoft.com/v1.0); en
+   * local apuntan al m365-mock para probar el correo sin un tenant real.
+   */
+  M365_GRAPH_BASE_URL: z.string().url().optional(),
+  M365_LOGIN_BASE_URL: z.string().url().optional(),
+  /**
    * 2026-10-05 — Pausa entre dos correos de un envío masivo por cohorte.
    * Exchange Online limita un buzón a unos 30 mensajes por minuto: 2 s deja
    * margen. 0 solo en pruebas.

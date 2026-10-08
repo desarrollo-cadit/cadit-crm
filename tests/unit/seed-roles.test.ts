@@ -42,7 +42,11 @@ const SQL = [
  * agrega con un `update` propio. Sin leerlo acá, este archivo exigiría que la
  * 0024 traiga una capacidad que no existía cuando se escribió.
  */
-const GRANTS = [migracion("0050_registro_de_actividad.sql")].join("\n");
+const GRANTS = [
+  migracion("0050_registro_de_actividad.sql"),
+  // 029 — `areas.configurar` para dirección.
+  migracion("0051_agente_por_areas.sql"),
+].join("\n");
 
 function grantsPosteriores(key: string): string[] {
   return [

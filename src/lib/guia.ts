@@ -159,6 +159,14 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
     que: "ver cuándo y desde qué dispositivo entró un alumno al portal, cómo avanza en los cursos offline y sus últimas interacciones con la academia",
     donde: "Alumnos → el alumno → Administración",
   },
+  // ── Agente de IA ───────────────────────────────────────────────────────
+  "areas.configurar": {
+    que: "decidir a qué casilla y con qué copias manda el asistente de WhatsApp las consultas de Ventas y Soporte, y qué le contesta al cliente",
+    // 029 (MVP) — Hoy se configura por la API (`/api/settings/areas`); la
+    // pestaña Configuración › Áreas llega con la US4 y este `donde` pasa a ser
+    // `/settings/areas`.
+    donde: "/settings",
+  },
 };
 
 /**
@@ -186,7 +194,7 @@ export const GRUPOS_CAPACIDADES: readonly {
     incluye: (c) => /^(contactos|inscripciones|cobranza)\./.test(c),
   },
   { titulo: "Conversaciones", incluye: (c) => c.startsWith("inbox.") },
-  { titulo: "Plataforma", incluye: (c) => /^(configuracion|accesos|alumnos)\./.test(c) },
+  { titulo: "Plataforma", incluye: (c) => /^(configuracion|accesos|alumnos|areas)\./.test(c) },
 ];
 
 /**

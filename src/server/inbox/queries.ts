@@ -17,6 +17,8 @@ export type ConversationDto = {
   windowOpen: boolean;
   windowRemainingMs: number;
   preview: string | null;
+  /** 029 — la última derivación a un área (chip de la lista), o null. */
+  lastAreaHandoff?: { area: "ventas" | "soporte"; status: string } | null;
 };
 
 export async function listConversations(
@@ -37,6 +39,14 @@ export async function listConversations(
     where e.contact_id = ${schema.contact.id} and e.cohort_id is null
     limit 1
   )`;
+  // 029 — la última derivación de la conversación, para el chip de la lista.
+  const lastAreaHandoffSql = sql<{ area: "ventas" | "soporte"; status: string } | null>`(
+    select json_build_object('area', h.area, 'status', h.status)
+    from area_handoff h
+    where h.conversation_id = ${schema.conversation.id}
+    order by h.created_at desc
+    limit 1
+  )`;
 
   const rows = await db
     .select({
@@ -44,6 +54,7 @@ export async function listConversations(
       contact: schema.contact,
       preview: previewSql,
       stageName: stageSql,
+      lastAreaHandoff: lastAreaHandoffSql,
     })
     .from(schema.conversation)
     .innerJoin(
@@ -60,9 +71,10 @@ export async function listConversations(
     )
     .orderBy(desc(sql`coalesce(${schema.conversation.lastMessageAt}, ${schema.conversation.createdAt})`));
 
-  return rows.map((r) =>
-    serializeConversation(r.conversation, r.contact, r.preview, r.stageName)
-  );
+  return rows.map((r) => ({
+    ...serializeConversation(r.conversation, r.contact, r.preview, r.stageName),
+    lastAreaHandoff: r.lastAreaHandoff ?? null,
+  }));
 }
 
 export async function getConversation(

@@ -10,6 +10,7 @@ import {
   type Credentials,
 } from "@/server/whatsapp/credentials";
 import { isWindowOpen } from "@/server/inbox/window";
+import type { Topic } from "@/lib/areas";
 import { serializeMessage } from "@/server/inbox/message-dto";
 import {
   saveMediaFile,
@@ -130,6 +131,8 @@ async function persistOutbound(input: {
   error?: string | null;
   aiGenerated?: boolean;
   origin: "ai" | "operator";
+  /** 029 — tema del turno del agente; solo se guarda en salientes de la IA. */
+  aiTopic?: Topic | null;
   mediaAssetId?: string | null;
   media?: typeof schema.mediaAsset.$inferSelect | null;
 }): Promise<string> {
@@ -148,6 +151,7 @@ async function persistOutbound(input: {
       error: input.error ?? null,
       aiGenerated: input.aiGenerated ?? false,
       origin: input.origin,
+      aiTopic: input.origin === "ai" ? (input.aiTopic ?? null) : null,
       mediaAssetId: input.mediaAssetId ?? null,
     })
     .returning();
@@ -181,6 +185,8 @@ export async function sendText(input: {
   organizationId: string;
   text: string;
   aiGenerated?: boolean;
+  /** 029 — tema que clasificó el agente en este turno (`message.ai_topic`). */
+  aiTopic?: Topic | null;
 }): Promise<SendResult> {
   const { credentials, recipient } = await prepareSend(
     input.conversationId,
@@ -203,6 +209,7 @@ export async function sendText(input: {
     status: "pending",
     aiGenerated: input.aiGenerated,
     origin: input.aiGenerated ? "ai" : "operator",
+    aiTopic: input.aiTopic,
   });
 
   return { messageId };

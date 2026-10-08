@@ -9,6 +9,7 @@ import { ContactAvatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { EnrollLauncher } from "@/components/enrollments/enroll-launcher";
+import { AreaHandoffs } from "@/components/inbox/area-handoffs";
 
 const HANDOFF_LABELS: Record<string, string> = {
   cliente: "El cliente pidió un humano",
@@ -246,6 +247,9 @@ export function ContactPanel({
             )}
           </div>
         </section>
+
+        {/* 029 — Derivaciones a Ventas/Soporte (solo aparece si hubo alguna). */}
+        <AreaHandoffs conversationId={conversation.id} refreshKey={refreshKey} />
 
         {/* Stepper de etapa */}
         {stages.length > 0 && leadId && (

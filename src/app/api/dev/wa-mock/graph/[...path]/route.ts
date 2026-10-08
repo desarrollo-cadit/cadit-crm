@@ -128,7 +128,10 @@ export async function POST(req: Request, ctx: Params) {
     return Response.json({
       messaging_product: "whatsapp",
       contacts: [{ input: body.to, wa_id: body.to }],
-      messages: [{ id: `wamid.mock.out.${n}` }],
+      // El contador se reinicia con cada DELETE del outbox y con cada arranque:
+      // sin el sello de tiempo, el id choca con salientes de corridas
+      // anteriores (`message.wa_message_id` es UNIQUE) y el turno revierte.
+      messages: [{ id: `wamid.mock.out.${n}.${Date.now().toString(36)}` }],
     });
   }
 

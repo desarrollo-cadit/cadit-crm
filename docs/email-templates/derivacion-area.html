@@ -1,0 +1,91 @@
+<!--
+  029 — Derivación a un área (Ventas / Soporte).
+
+  Lo recibe la casilla del área, que NO usa el CRM: este correo es todo lo que
+  ese equipo ve del caso. Mismas reglas que las otras plantillas: tablas, CSS
+  en línea, 600px, sin webfonts ni JavaScript.
+
+  Valores (se escapan siempre): area, caseRef, tipo, fecha, resumen,
+  identidad, nombrePerfil, organizacion, replyTo, canal.
+
+  Bloques de varias filas (marcador de TRES llaves): novedades, datos,
+  faltantes, transcripcion. Solo aceptan HTML ya escapado (SafeHtml), que
+  arma htmlRows() en src/server/areas/email.ts.
+-->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0;padding:0;background-color:#f4f4f5;">
+  <tr>
+    <td align="center" style="padding:24px 12px;">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:100%;background-color:#ffffff;border-radius:8px;border:1px solid #e4e4e7;font-family:Arial,Helvetica,sans-serif;color:#18181b;">
+
+        <!-- 1. Encabezado: área, caso, tipo y fecha -->
+        <tr>
+          <td style="padding:24px 28px 8px;">
+            <p style="margin:0;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:#71717a;">{{area}} · {{tipo}}</p>
+            <h1 style="margin:6px 0 0;font-size:20px;line-height:1.3;color:#001b5e;">Caso {{caseRef}}</h1>
+            <p style="margin:4px 0 0;font-size:13px;color:#52525b;">{{fecha}}</p>
+          </td>
+        </tr>
+
+        <!-- 6. Novedades del seguimiento (vacío en la apertura) -->
+        {{{novedades}}}
+
+        <!-- 2. Resumen -->
+        <tr>
+          <td style="padding:16px 28px 0;">
+            <h2 style="margin:0 0 6px;font-size:15px;color:#001b5e;">Resumen</h2>
+            <p style="margin:0;font-size:14px;line-height:1.5;">{{resumen}}</p>
+          </td>
+        </tr>
+
+        <!-- 3. Datos de contacto -->
+        <tr>
+          <td style="padding:16px 28px 0;">
+            <h2 style="margin:0 0 6px;font-size:15px;color:#001b5e;">Datos de contacto</h2>
+            <p style="margin:0 0 6px;font-size:12px;color:#71717a;">Datos declarados por el cliente en la conversación.</p>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:14px;">
+              {{{datos}}}
+            </table>
+          </td>
+        </tr>
+
+        <!-- 4. Datos faltantes -->
+        <tr>
+          <td style="padding:16px 28px 0;">
+            <h2 style="margin:0 0 6px;font-size:15px;color:#001b5e;">Datos faltantes</h2>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:14px;">
+              {{{faltantes}}}
+            </table>
+          </td>
+        </tr>
+
+        <!-- 5. Identidad de WhatsApp -->
+        <tr>
+          <td style="padding:16px 28px 0;">
+            <h2 style="margin:0 0 6px;font-size:15px;color:#001b5e;">Identidad de WhatsApp</h2>
+            <p style="margin:0;font-size:14px;">{{identidad}} — {{nombrePerfil}}</p>
+          </td>
+        </tr>
+
+        <!-- 7. Transcripción -->
+        <tr>
+          <td style="padding:16px 28px 0;">
+            <h2 style="margin:0 0 6px;font-size:15px;color:#001b5e;">Transcripción</h2>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:13px;">
+              {{{transcripcion}}}
+            </table>
+          </td>
+        </tr>
+
+        <!-- 8. Pie -->
+        <tr>
+          <td style="padding:20px 28px 24px;">
+            <p style="margin:0;font-size:12px;line-height:1.5;color:#71717a;">
+              Este correo lo envió el asistente de WhatsApp de {{organizacion}}. Para responderle al cliente, respondé a este correo (va a {{replyTo}}) o contactalo por {{canal}}.
+            </p>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+</table>

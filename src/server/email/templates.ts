@@ -13,7 +13,29 @@ import path from "node:path";
 
 const TEMPLATE_DIR = path.join(process.cwd(), "docs", "email-templates");
 
-export type TemplateName = "licencia-atc" | "bienvenida-cohorte" | "acceso-portal";
+export type TemplateName =
+  | "licencia-atc"
+  | "bienvenida-cohorte"
+  | "acceso-portal"
+  // 029 — correo de derivación a un área (Ventas/Soporte).
+  | "derivacion-area";
+
+declare const safeHtmlBrand: unique symbol;
+
+/**
+ * 029 — HTML ya escapado, apto para el marcador `{{{x}}}`.
+ *
+ * Es un tipo MARCADO: un `string` cualquiera no lo es, así que pasar texto
+ * crudo a un bloque no compila. Lo produce `markSafeHtml`, y a esa función
+ * solo la llama `htmlRows()` de `src/server/areas/email.ts`, que escapa cada
+ * celda antes.
+ */
+export type SafeHtml = string & { readonly [safeHtmlBrand]: true };
+
+/** Solo para quien YA escapó todo valor que viene de afuera (ver `SafeHtml`). */
+export function markSafeHtml(html: string): SafeHtml {
+  return html as SafeHtml;
+}
 
 /** Cache en proceso: en producción los archivos no cambian entre pedidos. */
 const cache = new Map<TemplateName, string>();
@@ -42,10 +64,20 @@ function loadTemplate(name: TemplateName): string {
  */
 export function renderTemplate(
   name: TemplateName,
-  values: Record<string, string | null | undefined>
+  values: Record<string, string | null | undefined>,
+  /**
+   * 029 — Bloques de varias filas (`{{{x}}}`): se insertan SIN escapar, por
+   * eso solo aceptan `SafeHtml`.
+   */
+  blocks: Record<string, SafeHtml | undefined> = {}
 ): string {
   const html = loadTemplate(name);
-  return html.replace(/\{\{(\w+)\}\}/g, (_match, key: string) =>
-    escapeHtml(values[key] ?? "")
+  // UNA sola pasada: si primero se insertaran los bloques y después los
+  // `{{x}}`, un `{{marcador}}` que escribió el cliente en la transcripción se
+  // reemplazaría por un valor.
+  return html.replace(
+    /\{\{\{(\w+)\}\}\}|\{\{(\w+)\}\}/g,
+    (_match, block: string | undefined, key: string | undefined) =>
+      block !== undefined ? (blocks[block] ?? "") : escapeHtml(values[key!] ?? "")
   );
 }

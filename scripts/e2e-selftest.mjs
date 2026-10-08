@@ -34,6 +34,7 @@ import { seccion029 } from "./e2e/navegacion-029.mjs";
 import { seccionCursosOffline } from "./e2e/cursos-offline.mjs";
 import { seccionEnviosMasivos } from "./e2e/envios-masivos.mjs";
 import { seccionVendedores } from "./e2e/vendedores.mjs";
+import { seccionAgentePorAreas } from "./e2e/agente-por-areas.mjs";
 import {
   alEntrar,
   claveVigente,
@@ -167,6 +168,16 @@ async function main() {
   await api("/api/dev/wa-mock/outbox", { method: "DELETE" });
 
   /**
+   * 029 — La línea base del correo es "no sale": los bloques de 007/014 y de
+   * envíos masivos prueban el camino infeliz (sin M365 el correo falla y el
+   * sistema no miente). Con el m365-mock configurado en la instancia E2E eso
+   * dejaría de ser cierto, así que se fuerza la falla; la sección
+   * `agente-por-areas` la apaga para sí y la vuelve a dejar encendida. Sin M365
+   * configurado, esto no cambia nada (el envío falla igual).
+   */
+  await api("/api/dev/m365-mock/fail", { method: "POST", body: JSON.stringify({ fail: true }) });
+
+  /**
    * `E2E_SECCIONES=envios-masivos,cambio-de-contrasena` corre SOLO esos
    * bloques (los que viven en módulo propio) después del setup. El arnés
    * entero tarda más de diez minutos y ya tumbó el dev server por memoria:
@@ -184,6 +195,7 @@ async function main() {
       "cambio-de-contrasena": seccionCambioDeContrasena,
       "envios-masivos": seccionEnviosMasivos,
       vendedores: seccionVendedores,
+      "agente-por-areas": seccionAgentePorAreas,
     };
     for (const nombre of soloSecciones) {
       const seccion = SECCIONES[nombre];
@@ -5133,6 +5145,10 @@ async function main() {
 
   // 2026-10-06 — Vendedores y ventas por vendedor.
   await seccionVendedores({ api, ok, BASE, getCookie: () => cookie });
+
+  // 029 — Agente por áreas: derivación por correo (m365-mock) y tema del turno.
+  // Va al final: enciende el agente y el ruteo, y los deja como estaban.
+  await seccionAgentePorAreas({ api, ok, BASE, getCookie: () => cookie });
 
   console.log(`\n===== ${checks - failures}/${checks} checks OK, ${failures} fallos =====`);
   process.exit(failures > 0 ? 1 : 0);

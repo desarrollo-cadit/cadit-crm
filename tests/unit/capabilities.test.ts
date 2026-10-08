@@ -132,8 +132,10 @@ describe("SYSTEM_ROLES — la semilla de la fase 4", () => {
     const coord = byKey("coordinacion");
     expect(coord?.capabilities).not.toContain("configuracion.editar");
     expect(coord?.capabilities).not.toContain("alumnos.auditoria");
+    // 029 — configurar las áreas de derivación del agente también es de dirección.
+    expect(coord?.capabilities).not.toContain("areas.configurar");
     expect(coord?.capabilities).toContain("cobranza.ver");
-    expect(CAPABILITIES.length - coord!.capabilities.length).toBe(2);
+    expect(CAPABILITIES.length - coord!.capabilities.length).toBe(3);
   });
 
   /**
@@ -155,6 +157,12 @@ describe("SYSTEM_ROLES — la semilla de la fase 4", () => {
     }
     expect(soporte?.capabilities).toContain("academico.editar");
     expect(soporte?.capabilities).toContain("asistencia.editar");
+    expect(soporte?.capabilities).not.toContain("areas.configurar");
+  });
+
+  it("029 — `areas.configurar` solo la siembra `direccion`", () => {
+    const con = SYSTEM_ROLES.filter((r) => r.capabilities.includes("areas.configurar"));
+    expect(con.map((r) => r.key)).toEqual(["direccion"]);
   });
 
   /**

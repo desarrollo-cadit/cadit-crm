@@ -20,9 +20,19 @@ import { getEnv } from "@/lib/env";
  * la empresa.
  */
 
-const GRAPH = "https://graph.microsoft.com/v1.0";
+/**
+ * 029 — Las bases se pueden cambiar por entorno (`M365_GRAPH_BASE_URL`,
+ * `M365_LOGIN_BASE_URL`) para hablarle al m365-mock en local, igual que
+ * `META_GRAPH_BASE_URL` con el wa-mock: el adaptador real habla HTTP con un
+ * servidor falso y el dominio no tiene ningún `if (mock)`.
+ */
+const DEFAULT_GRAPH = "https://graph.microsoft.com/v1.0";
+const DEFAULT_LOGIN = "https://login.microsoftonline.com";
+
+const trimSlash = (url: string) => url.replace(/\/+$/, "");
+const graphBase = () => trimSlash(getEnv().M365_GRAPH_BASE_URL ?? DEFAULT_GRAPH);
 const TOKEN_ENDPOINT = (tenantId: string) =>
-  `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
+  `${trimSlash(getEnv().M365_LOGIN_BASE_URL ?? DEFAULT_LOGIN)}/${tenantId}/oauth2/v2.0/token`;
 
 /** Token de aplicación cacheado en proceso: dura ~1h y se pide una vez. */
 let cachedToken: { value: string; expiresAt: number } | null = null;
@@ -90,12 +100,20 @@ async function getAccessToken(config: M365Config): Promise<string> {
 }
 
 export type SendMailInput = {
-  to: string;
-  subject: string;
-  html: string;
+  /** Uno o varios destinatarios (029: la casilla del área). */
+  to: string | string[];
+  /** 029 — Copias visibles (la gerencia, el vendedor). */
+  cc?: string[];
   /** Copia oculta al buzón de la academia, para tener registro del envío. */
   bcc?: string;
+  /** 029 — A quién va la respuesta: el cliente, si dejó un correo válido. */
+  replyTo?: string;
+  subject: string;
+  html: string;
 };
+
+const recipients = (addresses: string[]) =>
+  addresses.map((address) => ({ emailAddress: { address } }));
 
 export type SendMailResult =
   | { ok: true }
@@ -130,7 +148,7 @@ export async function sendMail(input: SendMailInput): Promise<SendMailResult> {
   }
 
   const res = await fetch(
-    `${GRAPH}/users/${encodeURIComponent(config.sender)}/sendMail`,
+    `${graphBase()}/users/${encodeURIComponent(config.sender)}/sendMail`,
     {
       method: "POST",
       headers: {
@@ -141,10 +159,10 @@ export async function sendMail(input: SendMailInput): Promise<SendMailResult> {
         message: {
           subject: input.subject,
           body: { contentType: "HTML", content: input.html },
-          toRecipients: [{ emailAddress: { address: input.to } }],
-          ...(input.bcc
-            ? { bccRecipients: [{ emailAddress: { address: input.bcc } }] }
-            : {}),
+          toRecipients: recipients(Array.isArray(input.to) ? input.to : [input.to]),
+          ...(input.cc && input.cc.length > 0 ? { ccRecipients: recipients(input.cc) } : {}),
+          ...(input.bcc ? { bccRecipients: recipients([input.bcc]) } : {}),
+          ...(input.replyTo ? { replyTo: recipients([input.replyTo]) } : {}),
         },
         saveToSentItems: true,
       }),

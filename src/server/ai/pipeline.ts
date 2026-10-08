@@ -8,9 +8,26 @@ import { chatJson, type ChatMessage } from "@/lib/ai";
 import { publish } from "@/server/events/bus";
 import { isWindowOpen } from "@/server/inbox/window";
 import { SendError, sendText } from "@/server/inbox/send";
-import { AgentAction, degradeAction, resolveStage, type AgentActionType } from "@/server/ai/actions";
-import { matchesHandoffIntent } from "@/server/ai/handoff";
-import { buildAgentSystemPrompt } from "@/server/ai/prompts";
+import {
+  AgentAction,
+  degradeAction,
+  normalizeAgentAction,
+  resolveStage,
+  type DeriveAreaAction,
+  type NormalizedAction,
+} from "@/server/ai/actions";
+import { shouldBackupHandoff } from "@/server/ai/handoff";
+import { buildAgentSystemPrompt, type RoutingPromptInput } from "@/server/ai/prompts";
+import { resolveContactProfile } from "@/server/ai/contact-profile";
+import { getAreaConfigs } from "@/server/areas/config";
+import {
+  alreadyOpenText,
+  buildClosingText,
+  deliverAreaClosing,
+  deriveToArea,
+} from "@/server/areas/handoff";
+import { organizationTimezone } from "@/server/finanzas-periodo";
+import type { Topic } from "@/lib/areas";
 
 /**
  * Turno del agente (FR-021..FR-025).
@@ -160,8 +177,15 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     return;
   }
 
-  // Patrón de respaldo ANTES del LLM (FR-022).
-  if (lastInbound.text && matchesHandoffIntent(lastInbound.text)) {
+  /**
+   * 029 (DV-012) — Interruptor del ruteo por áreas. Apagado, todo lo que sigue
+   * es el turno de siempre: mismo prompt, mismo respaldo, mismas acciones.
+   */
+  const routingEnabled = profile.areaRoutingEnabled;
+
+  // Patrón de respaldo ANTES del LLM (FR-022). 029 — con el ruteo encendido,
+  // pedir a alguien de Ventas/Soporte llega al modelo en vez de silenciar la IA.
+  if (lastInbound.text && shouldBackupHandoff(lastInbound.text, { routingEnabled })) {
     await applyHandoff(conversationId, organizationId, "cliente");
     return;
   }
@@ -177,10 +201,28 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     .where(scoped(schema.pipelineStage.organizationId, organizationId))
     .orderBy(asc(schema.pipelineStage.position));
 
+  /**
+   * 029 (DV-002) — El perfil lo calcula el SERVIDOR antes del modelo, y el
+   * modelo no lo puede cambiar. Las áreas sin casilla se marcan para que el
+   * prompt sepa que igual se puede derivar (el cliente recibe el cierre).
+   */
+  let routing: RoutingPromptInput | undefined;
+  if (routingEnabled) {
+    const [contactProfile, areaConfigs] = await Promise.all([
+      resolveContactProfile(organizationId, conversation.contactId),
+      getAreaConfigs(organizationId),
+    ]);
+    routing = {
+      enabled: true,
+      profile: contactProfile,
+      areas: areaConfigs.map((a) => ({ area: a.area, enabled: a.enabled && Boolean(a.mailbox) })),
+    };
+  }
+
   const messages: ChatMessage[] = [
     {
       role: "system",
-      content: buildAgentSystemPrompt({ profile, kb, stages }),
+      content: buildAgentSystemPrompt({ profile, kb, stages, routing }),
     },
     ...history
       .filter((m) => m.text)
@@ -199,12 +241,16 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     return;
   }
 
-  let action: AgentActionType = result.data;
+  // 029 — Reglas del servidor sobre la salida (contracts/agente.md). Con el
+  // ruteo apagado solo degradan derive_area/lookup; el resto pasa intacto.
+  let action: NormalizedAction = normalizeAgentAction(result.data, { routingEnabled });
+  // El tema solo se persiste con el ruteo encendido (`message.ai_topic`).
+  const topic: Topic | null = routingEnabled ? action.topic : null;
 
   if (action.action === "move_stage") {
     const stage = resolveStage(action.stage, stages);
     if (!stage) {
-      action = degradeAction(action);
+      action = normalizeAgentAction(degradeAction(action), { routingEnabled });
     } else {
       await moveLeadToStage(organizationId, conversation.contactId, stage.id);
       publish(organizationId, {
@@ -212,7 +258,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
         data: { conversation: { id: conversationId } },
       });
       if (action.reply) {
-        await deliverReply(conversation, action.reply);
+        await deliverReply(conversation, action.reply, topic);
       }
       return;
     }
@@ -222,21 +268,69 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     case "none":
       return;
     case "reply":
-      await deliverReply(conversation, action.text);
+      await deliverReply(conversation, action.text, topic);
       return;
     case "update_lead": {
       await appendLeadNote(organizationId, conversation.contactId, action.note);
-      if (action.reply) await deliverReply(conversation, action.reply);
+      if (action.reply) await deliverReply(conversation, action.reply, topic);
       return;
     }
     case "handoff": {
+      // 029 (US2-4) — el handoff de la ACADEMIA sigue silenciando la IA.
       if (action.farewell) {
-        await deliverReply(conversation, action.farewell);
+        await deliverReply(conversation, action.farewell, topic);
       }
       await applyHandoff(conversationId, organizationId, "modelo");
       return;
     }
+    case "derive_area":
+      await runDerivation(conversation, lastInbound.id, action);
+      return;
+    case "lookup":
+      // 029 (MVP) — Las consultas del alumno llegan con la US3. Mientras
+      // tanto, ruta segura: ningún dato, y la academia sigue disponible.
+      await deliverReply(conversation, LOOKUP_UNAVAILABLE_TEXT, "academia");
+      return;
   }
+}
+
+const LOOKUP_UNAVAILABLE_TEXT =
+  "Por ahora no puedo consultar esos datos por acá. ¿Querés que te pase con alguien de la academia?";
+
+/**
+ * 029 (US1) — Derivación a un área externa por correo.
+ *
+ * El caso se persiste ANTES del cierre, y el cierre va con su propio
+ * try/catch: un error de WhatsApp no revierte el caso (riesgo R4). El correo
+ * sale post-commit (`deriveToArea`). NO se setea `handoffAt`: la IA sigue
+ * atendiendo lo de la Academia (FR-011). El `reply` del modelo se ignora como
+ * cierre: lo arma el servidor con el texto configurado del área.
+ */
+async function runDerivation(
+  conversation: Conversation,
+  sourceMessageId: string,
+  action: DeriveAreaAction
+): Promise<void> {
+  const organizationId = conversation.organizationId;
+  const result = await deriveToArea({
+    organizationId,
+    conversation: {
+      id: conversation.id,
+      contactId: conversation.contactId,
+      isTest: conversation.isTest,
+    },
+    sourceMessageId,
+    action,
+  });
+  const text =
+    result.kind === "already_open"
+      ? alreadyOpenText(result.area, result.caseRef)
+      : buildClosingText(result.config, new Date(), await organizationTimezone(organizationId));
+
+  await deliverAreaClosing(
+    () => deliverReply(conversation, text, action.topic, { rethrowWindowClosed: true }),
+    () => applyHandoff(conversation.id, organizationId, "ventana")
+  );
 }
 
 type Conversation = typeof schema.conversation.$inferSelect;
@@ -244,10 +338,12 @@ type Conversation = typeof schema.conversation.$inferSelect;
 /** Entrega la respuesta: envío real o persistencia sandbox (is_test). */
 async function deliverReply(
   conversation: Conversation,
-  text: string
+  text: string,
+  aiTopic: Topic | null = null,
+  opts: { rethrowWindowClosed?: boolean } = {}
 ): Promise<void> {
   if (conversation.isTest) {
-    await persistTestOutbound(conversation, text);
+    await persistTestOutbound(conversation, text, aiTopic);
     return;
   }
   try {
@@ -256,9 +352,10 @@ async function deliverReply(
       organizationId: conversation.organizationId,
       text,
       aiGenerated: true,
+      aiTopic,
     });
   } catch (err) {
-    if (err instanceof SendError && err.code === "window_closed") {
+    if (err instanceof SendError && err.code === "window_closed" && !opts.rethrowWindowClosed) {
       await applyHandoff(conversation.id, conversation.organizationId, "ventana");
       return;
     }
@@ -269,7 +366,8 @@ async function deliverReply(
 /** Mensaje saliente del sandbox: se persiste, JAMÁS toca la API (FR-031). */
 async function persistTestOutbound(
   conversation: Conversation,
-  text: string
+  text: string,
+  aiTopic: Topic | null = null
 ): Promise<void> {
   const db = getDb();
   await db.insert(schema.message).values({
@@ -282,6 +380,7 @@ async function persistTestOutbound(
     status: "sent",
     aiGenerated: true,
     origin: "ai",
+    aiTopic,
   });
   await db
     .update(schema.conversation)
