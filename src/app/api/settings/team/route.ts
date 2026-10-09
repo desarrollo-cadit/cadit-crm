@@ -5,7 +5,8 @@ import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { signUpWithAssignedPassword } from "@/server/auth/assigned-password";
-import { listRoles } from "@/server/roles";
+import { sessionCapabilities } from "@/lib/capabilities";
+import { resolveRoleForNewMember } from "@/server/team";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +36,9 @@ export const GET = requireCapability(
       name: m.name,
       email: m.email,
       createdAt: m.createdAt.toISOString(),
+      // Crear-roles — Tu propia fila no ofrece cambiar el rol: lo cambia otra
+      // persona (`changeMemberRole` lo rechaza igual).
+      isSelf: m.userId === session.userId,
     })),
   });
 });
@@ -66,11 +70,14 @@ export const POST = requireCapability(
 
   // El rol tiene que existir en ESTA organización. Sin esto, un rol inventado
   // cae al respaldo de código y otorga todo.
-  const roles = await listRoles(session.organizationId, session.role);
-  const target = roles.find((r) => r.key === body.data.roleKey);
-  if (!target) {
-    return apiError(422, "invalid_role", "Ese rol no existe en la organización");
-  }
+  // Crear-roles — Y no puede exceder a quien da el alta: dar una cuenta con
+  // más permisos que los propios es la escalada más corta posible.
+  const target = await resolveRoleForNewMember(
+    session.organizationId,
+    sessionCapabilities(session),
+    body.data.roleKey
+  );
+  if (!target.ok) return apiError(target.status, target.code, target.message);
 
   // La contraseña la escribe quien da el alta, no la persona: al entrar por
   // primera vez se le pide que elija la suya (`mustChangePassword`).

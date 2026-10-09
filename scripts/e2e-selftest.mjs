@@ -35,11 +35,40 @@ import { seccionCursosOffline } from "./e2e/cursos-offline.mjs";
 import { seccionEnviosMasivos } from "./e2e/envios-masivos.mjs";
 import { seccionVendedores } from "./e2e/vendedores.mjs";
 import { seccionAgentePorAreas } from "./e2e/agente-por-areas.mjs";
+import { seccionRoles } from "./e2e/roles.mjs";
 import {
   alEntrar,
   claveVigente,
   seccionCambioDeContrasena,
 } from "./e2e/cambio-de-contrasena.mjs";
+
+/**
+ * El dev server se reinicia SOLO cuando el heap pasa el 80% de su límite
+ * (`next dev`: "Server is approaching the used memory threshold,
+ * restarting..."). Con el arnés entero eso pasa a mitad de corrida, y el
+ * pedido que llega durante el reinicio muere con ECONNRESET/ECONNREFUSED:
+ * el arnés caía con "fetch failed" sin que la app tuviera ningún error.
+ *
+ * Se reintenta SOLO el fallo de conexión (nunca un status HTTP): el reinicio
+ * ocurre después de responder el pedido anterior, así que el que falla no
+ * llegó a procesarse y repetirlo no duplica nada. Las sesiones viven en la
+ * base y sobreviven al reinicio. Envuelve el `fetch` global para que valga
+ * también en las secciones con fetcher propio (scripts/e2e/*.mjs).
+ */
+const fetchOriginal = globalThis.fetch;
+const CONEXION_CAIDA = new Set(["ECONNRESET", "ECONNREFUSED", "UND_ERR_SOCKET", "EPIPE"]);
+globalThis.fetch = async (input, init) => {
+  for (let intento = 1; ; intento++) {
+    try {
+      return await fetchOriginal(input, init);
+    } catch (err) {
+      const codigo = err?.cause?.code ?? err?.code;
+      if (!CONEXION_CAIDA.has(codigo) || intento >= 60) throw err;
+      if (intento === 1) console.log(`  …  el servidor se está reiniciando (${codigo}): reintento`);
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  }
+};
 
 const BASE = process.env.APP_BASE_URL ?? "http://localhost:3000";
 const BOT_KEY = process.env.BOT_API_KEY;
@@ -196,6 +225,7 @@ async function main() {
       "envios-masivos": seccionEnviosMasivos,
       vendedores: seccionVendedores,
       "agente-por-areas": seccionAgentePorAreas,
+      roles: seccionRoles,
     };
     for (const nombre of soloSecciones) {
       const seccion = SECCIONES[nombre];
@@ -5145,6 +5175,9 @@ async function main() {
 
   // 2026-10-06 — Vendedores y ventas por vendedor.
   await seccionVendedores({ api, ok, BASE, getCookie: () => cookie });
+
+  // Crear-roles — Un rol propio, asignado a una cuenta, rige de punta a punta.
+  await seccionRoles({ api, ok, BASE });
 
   // 029 — Agente por áreas: derivación por correo (m365-mock) y tema del turno.
   // Va al final: enciende el agente y el ruteo, y los deja como estaban.

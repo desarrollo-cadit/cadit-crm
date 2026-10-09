@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { CAPABILITIES } from "@/lib/capabilities";
 
 /**
  * 012 (T020) — El guardarraíl de la pantalla de roles.
@@ -65,6 +66,8 @@ vi.mock("@/lib/db", () => ({
   ),
 }));
 
+const TODAS = CAPABILITIES;
+
 const ROL_DIRECCION = {
   id: "rol_1",
   organizationId: "org_1",
@@ -85,7 +88,7 @@ describe("updateRoleCapabilities — no podés encerrarte afuera", () => {
     selectQueue.push([ROL_DIRECCION]);
 
     const { updateRoleCapabilities } = await import("@/server/roles");
-    const r = await updateRoleCapabilities("org_1", "rol_1", "direccion", [
+    const r = await updateRoleCapabilities("org_1", "rol_1", "direccion", TODAS, [
       "academico.ver",
     ]);
 
@@ -107,7 +110,7 @@ describe("updateRoleCapabilities — no podés encerrarte afuera", () => {
     selectQueue.push([]); // conteo de miembros
 
     const { updateRoleCapabilities } = await import("@/server/roles");
-    const r = await updateRoleCapabilities("org_1", "rol_1", "direccion", [
+    const r = await updateRoleCapabilities("org_1", "rol_1", "direccion", TODAS, [
       "academico.ver",
     ]);
 
@@ -120,7 +123,7 @@ describe("updateRoleCapabilities — no podés encerrarte afuera", () => {
     selectQueue.push([]);
 
     const { updateRoleCapabilities } = await import("@/server/roles");
-    const r = await updateRoleCapabilities("org_1", "rol_1", "direccion", [
+    const r = await updateRoleCapabilities("org_1", "rol_1", "direccion", TODAS, [
       "configuracion.editar",
     ]);
 
@@ -138,7 +141,7 @@ describe("updateRoleCapabilities — no podés encerrarte afuera", () => {
     selectQueue.push([]);
 
     const { updateRoleCapabilities } = await import("@/server/roles");
-    const r = await updateRoleCapabilities("org_1", "rol_1", "direccion", [
+    const r = await updateRoleCapabilities("org_1", "rol_1", "direccion", TODAS, [
       "academico.ver",
       "borrar.la.base",
     ]);
@@ -152,11 +155,64 @@ describe("updateRoleCapabilities — no podés encerrarte afuera", () => {
     selectQueue.push([]);
 
     const { updateRoleCapabilities } = await import("@/server/roles");
-    const r = await updateRoleCapabilities("org_1", "rol_fantasma", "direccion", []);
+    const r = await updateRoleCapabilities("org_1", "rol_fantasma", "direccion", TODAS, []);
 
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.status).toBe(404);
     expect(updates).toHaveLength(0);
+  });
+});
+
+/**
+ * Crear-roles — Nadie reparte una llave que no tiene.
+ *
+ * `configuracion.editar` abre esta pantalla, pero no todas las demás puertas:
+ * quien la tenga sin `cobranza.editar` no puede regalársela a un rol (ni al
+ * suyo, ni al de un compañero que después se la devuelve). La regla mira lo
+ * que se AGREGA: lo que el rol ya tenía puede quedarse aunque quien edita no
+ * lo tenga; si no, tocar cualquier tilde de ese rol sería imposible.
+ */
+describe("updateRoleCapabilities — sin escalada de privilegios", () => {
+  beforeEach(() => {
+    selectQueue.length = 0;
+    updates.length = 0;
+    vi.resetModules();
+  });
+
+  const SIN_PLATA = CAPABILITIES.filter((c) => !c.startsWith("cobranza."));
+
+  it("rechaza agregar una capacidad que quien edita no tiene", async () => {
+    selectQueue.push([{ ...ROL_DIRECCION, key: "coordinacion", capabilities: ["academico.ver"] }]);
+
+    const { updateRoleCapabilities } = await import("@/server/roles");
+    const r = await updateRoleCapabilities("org_1", "rol_1", "direccion", SIN_PLATA, [
+      "academico.ver",
+      "cobranza.editar",
+    ]);
+
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.status).toBe(403);
+    expect(r.code).toBe("escalation");
+    expect(r.message).toContain("cobranza.editar");
+    expect(updates).toHaveLength(0);
+  });
+
+  it("deja conservar lo que el rol ya tenía aunque quien edita no lo tenga", async () => {
+    selectQueue.push([
+      { ...ROL_DIRECCION, key: "coordinacion", capabilities: ["academico.ver", "cobranza.ver"] },
+    ]);
+    selectQueue.push([]);
+
+    const { updateRoleCapabilities } = await import("@/server/roles");
+    const r = await updateRoleCapabilities("org_1", "rol_1", "direccion", SIN_PLATA, [
+      "academico.ver",
+      "cobranza.ver",
+      "asistencia.ver",
+    ]);
+
+    expect(r.ok).toBe(true);
+    expect(updates).toHaveLength(1);
   });
 });

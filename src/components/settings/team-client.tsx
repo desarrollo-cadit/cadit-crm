@@ -16,7 +16,11 @@ type Member = {
   name: string;
   email: string;
   createdAt: string;
+  isSelf?: boolean;
 };
+
+/** Crear-roles — Lo que devuelve `/api/settings/team/roles`. */
+type AssignableRole = { id: string; key: string; name: string; assignable: boolean };
 
 export function TeamClient() {
   const [members, setMembers] = useState<Member[]>([]);
@@ -36,7 +40,9 @@ export function TeamClient() {
    * respaldo en código terminan pudiendo TODO.
    */
   const [roleKey, setRoleKey] = useState("");
-  const [roles, setRoles] = useState<{ key: string; name: string }[]>([]);
+  const [roles, setRoles] = useState<AssignableRole[]>([]);
+  const [changing, setChanging] = useState<string | null>(null);
+  const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
   const [created, setCreated] = useState<{ email: string; password: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -55,12 +61,16 @@ export function TeamClient() {
   useEffect(() => {
     void refetch();
     // Los roles que EXISTEN, para no ofrecer ninguno que no esté mapeado.
+    // Crear-roles — Sale de `/api/settings/team/roles`, que pide la misma
+    // capacidad que esta pantalla (`accesos.gestionar`). Antes se leía de la
+    // pantalla de Roles, que pide `configuracion.editar`: quien gestionaba
+    // accesos sin configurar veía el selector vacío.
     void (async () => {
-      const res = await fetch("/api/settings/roles").catch(() => null);
+      const res = await fetch("/api/settings/team/roles").catch(() => null);
       if (!res?.ok) return;
-      const data = (await res.json()) as { roles: { key: string; name: string }[] };
+      const data = (await res.json()) as { roles: AssignableRole[] };
       setRoles(data.roles);
-      setRoleKey((actual) => actual || data.roles[0]?.key || "");
+      setRoleKey((actual) => actual || data.roles.find((r) => r.assignable)?.key || "");
     })();
   }, [refetch]);
 
@@ -95,7 +105,27 @@ export function TeamClient() {
     setName("");
     setEmail("");
     setTempPassword("");
-    setRoleKey(roles[0]?.key ?? "");
+    setRoleKey(roles.find((r) => r.assignable)?.key ?? "");
+    void refetch();
+  }
+
+  /** Crear-roles — Cambia el rol de una cuenta existente. */
+  async function changeRole(member: Member, roleId: string) {
+    setChanging(member.id);
+    setRowError(null);
+    const res = await fetch(`/api/settings/team/${member.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ roleId }),
+    }).catch(() => null);
+    setChanging(null);
+    if (!res?.ok) {
+      const data = (await res?.json().catch(() => null)) as {
+        error?: { message?: string };
+      } | null;
+      setRowError({ id: member.id, message: data?.error?.message ?? "No se pudo cambiar el rol" });
+      return;
+    }
     void refetch();
   }
 
@@ -138,8 +168,8 @@ export function TeamClient() {
               onChange={(e) => setRoleKey(e.target.value)}
             >
               {roles.map((r) => (
-                <option key={r.key} value={r.key}>
-                  {r.name}
+                <option key={r.key} value={r.key} disabled={!r.assignable}>
+                  {r.assignable ? r.name : `${r.name} (tiene permisos que tu rol no tiene)`}
                 </option>
               ))}
             </select>
@@ -200,22 +230,43 @@ export function TeamClient() {
           </>
         )}
         {!loading && members.map((m) => (
-          <div
-            key={m.id}
-            className="flex items-center gap-3 rounded-lg border bg-card px-4 py-3"
-          >
-            <ContactAvatar name={m.name} seed={m.id} size="sm" />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium">{m.name}</p>
-              <p className="text-xs text-muted-foreground">{m.email}</p>
+          <div key={m.id} className="space-y-1 rounded-lg border bg-card px-4 py-3">
+            <div className="flex items-center gap-3">
+              <ContactAvatar name={m.name} seed={m.id} size="sm" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">{m.name}</p>
+                <p className="text-xs text-muted-foreground">{m.email}</p>
+              </div>
+              {/* 012 (T029) — El rótulo sale de la tabla `role`, no de un
+                  `if` con nombres quemados: si la dueña renombra un rol desde
+                  Roles, acá se ve el nombre nuevo. Si el rol no está sembrado,
+                  se muestra la llave cruda antes que inventar un rótulo. */}
+              {/* Crear-roles — Se cambia desde la fila. La propia no ofrece el
+                  selector (tu rol lo cambia otra persona), y un rol que excede
+                  al tuyo aparece pero no se puede elegir. */}
+              {m.isSelf || roles.length === 0 || !roles.some((r) => r.key === m.role) ? (
+                <Badge variant="secondary">
+                  {roles.find((r) => r.key === m.role)?.name ?? m.role}
+                </Badge>
+              ) : (
+                <select
+                  aria-label={`Rol de ${m.name}`}
+                  className="rounded-md border bg-background px-2 py-1 text-xs"
+                  value={roles.find((r) => r.key === m.role)?.id ?? ""}
+                  disabled={changing === m.id}
+                  onChange={(e) => void changeRole(m, e.target.value)}
+                >
+                  {roles.map((r) => (
+                    <option key={r.id} value={r.id} disabled={!r.assignable && r.key !== m.role}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
-            {/* 012 (T029) — El rótulo sale de la tabla `role`, no de un
-                `if` con nombres quemados: si la dueña renombra un rol desde
-                Roles, acá se ve el nombre nuevo. Si el rol no está sembrado,
-                se muestra la llave cruda antes que inventar un rótulo. */}
-            <Badge variant="secondary">
-              {roles.find((r) => r.key === m.role)?.name ?? m.role}
-            </Badge>
+            {rowError?.id === m.id && (
+              <p className="text-xs text-destructive">{rowError.message}</p>
+            )}
           </div>
         ))}
       </div>

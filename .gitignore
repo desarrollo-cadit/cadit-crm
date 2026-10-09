@@ -71,3 +71,6 @@ dev-e2e.log
 .tmp-pass.txt
 .next-build/
 .tmp-import-offline-courses.mjs
+
+# Agent worktrees (local checkouts, never committed)
+.claude/worktrees/

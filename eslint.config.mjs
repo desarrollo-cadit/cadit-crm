@@ -22,6 +22,10 @@ const config = [
       "next-env.d.ts",
       // Bundles temporales de esbuild (seeds e importador): código generado.
       ".tmp-*.mjs",
+      // Checkouts de otros agentes (git worktrees bajo .claude/worktrees): cada
+      // uno se lintea desde su propia raíz. Escanearlos acá mezcla los errores
+      // de otra rama con los de esta.
+      ".claude/**",
     ],
   },
   ...compat.extends("next/core-web-vitals", "next/typescript"),
