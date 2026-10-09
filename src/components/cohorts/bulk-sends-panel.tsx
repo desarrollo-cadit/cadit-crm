@@ -8,6 +8,7 @@ import type { BulkKindOverview, BulkRunDto, BulkRunRecipientDto } from "@/server
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmSendDialog } from "@/components/cohorts/confirm-send-dialog";
+import { notify } from "@/lib/notify";
 
 /**
  * 2026-10-05 — Envíos a toda la cohorte: términos de la licencia ATC,
@@ -80,7 +81,6 @@ export function BulkSendsPanel({
   const [kinds, setKinds] = useState<BulkKindOverview[] | null>(null);
   const [confirmar, setConfirmar] = useState<BulkKindOverview | null>(null);
   const [enviando, setEnviando] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [corrida, setCorrida] = useState<BulkRunDto | null>(null);
   const [detalleAbierto, setDetalleAbierto] = useState(false);
 
@@ -121,7 +121,6 @@ export function BulkSendsPanel({
 
   async function enviar(k: BulkKindOverview) {
     setEnviando(true);
-    setError(null);
     const res = await fetch(`/api/cohorts/${cohortId}/${RUTA[k.kind]}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -131,7 +130,7 @@ export function BulkSendsPanel({
     setConfirmar(null);
     if (!res || res.status !== 202) {
       const body = (await res?.json().catch(() => null)) as { error?: { message?: string } } | null;
-      setError(body?.error?.message ?? "No se pudo iniciar el envío.");
+      notify.error(body?.error?.message ?? "No se pudo iniciar el envío.");
       void cargar();
       return;
     }
@@ -192,12 +191,6 @@ export function BulkSendsPanel({
             {k.blockedReason}
           </p>
         ))}
-
-      {error && (
-        <p role="alert" className="mt-2 text-xs text-destructive">
-          {error}
-        </p>
-      )}
 
       {!corrida &&
         kinds

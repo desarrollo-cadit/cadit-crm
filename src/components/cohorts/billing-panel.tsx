@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { notify } from "@/lib/notify";
 
 type Currency = "UYU" | "PYG" | "USD";
 type Status = "pagada" | "parcial" | "vencida" | "pendiente";
@@ -56,7 +57,6 @@ export function BillingPanel({ enrollmentId }: { enrollmentId: string }) {
   const [installments, setInstallments] = useState<Installment[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [count, setCount] = useState("3");
   const [firstDueDate, setFirstDueDate] = useState("");
   const [paying, setPaying] = useState<Installment | null>(null);
@@ -94,7 +94,8 @@ export function BillingPanel({ enrollmentId }: { enrollmentId: string }) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ count: Number(count), firstDueDate, replace }),
     }).catch(() => null);
-    setError(res?.ok ? null : await readError(res, "No se pudo generar el plan"));
+    if (!res?.ok) notify.error(await readError(res, "No se pudo generar el plan"));
+    else notify.success("Plan de cuotas generado.");
     if (res?.ok) setRefinancing(false);
     void refetch();
   }
@@ -107,7 +108,8 @@ export function BillingPanel({ enrollmentId }: { enrollmentId: string }) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ reason: reason.trim() }),
     }).catch(() => null);
-    setError(res?.ok ? null : await readError(res, "No se pudo anular el pago"));
+    if (!res?.ok) notify.error(await readError(res, "No se pudo anular el pago"));
+    else notify.success("Pago anulado.");
     void refetch();
   }
 
@@ -160,8 +162,6 @@ export function BillingPanel({ enrollmentId }: { enrollmentId: string }) {
           </p>
         )}
       </div>
-
-      {error && <p className="text-xs text-destructive">{error}</p>}
 
       {installments.length === 0 ? (
         <div className="flex flex-wrap items-end gap-2 rounded-md border border-dashed p-3">
@@ -303,7 +303,6 @@ export function BillingPanel({ enrollmentId }: { enrollmentId: string }) {
             setPaying(null);
             void refetch();
           }}
-          onError={setError}
         />
       )}
     </div>
@@ -319,13 +318,11 @@ function PaymentForm({
   installment,
   onClose,
   onSaved,
-  onError,
 }: {
   enrollmentId: string;
   installment: Installment;
   onClose: () => void;
   onSaved: () => void;
-  onError: (message: string | null) => void;
 }) {
   const [amount, setAmount] = useState(String(installment.balance));
   const [paidAt, setPaidAt] = useState(new Date().toISOString().slice(0, 10));
@@ -353,10 +350,10 @@ function PaymentForm({
       const body = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      onError(body?.error?.message ?? "No se pudo registrar el pago");
+      notify.error(body?.error?.message ?? "No se pudo registrar el pago");
       return;
     }
-    onError(null);
+    notify.success("Pago registrado.");
     onSaved();
   }
 

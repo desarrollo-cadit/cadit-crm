@@ -13,6 +13,7 @@ import { getBranding } from "@/server/branding";
 import { studentNavCourses } from "@/server/student-portal";
 import { PortalNav } from "@/components/portal/portal-nav";
 import { PortalWorld } from "@/components/portal/portal-world";
+import { AppToaster } from "@/components/ui/toaster";
 import { parseThemeCookie, THEME_COOKIE } from "@/lib/theme";
 
 /**
@@ -115,6 +116,7 @@ export default async function PortalLayout({
           </div>
         </main>
       </PortalWorld>
+      <AppToaster />
     </div>
   );
 }

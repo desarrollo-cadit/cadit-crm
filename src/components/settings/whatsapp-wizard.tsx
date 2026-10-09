@@ -14,6 +14,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { notify } from "@/lib/notify";
 
 type Connection = {
   wabaId: string;
@@ -112,14 +113,10 @@ function ConnectForm({
     existing?.phoneNumberId ?? ""
   );
   const [token, setToken] = useState("");
-  const [testResult, setTestResult] = useState<
-    | { ok: true; display: string }
-    | { ok: false; message: string }
-    | null
-  >(null);
+  /** Solo habilita "Guardar": el resultado de la prueba se anuncia en un toast. */
+  const [testResult, setTestResult] = useState<{ ok: boolean } | null>(null);
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
 
   const canTest = wabaId.trim() && phoneNumberId.trim() && token.trim();
 
@@ -133,7 +130,8 @@ function ConnectForm({
     }).catch(() => null);
     setTesting(false);
     if (!res) {
-      setTestResult({ ok: false, message: "Sin conexión con el servidor" });
+      setTestResult({ ok: false });
+      notify.error("Sin conexión con el servidor");
       return;
     }
     const data = (await res.json().catch(() => null)) as {
@@ -141,18 +139,16 @@ function ConnectForm({
       error?: { message?: string };
     } | null;
     if (res.ok && data?.displayPhoneNumber) {
-      setTestResult({ ok: true, display: data.displayPhoneNumber });
+      setTestResult({ ok: true });
+      notify.success(`Token válido para ${data.displayPhoneNumber}. Ya podés guardar.`);
     } else {
-      setTestResult({
-        ok: false,
-        message: data?.error?.message ?? "La validación falló",
-      });
+      setTestResult({ ok: false });
+      notify.error(data?.error?.message ?? "La validación falló");
     }
   }
 
   async function save() {
     setSaving(true);
-    setSaveError(null);
     const res = await fetch("/api/settings/whatsapp", {
       method: "PUT",
       headers: { "content-type": "application/json" },
@@ -163,9 +159,10 @@ function ConnectForm({
       const data = (await res?.json().catch(() => null)) as {
         error?: { message?: string };
       } | null;
-      setSaveError(data?.error?.message ?? "No se pudo guardar la conexión");
+      notify.error(data?.error?.message ?? "No se pudo guardar la conexión");
       return;
     }
+    notify.success("Conexión de WhatsApp guardada.");
     setToken("");
     setTestResult(null);
     onSaved();
@@ -243,16 +240,6 @@ function ConnectForm({
           />
         </div>
 
-        {testResult && (
-          <p
-            className={`text-sm ${testResult.ok ? "text-success" : "text-destructive"}`}
-          >
-            {testResult.ok
-              ? `✓ Token válido para ${testResult.display}. Ya podés guardar.`
-              : testResult.message}
-          </p>
-        )}
-        {saveError && <p className="text-sm text-destructive">{saveError}</p>}
 
         <div className="flex gap-2">
           <Button
@@ -275,13 +262,11 @@ function ConnectForm({
 }
 
 function WebhookCard({ webhook }: { webhook: WebhookInfo }) {
-  const [copied, setCopied] = useState<string | null>(null);
-
-  function copy(text: string, which: string) {
-    void navigator.clipboard.writeText(text).then(() => {
-      setCopied(which);
-      setTimeout(() => setCopied(null), 1500);
-    });
+  function copy(text: string, mensaje: string) {
+    void navigator.clipboard.writeText(text).then(
+      () => notify.success(mensaje),
+      () => notify.error("No se pudo copiar: seleccioná y copiá a mano.")
+    );
   }
 
   return (
@@ -317,13 +302,10 @@ function WebhookCard({ webhook }: { webhook: WebhookInfo }) {
               variant="outline"
               size="icon"
               aria-label="Copiar URL"
-              onClick={() => copy(webhook.url, "url")}
+              onClick={() => copy(webhook.url, "URL del webhook copiada.")}
             >
               <Copy className="h-4 w-4" />
             </Button>
-            {copied === "url" && (
-              <span className="text-xs text-primary">Copiada ✓</span>
-            )}
           </div>
           <p className="text-xs text-muted-foreground">
             La URL contiene el token secreto en la ruta: trátala como una
@@ -340,13 +322,10 @@ function WebhookCard({ webhook }: { webhook: WebhookInfo }) {
               variant="outline"
               size="icon"
               aria-label="Copiar verify token"
-              onClick={() => copy(webhook.verifyToken, "vt")}
+              onClick={() => copy(webhook.verifyToken, "Verify token copiado.")}
             >
               <Copy className="h-4 w-4" />
             </Button>
-            {copied === "vt" && (
-              <span className="text-xs text-primary">Copiado ✓</span>
-            )}
           </div>
         </div>
         {webhook.signatureLayer ? (

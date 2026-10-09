@@ -13,6 +13,7 @@ import type {
 import type { StaffCourseProgress } from "@/server/offline-courses/progress";
 import { OfflineAttemptsTable } from "@/components/offline-courses/attempts-table";
 import { RecognitionActions, recognitionLabel } from "@/components/offline-courses/recognition-panel";
+import { notify } from "@/lib/notify";
 
 const STATE_LABEL: Record<AccessState, string> = {
   inherited: "Heredado de la cohorte",
@@ -180,11 +181,9 @@ export function OfflineCoursesPanel({
   const [progress, setProgress] = useState<StaffCourseProgress[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
-  // Two errors, cleared by different events: a failed load goes away when a
-  // reload succeeds; a failed change stays until the next change is tried
-  // (the reload that follows it must not wipe the message).
+  // A failed load is page state and stays inline until a reload succeeds; a
+  // failed change is an event and is announced with a toast.
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   const refetch = useCallback(async () => {
     const res = await fetch(`/api/enrollments/${enrollmentId}/offline-courses`).catch(() => null);
@@ -210,7 +209,6 @@ export function OfflineCoursesPanel({
 
   async function apply(courseId: string, action: OverrideAction) {
     setBusy(courseId);
-    setError(null);
     const res = await fetch(`/api/enrollments/${enrollmentId}/offline-courses`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
@@ -220,7 +218,7 @@ export function OfflineCoursesPanel({
       const body = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      setError(body?.error?.message ?? "No se pudo cambiar el acceso");
+      notify.error(body?.error?.message ?? "No se pudo cambiar el acceso");
     }
     await refetch();
     setBusy(null);
@@ -228,7 +226,6 @@ export function OfflineCoursesPanel({
 
   async function completeTopic(topicId: string) {
     setBusy(topicId);
-    setError(null);
     const res = await fetch(
       `/api/enrollments/${enrollmentId}/offline-courses/topics/${topicId}/complete`,
       { method: "PUT" }
@@ -237,7 +234,7 @@ export function OfflineCoursesPanel({
       const body = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      setError(body?.error?.message ?? "No se pudo marcar el tema como completado");
+      notify.error(body?.error?.message ?? "No se pudo marcar el tema como completado");
     }
     await refetch();
     setBusy(null);
@@ -255,11 +252,11 @@ export function OfflineCoursesPanel({
   return (
     <div className="space-y-3">
       <p className="text-xs font-medium">Cursos offline</p>
-      {[loadError, error].filter(Boolean).map((message) => (
-        <p key={message} role="alert" className="text-xs text-destructive">
-          {message}
+      {loadError && (
+        <p role="alert" className="text-xs text-destructive">
+          {loadError}
         </p>
-      ))}
+      )}
 
       {courses.length === 0 ? (
         <p className="text-xs text-muted-foreground">La biblioteca de cursos offline está vacía.</p>
@@ -307,7 +304,8 @@ export function OfflineCoursesPanel({
                     onBusy={(b) => setBusy(b ? c.courseId : null)}
                     onComplete={(topicId) => void completeTopic(topicId)}
                     onRecognitionChange={(message) => {
-                      setError(message);
+                      if (message) notify.error(message);
+                      else notify.success("Reconocimiento actualizado.");
                       void refetch();
                     }}
                   />

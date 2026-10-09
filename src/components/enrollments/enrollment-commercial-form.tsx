@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { SellerField } from "@/components/enrollments/seller-field";
 import type { SellerOption } from "@/lib/vendedores";
+import { notify } from "@/lib/notify";
 
 /**
  * 005 iteración 2 — edita los datos comerciales de una inscripción YA
@@ -50,11 +51,9 @@ export function EnrollmentCommercialForm({
   const sellerRequired = entry.sellerRequired ?? true;
   const permiteVacio = !sellerRequired || !entry.sellerId;
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   async function submit() {
     setSaving(true);
-    setError(null);
     const res = await fetch(`/api/enrollments/${enrollmentId}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
@@ -74,9 +73,10 @@ export function EnrollmentCommercialForm({
       const body = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      setError(body?.error?.message ?? "No se pudo guardar la inscripción");
+      notify.error(body?.error?.message ?? "No se pudo guardar la inscripción");
       return;
     }
+    notify.success("Inscripción guardada.");
     onSaved();
   }
 
@@ -182,8 +182,6 @@ export function EnrollmentCommercialForm({
             />
           </div>
         </div>
-
-        {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
 
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>

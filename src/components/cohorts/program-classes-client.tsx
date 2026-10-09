@@ -7,6 +7,7 @@ import { ResourcesPanel, useClassMaterial } from "@/components/academic/resource
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { notify } from "@/lib/notify";
 
 type Fila = {
   id: string | null;
@@ -55,6 +56,7 @@ export function ProgramClassesClient({
   canEdit: boolean;
 }) {
   const [data, setData] = useState<Payload | null>(null);
+  /** Solo el error de CARGA (estado). Generar avisa con toast. */
   const [error, setError] = useState<string | null>(null);
   const [generando, setGenerando] = useState(false);
   const [resumen, setResumen] = useState<Resumen | null>(null);
@@ -76,7 +78,6 @@ export function ProgramClassesClient({
 
   async function generarTodos() {
     setGenerando(true);
-    setError(null);
     const res = await fetch(`/api/cohorts/${cohortId}/modules/schedule`, {
       method: "POST",
     }).catch(() => null);
@@ -85,10 +86,19 @@ export function ProgramClassesClient({
       const body = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      setError(body?.error?.message ?? "No se pudo generar el cronograma de los módulos");
+      notify.error(body?.error?.message ?? "No se pudo generar el cronograma de los módulos");
       return;
     }
-    setResumen((await res.json()) as Resumen);
+    const r = (await res.json()) as Resumen;
+    if (r.generated.length > 0) {
+      const n = r.generated.reduce((acc, g) => acc + g.classes, 0);
+      notify.success(
+        `Se generaron ${n} clases en ${r.generated.length} módulo${r.generated.length === 1 ? "" : "s"}.`
+      );
+    } else {
+      notify.warning("No se generó ninguna clase.");
+    }
+    setResumen(r);
     void refetch();
   }
 
@@ -143,13 +153,14 @@ export function ProgramClassesClient({
         </div>
       ) : null}
 
-      {resumen ? (
-        <div className="rounded-md border p-3 text-sm" role="status">
-          <p className="font-medium">
-            {resumen.generated.length > 0
-              ? `Se generaron ${resumen.generated.reduce((n, g) => n + g.classes, 0)} clases en ${resumen.generated.length} módulo${resumen.generated.length === 1 ? "" : "s"}.`
-              : "No se generó ninguna clase."}
-          </p>
+      {/*
+        El total generado se anuncia en un toast. Los módulos SALTEADOS y su
+        motivo se quedan inline: es un informe que hay que poder leer y
+        corregir módulo por módulo.
+      */}
+      {resumen && resumen.skipped.length > 0 ? (
+        <div className="rounded-md border p-3 text-sm">
+          <p className="font-medium">Módulos sin generar</p>
           {resumen.skipped.length > 0 ? (
             <ul className="mt-1 list-disc pl-5 text-xs text-muted-foreground">
               {resumen.skipped.map((s) => (

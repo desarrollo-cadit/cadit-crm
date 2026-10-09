@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { callApi } from "./api";
 import { StatusToggle } from "./course-editor";
 import { EditorDialog, ErrorText } from "./dialog";
+import { notify } from "@/lib/notify";
 
 /**
  * cursos-offline T11b — "Nuevo curso" on the library. Creates it (draft by
@@ -40,9 +41,10 @@ export function NewCourseButton() {
     });
     if (!result.ok) {
       setSaving(false);
-      setError(result.message);
+      notify.error(result.message);
       return;
     }
+    notify.success("Curso creado.");
     router.push(`/cursos-offline/${result.data.id}`);
   }
 

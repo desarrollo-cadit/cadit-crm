@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { notify } from "@/lib/notify";
 
 type Member = {
   id: string;
@@ -44,11 +45,9 @@ export function TeamClient() {
   const [roleKey, setRoleKey] = useState("");
   const [roles, setRoles] = useState<AssignableRole[]>([]);
   const [changing, setChanging] = useState<string | null>(null);
-  const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
   const [created, setCreated] = useState<
     { email: string; password: string; attached: false } | { email: string; attached: true } | null
   >(null);
-  const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const refetch = useCallback(async () => {
@@ -90,7 +89,6 @@ export function TeamClient() {
 
   async function create() {
     setSaving(true);
-    setError(null);
     setCreated(null);
     const res = await fetch("/api/settings/team", {
       method: "POST",
@@ -102,11 +100,18 @@ export function TeamClient() {
       const data = (await res?.json().catch(() => null)) as {
         error?: { message?: string };
       } | null;
-      setError(data?.error?.message ?? "No se pudo crear la cuenta");
+      notify.error(data?.error?.message ?? "No se pudo crear la cuenta");
       return;
     }
     const ok = (await res.json().catch(() => null)) as { attached?: boolean } | null;
-    setCreated(ok?.attached ? { email, attached: true } : { email, password: tempPassword, attached: false });
+    if (ok?.attached) {
+      // Sin contraseña nueva que mostrar: es un evento, alcanza con el toast.
+      notify.success(`${email} ya era profesor y ahora también es parte del equipo.`, {
+        description: "Entra con su misma contraseña y cambia de vista desde su cuenta.",
+      });
+    } else {
+      setCreated({ email, password: tempPassword, attached: false });
+    }
     setName("");
     setEmail("");
     setTempPassword("");
@@ -124,23 +129,22 @@ export function TeamClient() {
       : `¿Quitar a ${member.name} del equipo? No va a poder entrar al panel.`;
     if (!window.confirm(aviso)) return;
     setChanging(member.id);
-    setRowError(null);
     const res = await fetch(`/api/settings/team/${member.id}`, { method: "DELETE" }).catch(() => null);
     setChanging(null);
     if (!res?.ok) {
       const data = (await res?.json().catch(() => null)) as {
         error?: { message?: string };
       } | null;
-      setRowError({ id: member.id, message: data?.error?.message ?? "No se pudo quitar del equipo" });
+      notify.error(data?.error?.message ?? "No se pudo quitar del equipo");
       return;
     }
+    notify.success(`${member.name} ya no es parte del equipo.`);
     void refetch();
   }
 
   /** Crear-roles — Cambia el rol de una cuenta existente. */
   async function changeRole(member: Member, roleId: string) {
     setChanging(member.id);
-    setRowError(null);
     const res = await fetch(`/api/settings/team/${member.id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
@@ -151,9 +155,10 @@ export function TeamClient() {
       const data = (await res?.json().catch(() => null)) as {
         error?: { message?: string };
       } | null;
-      setRowError({ id: member.id, message: data?.error?.message ?? "No se pudo cambiar el rol" });
+      notify.error(data?.error?.message ?? "No se pudo cambiar el rol");
       return;
     }
+    notify.success(`Rol de ${member.name} actualizado.`);
     void refetch();
   }
 
@@ -227,16 +232,10 @@ export function TeamClient() {
               cuenta y su contraseña no cambia.
             </p>
           </div>
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          {created && created.attached && (
-            <div className="rounded-md border border-success-border bg-success-soft p-3 text-sm" data-team-attached>
-              <p className="font-medium text-success">Listo ✓</p>
-              <p className="mt-1 text-success">
-                <code>{created.email}</code> ya era profesor y ahora también es parte del equipo.
-                Entra con su misma contraseña y cambia de vista desde su cuenta.
-              </p>
-            </div>
-          )}
+          {/*
+            Inline A PROPÓSITO: la contraseña temporal se muestra una sola vez y
+            hay que copiarla. Un toast que se va solo la perdería.
+          */}
           {created && !created.attached && (
             <div className="rounded-md border border-success-border bg-success-soft p-3 text-sm">
               <p className="font-medium text-success">Cuenta creada ✓</p>
@@ -321,9 +320,6 @@ export function TeamClient() {
                 </Button>
               )}
             </div>
-            {rowError?.id === m.id && (
-              <p className="text-xs text-destructive">{rowError.message}</p>
-            )}
           </div>
         ))}
       </div>

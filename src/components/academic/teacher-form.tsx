@@ -5,6 +5,7 @@ import type { CourseDto, TeacherDto } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { notify } from "@/lib/notify";
 
 /**
  * 005 iteración 2 — alta/edición de un profesor desde la pestaña
@@ -33,7 +34,6 @@ export function TeacherForm({
   const [courseIds, setCourseIds] = useState<string[]>(initial?.courseIds ?? []);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   function toggleCourse(id: string) {
     setCourseIds((prev) => (prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]));
@@ -49,7 +49,6 @@ export function TeacherForm({
   async function submit() {
     if (!name.trim()) return;
     setSaving(true);
-    setError(null);
 
     const patchBody = {
       name: name.trim(),
@@ -98,11 +97,12 @@ export function TeacherForm({
       const body = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      setError(body?.error?.message ?? "No se pudo guardar el profesor");
+      notify.error(body?.error?.message ?? "No se pudo guardar el profesor");
       return;
     }
     if (teacherId) await uploadPhoto(teacherId);
     setSaving(false);
+    notify.success(initial ? "Profesor guardado." : "Profesor creado.");
     onSaved();
   }
 
@@ -196,7 +196,6 @@ export function TeacherForm({
             </div>
           </div>
         </div>
-        {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
             Cancelar

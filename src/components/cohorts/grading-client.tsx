@@ -16,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { wallClockInZone } from "@/lib/schedule-time";
+import { notify } from "@/lib/notify";
 
 type Assessment = {
   id: string;
@@ -93,10 +94,8 @@ export function GradingClient({
 }) {
   const [sheet, setSheet] = useState<Sheet | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   /** Separado de `error`: un guardado que falla no puede tapar la planilla. */
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [aviso, setAviso] = useState<string | null>(null);
   /** 024 — Sobre qué alumno está abierto el panel de anulación. */
   const [anulando, setAnulando] = useState<Student | null>(null);
   const [motivoAnulacion, setMotivoAnulacion] = useState("");
@@ -169,8 +168,7 @@ export function GradingClient({
     setCopiando(false);
 
     if (!res?.ok) {
-      setAviso(null);
-      setError(await readError(res, "No se pudieron copiar las evaluaciones"));
+      notify.error(await readError(res, "No se pudieron copiar las evaluaciones"));
       return;
     }
 
@@ -179,17 +177,15 @@ export function GradingClient({
       omitidas: string[];
       aviso: string | null;
     };
-    setError(null);
     // El servidor ya explicó por qué no copió nada; cuando SÍ copió, el número
     // y lo que se salteó importan tanto como el éxito.
-    setAviso(
-      data.aviso ??
-        `Se copiaron ${data.copiadas} evaluaciones${
-          data.omitidas.length > 0
-            ? `. Ya estaban: ${data.omitidas.join(", ")}`
-            : "."
-        }`
-    );
+    if (data.aviso) {
+      notify.warning(data.aviso);
+    } else {
+      notify.success(`Se copiaron ${data.copiadas} evaluaciones.`, {
+        ...(data.omitidas.length > 0 ? { description: `Ya estaban: ${data.omitidas.join(", ")}` } : {}),
+      });
+    }
     void refetch();
   }
 
@@ -207,7 +203,7 @@ export function GradingClient({
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ name: newName.trim() }),
     }).catch(() => null);
-    setError(res?.ok ? null : await readError(res, "No se pudo crear la evaluación"));
+    if (!res?.ok) notify.error(await readError(res, "No se pudo crear la evaluación"));
     setNewName("");
     void refetch();
   }
@@ -219,7 +215,7 @@ export function GradingClient({
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ results: [{ enrollmentId, passed }] }),
     }).catch(() => null);
-    setError(res?.ok ? null : await readError(res, "No se pudo guardar el resultado"));
+    if (!res?.ok) notify.error(await readError(res, "No se pudo guardar el resultado"));
     void refetch();
   }
 
@@ -231,14 +227,14 @@ export function GradingClient({
       body: JSON.stringify({}),
     }).catch(() => null);
     setBusy(null);
-    setError(res?.ok ? null : await readError(res, "No se pudo emitir el certificado"));
+    if (!res?.ok) notify.error(await readError(res, "No se pudo emitir el certificado"));
+    else notify.success("Certificado emitido.");
     void refetch();
   }
 
   function abrirAnulacion(st: Student) {
     setAnulando(st);
     setMotivoAnulacion("");
-    setError(null);
   }
 
   /**
@@ -267,10 +263,10 @@ export function GradingClient({
     setBusy(null);
 
     if (!res?.ok) {
-      setError(await readError(res, "No se pudo anular el certificado"));
+      notify.error(await readError(res, "No se pudo anular el certificado"));
       return;
     }
-    setError(null);
+    notify.success("Certificado anulado.");
     setAnulando(null);
     setMotivoAnulacion("");
     void refetch();
@@ -357,12 +353,9 @@ export function GradingClient({
           </div>
         )}
       </div>
-
-      {error && <p className="text-xs text-destructive">{error}</p>}
       {/* Una recarga que falló con la planilla ya en pantalla: se avisa que lo
           que se está mirando puede estar viejo, sin borrarlo. */}
       {loadError && <p className="text-xs text-danger">{loadError}</p>}
-      {aviso && <p className="text-xs text-muted-foreground">{aviso}</p>}
 
       {sheet.assessments.length > 0 && (
         <PlazosDeEntrega
@@ -370,7 +363,6 @@ export function GradingClient({
           timezone={sheet.timezone}
           canEdit={canEdit}
           onCambio={refetch}
-          onError={setError}
         />
       )}
 
@@ -582,14 +574,12 @@ function PlazosDeEntrega({
   timezone,
   canEdit,
   onCambio,
-  onError,
 }: {
   assessments: Assessment[];
   /** FR-005e — La zona de la ACADEMIA. Sin ella se pinta con la de quien mira. */
   timezone: string;
   canEdit: boolean;
   onCambio: () => void;
-  onError: (m: string | null) => void;
 }) {
   const [abierta, setAbierta] = useState<string | null>(null);
   const [fecha, setFecha] = useState("");
@@ -632,10 +622,10 @@ function PlazosDeEntrega({
       const body = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      onError(body?.error?.message ?? "No se pudo guardar el plazo");
+      notify.error(body?.error?.message ?? "No se pudo guardar el plazo");
       return;
     }
-    onError(null);
+    notify.success("Plazo de entrega guardado.");
     setAbierta(null);
     setFecha("");
     onCambio();

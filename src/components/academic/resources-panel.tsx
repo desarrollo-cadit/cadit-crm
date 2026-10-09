@@ -5,6 +5,7 @@ import { FileText, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { notify } from "@/lib/notify";
 
 export type Resource = {
   id: string;
@@ -51,6 +52,7 @@ export function ResourcesPanel({
   const precargado = initialItems !== undefined;
   const [items, setItems] = useState<Resource[]>(initialItems ?? []);
   const [loading, setLoading] = useState(!precargado);
+  /** Solo el error de CARGA de la lista (estado). Agregar/quitar avisan con toast. */
   const [error, setError] = useState<string | null>(null);
   const [abierto, setAbierto] = useState(false);
   const [title, setTitle] = useState("");
@@ -96,10 +98,10 @@ export function ResourcesPanel({
       const data = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      setError(data?.error?.message ?? "No se pudo guardar el material");
+      notify.error(data?.error?.message ?? "No se pudo guardar el material");
       return;
     }
-    setError(null);
+    notify.success("Material agregado.");
     setTitle("");
     setUrl("");
     setAbierto(false);
@@ -120,7 +122,7 @@ export function ResourcesPanel({
     const res = await fetch(`/api/resources/${id}`, { method: "DELETE" }).catch(() => null);
     if (precargado) {
       if (res?.ok) setItems((prev) => prev.filter((r) => r.id !== id));
-      else setError("No se pudo quitar el material");
+      else notify.error("No se pudo quitar el material");
       return;
     }
     void refetch();

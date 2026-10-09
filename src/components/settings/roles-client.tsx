@@ -9,6 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { notify } from "@/lib/notify";
 
 type Role = {
   id: string;
@@ -142,19 +143,17 @@ export function RolesClient() {
   const [grantable, setGrantable] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
+  /** Solo el error de CARGA: es el estado de la pantalla. Lo de guardar va en toast. */
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState<string | null>(null);
 
   // Alta de un rol nuevo.
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [newCaps, setNewCaps] = useState<string[]>([]);
-  const [createError, setCreateError] = useState<string | null>(null);
 
   // Renombre y baja, por fila.
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-  const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
 
   const refetch = useCallback(async () => {
     const res = await fetch("/api/settings/roles").catch(() => null);
@@ -187,7 +186,6 @@ export function RolesClient() {
     // rechaza, `refetch` devuelve el estado real y el mensaje explica por qué.
     setRoles((rs) => rs.map((r) => (r.id === role.id ? { ...r, capabilities: next } : r)));
     setSaving(role.id);
-    setSaved(null);
 
     const res = await fetch(`/api/settings/roles/${role.id}`, {
       method: "PATCH",
@@ -197,17 +195,16 @@ export function RolesClient() {
 
     setSaving(null);
     if (!res?.ok) {
-      setError(await mensajeDeError(res, "No se pudo guardar el rol"));
+      notify.error(await mensajeDeError(res, "No se pudo guardar el rol"), { id: `rol-${role.id}` });
       void refetch();
       return;
     }
-    setError(null);
-    setSaved(role.id);
+    // Mismo id por rol: tildar cinco permisos seguidos deja UN aviso, no cinco.
+    notify.success(`Permisos de ${role.name} guardados.`, { id: `rol-${role.id}` });
   }
 
   async function create() {
     setSaving("nuevo");
-    setCreateError(null);
     const res = await fetch("/api/settings/roles", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -215,9 +212,10 @@ export function RolesClient() {
     }).catch(() => null);
     setSaving(null);
     if (!res?.ok) {
-      setCreateError(await mensajeDeError(res, "No se pudo crear el rol"));
+      notify.error(await mensajeDeError(res, "No se pudo crear el rol"));
       return;
     }
+    notify.success(`Rol ${newName.trim()} creado.`);
     setCreating(false);
     setNewName("");
     setNewCaps([]);
@@ -226,7 +224,6 @@ export function RolesClient() {
 
   async function rename(role: Role, name: string) {
     setSaving(role.id);
-    setRowError(null);
     const res = await fetch(`/api/settings/roles/${role.id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
@@ -234,26 +231,26 @@ export function RolesClient() {
     }).catch(() => null);
     setSaving(null);
     if (!res?.ok) {
-      setRowError({ id: role.id, message: await mensajeDeError(res, "No se pudo renombrar el rol") });
+      notify.error(await mensajeDeError(res, "No se pudo renombrar el rol"));
       return;
     }
     setRenaming(null);
-    setSaved(role.id);
+    notify.success("Rol renombrado.");
     void refetch();
   }
 
   async function remove(role: Role) {
     setSaving(role.id);
-    setRowError(null);
     const res = await fetch(`/api/settings/roles/${role.id}`, { method: "DELETE" }).catch(
       () => null
     );
     setSaving(null);
     setConfirmDelete(null);
     if (!res?.ok) {
-      setRowError({ id: role.id, message: await mensajeDeError(res, "No se pudo borrar el rol") });
+      notify.error(await mensajeDeError(res, "No se pudo borrar el rol"));
       return;
     }
+    notify.success(`Rol ${role.name} borrado.`);
     void refetch();
   }
 
@@ -327,7 +324,6 @@ export function RolesClient() {
                 setNewCaps((cs) => (on ? [...cs, c] : cs.filter((x) => x !== c)))
               }
             />
-            {createError && <p className="text-sm text-destructive">{createError}</p>}
             <div className="flex gap-2">
               <Button
                 size="sm"
@@ -339,10 +335,7 @@ export function RolesClient() {
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => {
-                  setCreating(false);
-                  setCreateError(null);
-                }}
+                onClick={() => setCreating(false)}
               >
                 Cancelar
               </Button>
@@ -390,9 +383,6 @@ export function RolesClient() {
                   {role.isOwnRole && <Badge>Tu rol</Badge>}
                   {saving === role.id && (
                     <span className="text-xs text-muted-foreground">Guardando…</span>
-                  )}
-                  {saved === role.id && saving !== role.id && (
-                    <span className="text-xs text-muted-foreground">Guardado</span>
                   )}
                   {persistido && (
                     <div className="ml-auto flex gap-1">
@@ -448,9 +438,6 @@ export function RolesClient() {
                     </Button>
                   </div>
                 </div>
-              )}
-              {rowError?.id === role.id && (
-                <p className="text-sm text-destructive">{rowError.message}</p>
               )}
             </CardHeader>
             <CardContent className="space-y-4">

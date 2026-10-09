@@ -5,6 +5,7 @@ import type { SoftwareDto } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { notify } from "@/lib/notify";
 
 /**
  * 005 iteración 2 — alta/edición del catálogo de software desde la pestaña
@@ -33,7 +34,6 @@ export function SoftwareForm({
   );
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   async function uploadPhoto(id: string) {
     if (!photoFile) return;
@@ -45,7 +45,6 @@ export function SoftwareForm({
   async function submit() {
     if (!name.trim()) return;
     setSaving(true);
-    setError(null);
     const res = await fetch(initial ? `/api/software/${initial.id}` : "/api/software", {
       method: initial ? "PATCH" : "POST",
       headers: { "content-type": "application/json" },
@@ -59,12 +58,13 @@ export function SoftwareForm({
       const body = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      setError(body?.error?.message ?? "No se pudo guardar el software");
+      notify.error(body?.error?.message ?? "No se pudo guardar el software");
       return;
     }
     const id = initial?.id ?? ((await res.json()) as { software: { id: string } }).software.id;
     await uploadPhoto(id);
     setSaving(false);
+    notify.success(initial ? "Software guardado." : "Software creado.");
     onSaved();
   }
 
@@ -115,7 +115,6 @@ export function SoftwareForm({
             </div>
           </div>
         </div>
-        {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
             Cancelar

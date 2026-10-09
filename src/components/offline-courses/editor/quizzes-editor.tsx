@@ -16,6 +16,7 @@ import { ConfirmDeleteDialog, EditorDialog, ErrorText, IconButton } from "./dial
 import { MarkdownField } from "./markdown-field";
 import { QuestionDialog } from "./question-dialog";
 import { SortableList } from "./sortable-list";
+import { notify } from "@/lib/notify";
 
 type Course = OfflineCourseDetail;
 export type Quiz = Course["quizzes"][number];
@@ -278,8 +279,10 @@ function QuizDialog({
       ? await callApi(`${coursePath(course.id)}/quizzes/${quiz.id}`, "PATCH", body)
       : await callApi(`${coursePath(course.id)}/quizzes`, "POST", body);
     setSaving(false);
-    if (result.ok) onSaved();
-    else setError(result.message);
+    if (result.ok) {
+      notify.success("Cuestionario guardado.");
+      onSaved();
+    } else notify.error(result.message);
   }
 
   return (

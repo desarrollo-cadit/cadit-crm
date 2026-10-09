@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { notify } from "@/lib/notify";
 
 export function BrandingClient() {
   const router = useRouter();
@@ -16,8 +17,6 @@ export function BrandingClient() {
   const [accent, setAccent] = useState("#3f5972");
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     fetch("/api/settings/branding")
@@ -37,8 +36,6 @@ export function BrandingClient() {
 
   async function save() {
     setSaving(true);
-    setError(null);
-    setSaved(false);
     const res = await fetch("/api/settings/branding", {
       method: "PUT",
       headers: { "content-type": "application/json" },
@@ -49,10 +46,10 @@ export function BrandingClient() {
       const data = (await res?.json().catch(() => null)) as {
         error?: { message?: string };
       } | null;
-      setError(data?.error?.message ?? "No se pudo guardar");
+      notify.error(data?.error?.message ?? "No se pudo guardar");
       return;
     }
-    setSaved(true);
+    notify.success("Marca guardada.");
     // Re-renderiza el árbol server (layout raíz inyecta el acento y el título)
     router.refresh();
   }
@@ -161,8 +158,6 @@ export function BrandingClient() {
             </div>
           </div>
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          {saved && <p className="text-sm" style={{ color: previewSet.text }}>Marca guardada ✓</p>}
           <Button disabled={saving || !name.trim()} onClick={() => void save()}>
             {saving ? "Guardando…" : "Guardar marca"}
           </Button>

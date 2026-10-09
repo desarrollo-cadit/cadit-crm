@@ -11,6 +11,7 @@ import { callApi, coursePath } from "./api";
 import { EditorDialog, ErrorText } from "./dialog";
 import { MarkdownField } from "./markdown-field";
 import type { Question } from "./quizzes-editor";
+import { notify } from "@/lib/notify";
 
 type DraftAnswer = { key: string; id?: string; text: string; isCorrect: boolean };
 
@@ -94,8 +95,10 @@ export function QuestionDialog({
       ? await callApi(`${base}/${question.id}`, "PATCH", body)
       : await callApi(base, "POST", body);
     setSaving(false);
-    if (result.ok) onSaved();
-    else setError(result.message);
+    if (result.ok) {
+      notify.success("Pregunta guardada.");
+      onSaved();
+    } else notify.error(result.message);
   }
 
   return (

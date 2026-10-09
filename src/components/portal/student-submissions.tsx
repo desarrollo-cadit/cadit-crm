@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyNote, PortalCard, formatDate } from "@/components/portal/student-bits";
+import { notify } from "@/lib/notify";
 
 /**
  * 016 (US1, US4, US5) — Entregar, ver la devolución y reentregar.
@@ -368,12 +369,10 @@ function FormularioDeEntrega({
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
   const [guardando, setGuardando] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   async function entregar(e: React.FormEvent) {
     e.preventDefault();
     setGuardando(true);
-    setError(null);
 
     const res = await fetch("/api/portal/me/entregas", {
       method: "POST",
@@ -390,10 +389,11 @@ function FormularioDeEntrega({
       const body = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      setError(body?.error?.message ?? "No pudimos registrar la entrega. ¿El enlace está completo? Podés corregirlo y enviarla otra vez.");
+      notify.error(body?.error?.message ?? "No pudimos registrar la entrega. ¿El enlace está completo? Podés corregirlo y enviarla otra vez.");
       return;
     }
 
+    notify.success("Entrega registrada.");
     setUrl("");
     setTitle("");
     onListo();
@@ -431,12 +431,6 @@ function FormularioDeEntrega({
           onChange={(e) => setTitle(e.target.value)}
         />
       </div>
-
-      {error && (
-        <p className="rounded-md border border-danger-border bg-danger-soft px-3 py-2 text-sm text-danger">
-          {error}
-        </p>
-      )}
 
       <Button type="submit" className="h-11 w-full" loading={guardando}>
         <Upload className="h-4 w-4" />

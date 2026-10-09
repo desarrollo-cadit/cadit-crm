@@ -10,6 +10,7 @@ import type { OfflineAttemptRow } from "@/server/offline-courses/attempts";
 import type { OfflineCourseSummary } from "@/server/offline-courses/library";
 import { OfflineAttemptsTable } from "@/components/offline-courses/attempts-table";
 import { OfflineCourseStatusBadge } from "@/components/offline-courses/status-badge";
+import { notify } from "@/lib/notify";
 
 async function readError(res: Response | null, fallback: string) {
   const body = (await res?.json().catch(() => null)) as { error?: { message?: string } } | null;
@@ -38,8 +39,8 @@ export function CohortOfflineCoursesClient({
   const [attempts, setAttempts] = useState<OfflineAttemptRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  /** Solo el error de CARGA (estado). Guardar avisa con toast. */
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
 
   const refetch = useCallback(async () => {
     const [assignedRes, attemptsRes] = await Promise.all([
@@ -74,7 +75,6 @@ export function CohortOfflineCoursesClient({
   );
 
   function toggle(id: string, on: boolean) {
-    setNotice(null);
     setSelected((prev) => {
       const next = new Set(prev);
       if (on) next.add(id);
@@ -85,7 +85,6 @@ export function CohortOfflineCoursesClient({
 
   async function save() {
     setSaving(true);
-    setError(null);
     const res = await fetch(`/api/cohorts/${cohortId}/offline-courses`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
@@ -95,9 +94,9 @@ export function CohortOfflineCoursesClient({
       const data = (await res.json()) as { courseIds: string[] };
       setSaved(data.courseIds);
       setSelected(new Set(data.courseIds));
-      setNotice("Cambios guardados.");
+      notify.success("Cambios guardados.");
     } else {
-      setError(await readError(res, "No se pudieron guardar los cursos"));
+      notify.error(await readError(res, "No se pudieron guardar los cursos"));
     }
     setSaving(false);
   }
@@ -165,11 +164,6 @@ export function CohortOfflineCoursesClient({
             </Button>
             {dirty && !saving && (
               <span className="text-xs text-muted-foreground">Hay cambios sin guardar.</span>
-            )}
-            {notice && !dirty && (
-              <span role="status" className="text-xs text-muted-foreground">
-                {notice}
-              </span>
             )}
           </div>
         ) : (

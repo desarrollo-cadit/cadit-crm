@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { notify } from "@/lib/notify";
 
 type Curso = {
   id: string;
@@ -50,7 +51,6 @@ export function CargaRapidaClient() {
   const [estado, setEstado] = useState<Estado | null>(null);
   const [sucio, setSucio] = useState(false);
   const [guardando, setGuardando] = useState(false);
-  const [aviso, setAviso] = useState<string | null>(null);
 
   const refetch = useCallback(async () => {
     const res = await fetch("/api/settings/carga-rapida").catch(() => null);
@@ -73,7 +73,6 @@ export function CargaRapidaClient() {
   async function guardar() {
     if (!cursos || !profesores) return;
     setGuardando(true);
-    setAviso(null);
     const res = await fetch("/api/settings/carga-rapida", {
       method: "PUT",
       headers: { "content-type": "application/json" },
@@ -92,10 +91,10 @@ export function CargaRapidaClient() {
       const b = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      setAviso(b?.error?.message ?? "No se pudo guardar.");
+      notify.error(b?.error?.message ?? "No se pudo guardar.");
       return;
     }
-    setAviso("Guardado.");
+    notify.success("Guardado.");
     void refetch();
   }
 
@@ -126,7 +125,6 @@ export function CargaRapidaClient() {
         </Button>
       </div>
 
-      {aviso && <p className="text-sm text-muted-foreground">{aviso}</p>}
 
       <div className="grid gap-3 sm:grid-cols-3">
         <Pendiente

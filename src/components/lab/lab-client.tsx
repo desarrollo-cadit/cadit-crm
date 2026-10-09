@@ -20,6 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { notify } from "@/lib/notify";
 
 type Run = {
   id: string;
@@ -61,7 +62,6 @@ export function LabClient() {
   const [detail, setDetail] = useState<{ run: Run; cases: Case[] } | null>(null);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [launching, setLaunching] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const refetchRuns = useCallback(async () => {
     const res = await fetch("/api/lab/runs").catch(() => null);
@@ -99,7 +99,6 @@ export function LabClient() {
 
   async function launch() {
     setLaunching(true);
-    setError(null);
     const res = await fetch("/api/lab/runs", { method: "POST" }).catch(() => null);
     setLaunching(false);
     if (!res) return;
@@ -107,7 +106,7 @@ export function LabClient() {
       const data = (await res.json().catch(() => null)) as {
         error?: { message?: string };
       } | null;
-      setError(data?.error?.message ?? "No se pudo lanzar la corrida");
+      notify.error(data?.error?.message ?? "No se pudo lanzar la corrida");
       return;
     }
     const data = (await res.json()) as { runId: string };
@@ -145,7 +144,6 @@ export function LabClient() {
         onLaunch={() => void launch()}
         disabled={false}
       />
-      {error && <p className="px-6 pt-3 text-sm text-destructive">{error}</p>}
 
       {running && progress && (
         <div className="mx-6 mt-4 rounded-lg border bg-card p-4">
@@ -422,7 +420,10 @@ function HallazgoCard({
     if (res?.ok) {
       setApplied(true);
       setEditing(false);
+      notify.success("Agregado al conocimiento.");
       onApplied();
+    } else {
+      notify.error("No se pudo agregar al conocimiento.");
     }
   }
 
@@ -435,6 +436,7 @@ function HallazgoCard({
             Agregar al conocimiento
           </Button>
         )}
+        {/* Estado del hallazgo (ya aplicado), no el aviso del evento: queda. */}
         {applied && (
           <span className="text-xs text-success">Agregado al conocimiento ✓</span>
         )}

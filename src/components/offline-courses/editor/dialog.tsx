@@ -3,6 +3,7 @@
 import { useEffect, useId, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import type { ApiResult } from "./api";
+import { notify } from "@/lib/notify";
 
 /**
  * cursos-offline T11b — The editor's modal, same shell as the rest of the
@@ -100,7 +101,11 @@ export function ConfirmDeleteDialog({
       after();
       return;
     }
-    setError(result.message);
+    // `has_history` stays INLINE: it explains why the button just changed to
+    // the alternative, and the dialog waits for that decision. Any other
+    // failure is an event and goes to a toast.
+    if (result.code === "has_history") setError(result.message);
+    else notify.error(result.message);
     setHasHistory(result.code === "has_history");
   }
 

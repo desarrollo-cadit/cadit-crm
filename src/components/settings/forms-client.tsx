@@ -14,6 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { notify } from "@/lib/notify";
 
 export function FormsClient() {
   const [forms, setForms] = useState<IntakeFormDto[]>([]);
@@ -117,11 +118,9 @@ function CreateForm({
   const [name, setName] = useState("");
   const [courseId, setCourseId] = useState("");
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   async function create() {
     setSaving(true);
-    setError(null);
     const res = await fetch("/api/intake-forms", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -135,9 +134,10 @@ function CreateForm({
       const data = (await res?.json().catch(() => null)) as {
         error?: { message?: string };
       } | null;
-      setError(data?.error?.message ?? "No se pudo crear el formulario");
+      notify.error(data?.error?.message ?? "No se pudo crear el formulario");
       return;
     }
+    notify.success("Formulario creado.");
     setName("");
     setCourseId("");
     onCreated();
@@ -180,7 +180,6 @@ function CreateForm({
             </select>
           </div>
         </div>
-        {error && <p className="text-sm text-destructive">{error}</p>}
         <Button disabled={saving || !name.trim()} onClick={() => void create()}>
           <Plus className="h-4 w-4" />
           {saving ? "Creando…" : "Crear formulario"}
@@ -191,7 +190,6 @@ function CreateForm({
 }
 
 function FormCard({ form }: { form: IntakeFormDto }) {
-  const [copied, setCopied] = useState(false);
   const [origin, setOrigin] = useState("");
 
   useEffect(() => setOrigin(window.location.origin), []);
@@ -213,9 +211,10 @@ function FormCard({ form }: { form: IntakeFormDto }) {
   -d '{"name":"Nombre","lastName":"Apellido","phone":"5215512345678"}'`;
 
   async function copy() {
-    await navigator.clipboard.writeText(url).catch(() => null);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    await navigator.clipboard.writeText(url).then(
+      () => notify.success("Enlace del formulario copiado."),
+      () => notify.error("No se pudo copiar: seleccioná y copiá a mano.")
+    );
   }
 
   return (
@@ -236,7 +235,7 @@ function FormCard({ form }: { form: IntakeFormDto }) {
           <Input readOnly value={url} className="font-mono text-xs" />
           <Button variant="outline" size="sm" onClick={() => void copy()}>
             <ClipboardCopy className="h-4 w-4" />
-            {copied ? "Copiado ✓" : "Copiar"}
+            Copiar
           </Button>
         </div>
         <details className="rounded-md border bg-subtle p-3 text-xs">

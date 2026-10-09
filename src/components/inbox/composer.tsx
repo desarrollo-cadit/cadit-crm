@@ -14,6 +14,7 @@ import type { ConversationDto, TemplateDto } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { formatBytes, formatRemaining } from "./helpers";
 import { TemplateSender } from "./template-sender";
+import { notify } from "@/lib/notify";
 
 /** 008 — Panel secundario del clip: formulario de ubicación o contacto. */
 type AttachPanel = "location" | "contact" | null;
@@ -42,6 +43,7 @@ export function Composer({
 }) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  /** Validación de lo que se está armando (coordenadas, contacto): inline. Un envío que falla, en toast. */
   const [error, setError] = useState<string | null>(null);
   const [templates, setTemplates] = useState<TemplateDto[]>([]);
   const [file, setFile] = useState<File | null>(null);
@@ -113,7 +115,7 @@ export function Composer({
       );
       setSending(false);
       if (err) {
-        setError(err);
+        notify.error(err);
         return;
       }
       pickFile(null);
@@ -129,7 +131,7 @@ export function Composer({
     const err = await onSend(value);
     setSending(false);
     if (err) {
-      setError(err);
+      notify.error(err);
       return;
     }
     setText("");
@@ -154,7 +156,7 @@ export function Composer({
     });
     setSending(false);
     if (err) {
-      setError(err);
+      notify.error(err);
       return;
     }
     setPanel(null);
@@ -180,7 +182,7 @@ export function Composer({
     });
     setSending(false);
     if (err) {
-      setError(err);
+      notify.error(err);
       return;
     }
     setPanel(null);

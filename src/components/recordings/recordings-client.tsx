@@ -12,6 +12,7 @@ import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatDuration } from "@/lib/duration";
+import { notify } from "@/lib/notify";
 import { paginationItems } from "@/lib/pagination";
 import { cn } from "@/lib/utils";
 import type { RecordingRowDto, RecordingsPage, SyncStatusDto } from "@/server/zoom/recordings";
@@ -119,9 +120,6 @@ export function RecordingsClient({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [status, setStatus] = useState<SyncStatusDto | null>(null);
-  const [syncMsg, setSyncMsg] = useState<{ tone: "ok" | "error"; text: string; linkToSettings?: boolean } | null>(
-    null
-  );
   const [syncing, setSyncing] = useState(false);
   /** La grabación cuyo panel de asignación está abierto (uno a la vez). */
   const [abierta, setAbierta] = useState<string | null>(null);
@@ -249,33 +247,38 @@ export function RecordingsClient({
   }, []);
 
   async function sincronizar() {
-    setSyncMsg(null);
     const res = await fetch("/api/recordings/sync", { method: "POST" }).catch(() => null);
     if (res?.status === 202) {
       setSyncing(true);
       corriaRef.current = true;
-      setSyncMsg({ tone: "ok", text: "Sincronización iniciada. La tabla se actualiza cuando termine." });
+      notify.success("Sincronización iniciada. La tabla se actualiza cuando termine.", { id: "zoom-sync" });
       programar(1500);
       return;
     }
     const err = await mensajeDeError(res, "No pudimos iniciar la sincronización. Probá de nuevo en un momento.");
     if (err.code === "sync_en_curso") {
       setSyncing(true);
-      setSyncMsg({
-        tone: "error",
-        text: err.startedAt
+      notify.warning(
+        err.startedAt
           ? `Ya hay una sincronización corriendo desde las ${hora.format(new Date(err.startedAt))}.`
           : "Ya hay una sincronización corriendo.",
-      });
+        { id: "zoom-sync" }
+      );
       corriaRef.current = true;
       programar(5000);
       return;
     }
-    setSyncMsg({
-      tone: "error",
-      text: err.message ?? "No pudimos iniciar la sincronización.",
-      linkToSettings: err.code === "sin_aulas" && canConfigure,
-    });
+    if (err.code === "sin_aulas") {
+      // Un aviso, no un fallo: falta configurar algo, y el toast lleva hasta ahí.
+      notify.warning(err.message ?? "No hay aulas vinculadas a Zoom.", {
+        id: "zoom-sync",
+        ...(canConfigure
+          ? { action: { label: "Ir a Configuración › Zoom", href: "/settings/zoom" } }
+          : {}),
+      });
+      return;
+    }
+    notify.error(err.message ?? "No pudimos iniciar la sincronización.", { id: "zoom-sync" });
   }
 
   const conexiones = status?.connections ?? [];
@@ -313,23 +316,7 @@ export function RecordingsClient({
             </Button>
           )}
         </div>
-        {syncMsg && (
-          <p
-            role="status"
-            data-sync-msg
-            className={syncMsg.tone === "ok" ? "text-sm text-success" : "text-sm text-destructive"}
-          >
-            {syncMsg.text}
-            {syncMsg.linkToSettings && (
-              <>
-                {" "}
-                <Link href="/settings/zoom" className="font-medium text-brand hover:underline">
-                  Ir a Configuración › Zoom
-                </Link>
-              </>
-            )}
-          </p>
-        )}
+        {/* El estado de la sincronización es ESTADO (persiste); el resultado del botón va en toast. */}
         <SyncStatus status={status} timezone={timezone} />
       </header>
 

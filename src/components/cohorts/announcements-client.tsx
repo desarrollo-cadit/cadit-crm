@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { notify } from "@/lib/notify";
 
 type Announcement = {
   id: string;
@@ -68,10 +69,10 @@ export function AnnouncementsClient({
       const data = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      setError(data?.error?.message ?? "No se pudo publicar el aviso");
+      notify.error(data?.error?.message ?? "No se pudo publicar el aviso");
       return;
     }
-    setError(null);
+    notify.success("Aviso publicado.");
     setTitle("");
     setBody("");
     void refetch();

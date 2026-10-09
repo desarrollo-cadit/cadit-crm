@@ -14,6 +14,7 @@ import { ConfirmDeleteDialog, ErrorText } from "./dialog";
 import { LessonsEditor } from "./lessons-editor";
 import { MarkdownField } from "./markdown-field";
 import { QuizzesEditor } from "./quizzes-editor";
+import { notify } from "@/lib/notify";
 
 /**
  * cursos-offline T11b — The course page for whoever has `academico.editar`.
@@ -43,8 +44,8 @@ function CourseHeaderForm({ course, refresh }: { course: OfflineCourseDetail; re
   const [description, setDescription] = useState(course.descriptionMd);
   const [status, setStatus] = useState<Status>(course.status);
   const [saving, setSaving] = useState(false);
+  /** Field validation (inline). Server results are announced with a toast. */
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const dirty = title !== course.title || description !== course.descriptionMd || status !== course.status;
@@ -56,14 +57,13 @@ function CourseHeaderForm({ course, refresh }: { course: OfflineCourseDetail; re
     }
     setSaving(true);
     setError(null);
-    setNotice(null);
     const result = await callApi(coursePath(course.id), "PATCH", { title, descriptionMd: description, status });
     setSaving(false);
     if (!result.ok) {
-      setError(result.message);
+      notify.error(result.message);
       return;
     }
-    setNotice("Cambios guardados.");
+    notify.success("Cambios guardados.");
     refresh();
   }
 
@@ -96,11 +96,6 @@ function CourseHeaderForm({ course, refresh }: { course: OfflineCourseDetail; re
           Guardar cambios
         </Button>
         {dirty && !saving && <span className="text-xs text-muted-foreground">Hay cambios sin guardar.</span>}
-        {notice && !dirty && (
-          <span role="status" className="text-xs text-muted-foreground">
-            {notice}
-          </span>
-        )}
       </div>
       <ErrorText>{error}</ErrorText>
 
@@ -199,9 +194,10 @@ function ThumbnailField({ course, refresh }: { course: OfflineCourseDetail; refr
     const result = await callApi(`${coursePath(course.id)}/thumbnail`, "PUT", form);
     setBusy(false);
     if (!result.ok) {
-      setError(result.message);
+      notify.error(result.message);
       return;
     }
+    notify.success("Portada actualizada.");
     refresh();
   }
 

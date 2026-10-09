@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import { notify } from "@/lib/notify";
 
 type Profile = {
   enabled: boolean;
@@ -32,7 +33,6 @@ export function AgentClient() {
   const [aiConfigured, setAiConfigured] = useState(true);
   const [entries, setEntries] = useState<KbEntry[]>([]);
   const [kbSize, setKbSize] = useState<{ chars: number; warnAt: number; warning: boolean } | null>(null);
-  const [saved, setSaved] = useState(false);
 
   const refetch = useCallback(async () => {
     const [p, kb, size] = await Promise.all([
@@ -65,13 +65,14 @@ export function AgentClient() {
   }
 
   async function saveProfile(patch: Partial<Profile>) {
-    await fetch("/api/agent/profile", {
+    const res = await fetch("/api/agent/profile", {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(patch),
     }).catch(() => null);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    // Mismo id: varios cambios seguidos dejan un solo aviso.
+    if (res?.ok) notify.success("Guardado.", { id: "agent-profile" });
+    else notify.error("No se pudo guardar el cambio.", { id: "agent-profile" });
     void refetch();
   }
 
@@ -80,7 +81,6 @@ export function AgentClient() {
       <header className="flex items-center justify-between border-b px-6 py-4">
         <h2 className="font-semibold">Agente de IA</h2>
         <div className="flex items-center gap-3">
-          {saved && <span className="text-xs text-primary">Guardado ✓</span>}
           <span className="text-sm text-muted-foreground">
             {profile.enabled ? "Encendido" : "Apagado"}
           </span>

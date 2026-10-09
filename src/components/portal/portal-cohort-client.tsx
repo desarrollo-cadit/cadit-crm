@@ -13,6 +13,7 @@ import { PortalAttendanceSheet } from "@/components/portal/portal-attendance-she
 import { PortalOfflineAttempts } from "@/components/portal/portal-offline-attempts";
 import { PortalSubmissions } from "@/components/portal/portal-submissions";
 import { ZoomRecordingPlayer, isZoomRecording } from "@/components/portal/zoom-recording-player";
+import { notify } from "@/lib/notify";
 
 type Cohort = {
   id: string;
@@ -434,7 +435,6 @@ function Clases({
  */
 function Evaluacion({ cohortId }: { cohortId: string }) {
   const [datos, setDatos] = useState<GradingPayload | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [fallo, setFallo] = useState(false);
 
   const refetch = useCallback(async () => {
@@ -463,9 +463,7 @@ function Evaluacion({ cohortId }: { cohortId: string }) {
       const body = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      setError(body?.error?.message ?? "No se pudo guardar el resultado.");
-    } else {
-      setError(null);
+      notify.error(body?.error?.message ?? "No se pudo guardar el resultado.");
     }
     void refetch();
   }
@@ -489,7 +487,6 @@ function Evaluacion({ cohortId }: { cohortId: string }) {
 
   return (
     <div className="space-y-3">
-      {error && <p className="text-sm text-destructive">{error}</p>}
       {!datos.editable && (
         <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
           La cohorte finalizó: los resultados están disponibles solo para
@@ -666,12 +663,10 @@ function DialogoGrabacion({
 }) {
   const [url, setUrl] = useState(actual ?? "");
   const [guardando, setGuardando] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   async function guardar(e: React.FormEvent) {
     e.preventDefault();
     setGuardando(true);
-    setError(null);
     const res = await fetch(`/api/portal/classes/${classSessionId}/recording`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
@@ -683,9 +678,10 @@ function DialogoGrabacion({
       const body = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      setError(body?.error?.message ?? "No se pudo guardar la grabación.");
+      notify.error(body?.error?.message ?? "No se pudo guardar la grabación.");
       return;
     }
+    notify.success("Grabación guardada.");
     onSaved();
   }
 
@@ -715,12 +711,6 @@ function DialogoGrabacion({
               </p>
             )}
           </div>
-
-          {error && (
-            <p className="rounded-md border border-danger-border bg-danger-soft px-3 py-2 text-sm text-danger">
-              {error}
-            </p>
-          )}
 
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" className="h-11" onClick={onClose}>
@@ -756,12 +746,10 @@ function DialogoMaterial({
   const [url, setUrl] = useState("");
   const [kind, setKind] = useState("guia");
   const [guardando, setGuardando] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   async function guardar(e: React.FormEvent) {
     e.preventDefault();
     setGuardando(true);
-    setError(null);
     const res = await fetch(`/api/portal/cohorts/${cohortId}/resources`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -773,9 +761,10 @@ function DialogoMaterial({
       const body = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      setError(body?.error?.message ?? "No se pudo publicar el material.");
+      notify.error(body?.error?.message ?? "No se pudo publicar el material.");
       return;
     }
+    notify.success("Material publicado.");
     onSaved();
   }
 
@@ -829,12 +818,6 @@ function DialogoMaterial({
               <option value="enlace">Enlace</option>
             </Select>
           </div>
-
-          {error && (
-            <p className="rounded-md border border-danger-border bg-danger-soft px-3 py-2 text-sm text-danger">
-              {error}
-            </p>
-          )}
 
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" className="h-11" onClick={onClose}>

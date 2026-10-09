@@ -21,7 +21,7 @@ import { ArrowDown, ArrowUp, GripVertical } from "lucide-react";
 import { moveBy, moveItem } from "@/lib/offline-course-editor";
 import { cn } from "@/lib/utils";
 import type { ApiResult } from "./api";
-import { ErrorText } from "./dialog";
+import { notify } from "@/lib/notify";
 
 /**
  * cursos-offline T11b — A reorderable list (lessons, topics, quizzes,
@@ -71,7 +71,6 @@ export function SortableList<T extends { id: string }>({
   const incomingKey = incoming.join("|");
   const [order, setOrder] = useState<string[]>(incoming);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   // The server's order wins whenever it changes (refresh after any edit).
   useEffect(() => {
@@ -92,12 +91,11 @@ export function SortableList<T extends { id: string }>({
     const previous = order;
     setOrder(next);
     setBusy(true);
-    setError(null);
     const result = await onReorder(next);
     setBusy(false);
     if (!result.ok) {
       setOrder(previous);
-      setError(result.message);
+      notify.error(result.message);
     }
   }
 
@@ -114,7 +112,6 @@ export function SortableList<T extends { id: string }>({
 
   return (
     <div className="space-y-1">
-      <ErrorText>{error}</ErrorText>
       <DndContext
         id={dndId}
         sensors={sensors}

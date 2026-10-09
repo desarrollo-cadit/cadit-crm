@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { SellerField } from "@/components/enrollments/seller-field";
 import type { SellerOption } from "@/lib/vendedores";
+import { notify } from "@/lib/notify";
 
 /** Lo que el formulario le cuenta a quien lo abrió cuando la inscripción se creó. */
 export type EnrollSavedResult = {
@@ -203,7 +204,9 @@ export function EnrollForm({
       const body = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      setError(body?.error?.message ?? "No se pudo inscribir al alumno");
+      // Las validaciones locales quedan inline junto al botón; el rechazo del
+      // servidor es el resultado de la acción y va en toast.
+      notify.error(body?.error?.message ?? "No se pudo inscribir al alumno");
       return;
     }
     const chosen = cohortOptions?.find((c) => c.id === targetCohortId);

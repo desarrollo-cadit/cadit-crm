@@ -6,6 +6,7 @@ import type { StageDto } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { notify } from "@/lib/notify";
 
 /** Gestión de etapas: renombrar, reordenar, agregar, eliminar (con reasignación). */
 export function StageManager({
@@ -20,7 +21,6 @@ export function StageManager({
   const [newName, setNewName] = useState("");
   const [deleting, setDeleting] = useState<StageDto | null>(null);
   const [moveTo, setMoveTo] = useState("");
-  const [error, setError] = useState<string | null>(null);
 
   async function rename(stage: StageDto, name: string) {
     if (!name.trim() || name === stage.name) return;
@@ -64,7 +64,6 @@ export function StageManager({
   }
 
   async function remove(stage: StageDto, moveToId: string | null) {
-    setError(null);
     const url = moveToId
       ? `/api/pipeline/stages/${stage.id}?moveTo=${moveToId}`
       : `/api/pipeline/stages/${stage.id}`;
@@ -78,11 +77,12 @@ export function StageManager({
         setDeleting(stage);
         return;
       }
-      setError(data?.error?.message ?? "No se pudo eliminar");
+      notify.error(data?.error?.message ?? "No se pudo eliminar");
       return;
     }
     setDeleting(null);
     setMoveTo("");
+    notify.success(`Etapa ${stage.name} eliminada.`);
     onChanged();
   }
 
@@ -173,8 +173,6 @@ export function StageManager({
             </div>
           </div>
         )}
-
-        {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
 
         <div className="mt-4 flex gap-2 border-t pt-4">
           <Input

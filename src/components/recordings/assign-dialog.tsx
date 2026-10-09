@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { CandidatesDto, ClassOptionDto, RecordingRowDto } from "@/server/zoom/recordings";
+import { notify } from "@/lib/notify";
 
 type ApiError = { code?: string; message?: string; current?: ClassOptionDto["current"] };
 
@@ -64,6 +65,7 @@ export function AssignDialog({
       setError((await leerError(res)).message ?? null);
       return;
     }
+    setError(null);
     setData((await res.json()) as CandidatesDto);
   }, [row.id, q, cohortId, date]);
 
@@ -74,7 +76,6 @@ export function AssignDialog({
 
   async function accion(url: string, init: RequestInit) {
     setBusy(true);
-    setError(null);
     const res = await fetch(url, init).catch(() => null);
     setBusy(false);
     if (res?.ok) {
@@ -99,18 +100,18 @@ export function AssignDialog({
       setConfirmar({ clase, current: r.error.current });
       return;
     }
-    setError(r.error.message ?? "No pudimos asignar la grabación.");
+    notify.error(r.error.message ?? "No pudimos asignar la grabación.");
   }
 
   async function desasignar() {
     const r = await accion(`/api/recordings/${row.id}/assignment`, { method: "DELETE" });
-    if (!r.ok) setError(r.error.message ?? "No pudimos desasignar la grabación.");
+    if (!r.ok) notify.error(r.error.message ?? "No pudimos desasignar la grabación.");
     else void cargar();
   }
 
   async function volverAAutomatico() {
     const r = await accion(`/api/recordings/${row.id}/assignment/reset`, { method: "POST" });
-    if (!r.ok) setError(r.error.message ?? "No pudimos volver a la asignación automática.");
+    if (!r.ok) notify.error(r.error.message ?? "No pudimos volver a la asignación automática.");
     else void cargar();
   }
 
@@ -195,6 +196,7 @@ export function AssignDialog({
           </div>
         </div>
       )}
+      {/* Inline a propósito: es el ESTADO de la búsqueda de clases (se reintenta al tipear), no el resultado de una acción. */}
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <section className="space-y-2">

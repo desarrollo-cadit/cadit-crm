@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { notify } from "@/lib/notify";
 
 type Seller = {
   id: string;
@@ -43,10 +44,8 @@ export function SellersClient() {
   const [email, setEmail] = useState("");
   const [userId, setUserId] = useState("");
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const [editing, setEditing] = useState<{ id: string; name: string; email: string } | null>(null);
-  const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
 
   const refetch = useCallback(async () => {
     const res = await fetch("/api/sellers").catch(() => null);
@@ -72,7 +71,6 @@ export function SellersClient() {
 
   async function create() {
     setSaving(true);
-    setError(null);
     const res = await fetch("/api/sellers", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -84,9 +82,10 @@ export function SellersClient() {
     }).catch(() => null);
     setSaving(false);
     if (!res?.ok) {
-      setError(await mensajeDeError(res, "No pudimos guardar el vendedor. Podés intentarlo otra vez en un momento."));
+      notify.error(await mensajeDeError(res, "No pudimos guardar el vendedor. Podés intentarlo otra vez en un momento."));
       return;
     }
+    notify.success("Vendedor agregado.");
     setName("");
     setEmail("");
     setUserId("");
@@ -94,17 +93,13 @@ export function SellersClient() {
   }
 
   async function patch(id: string, body: Record<string, unknown>) {
-    setRowError(null);
     const res = await fetch(`/api/sellers/${id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     }).catch(() => null);
     if (!res?.ok) {
-      setRowError({
-        id,
-        message: await mensajeDeError(res, "No pudimos guardar el cambio. Podés intentarlo otra vez en un momento."),
-      });
+      notify.error(await mensajeDeError(res, "No pudimos guardar el cambio. Podés intentarlo otra vez en un momento."));
       return false;
     }
     void refetch();
@@ -196,7 +191,6 @@ export function SellersClient() {
             </Button>
           </div>
         )}
-        {rowError?.id === s.id && <p className="text-xs text-destructive">{rowError.message}</p>}
       </div>
     );
   }
@@ -242,7 +236,6 @@ export function SellersClient() {
               </Select>
             </div>
           )}
-          {error && <p className="text-sm text-destructive">{error}</p>}
           <Button disabled={saving || !name.trim()} onClick={() => void create()}>
             <UserPlus className="h-4 w-4" />
             {saving ? "Guardando…" : "Agregar vendedor"}

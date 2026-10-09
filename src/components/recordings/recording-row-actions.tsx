@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
 import { Copy, ExternalLink, KeyRound, Link2 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { notify } from "@/lib/notify";
 
 /**
  * 030 US1 — Copiar el enlace, abrirlo, y copiar el código de acceso cuando
@@ -25,16 +25,13 @@ export function RecordingRowActions({
   onAssign?: () => void;
   assigned?: boolean;
 }) {
-  const [aviso, setAviso] = useState<string | null>(null);
-
   async function copiar(texto: string, mensaje: string) {
     try {
       await navigator.clipboard.writeText(texto);
-      setAviso(mensaje);
+      notify.success(mensaje);
     } catch {
-      setAviso("No se pudo copiar: seleccioná y copiá a mano.");
+      notify.error("No se pudo copiar: seleccioná y copiá a mano.");
     }
-    setTimeout(() => setAviso(null), 2500);
   }
 
   const sinEnlace = "Zoom todavía no dio el enlace de esta grabación.";
@@ -79,11 +76,6 @@ export function RecordingRowActions({
         <Button size="sm" variant="ghost" onClick={onAssign}>
           <Link2 className="h-3.5 w-3.5" /> {assigned ? "Cambiar clase" : "Asignar a clase"}
         </Button>
-      )}
-      {aviso && (
-        <span role="status" className="text-xs text-success">
-          {aviso}
-        </span>
       )}
     </div>
   );

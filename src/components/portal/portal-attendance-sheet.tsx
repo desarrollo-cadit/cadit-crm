@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, Check } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { notify } from "@/lib/notify";
 
 type Status = "presente" | "tarde" | "ausente" | "justificado";
 
@@ -68,6 +69,7 @@ export function PortalAttendanceSheet({
   onBack: () => void;
 }) {
   const [sheet, setSheet] = useState<Sheet | null>(null);
+  /** Solo el error de CARGA de la clase (estado). Un guardado que falla avisa con toast. */
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState<string | null>(null);
 
@@ -114,7 +116,7 @@ export function PortalAttendanceSheet({
       const body = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      setError(body?.error?.message ?? "No pudimos guardar la asistencia. Podés intentarlo de nuevo en un momento.");
+      notify.error(body?.error?.message ?? "No pudimos guardar la asistencia. Podés intentarlo de nuevo en un momento.");
       // Y se vuelve a lo que dice el servidor: mostrar una marca que no se
       // guardó es peor que no mostrar ninguna.
       void refetch();

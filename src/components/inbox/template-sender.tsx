@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { notify } from "@/lib/notify";
 
 /**
  * Selector de plantilla aprobada para conversaciones con ventana cerrada
@@ -22,7 +23,6 @@ export function TemplateSender({
   const [selectedId, setSelectedId] = useState<string>("");
   const [variable, setVariable] = useState("");
   const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -66,7 +66,6 @@ export function TemplateSender({
   async function send() {
     if (!selected || sending) return;
     setSending(true);
-    setError(null);
     const res = await fetch(
       `/api/conversations/${conversationId}/messages/template`,
       {
@@ -83,7 +82,7 @@ export function TemplateSender({
       const data = (await res.json().catch(() => null)) as {
         error?: { message?: string };
       } | null;
-      setError(data?.error?.message ?? "No se pudo enviar la plantilla");
+      notify.error(data?.error?.message ?? "No se pudo enviar la plantilla");
       return;
     }
     setSelectedId("");
@@ -125,7 +124,6 @@ export function TemplateSender({
           />
         </div>
       )}
-      {error && <p className="text-xs text-destructive">{error}</p>}
       <Button
         onClick={() => void send()}
         disabled={!selected || sending || (needsVariable && !variable.trim())}

@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { GraduationCap } from "lucide-react";
 import type { CompanyDto } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { EnrollForm, type EnrollSavedResult } from "@/components/enrollments/enroll-form";
+import { EnrollForm } from "@/components/enrollments/enroll-form";
 import type { SellerOption } from "@/lib/vendedores";
+import { notify } from "@/lib/notify";
 
 /**
  * Inscribir desde el contacto — botón + formulario de inscripción para las
@@ -41,7 +41,6 @@ export function EnrollLauncher({
   const [companies, setCompanies] = useState<CompanyDto[]>([]);
   const [sellers, setSellers] = useState<SellerOption[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [done, setDone] = useState<EnrollSavedResult | null>(null);
 
   useEffect(() => {
     if (!open || loaded) return;
@@ -67,29 +66,11 @@ export function EnrollLauncher({
       <Button
         size="sm"
         variant={variant}
-        onClick={() => {
-          setDone(null);
-          setOpen(true);
-        }}
+        onClick={() => setOpen(true)}
       >
         <GraduationCap className="h-4 w-4" strokeWidth={1.7} />
         {label}
       </Button>
-
-      {done && (
-        <p
-          role="status"
-          className="rounded-md border border-success-border bg-success-soft px-3 py-2 text-sm text-success"
-        >
-          Inscripción creada en {done.cohortLabel ?? "la cohorte"}.{" "}
-          <Link
-            href={`/cohorts/${done.cohortId}`}
-            className="font-medium underline underline-offset-2"
-          >
-            Ver la cohorte
-          </Link>
-        </p>
-      )}
 
       {open && (
         <EnrollForm
@@ -100,7 +81,9 @@ export function EnrollLauncher({
           onClose={() => setOpen(false)}
           onSaved={(result) => {
             setOpen(false);
-            setDone(result);
+            notify.success(`Inscripción creada en ${result.cohortLabel ?? "la cohorte"}.`, {
+              action: { label: "Ver la cohorte", href: `/cohorts/${result.cohortId}` },
+            });
             onEnrolled?.();
           }}
           onCompanyCreated={(company) =>

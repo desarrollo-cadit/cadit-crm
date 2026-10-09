@@ -5,6 +5,7 @@ import { Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { notify } from "@/lib/notify";
 
 type Preview = {
   total: number;
@@ -49,7 +50,6 @@ export function BillingBulkPanel({
   const [cuotas, setCuotas] = useState(3);
   const [trabajando, setTrabajando] = useState(false);
   const [resultado, setResultado] = useState<Resultado | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   const refetch = useCallback(async () => {
     const res = await fetch(`/api/cohorts/${cohortId}/billing/bulk`).catch(() => null);
@@ -66,7 +66,6 @@ export function BillingBulkPanel({
 
   async function aplicar() {
     setTrabajando(true);
-    setError(null);
     const cuerpo =
       modo === "cobrada"
         ? { kind: "cobrada", paidAt: fecha, method: metodo }
@@ -83,10 +82,14 @@ export function BillingBulkPanel({
       const b = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      setError(b?.error?.message ?? "No se pudo aplicar.");
+      notify.error(b?.error?.message ?? "No se pudo aplicar.");
       return;
     }
-    setResultado((await res.json()) as Resultado);
+    const r = (await res.json()) as Resultado;
+    notify.success(
+      `${r.aplicadas} inscripción${r.aplicadas === 1 ? "" : "es"} cargada${r.aplicadas === 1 ? "" : "s"}.`
+    );
+    setResultado(r);
     void refetch();
     onDone();
   }
@@ -180,18 +183,15 @@ export function BillingBulkPanel({
             veces no duplica nada.
           </p>
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
-
-          {resultado && (
+          {/*
+            El total cargado se anuncia en un toast. El detalle de lo que quedó
+            SIN TOCAR se queda inline: es un informe para leer con calma.
+          */}
+          {resultado && resultado.saltadas.length > 0 && (
             <div className="rounded-md border bg-subtle p-3 text-xs">
-              <p className="font-medium">
-                {resultado.aplicadas} inscripción
-                {resultado.aplicadas === 1 ? "" : "es"} cargada
-                {resultado.aplicadas === 1 ? "" : "s"}.
-              </p>
               {resultado.saltadas.length > 0 && (
                 <>
-                  <p className="mt-1.5 text-muted-foreground">
+                  <p className="text-muted-foreground">
                     {resultado.saltadas.length} sin tocar:
                   </p>
                   <ul className="mt-1 space-y-0.5 text-muted-foreground">

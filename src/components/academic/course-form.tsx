@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import { notify } from "@/lib/notify";
 
 /**
  * `key` sintética y estable: los módulos se borran del medio de la lista, y con
@@ -121,7 +122,6 @@ export function CourseForm({
     initial?.minAttendancePct?.toString() ?? ""
   );
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   // El temario no viene en el listado de cursos: se pide al abrir el editor.
   useEffect(() => {
@@ -165,7 +165,6 @@ export function CourseForm({
   async function submit() {
     if (!name.trim()) return;
     setSaving(true);
-    setError(null);
 
     const payload = {
       name: name.trim(),
@@ -208,9 +207,10 @@ export function CourseForm({
       const body = (await res?.json().catch(() => null)) as {
         error?: { message?: string };
       } | null;
-      setError(body?.error?.message ?? "No se pudo guardar el curso");
+      notify.error(body?.error?.message ?? "No se pudo guardar el curso");
       return;
     }
+    notify.success(initial ? "Curso guardado." : "Curso creado.");
     onSaved();
   }
 
@@ -522,8 +522,6 @@ export function CourseForm({
             ))}
           </div>
         </div>
-
-        {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
 
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>

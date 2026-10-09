@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RecorridoGrid } from "@/components/cohorts/recorrido-grid";
+import { notify } from "@/lib/notify";
 
 type State = "aprobado" | "reprobado" | "pendiente";
 /** 030 — Un módulo sin evaluaciones ni asistencia cargadas NO es aprobado. */
@@ -158,8 +159,8 @@ export function ProgramClient({
   const [data, setData] = useState<Programa | null>(null);
   const [cohorts, setCohorts] = useState<CohortOption[]>([]);
   const [loading, setLoading] = useState(true);
+  /** Solo el error de CARGA de la especialización (estado). Las acciones avisan con toast. */
   const [error, setError] = useState<string | null>(null);
-  const [aviso, setAviso] = useState<string | null>(null);
   /** Qué celda tiene el panel de US4 abierto, y por cuál de los dos caminos. */
   const [accion, setAccion] = useState<{
     alumno: Alumno;
@@ -183,7 +184,6 @@ export function ProgramClient({
    */
   async function abrirAlta() {
     setAbriendoAlta(true);
-    setError(null);
     try {
       const [c, t, s] = await Promise.all(
         ["/api/courses", "/api/teachers", "/api/software"].map(async (url) => {
@@ -198,7 +198,7 @@ export function ProgramClient({
         software: (s as { software: SoftwareDto[] }).software,
       });
     } catch {
-      setError("No se pudieron cargar los cursos y profesores para agregar el módulo");
+      notify.error("No se pudieron cargar los cursos y profesores para agregar el módulo");
     } finally {
       setAbriendoAlta(false);
     }
@@ -217,7 +217,6 @@ export function ProgramClient({
     [orden[indice], orden[destino]] = [orden[destino]!, orden[indice]!];
 
     setReordenando(true);
-    setError(null);
     const res = await fetch(`/api/cohorts/${cohortId}/modules/order`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
@@ -228,7 +227,7 @@ export function ProgramClient({
       const body = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      setError(body?.error?.message ?? "No se pudo cambiar el orden de los módulos");
+      notify.error(body?.error?.message ?? "No se pudo cambiar el orden de los módulos");
       return;
     }
     void refetch();
@@ -290,8 +289,6 @@ export function ProgramClient({
     setDestino("");
     setMonto("");
     setMotivo("");
-    setAviso(null);
-    setError(null);
   }
 
   const esDispensa =
@@ -311,7 +308,6 @@ export function ProgramClient({
   async function confirmarDispensa() {
     if (!accion || motivo.trim().length < 3) return;
     setGuardando(true);
-    setError(null);
 
     const res = await fetch(`/api/enrollments/${accion.modulo.enrollmentId}/dispensa`, {
       method: accion.via === "dispensar" ? "POST" : "DELETE",
@@ -324,24 +320,27 @@ export function ProgramClient({
       const body = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      setError(body?.error?.message ?? "No se pudo registrar la dispensa");
+      notify.error(body?.error?.message ?? "No se pudo registrar la dispensa");
       return;
     }
 
     const via = accion.via;
     setAccion(null);
-    setAviso(
-      via === "dispensar"
-        ? "Dispensa otorgada. El motivo, con tu nombre y la fecha, aparece junto al estado del alumno."
-        : "Dispensa revocada. El certificado, si ya se emitió, sigue vigente: anularlo es un acto aparte."
-    );
+    if (via === "dispensar") {
+      notify.success("Dispensa otorgada.", {
+        description: "El motivo, con tu nombre y la fecha, aparece junto al estado del alumno.",
+      });
+    } else {
+      notify.success("Dispensa revocada.", {
+        description: "El certificado, si ya se emitió, sigue vigente: anularlo es un acto aparte.",
+      });
+    }
     void refetch();
   }
 
   async function confirmar() {
     if (!accion || !destino) return;
     setGuardando(true);
-    setError(null);
 
     const res =
       accion.via === "baja"
@@ -366,16 +365,20 @@ export function ProgramClient({
       const body = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      setError(body?.error?.message ?? "No se pudo registrar el cambio de camada");
+      notify.error(body?.error?.message ?? "No se pudo registrar el cambio de camada");
       return;
     }
 
     setAccion(null);
-    setAviso(
-      accion.via === "baja"
-        ? "Módulo mudado a la otra camada. La madre y el plan de cuotas del paquete quedaron intactos."
-        : "Recursada creada. Cargale su plan de cuotas desde la pestaña de cobranza de esa inscripción."
-    );
+    if (accion.via === "baja") {
+      notify.success("Módulo mudado a la otra camada.", {
+        description: "La madre y el plan de cuotas del paquete quedaron intactos.",
+      });
+    } else {
+      notify.success("Recursada creada.", {
+        description: "Cargale su plan de cuotas desde la pestaña de cobranza de esa inscripción.",
+      });
+    }
     void refetch();
   }
 
@@ -429,7 +432,8 @@ export function ProgramClient({
       onClose={() => setCatalogo(null)}
       onSaved={() => {
         setCatalogo(null);
-        setAviso("Módulo agregado al final de la especialización.");
+        // Mismo id que el "Cohorte guardada." del formulario: lo reemplaza.
+        notify.success("Módulo agregado al final de la especialización.", { id: "cohorte-guardada" });
         void refetch();
       }}
       onTeacherCreated={(t) =>
@@ -471,7 +475,6 @@ export function ProgramClient({
   return (
     <div className="space-y-6 p-6">
       {error ? <p className="text-sm text-danger">{error}</p> : null}
-      {aviso ? <p className="text-sm text-success">{aviso}</p> : null}
 
       {botonAgregar ? (
         <div className="flex items-center justify-between gap-3">

@@ -521,6 +521,8 @@ function TopicBody({ data, courseId }: { data: StudentOfflineTopic; courseId: st
 
       {video?.shown === "after" && player}
 
+      {/* Inline on purpose: progress saves in the background, so this is STATE
+          ("your progress is not being saved") until a later save succeeds. */}
       {save === "error" && (
         <p role="alert" className="text-sm text-danger">
           No pudimos guardar tu avance, puede ser la conexión. Cuando vuelva, podés recargar la página y marcarlo otra vez.

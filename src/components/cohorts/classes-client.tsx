@@ -8,6 +8,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { notify } from "@/lib/notify";
 
 type ClassRow = {
   id: string | null;
@@ -78,6 +79,7 @@ export function ClassesClient({
 }) {
   const [data, setData] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
+  /** Solo el error de CARGA de las clases (estado). Las escrituras avisan con toast. */
   const [error, setError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   /** Qué se está editando: la clase y CUÁL de sus dos enlaces. */
@@ -125,7 +127,6 @@ export function ClassesClient({
 
   async function generar() {
     setGenerating(true);
-    setError(null);
     const res = await fetch(`/api/cohorts/${cohortId}/schedule`, {
       method: "POST",
     }).catch(() => null);
@@ -134,9 +135,10 @@ export function ClassesClient({
       const body = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      setError(body?.error?.message ?? "No se pudo generar el cronograma");
+      notify.error(body?.error?.message ?? "No se pudo generar el cronograma");
       return;
     }
+    notify.success("Cronograma generado.");
     void refetch();
   }
 
@@ -161,11 +163,12 @@ export function ClassesClient({
       const body = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      setError(body?.error?.message ?? "No se pudo guardar el enlace");
+      notify.error(body?.error?.message ?? "No se pudo guardar el enlace");
       // Se deja el editor ABIERTO y con lo tipeado: el mensaje dice qué
       // corregir, y cerrarlo obligaría a escribir todo de nuevo.
       return;
     }
+    notify.success("Enlace guardado.");
     setEditing(null);
     setDraft("");
     void refetch();
@@ -222,10 +225,10 @@ export function ClassesClient({
         | null;
       // El servidor dice QUÉ pasó —un aula de baja, una clase que no existe—;
       // un "no se pudo" genérico borraría el motivo.
-      setError(body?.error?.message ?? "No se pudo cambiar el aula de la clase");
+      notify.error(body?.error?.message ?? "No se pudo cambiar el aula de la clase");
       return;
     }
-    setError(null);
+    notify.success("Se cambió el aula de esta clase.");
     void refetch();
   }
 

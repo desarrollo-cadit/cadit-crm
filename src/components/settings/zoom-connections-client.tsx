@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { notify } from "@/lib/notify";
 
 type ConnectionRoom = {
   id: string;
@@ -72,10 +73,8 @@ export function ZoomConnectionsClient({ rooms }: { rooms: ActiveRoom[] }) {
 
   const [form, setForm] = useState(vacio);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const [editing, setEditing] = useState<(typeof vacio & { id: string }) | null>(null);
-  const [rowMsg, setRowMsg] = useState<{ id: string; text: string; tone: "ok" | "error" } | null>(null);
   const [users, setUsers] = useState<Record<string, ZoomUser[]>>({});
   const [testing, setTesting] = useState<string | null>(null);
   const [updatingUrl, setUpdatingUrl] = useState<string | null>(null);
@@ -98,7 +97,6 @@ export function ZoomConnectionsClient({ rooms }: { rooms: ActiveRoom[] }) {
 
   async function create() {
     setSaving(true);
-    setError(null);
     const res = await fetch("/api/settings/zoom/connections", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -111,26 +109,22 @@ export function ZoomConnectionsClient({ rooms }: { rooms: ActiveRoom[] }) {
     }).catch(() => null);
     setSaving(false);
     if (!res?.ok) {
-      setError(await mensajeDeError(res, "No pudimos guardar la conexión. Podés intentarlo otra vez en un momento."));
+      notify.error(await mensajeDeError(res, "No pudimos guardar la conexión. Podés intentarlo otra vez en un momento."));
       return;
     }
+    notify.success("Conexión de Zoom agregada.");
     setForm(vacio);
     void refetch();
   }
 
   async function patch(id: string, body: Record<string, unknown>) {
-    setRowMsg(null);
     const res = await fetch(`/api/settings/zoom/connections/${id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     }).catch(() => null);
     if (!res?.ok) {
-      setRowMsg({
-        id,
-        tone: "error",
-        text: await mensajeDeError(res, "No pudimos guardar el cambio. Podés intentarlo otra vez en un momento."),
-      });
+      notify.error(await mensajeDeError(res, "No pudimos guardar el cambio. Podés intentarlo otra vez en un momento."));
       return false;
     }
     void refetch();
@@ -139,11 +133,10 @@ export function ZoomConnectionsClient({ rooms }: { rooms: ActiveRoom[] }) {
 
   async function probar(id: string) {
     setTesting(id);
-    setRowMsg(null);
     const res = await fetch(`/api/settings/zoom/connections/${id}/test`, { method: "POST" }).catch(() => null);
     setTesting(null);
     if (!res?.ok) {
-      setRowMsg({ id, tone: "error", text: await mensajeDeError(res, "No pudimos probar la conexión.") });
+      notify.error(await mensajeDeError(res, "No pudimos probar la conexión."));
       return;
     }
     const data = (await res.json()) as
@@ -151,22 +144,18 @@ export function ZoomConnectionsClient({ rooms }: { rooms: ActiveRoom[] }) {
       | { ok: false; error: string; message: string };
     if (data.ok) {
       setUsers((u) => ({ ...u, [id]: data.users }));
-      setRowMsg({
-        id,
-        tone: "ok",
-        text:
-          data.users.length === 1
-            ? "Conexión correcta: Zoom devolvió 1 usuario."
-            : `Conexión correcta: Zoom devolvió ${data.users.length} usuarios.`,
-      });
+      notify.success(
+        data.users.length === 1
+          ? "Conexión correcta: Zoom devolvió 1 usuario."
+          : `Conexión correcta: Zoom devolvió ${data.users.length} usuarios.`
+      );
     } else {
-      setRowMsg({ id, tone: "error", text: data.message });
+      notify.error(data.message);
     }
     void refetch();
   }
 
   async function vincular(roomId: string, connectionId: string, zoomUserId: string) {
-    setRowMsg(null);
     const user = (users[connectionId] ?? []).find((u) => u.id === zoomUserId);
     const res = await fetch(`/api/settings/zoom/rooms/${roomId}`, {
       method: "PUT",
@@ -183,11 +172,7 @@ export function ZoomConnectionsClient({ rooms }: { rooms: ActiveRoom[] }) {
       ),
     }).catch(() => null);
     if (!res?.ok) {
-      setRowMsg({
-        id: connectionId,
-        tone: "error",
-        text: await mensajeDeError(res, "No pudimos vincular el aula. Podés intentarlo otra vez en un momento."),
-      });
+      notify.error(await mensajeDeError(res, "No pudimos vincular el aula. Podés intentarlo otra vez en un momento."));
       return;
     }
     void refetch();
@@ -197,24 +182,20 @@ export function ZoomConnectionsClient({ rooms }: { rooms: ActiveRoom[] }) {
    * "Actualizar enlace": un clic explícito. Vincular nunca reescribe el enlace
    * del aula, porque es lo que abre el alumno.
    */
-  async function usarSalaPersonal(connectionId: string, room: ConnectionRoom) {
-    setRowMsg(null);
+  async function usarSalaPersonal(room: ConnectionRoom) {
     setUpdatingUrl(room.id);
     const res = await fetch(`/api/settings/zoom/rooms/${room.id}/pmi`, { method: "POST" }).catch(() => null);
     setUpdatingUrl(null);
     if (!res?.ok) {
-      setRowMsg({
-        id: connectionId,
-        tone: "error",
-        text: await mensajeDeError(res, "No pudimos actualizar el enlace del aula. Podés intentarlo otra vez en un momento."),
-      });
+      notify.error(
+        await mensajeDeError(res, "No pudimos actualizar el enlace del aula. Podés intentarlo otra vez en un momento.")
+      );
       return;
     }
     const data = (await res.json()) as { url: string };
-    setRowMsg({
-      id: connectionId,
-      tone: "ok",
-      text: `El enlace de ${room.name} ahora es ${data.url}. Sincronizá en Grabaciones para volver a adjudicar las grabaciones sin clase.`,
+    notify.success(`El enlace de ${room.name} ahora es ${data.url}.`, {
+      description: "Sincronizá en Grabaciones para volver a adjudicar las grabaciones sin clase.",
+      action: { label: "Ir a Grabaciones", href: "/grabaciones" },
     });
     void refetch();
   }
@@ -294,7 +275,7 @@ export function ZoomConnectionsClient({ rooms }: { rooms: ActiveRoom[] }) {
                         size="sm"
                         variant="outline"
                         disabled={updatingUrl === room.id}
-                        onClick={() => void usarSalaPersonal(c.id, etiquetaActual)}
+                        onClick={() => void usarSalaPersonal(etiquetaActual)}
                       >
                         {updatingUrl === room.id
                           ? "Actualizando…"
@@ -421,12 +402,6 @@ export function ZoomConnectionsClient({ rooms }: { rooms: ActiveRoom[] }) {
             </div>
           )}
 
-          {rowMsg?.id === c.id && (
-            <p className={rowMsg.tone === "ok" ? "text-sm text-success" : "text-sm text-destructive"}>
-              {rowMsg.text}
-            </p>
-          )}
-
           {c.archived ? (
             <p className="text-sm text-muted-foreground">
               Una conexión archivada no se sincroniza. Sus grabaciones siguen en Grabaciones.
@@ -491,7 +466,6 @@ export function ZoomConnectionsClient({ rooms }: { rooms: ActiveRoom[] }) {
               />
             </div>
           </div>
-          {error && <p className="text-sm text-destructive">{error}</p>}
           <Button
             disabled={
               saving ||

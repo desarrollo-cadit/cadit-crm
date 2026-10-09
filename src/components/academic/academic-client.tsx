@@ -31,6 +31,7 @@ import { CourseForm } from "@/components/academic/course-form";
 import { SoftwareForm } from "@/components/academic/software-form";
 import { TeacherForm } from "@/components/academic/teacher-form";
 import { RoomsPanel } from "@/components/academic/rooms-panel";
+import { notify } from "@/lib/notify";
 
 const TABS = [
   { key: "courses", label: "Cursos" },
@@ -233,8 +234,12 @@ export function AcademicClient() {
   const [invitando, setInvitando] = useState<string | null>(null);
   /** 023 — Qué cohorte se está borrando, y qué contestó el servidor. */
   const [borrando, setBorrando] = useState<string | null>(null);
-  const [avisoCohorte, setAvisoCohorte] = useState<string | null>(null);
-  const [avisoProfesor, setAvisoProfesor] = useState<string | null>(null);
+  /**
+   * La contraseña temporal del profesor recién invitado. Se queda INLINE (no
+   * en toast): se muestra una sola vez y hay que leerla o dictarla. El resto
+   * de los resultados (baja, errores, cuenta existente) van en toast.
+   */
+  const [accesoProfesor, setAccesoProfesor] = useState<string | null>(null);
 
   async function borrarCohorte(cohort: CohortDto) {
     const nombre = cohort.name ?? cohort.courseName;
@@ -243,7 +248,6 @@ export function AcademicClient() {
     }
 
     setBorrando(cohort.id);
-    setAvisoCohorte(null);
     const res = await fetch(`/api/cohorts/${cohort.id}`, { method: "DELETE" }).catch(
       () => null
     );
@@ -253,16 +257,17 @@ export function AcademicClient() {
       const body = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      setAvisoCohorte(body?.error?.message ?? "No se pudo borrar la cohorte.");
+      notify.error(body?.error?.message ?? "No se pudo borrar la cohorte.");
       return;
     }
 
     setCohorts((prev) => prev.filter((c) => c.id !== cohort.id));
+    notify.success(`"${nombre}" fue borrada.`);
   }
 
   async function invitarProfesor(teacherId: string) {
     setInvitando(teacherId);
-    setAvisoProfesor(null);
+    setAccesoProfesor(null);
     const res = await fetch(`/api/teachers/${teacherId}/access`, {
       method: "POST",
     }).catch(() => null);
@@ -277,12 +282,12 @@ export function AcademicClient() {
       | null;
 
     if (!res?.ok) {
-      setAvisoProfesor(data?.error?.message ?? "No se pudo dar el acceso");
+      notify.error(data?.error?.message ?? "No se pudo dar el acceso");
       return;
     }
 
     if (!data?.temporaryPassword) {
-      setAvisoProfesor(
+      notify.success(
         "Esa persona ya tenía cuenta; se le habilitó el portal y entra con su contraseña de siempre."
       );
       return;
@@ -293,11 +298,19 @@ export function AcademicClient() {
      * sobre lo único que la persona necesita para entrar. El acceso se creó
      * igual: la contraseña está acá y hay que dictarla.
      */
-    setAvisoProfesor(
+    setAccesoProfesor(
       data.emailError
         ? `Creamos el acceso, pero el correo no se pudo enviar (${data.emailError}). La contraseña temporal es ${data.temporaryPassword}: compartila por otro medio, porque no se va a volver a mostrar.`
         : `Acceso creado y correo enviado. Contraseña temporal: ${data.temporaryPassword} (no se va a volver a mostrar).`
     );
+    // El toast ANUNCIA; la contraseña sigue en la pantalla.
+    if (data.emailError) {
+      notify.warning("Acceso creado, pero el correo no se pudo enviar.", {
+        description: "La contraseña temporal está en la pantalla: compartila por otro medio.",
+      });
+    } else {
+      notify.success("Acceso creado y correo enviado.");
+    }
   }
 
   /**
@@ -307,7 +320,6 @@ export function AcademicClient() {
    * El navegador solo muestra ese mensaje — la barrera no vive acá.
    */
   async function bajaProfesor(teacherId: string, nombre: string) {
-    setAvisoProfesor(null);
     const res = await fetch(`/api/teachers/${teacherId}`, {
       method: "DELETE",
     }).catch(() => null);
@@ -317,10 +329,10 @@ export function AcademicClient() {
       | null;
 
     if (!res?.ok) {
-      setAvisoProfesor(data?.error?.message ?? "No se pudo dar de baja");
+      notify.error(data?.error?.message ?? "No se pudo dar de baja");
       return;
     }
-    setAvisoProfesor(`${nombre} fue dado de baja.`);
+    notify.success(`${nombre} fue dado de baja.`);
     void refetch();
   }
 
@@ -571,11 +583,6 @@ export function AcademicClient() {
             </Button>
           </div>
         )}
-        {tab === "cohorts" && avisoCohorte && (
-          <p className="mb-3 rounded-md border border-warning-border bg-warning-soft px-3 py-2 text-sm">
-            {avisoCohorte}
-          </p>
-        )}
         {!loading && tab === "cohorts" && cohorts.length > 0 && (
           <CohortStatusFilter
             cohorts={cohorts}
@@ -747,9 +754,9 @@ export function AcademicClient() {
             </ul>
           ))}
 
-        {tab === "teachers" && avisoProfesor && (
+        {tab === "teachers" && accesoProfesor && (
           <p className="mb-3 rounded-md border border-warning-border bg-warning-soft px-3 py-2 text-sm">
-            {avisoProfesor}
+            {accesoProfesor}
           </p>
         )}
         {!loading && tab === "teachers" &&

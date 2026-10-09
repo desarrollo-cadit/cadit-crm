@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { notify } from "@/lib/notify";
 
 const STATUS_BADGE: Record<
   TemplateDto["status"],
@@ -25,7 +26,6 @@ export function TemplatesClient() {
   const [templates, setTemplates] = useState<TemplateDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
-  const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
   const refetch = useCallback(async () => {
     const res = await fetch("/api/templates").catch(() => null);
@@ -44,14 +44,13 @@ export function TemplatesClient() {
 
   async function sync() {
     setSyncing(true);
-    setSyncMsg(null);
     const res = await fetch("/api/templates/sync", { method: "POST" }).catch(
       () => null
     );
     setSyncing(false);
     if (res?.ok) {
       const data = (await res.json()) as { updated: number };
-      setSyncMsg(
+      notify.success(
         data.updated > 0
           ? `${data.updated} plantilla(s) actualizada(s)`
           : "Todo al día"
@@ -61,7 +60,7 @@ export function TemplatesClient() {
       const data = (await res?.json().catch(() => null)) as {
         error?: { message?: string };
       } | null;
-      setSyncMsg(data?.error?.message ?? "No se pudo sincronizar");
+      notify.error(data?.error?.message ?? "No se pudo sincronizar");
     }
   }
 
@@ -79,8 +78,6 @@ export function TemplatesClient() {
           Sincronizar
         </Button>
       </div>
-      {syncMsg && <p className="text-xs text-muted-foreground">{syncMsg}</p>}
-
       <CreateForm onCreated={() => void refetch()} />
 
       <div className="space-y-2">
@@ -127,11 +124,9 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
   const [category, setCategory] = useState<"UTILITY" | "MARKETING">("UTILITY");
   const [body, setBody] = useState("");
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   async function create() {
     setSaving(true);
-    setError(null);
     const res = await fetch("/api/templates", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -142,9 +137,10 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
       const data = (await res?.json().catch(() => null)) as {
         error?: { message?: string };
       } | null;
-      setError(data?.error?.message ?? "No se pudo crear la plantilla");
+      notify.error(data?.error?.message ?? "No se pudo crear la plantilla");
       return;
     }
+    notify.success("Plantilla creada y enviada a aprobación de Meta.");
     setName("");
     setBody("");
     onCreated();
@@ -209,7 +205,6 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
             onChange={(e) => setBody(e.target.value)}
           />
         </div>
-        {error && <p className="text-sm text-destructive">{error}</p>}
         <Button
           disabled={saving || !name.trim() || !body.trim()}
           onClick={() => void create()}

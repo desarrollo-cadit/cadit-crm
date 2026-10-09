@@ -12,6 +12,7 @@ import { callApi, coursePath } from "./api";
 import { EditorDialog, ErrorText } from "./dialog";
 import type { Lesson, Topic } from "./lessons-editor";
 import { MarkdownField } from "./markdown-field";
+import { notify } from "@/lib/notify";
 
 /**
  * cursos-offline T11b — New topic / edit topic: title, lesson (moving it to
@@ -74,8 +75,10 @@ export function TopicDialog({
         })
       : await callApi(`${coursePath(courseId)}/lessons/${lessonId}/topics`, "POST", body);
     setSaving(false);
-    if (result.ok) onSaved();
-    else setError(result.message);
+    if (result.ok) {
+      notify.success("Tema guardado.");
+      onSaved();
+    } else notify.error(result.message);
   }
 
   return (

@@ -2,6 +2,7 @@ import { CalendarClock, FolderOpen, GraduationCap } from "lucide-react";
 import { IsotipoCadIT, LogoCadIT } from "@/components/logo-cadit";
 import { DEFAULT_BRANDING } from "@/lib/branding";
 import { getBranding } from "@/server/branding";
+import { AppToaster } from "@/components/ui/toaster";
 
 /**
  * 021 — La pantalla de acceso.
@@ -89,6 +90,7 @@ export default async function AuthLayout({
           </ul>
         </div>
       </aside>
+      <AppToaster />
     </div>
   );
 }

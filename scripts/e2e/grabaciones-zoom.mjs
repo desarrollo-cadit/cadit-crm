@@ -1001,7 +1001,8 @@ async function pantalla({ ok, BASE, getCookie, nombreZ2, desde, hasta, R5, secre
 
         const filaR5 = filas.filter({ hasText: "Grabación R5" });
         await filaR5.getByRole("button", { name: "Copiar enlace" }).click();
-        await filaR5.getByText("Enlace copiado").waitFor({ timeout: 5000 });
+        // El aviso es un toast (sonner): vive en el contenedor de avisos, no en la fila.
+        await pagina.locator("[data-sonner-toast]").getByText("Enlace copiado").waitFor({ timeout: 5000 });
         const portapapeles = await pagina.evaluate(() => navigator.clipboard.readText());
         ok("UI — Copiar enlace deja el playUrl en el portapapeles y avisa", portapapeles === R5?.playUrl, portapapeles);
 

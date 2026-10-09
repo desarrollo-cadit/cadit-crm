@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { notify } from "@/lib/notify";
 
 /**
  * 023 (US1, US3) — Las aulas virtuales de la academia.
@@ -59,6 +60,7 @@ export function RoomsPanel() {
   const [rooms, setRooms] = useState<Room[] | null>(null);
   const [clashes, setClashes] = useState<Clash[]>([]);
   const [form, setForm] = useState<FormState>(null);
+  /** Solo el error de CARGA (estado de la pantalla). Archivar avisa con toast. */
   const [error, setError] = useState<string | null>(null);
   const [verArchivadas, setVerArchivadas] = useState(false);
 
@@ -88,9 +90,10 @@ export function RoomsPanel() {
       body: JSON.stringify({ archived }),
     }).catch(() => null);
     if (!res?.ok) {
-      setError("No se pudo cambiar el estado del aula.");
+      notify.error("No se pudo cambiar el estado del aula.");
       return;
     }
+    notify.success(archived ? `${room.name} quedó archivada.` : `${room.name} volvió a estar activa.`);
     await refetch();
   }
 
@@ -294,12 +297,10 @@ function RoomForm({
   );
   const [notes, setNotes] = useState(editando ? (state.room.notes ?? "") : "");
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   async function guardar(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
-    setError(null);
 
     const cuerpo = {
       name: name.trim(),
@@ -322,9 +323,10 @@ function RoomForm({
       const data = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      setError(data?.error?.message ?? "No se pudo guardar el aula.");
+      notify.error(data?.error?.message ?? "No se pudo guardar el aula.");
       return;
     }
+    notify.success(editando ? "Aula guardada." : "Aula creada.");
     await onSaved();
   }
 
@@ -389,12 +391,6 @@ function RoomForm({
               onChange={(e) => setNotes(e.target.value)}
             />
           </div>
-
-          {error && (
-            <p className="rounded-md border border-danger-border bg-danger-soft px-3 py-2 text-sm text-danger">
-              {error}
-            </p>
-          )}
 
           <div className="flex justify-end gap-2 pt-1">
             <Button type="button" variant="outline" onClick={onClose}>

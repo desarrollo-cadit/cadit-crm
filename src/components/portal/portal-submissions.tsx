@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { wallClockInZone } from "@/lib/schedule-time";
+import { notify } from "@/lib/notify";
 
 /**
  * 016 (US2, US3, US5) — Las entregas de la cohorte, para el profesor.
@@ -89,7 +90,6 @@ type Payload = { timezone: string; assessments: Evaluacion[] };
 
 export function PortalSubmissions({ cohortId }: { cohortId: string }) {
   const [datos, setDatos] = useState<Payload | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [fallo, setFallo] = useState(false);
 
   const refetch = useCallback(async () => {
@@ -139,7 +139,6 @@ export function PortalSubmissions({ cohortId }: { cohortId: string }) {
 
   return (
     <div className="space-y-5">
-      {error && <p className="text-sm text-destructive">{error}</p>}
       {/* Falló al refrescar: lo de abajo es real, pero puede estar viejo. */}
       {fallo && (
         <p className="text-sm text-destructive">
@@ -153,7 +152,9 @@ export function PortalSubmissions({ cohortId }: { cohortId: string }) {
           evaluacion={e}
           zona={datos.timezone}
           onCambio={refetch}
-          onError={setError}
+          onError={(m) => {
+            if (m) notify.error(m);
+          }}
         />
       ))}
     </div>
@@ -273,7 +274,7 @@ function AlumnoFila({
       onError(body?.error?.message ?? "No se pudo reabrir la entrega.");
       return;
     }
-    onError(null);
+    notify.success("Entrega reabierta.");
     onCambio();
   }
 
@@ -502,7 +503,7 @@ function PlazoDelGrupo({
       onError(body?.error?.message ?? "No se pudo guardar el plazo.");
       return;
     }
-    onError(null);
+    notify.success("Plazo guardado.");
     onListo();
   }
 
@@ -585,7 +586,7 @@ function FormularioDeProrroga({
       onError(body?.error?.message ?? "No se pudo dar la prórroga.");
       return;
     }
-    onError(null);
+    notify.success("Prórroga otorgada.");
     onListo();
   }
 
@@ -656,7 +657,7 @@ function FormularioDeCorreccion({
       onError(body?.error?.message ?? "No se pudo guardar la corrección.");
       return;
     }
-    onError(null);
+    notify.success("Corrección guardada.");
     onListo();
   }
 

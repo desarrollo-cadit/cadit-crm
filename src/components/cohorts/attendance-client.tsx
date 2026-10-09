@@ -15,6 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { notify } from "@/lib/notify";
 
 type AttendanceStatus = "presente" | "tarde" | "ausente" | "justificado";
 
@@ -75,7 +76,6 @@ function formatDate(iso: string) {
 export function AttendanceClient({ cohortId }: { cohortId: string }) {
   const [sheet, setSheet] = useState<Sheet | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const refetch = useCallback(async () => {
@@ -101,7 +101,8 @@ export function AttendanceClient({ cohortId }: { cohortId: string }) {
       method: "POST",
     }).catch(() => null);
     setBusy(false);
-    setError(res?.ok ? null : await readError(res, "No se pudo generar el cronograma"));
+    if (!res?.ok) notify.error(await readError(res, "No se pudo generar el cronograma"));
+    else notify.success("Cronograma generado.");
     void refetch();
   }
 
@@ -111,7 +112,7 @@ export function AttendanceClient({ cohortId }: { cohortId: string }) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ attendance: [{ enrollmentId, status }] }),
     }).catch(() => null);
-    setError(res?.ok ? null : await readError(res, "No se pudo guardar la asistencia"));
+    if (!res?.ok) notify.error(await readError(res, "No se pudo guardar la asistencia"));
     void refetch();
   }
 
@@ -123,7 +124,7 @@ export function AttendanceClient({ cohortId }: { cohortId: string }) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ cancelReason: reason.trim() }),
     }).catch(() => null);
-    setError(res?.ok ? null : await readError(res, "No se pudo cancelar la clase"));
+    if (!res?.ok) notify.error(await readError(res, "No se pudo cancelar la clase"));
     void refetch();
   }
 
@@ -149,7 +150,6 @@ export function AttendanceClient({ cohortId }: { cohortId: string }) {
           inicio y la de fin. Es una acción explícita: dar de alta cuarenta clases
           sin querer es difícil de deshacer.
         </p>
-        {error && <p className="text-xs text-destructive">{error}</p>}
         <Button loading={busy} onClick={() => void generateSchedule()}>
           {!busy && <CalendarPlus className="h-4 w-4" />}
           {busy ? "Generando…" : "Generar cronograma"}
@@ -167,7 +167,6 @@ export function AttendanceClient({ cohortId }: { cohortId: string }) {
             ? "sin mínimo de asistencia definido"
             : `mínimo para aprobar: ${sheet.minAttendancePct}%`}
         </p>
-        {error && <p className="text-xs text-destructive">{error}</p>}
       </div>
 
       <div className="rounded-lg border">

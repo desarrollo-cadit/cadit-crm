@@ -9,6 +9,7 @@ import { parseThemeCookie, THEME_COOKIE } from "@/lib/theme";
 import { getBranding } from "@/server/branding";
 import { listRoles } from "@/server/roles";
 import { AppNav } from "@/components/app-nav";
+import { AppToaster } from "@/components/ui/toaster";
 
 export default async function AppLayout({
   children,
@@ -75,6 +76,7 @@ export default async function AppLayout({
         isAlsoTeacher={isAlsoTeacher}
       />
       <main className="min-w-0 flex-1 overflow-hidden">{children}</main>
+      <AppToaster />
     </div>
   );
 }

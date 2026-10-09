@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { notify } from "@/lib/notify";
 
 /** 023 — Lo mínimo del aula para poder elegirla: nombre e id. */
 type RoomOption = { id: string; name: string };
@@ -155,6 +156,7 @@ export function CohortForm({
   const esEspecializacion = !esModulo && tipo === "especializacion";
   const [newTeacherName, setNewTeacherName] = useState("");
   const [saving, setSaving] = useState(false);
+  /** Validación del formulario (inline, junto al botón). Los fallos del servidor van en toast. */
   const [error, setError] = useState<string | null>(null);
   // 005 (US4/US5, FR-006/FR-008) — advertencias no bloqueantes que devuelve
   // la API tras guardar (licencias insuficientes / choque de horario del
@@ -264,7 +266,7 @@ export function CohortForm({
       const body = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      setError(body?.error?.message ?? "No se pudo guardar la cohorte");
+      notify.error(body?.error?.message ?? "No se pudo guardar la cohorte");
       return;
     }
 
@@ -283,9 +285,11 @@ export function CohortForm({
       ),
     ];
     if (messages.length > 0) {
+      // Inline y no en toast: el diálogo espera a que la persona lo lea y lo cierre.
       setWarnings(messages);
       return; // la cohorte ya está guardada; el usuario cierra el aviso para continuar.
     }
+    notify.success("Cohorte guardada.", { id: "cohorte-guardada" });
     onSaved();
   }
 

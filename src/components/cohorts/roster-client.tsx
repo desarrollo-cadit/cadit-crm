@@ -27,6 +27,7 @@ import { BulkSendsPanel } from "@/components/cohorts/bulk-sends-panel";
 import { ConfirmSendDialog } from "@/components/cohorts/confirm-send-dialog";
 import { formatSentAt } from "@/lib/schedule-time";
 import type { SellerOption } from "@/lib/vendedores";
+import { notify } from "@/lib/notify";
 
 /**
  * 2026-10-05 (decisión del dueño) — "Software instalado" y "Licencia" son
@@ -154,7 +155,6 @@ export function RosterClient({
     sentAt: string | null;
   } | null>(null);
   const [notFound, setNotFound] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
 
   const refetch = useCallback(async () => {
     const res = await fetch(`/api/cohorts/${cohortId}/roster`).catch(() => null);
@@ -216,9 +216,7 @@ export function RosterClient({
       body: JSON.stringify({ [field]: value }),
     }).catch(() => null);
     if (!res?.ok) {
-      setActionError(await errorMessage(res, "No se pudo guardar el cambio del checklist"));
-    } else {
-      setActionError(null);
+      notify.error(await errorMessage(res, "No se pudo guardar el cambio del checklist"));
     }
     void refetch();
   }
@@ -243,13 +241,13 @@ export function RosterClient({
     }).catch(() => null);
     setSendingEmail(null);
     if (!res?.ok) {
-      setActionError(await errorMessage(res, "No se pudo enviar el correo"));
+      notify.error(await errorMessage(res, "No se pudo enviar el correo"));
     } else {
       const data = (await res.json()) as { skipped: boolean; sentAt: string };
-      setActionError(null);
       // 2026-10-05 — Ya había salido (quizás en un envío a toda la cohorte):
       // en vez de un aviso suelto, se pregunta si reenviarlo, diciendo cuándo.
       if (data.skipped) setResend({ enrollmentId, kind, contactName, sentAt: data.sentAt });
+      else notify.success(`Correo enviado a ${contactName}.`);
     }
     void refetch();
   }
@@ -272,7 +270,7 @@ export function RosterClient({
     setInvitingPortal(null);
 
     if (!res?.ok) {
-      setActionError(await errorMessage(res, "No se pudo dar el acceso al portal"));
+      notify.error(await errorMessage(res, "No se pudo dar el acceso al portal"));
     } else {
       const data = (await res.json()) as {
         skipped?: boolean;
@@ -282,7 +280,6 @@ export function RosterClient({
         emailError: string | null;
       };
       if (data.skipped) {
-        setActionError(null);
         setResend({ enrollmentId, kind: "portal", contactName, sentAt: data.emailSentAt });
       } else if (data.temporaryPassword) {
         setTemporaryPassword({
@@ -290,11 +287,19 @@ export function RosterClient({
           password: data.temporaryPassword,
           emailError: data.emailError,
         });
-        setActionError(null);
+        // La contraseña queda INLINE en la fila (se muestra una sola vez); el
+        // toast solo anuncia, y si el correo falló lo dice.
+        if (data.emailError) {
+          notify.warning(`Acceso creado para ${contactName}, pero el correo no se pudo enviar.`, {
+            description: "La contraseña temporal está en su fila: dictásela por otro medio.",
+          });
+        } else {
+          notify.success(`Acceso al portal creado para ${contactName}.`);
+        }
       } else {
         // Ya tenía cuenta en el sistema (por ejemplo, alguien del equipo que
         // además cursa): se le habilitó el portal sin tocarle la contraseña.
-        setActionError(
+        notify.success(
           "Esa persona ya tenía cuenta; se le habilitó el portal y entra con su contraseña de siempre."
         );
       }
@@ -309,9 +314,9 @@ export function RosterClient({
       body: JSON.stringify({ softwareId }),
     }).catch(() => null);
     if (!res?.ok) {
-      setActionError(await errorMessage(res, "No se pudo asignar la licencia"));
+      notify.error(await errorMessage(res, "No se pudo asignar la licencia"));
     } else {
-      setActionError(null);
+      notify.success("Licencia asignada.");
     }
     void refetch();
   }
@@ -321,9 +326,9 @@ export function RosterClient({
       method: "DELETE",
     }).catch(() => null);
     if (!res?.ok) {
-      setActionError(await errorMessage(res, "No se pudo liberar la licencia"));
+      notify.error(await errorMessage(res, "No se pudo liberar la licencia"));
     } else {
-      setActionError(null);
+      notify.success("Licencia liberada.");
     }
     void refetch();
   }
@@ -372,14 +377,6 @@ export function RosterClient({
       </header>
 
       <div className="flex-1 overflow-y-auto p-6">
-        {actionError && (
-          <div className="mb-4 flex items-center justify-between gap-4 rounded-lg border border-danger-border px-4 py-3">
-            <p className="text-sm text-destructive">{actionError}</p>
-            <Button variant="ghost" size="sm" onClick={() => setActionError(null)}>
-              Cerrar
-            </Button>
-          </div>
-        )}
         {!roster ? (
           <div className="space-y-2">
             {Array.from({ length: 5 }).map((_, i) => (
@@ -723,7 +720,9 @@ export function RosterClient({
 
                                 {temporaryPassword?.enrollmentId === e.id && (
                                   <span className="rounded border border-warning-border bg-warning-soft px-2 py-1">
-                                    {/* 014 — Decir que salió el correo cuando no
+                                    {/* Inline y NO en toast: la contraseña se muestra
+                                        una sola vez y hay que poder copiarla.
+                                        014 — Decir que salió el correo cuando no
                                         salió es mentir sobre lo único que la
                                         persona necesita para entrar. */}
                                     {temporaryPassword.emailError ? (
@@ -847,6 +846,7 @@ export function RosterClient({
           onClose={() => setShowEnrollForm(false)}
           onSaved={() => {
             setShowEnrollForm(false);
+            notify.success("Alumno inscripto.");
             void refetch();
           }}
           onCompanyCreated={(c) => setCompanies((prev) => [...prev, c])}

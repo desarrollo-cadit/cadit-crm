@@ -28,6 +28,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EnrollLauncher } from "@/components/enrollments/enroll-launcher";
+import { notify } from "@/lib/notify";
 
 const PAGE_SIZE = 20;
 
@@ -59,7 +60,6 @@ function formatDate(iso: string): string {
 export function ContactsClient({ canEnroll = false }: { canEnroll?: boolean }) {
   const [contacts, setContacts] = useState<ContactDto[]>([]);
   /** 014 — Qué pasó al dar de baja: borrado o archivado, y por qué. */
-  const [avisoBaja, setAvisoBaja] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
@@ -117,14 +117,14 @@ export function ContactsClient({ canEnroll = false }: { canEnroll?: boolean }) {
       | null;
 
     if (!res?.ok) {
-      setAvisoBaja(data?.error?.message ?? "No se pudo dar de baja");
+      notify.error(data?.error?.message ?? "No se pudo dar de baja");
       return;
     }
-    setAvisoBaja(
-      data?.accion === "borrar"
-        ? `${nombre} fue eliminado.`
-        : `${nombre} fue archivado. ${data?.motivo ?? ""}`
-    );
+    if (data?.accion === "borrar") notify.success(`${nombre} fue eliminado.`);
+    else
+      notify.success(`${nombre} fue archivado.`, {
+        ...(data?.motivo ? { description: data.motivo } : {}),
+      });
     void refetch();
   }
 
@@ -204,11 +204,6 @@ export function ContactsClient({ canEnroll = false }: { canEnroll?: boolean }) {
       </header>
 
       <div className="flex-1 overflow-y-auto p-6">
-        {avisoBaja && (
-          <p className="mb-3 rounded-md border border-warning-border bg-warning-soft px-3 py-2 text-sm">
-            {avisoBaja}
-          </p>
-        )}
         {loading ? (
           <div className="space-y-2">
             {Array.from({ length: 6 }).map((_, i) => (

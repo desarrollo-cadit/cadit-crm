@@ -14,6 +14,7 @@ import {
 } from "@/components/portal/student-offline-courses";
 import { cn } from "@/lib/utils";
 import type { StudentOfflineQuiz } from "@/server/offline-courses/student";
+import { notify } from "@/lib/notify";
 
 /**
  * cursos-offline (T5) — Taking a quiz.
@@ -123,6 +124,7 @@ export function StudentOfflineQuizClient({ courseId, quizId }: { courseId: strin
   );
 }
 
+/** Inline on purpose: it is the attempt's score to read and review, not a passing notice. */
 function ResultCard({ result, onDismiss }: { result: Result; onDismiss: () => void }) {
   return (
     <PortalCard
@@ -166,7 +168,6 @@ function QuizForm({
   const [chosen, setChosen] = useState<Record<string, string[]>>({});
   const [confirmBlank, setConfirmBlank] = useState(false);
   const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const canAttempt = quiz.attemptsRemaining === null || quiz.attemptsRemaining > 0;
   const unanswered = quiz.questions.filter((q) => (chosen[q.id] ?? []).length === 0).length;
@@ -191,7 +192,6 @@ function QuizForm({
       return;
     }
     setSending(true);
-    setError(null);
     const res = await fetch(
       `/api/portal/me/offline-courses/${courseId}/quizzes/${quiz.id}/attempts`,
       {
@@ -209,7 +209,7 @@ function QuizForm({
       onResult(body.result);
       return;
     }
-    setError(body?.error?.message ?? "No pudimos enviar el cuestionario. Podés intentarlo de nuevo en un momento.");
+    notify.error(body?.error?.message ?? "No pudimos enviar el cuestionario. Podés intentarlo de nuevo en un momento.");
     // The choices stay on screen: reloading only refreshes the attempts count.
     if (res?.status === 409) await onConflict();
   }
@@ -269,12 +269,6 @@ function QuizForm({
           </PortalCard>
         );
       })}
-
-      {error && (
-        <p role="alert" className="text-sm text-danger">
-          {error}
-        </p>
-      )}
       {confirmBlank && (
         <p role="alert" className="text-sm text-warning">
           {unanswered === 1

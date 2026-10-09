@@ -220,7 +220,8 @@ export async function seccion029({ api, ok, BASE, getCookie }) {
     const generar = pagina.waitForResponse((r) => r.url().includes("/modules/schedule"), { timeout: 30000 });
     await boton.click();
     const respuesta = await generar;
-    await pagina.getByRole("status").getByText(/Se generaron/).waitFor({ timeout: 15000 });
+    // El resultado se anuncia en un toast (sonner), no en un bloque inline.
+    await pagina.locator("[data-sonner-toast]").getByText(/Se generaron/).waitFor({ timeout: 15000 });
     await pagina.getByText(`Módulo 1 — ${nombreA}`).first().waitFor({ timeout: 15000 });
     const programa = (await api(`/api/cohorts/${madre.id}/modules/classes`)).json;
     const porModulo = (programa?.modules ?? []).map((m) => [m.label, m.projected, m.classes.length]);

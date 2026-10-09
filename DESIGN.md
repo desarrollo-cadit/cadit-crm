@@ -277,6 +277,13 @@ gruesa cada 140 px, derivadas del acento con `color-mix`.
 - **Style:** barra lateral en hoja sutil. Grupos con etiqueta de sección en versalitas de 10.5px. Ítems de 14px con ícono de 18px en `ink-3`. El ítem activo lleva el tinte de calco y el ícono en acero.
 - **Mobile:** encabezado pegajoso con disparador de 44px y cajón con el velo `--overlay`.
 
+### Avisos: toast = evento, inline = estado
+**Toast = el resultado de algo que la persona acaba de hacer** (guardar, crear, borrar, asignar, copiar, sincronizar, enviar, invitar), el fallo de esa acción y un aviso pasajero ("No hay aulas vinculadas a Zoom", con enlace a Configuración › Zoom). **Inline = lo que no puede desaparecer:** el error de un campo junto al campo (y la validación local de un formulario, incluido el error del login), un secreto que se muestra una sola vez (la contraseña temporal del portal o del equipo: el toast puede anunciar que el correo falló, la contraseña queda en pantalla), un informe para leer (lo que quedó sin generar, el resultado de un cuestionario) y el ESTADO de la pantalla (vacía, error de carga que dura hasta recargar, "Sincronización automática apagada", una sincronización en curso).
+
+- **Una sola puerta:** `notify.success|error|warning|info` de `src/lib/notify.ts`. Nadie importa `sonner` directo; `tests/unit/notify.test.ts` lo exige.
+- **Duraciones:** éxito e info 4s, advertencia 6s, error 8s; advertencias y errores llevan botón de cierre, y `persist: true` deja un error hasta que lo cierren. Pasar el mismo `id` reemplaza el aviso en vez de apilar otro igual.
+- **Piel:** `<AppToaster>` (`src/components/ui/toaster.tsx`) monta sonner sin estilos propios y lo viste con tokens (`--bg`, `--border`, texto e íconos de estado), así que sigue al tema por el mismo `data-theme` del `<html>`. Va montado dentro de cada caparazón (panel, portal y acceso) para heredar los radios de `data-surface="portal"`. Abajo a la derecha en escritorio, abajo al centro en el celular.
+
 ### Grilla de plano (signature)
 El panel de marca de la pantalla de acceso lleva una retícula técnica sobre el
 acento y un velo del propio acento que calma la banda central donde va el
@@ -298,6 +305,7 @@ que nadie lea una palabra.
 - **Do** apoyar el logo sobre el plato blanco (`--brand-plate`) en los dos temas. Los archivos de marca están dibujados para fondo claro.
 - **Do** declarar cada token nuevo en `:root` y en `:root[data-theme="dark"]`.
 - **Do** mostrar "sin datos" cuando falta el dato. Nunca un 0 % ni un "aprobado" por omisión.
+- **Do** anunciar el resultado de una acción con `notify`, y dejar inline los errores de campo, los secretos de una sola vez y el estado de la pantalla.
 
 ### Don't:
 - **Don't** escribir un color en un `.tsx`: ni hex, ni `bg-white`, ni `bg-amber-500`.

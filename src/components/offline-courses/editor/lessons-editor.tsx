@@ -13,6 +13,7 @@ import { ConfirmDeleteDialog, EditorDialog, ErrorText, IconButton } from "./dial
 import { MarkdownField } from "./markdown-field";
 import { SortableList } from "./sortable-list";
 import { TopicDialog } from "./topic-dialog";
+import { notify } from "@/lib/notify";
 
 type Course = OfflineCourseDetail;
 export type Lesson = Course["lessons"][number];
@@ -219,8 +220,10 @@ function LessonDialog({
       ? await callApi(`${coursePath(courseId)}/lessons/${lesson.id}`, "PATCH", body)
       : await callApi(`${coursePath(courseId)}/lessons`, "POST", body);
     setSaving(false);
-    if (result.ok) onSaved();
-    else setError(result.message);
+    if (result.ok) {
+      notify.success("Lección guardada.");
+      onSaved();
+    } else notify.error(result.message);
   }
 
   return (
