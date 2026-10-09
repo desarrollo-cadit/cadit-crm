@@ -11,6 +11,7 @@ import {
   Library,
   Settings,
   Users,
+  Video,
   Wallet,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -99,6 +100,16 @@ export const NAV_GROUPS = [
        * ítem — y quien sí puede, lo encuentra sin que nadie se lo cuente.
        */
       { href: "/finanzas", label: "Finanzas", icon: Wallet, capability: "cobranza.ver" },
+      /**
+       * 030 (US1) — Las grabaciones de Zoom de todas las aulas en una tabla.
+       * Capacidad propia (DV-009): sin `grabaciones.ver` el ítem no aparece.
+       */
+      {
+        href: "/grabaciones",
+        label: "Grabaciones",
+        icon: Video,
+        capability: "grabaciones.ver",
+      },
     ],
   },
   // {
@@ -237,6 +248,12 @@ export const SETTINGS_TABS = [
    * dónde entra nadie que ya entraba.
    */
   { href: "/settings/vendedores", label: "Vendedores", capability: "inscripciones.editar" },
+  /**
+   * 030 (US4) — Las conexiones de Zoom (credenciales cifradas) y qué usuario
+   * de Zoom hospeda cada aula. `configuracion.editar`, como WhatsApp: es
+   * configuración con secretos. Al final: no cambia a dónde entra nadie.
+   */
+  { href: "/settings/zoom", label: "Zoom", capability: "configuracion.editar" },
 ] as const;
 
 /**

@@ -203,3 +203,40 @@ describe("sanitizeCapabilities — la base no puede inventar capacidades", () =>
     expect(sanitizeCapabilities([...CAPABILITIES])).toEqual([...CAPABILITIES]);
   });
 });
+
+/**
+ * 030 (DV-009) — Grabaciones de Zoom: ver y gestionar, separadas.
+ *
+ * Soporte pasa un enlace a un alumno (`.ver`) pero no mueve adjudicaciones en
+ * lote (`.gestionar`): eso es de quien coordina la cursada.
+ */
+describe("030 — grabaciones.ver / grabaciones.gestionar", () => {
+  const byKey = (k: string) => SYSTEM_ROLES.find((r) => r.key === k)!;
+
+  it("las dos están en la lista cerrada", () => {
+    expect(CAPABILITIES).toContain("grabaciones.ver");
+    expect(CAPABILITIES).toContain("grabaciones.gestionar");
+  });
+
+  it("owner y member (respaldo) tienen ambas", () => {
+    for (const role of ["owner", "member"]) {
+      expect(hasCapability(role, "grabaciones.ver")).toBe(true);
+      expect(hasCapability(role, "grabaciones.gestionar")).toBe(true);
+    }
+  });
+
+  it("soporte ve pero no gestiona (código y semilla)", () => {
+    expect(hasCapability("soporte", "grabaciones.ver")).toBe(true);
+    expect(hasCapability("soporte", "grabaciones.gestionar")).toBe(false);
+    expect(byKey("soporte").capabilities).toContain("grabaciones.ver");
+    expect(byKey("soporte").capabilities).not.toContain("grabaciones.gestionar");
+  });
+
+  it("dirección y coordinación tienen ambas; administración ninguna", () => {
+    for (const key of ["direccion", "coordinacion"]) {
+      expect(byKey(key).capabilities).toContain("grabaciones.ver");
+      expect(byKey(key).capabilities).toContain("grabaciones.gestionar");
+    }
+    expect(byKey("administracion").capabilities).not.toContain("grabaciones.ver");
+  });
+});

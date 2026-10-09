@@ -46,6 +46,8 @@ const GRANTS = [
   migracion("0050_registro_de_actividad.sql"),
   // 029 — `areas.configurar` para dirección.
   migracion("0051_agente_por_areas.sql"),
+  // 030 — `grabaciones.ver` / `grabaciones.gestionar` (DV-009).
+  migracion("0052_grabaciones_zoom.sql"),
 ].join("\n");
 
 function grantsPosteriores(key: string): string[] {

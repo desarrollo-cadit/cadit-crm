@@ -49,6 +49,14 @@ export const CAPABILITIES = [
    * recibe `direccion` (ver `sinAreas`).
    */
   "areas.configurar",
+  /**
+   * 030 (DV-009) — Grabaciones de Zoom. `.ver`: la sección, la tabla, copiar
+   * y abrir enlaces, ver el código de acceso. `.gestionar`: sincronizar y
+   * adjudicar grabaciones a clases. Separadas para que soporte pueda pasarle
+   * un enlace a un alumno sin mover adjudicaciones (ver `sinGestionarGrabaciones`).
+   */
+  "grabaciones.ver",
+  "grabaciones.gestionar",
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -88,6 +96,13 @@ const sinAuditoria = (c: Capability) => c !== "alumnos.auditoria";
 const sinAreas = (c: Capability) => c !== "areas.configurar";
 
 /**
+ * 030 (DV-009) — Soporte VE las grabaciones (le pasa el enlace a un alumno)
+ * pero no las sincroniza ni las adjudica: mover una grabación de clase cambia
+ * lo que ven los alumnos de una cohorte entera, y eso es de coordinación.
+ */
+const sinGestionarGrabaciones = (c: Capability) => c !== "grabaciones.gestionar";
+
+/**
  * Mapeo rol → capacidades, FIEL al comportamiento actual.
  *
  * Cuidado con `member`: el data-model de la fase lo proyectaba como
@@ -104,7 +119,11 @@ export const ROLE_CAPABILITIES: Record<string, readonly Capability[]> = {
   owner: CAPABILITIES,
   member: CAPABILITIES,
   soporte: CAPABILITIES.filter(
-    (c) => !FINANCIAL_CAPABILITIES.includes(c) && sinAuditoria(c) && sinAreas(c)
+    (c) =>
+      !FINANCIAL_CAPABILITIES.includes(c) &&
+      sinAuditoria(c) &&
+      sinAreas(c) &&
+      sinGestionarGrabaciones(c)
   ),
 };
 
@@ -149,7 +168,11 @@ export const SYSTEM_ROLES: readonly {
     key: "soporte",
     name: "Soporte",
     capabilities: CAPABILITIES.filter(
-      (c) => !FINANCIAL_CAPABILITIES.includes(c) && sinAuditoria(c) && sinAreas(c)
+      (c) =>
+        !FINANCIAL_CAPABILITIES.includes(c) &&
+        sinAuditoria(c) &&
+        sinAreas(c) &&
+        sinGestionarGrabaciones(c)
     ),
   },
   /**

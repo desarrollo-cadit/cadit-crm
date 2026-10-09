@@ -77,8 +77,10 @@ Ver [.specify/memory/constitution.md](.specify/memory/constitution.md).
   correo transaccional a alumnos (constitución 1.3.0, tras `src/lib/m365`) y el
   reproductor embebido de Vimeo para los videos de cursos offline (constitución
   1.4.0: solo el navegador carga el iframe de `player.vimeo.com`; el servidor no
-  llama a Vimeo, sin tokens, sin almacenar video, tras un único componente).
-  PROHIBIDO en v1 introducir S3/R2, Stripe, Google u otros servicios externos.
+  llama a Vimeo, sin tokens, sin almacenar video, tras un único componente) y
+  Zoom para LEER las grabaciones en la nube (constitución 1.6.0, tras
+  `src/lib/zoom`, solo lectura, Server-to-Server OAuth, credenciales cifradas
+  cargadas por la UI, opcional). PROHIBIDO en v1 introducir S3/R2, Stripe, Google u otros servicios externos.
   Auth y BD self-hosted.
 - **Seguridad (I)**: secretos cifrados en reposo (AES-256-GCM, `lib/crypto`);
   jamás al cliente ni a logs. El token de WhatsApp solo muestra sus últimos 4.

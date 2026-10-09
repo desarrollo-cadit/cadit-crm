@@ -167,6 +167,15 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
     // `/settings/areas`.
     donde: "/settings",
   },
+  // ── Grabaciones de Zoom (030) ──────────────────────────────────────────
+  "grabaciones.ver": {
+    que: "ver las grabaciones de Zoom de todas las aulas y copiar sus enlaces",
+    donde: "/grabaciones",
+  },
+  "grabaciones.gestionar": {
+    que: "sincronizar las grabaciones con Zoom y adjudicarlas a las clases",
+    donde: "/grabaciones",
+  },
 };
 
 /**
@@ -187,7 +196,8 @@ export const GRUPOS_CAPACIDADES: readonly {
 }[] = [
   {
     titulo: "Académico",
-    incluye: (c) => /^(academico|asistencia|evaluacion|certificados)\./.test(c),
+    // 030 — Las grabaciones son de la cursada: van con lo académico.
+    incluye: (c) => /^(academico|asistencia|evaluacion|certificados|grabaciones)\./.test(c),
   },
   {
     titulo: "Comercial y financiero",

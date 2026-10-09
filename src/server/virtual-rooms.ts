@@ -207,6 +207,14 @@ export type VirtualRoomDto = {
   archivedAt: string | null;
   /** Cuántas cohortes la tienen asignada hoy. */
   cohortCount: number;
+  /**
+   * 030 (US4) — El usuario de Zoom que hospeda el aula, si está vinculada.
+   * Es dato de STAFF: no viaja a los portales. Archivar el aula no lo borra
+   * (deja de sincronizarse, DV-012).
+   */
+  zoomConnectionId: string | null;
+  zoomUserId: string | null;
+  zoomUserEmail: string | null;
 };
 
 export type RoomResult<T> =
@@ -256,6 +264,9 @@ export async function listVirtualRooms(
     notes: r.notes,
     archivedAt: r.archivedAt?.toISOString() ?? null,
     cohortCount: conteo.get(r.id) ?? 0,
+    zoomConnectionId: r.zoomConnectionId,
+    zoomUserId: r.zoomUserId,
+    zoomUserEmail: r.zoomUserEmail,
   }));
 }
 
@@ -314,6 +325,9 @@ export async function createVirtualRoom(
       notes: fila!.notes,
       archivedAt: null,
       cohortCount: 0,
+      zoomConnectionId: null,
+      zoomUserId: null,
+      zoomUserEmail: null,
     },
   };
 }

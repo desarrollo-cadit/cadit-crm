@@ -36,6 +36,7 @@ import { seccionEnviosMasivos } from "./e2e/envios-masivos.mjs";
 import { seccionVendedores } from "./e2e/vendedores.mjs";
 import { seccionAgentePorAreas } from "./e2e/agente-por-areas.mjs";
 import { seccionRoles } from "./e2e/roles.mjs";
+import { seccionGrabacionesZoom } from "./e2e/grabaciones-zoom.mjs";
 import {
   alEntrar,
   claveVigente,
@@ -226,6 +227,7 @@ async function main() {
       vendedores: seccionVendedores,
       "agente-por-areas": seccionAgentePorAreas,
       roles: seccionRoles,
+      "grabaciones-zoom": seccionGrabacionesZoom,
     };
     for (const nombre of soloSecciones) {
       const seccion = SECCIONES[nombre];
@@ -5182,6 +5184,9 @@ async function main() {
   // 029 — Agente por áreas: derivación por correo (m365-mock) y tema del turno.
   // Va al final: enciende el agente y el ruteo, y los deja como estaban.
   await seccionAgentePorAreas({ api, ok, BASE, getCookie: () => cookie });
+
+  // 030 — Grabaciones de Zoom: conexiones, aulas y sincronización (zoom-mock).
+  await seccionGrabacionesZoom({ api, ok, BASE, getCookie: () => cookie });
 
   console.log(`\n===== ${checks - failures}/${checks} checks OK, ${failures} fallos =====`);
   process.exit(failures > 0 ? 1 : 0);

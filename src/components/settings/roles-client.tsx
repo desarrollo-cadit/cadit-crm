@@ -47,6 +47,8 @@ const CAPABILITY_LABELS: Record<string, string> = {
   "accesos.gestionar": "Dar acceso al portal y al equipo",
   "alumnos.auditoria": "Ver ingresos y actividad de cada alumno",
   "areas.configurar": "Configurar las áreas de derivación del agente",
+  "grabaciones.ver": "Ver las grabaciones de Zoom y copiar sus enlaces",
+  "grabaciones.gestionar": "Sincronizar y adjudicar grabaciones a clases",
 };
 
 /**
@@ -55,7 +57,11 @@ const CAPABILITY_LABELS: Record<string, string> = {
  * división que `GRUPOS_CAPACIDADES` de la guía.
  */
 const GROUPS: { title: string; match: (c: string) => boolean }[] = [
-  { title: "Académico", match: (c) => /^(academico|asistencia|evaluacion|certificados)\./.test(c) },
+  {
+    title: "Académico",
+    // 030 — `grabaciones.*` va con lo académico, igual que en la guía.
+    match: (c) => /^(academico|asistencia|evaluacion|certificados|grabaciones)\./.test(c),
+  },
   { title: "Comercial y financiero", match: (c) => /^(contactos|inscripciones|cobranza)\./.test(c) },
   { title: "Conversaciones", match: (c) => c.startsWith("inbox.") },
   { title: "Plataforma", match: (c) => /^(configuracion|accesos|alumnos|areas)\./.test(c) },

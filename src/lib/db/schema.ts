@@ -1,6 +1,8 @@
 import {
+  bigint,
   boolean,
   check,
+  date,
   index,
   integer,
   jsonb,
@@ -1505,10 +1507,21 @@ export const classSession = pgTable(
      * ofrece grabación (FR-005e), aunque la columna tenga valor.
      */
     recordingUrl: text("recording_url"),
+    /**
+     * 030 (DV-007) — De dónde salió `recording_url`: `'manual'` (lo pegó una
+     * persona) o `'zoom'` (lo adjudicó la sincronización). NULL cuando no hay
+     * grabación. Es lo que impide que la sincronización pise un enlace que
+     * alguien cargó a mano.
+     */
+    recordingSource: text("recording_source", { enum: ["manual", "zoom"] }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [
+    check(
+      "class_session_recording_source_valid",
+      sql`${t.recordingSource} IS NULL OR ${t.recordingSource} IN ('manual','zoom')`
+    ),
     uniqueIndex("class_session_cohort_number_uq").on(
       t.organizationId,
       t.cohortId,
@@ -2143,6 +2156,19 @@ export const virtualRoom = pgTable(
      * historia, igual que borrar un aviso (013).
      */
     archivedAt: timestamp("archived_at"),
+    /**
+     * 030 (DV-002) — El usuario de Zoom que hospeda esta aula, dentro de UNA
+     * conexión. Se vinculan juntos o ninguno (CHECK). Archivar el aula NO
+     * borra el vínculo: solo deja de sincronizarse (DV-012).
+     */
+    zoomConnectionId: text("zoom_connection_id").references(
+      (): AnyPgColumn => zoomConnection.id,
+      { onDelete: "set null" }
+    ),
+    /** `id` del usuario en Zoom: estable aunque cambie el correo. */
+    zoomUserId: text("zoom_user_id"),
+    /** Rótulo; se refresca al "Probar" la conexión. */
+    zoomUserEmail: text("zoom_user_email"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -2150,6 +2176,15 @@ export const virtualRoom = pgTable(
     index("virtual_room_org_idx").on(t.organizationId),
     // Dos aulas con el mismo nombre son imposibles de asignar sin equivocarse.
     uniqueIndex("virtual_room_org_name_uq").on(t.organizationId, t.name),
+    check(
+      "virtual_room_zoom_link_together",
+      sql`(${t.zoomConnectionId} IS NULL) = (${t.zoomUserId} IS NULL)`
+    ),
+    // 030 — Un usuario de Zoom hospeda a lo sumo UN aula activa: si no, la
+    // señal "aula del anfitrión" sería ambigua por construcción.
+    uniqueIndex("virtual_room_zoom_user_uq")
+      .on(t.organizationId, t.zoomConnectionId, t.zoomUserId)
+      .where(sql`${t.zoomUserId} IS NOT NULL AND ${t.archivedAt} IS NULL`),
   ]
 );
 
@@ -2754,6 +2789,205 @@ export const areaHandoffEmail = pgTable(
     check(
       "area_handoff_email_status_valid",
       sql`${t.status} IN ('pendiente','enviado','fallido','sin_configurar','simulado')`
+    ),
+  ]
+);
+
+/* ============================================================
+ * 030 — Grabaciones de Zoom (constitución 1.6.0)
+ * ============================================================
+ *
+ * El CRM LEE las grabaciones en la nube de las cuentas de Zoom del negocio y
+ * las adjudica a clases. No descarga ni almacena video: una grabación es un
+ * ENLACE. Todo es opcional: sin conexiones, nada de esto se usa.
+ */
+
+/**
+ * Credenciales de UNA cuenta de Zoom (app Server-to-Server OAuth). Cubre uno
+ * o muchos usuarios de Zoom, así sirve igual si las cuentas son una
+ * organización de Zoom o varias cuentas sueltas (DV-002).
+ */
+export const zoomConnection = pgTable(
+  "zoom_connection",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    accountId: text("account_id").notNull(),
+    clientId: text("client_id").notNull(),
+    /** AES-256-GCM (`lib/crypto`). Jamás en respuestas ni logs. */
+    clientSecretCipher: text("client_secret_cipher").notNull(),
+    clientSecretIv: text("client_secret_iv").notNull(),
+    clientSecretTag: text("client_secret_tag").notNull(),
+    /** Lo único que se muestra (`••••1234`). */
+    clientSecretLast4: text("client_secret_last4").notNull(),
+    status: text("status", { enum: ["sin_probar", "ok", "error"] })
+      .notNull()
+      .default("sin_probar"),
+    /** Código propio + mensaje legible; nunca la respuesta cruda de Zoom. */
+    lastError: text("last_error"),
+    lastTestedAt: timestamp("last_tested_at"),
+    lastSyncAt: timestamp("last_sync_at"),
+    /** Fecha (UTC) hasta la que la conexión está al día (DV-004). */
+    syncedThrough: date("synced_through", { mode: "string" }),
+    /** Baja lógica: no se sincroniza; sus grabaciones se conservan. */
+    archivedAt: timestamp("archived_at"),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("zoom_connection_org_idx").on(t.organizationId),
+    uniqueIndex("zoom_connection_org_name_uq").on(t.organizationId, t.name),
+    // La misma cuenta de Zoom no se conecta dos veces.
+    uniqueIndex("zoom_connection_org_account_uq").on(t.organizationId, t.accountId),
+    check("zoom_connection_status_valid", sql`${t.status} IN ('sin_probar','ok','error')`),
+  ]
+);
+
+/**
+ * Una fila por INSTANCIA de reunión grabada (no por archivo: el enlace
+ * compartible es de la reunión). `zoom_meeting_uuid` es la llave de
+ * idempotencia del upsert.
+ */
+export const zoomRecording = pgTable(
+  "zoom_recording",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    zoomConnectionId: text("zoom_connection_id")
+      .notNull()
+      .references(() => zoomConnection.id, { onDelete: "restrict" }),
+    virtualRoomId: text("virtual_room_id").references(() => virtualRoom.id, {
+      onDelete: "set null",
+    }),
+    zoomMeetingUuid: text("zoom_meeting_uuid").notNull(),
+    /** Número de reunión, como texto (supera 2^53 en algunos casos). */
+    zoomMeetingId: text("zoom_meeting_id").notNull(),
+    hostZoomUserId: text("host_zoom_user_id").notNull(),
+    hostEmail: text("host_email"),
+    topic: text("topic"),
+    startTime: timestamp("start_time", { withTimezone: true }).notNull(),
+    durationMin: integer("duration_min"),
+    totalSizeBytes: bigint("total_size_bytes", { mode: "number" }),
+    fileCount: integer("file_count"),
+    shareUrl: text("share_url"),
+    /** DV-008: `share_url` + `pwd` si corresponde. */
+    playUrl: text("play_url"),
+    passcodeCipher: text("passcode_cipher"),
+    passcodeIv: text("passcode_iv"),
+    passcodeTag: text("passcode_tag"),
+    passcodeEmbedded: boolean("passcode_embedded").notNull().default(false),
+    autoDeleteDate: date("auto_delete_date", { mode: "string" }),
+    firstSeenAt: timestamp("first_seen_at").notNull(),
+    lastSeenAt: timestamp("last_seen_at").notNull(),
+    /** DV-013 — dejó de aparecer en Zoom dentro de la ventana consultada. */
+    missingInZoomAt: timestamp("missing_in_zoom_at"),
+    classSessionId: text("class_session_id").references(() => classSession.id, {
+      onDelete: "set null",
+    }),
+    assignmentMode: text("assignment_mode", { enum: ["auto", "manual"] })
+      .notNull()
+      .default("auto"),
+    assignmentState: text("assignment_state", {
+      enum: ["pendiente", "asignada", "ambigua", "conflicto", "sin_clase"],
+    })
+      .notNull()
+      .default("pendiente"),
+    candidateClassIds: text("candidate_class_ids").array().notNull().default(sql`'{}'::text[]`),
+    conflictClassSessionId: text("conflict_class_session_id").references(
+      () => classSession.id,
+      { onDelete: "set null" }
+    ),
+    assignedBy: text("assigned_by").references(() => user.id, { onDelete: "set null" }),
+    assignedAt: timestamp("assigned_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("zoom_recording_org_conn_uuid_uq").on(
+      t.organizationId,
+      t.zoomConnectionId,
+      t.zoomMeetingUuid
+    ),
+    // Una clase, UNA grabación adjudicada.
+    uniqueIndex("zoom_recording_org_class_uq")
+      .on(t.organizationId, t.classSessionId)
+      .where(sql`${t.classSessionId} IS NOT NULL`),
+    index("zoom_recording_org_start_idx").on(t.organizationId, t.startTime.desc()),
+    index("zoom_recording_org_room_start_idx").on(
+      t.organizationId,
+      t.virtualRoomId,
+      t.startTime.desc()
+    ),
+    index("zoom_recording_org_state_idx").on(t.organizationId, t.assignmentState),
+    index("zoom_recording_org_meeting_idx").on(t.organizationId, t.zoomMeetingId),
+    check("zoom_recording_mode_valid", sql`${t.assignmentMode} IN ('auto','manual')`),
+    check(
+      "zoom_recording_state_valid",
+      sql`${t.assignmentState} IN ('pendiente','asignada','ambigua','conflicto','sin_clase')`
+    ),
+    check(
+      "zoom_recording_assigned_has_class",
+      sql`(${t.assignmentState} = 'asignada') = (${t.classSessionId} IS NOT NULL)`
+    ),
+  ]
+);
+
+/** Lease de "una sincronización por organización a la vez" (DV-004). */
+export const zoomSyncState = pgTable("zoom_sync_state", {
+  organizationId: text("organization_id")
+    .primaryKey()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  /** `<hostname>:<pid>:<nanoid>`. */
+  leaseOwner: text("lease_owner"),
+  /** Vence solo si el proceso muere (15 min, renovado por aula). */
+  leaseUntil: timestamp("lease_until"),
+  /** Lo que dice la UI: "corriendo desde…". */
+  currentRunStartedAt: timestamp("current_run_started_at"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+/** Bitácora: una fila por corrida y conexión. Se conservan las últimas 200. */
+export const zoomSyncRun = pgTable(
+  "zoom_sync_run",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    zoomConnectionId: text("zoom_connection_id")
+      .notNull()
+      .references(() => zoomConnection.id, { onDelete: "cascade" }),
+    trigger: text("trigger", { enum: ["manual", "periodica"] }).notNull(),
+    triggeredBy: text("triggered_by").references(() => user.id, { onDelete: "set null" }),
+    windowFrom: date("window_from", { mode: "string" }).notNull(),
+    windowTo: date("window_to", { mode: "string" }).notNull(),
+    status: text("status", { enum: ["corriendo", "ok", "parcial", "error"] }).notNull(),
+    fetchedCount: integer("fetched_count").notNull().default(0),
+    newCount: integer("new_count").notNull().default(0),
+    assignedCount: integer("assigned_count").notNull().default(0),
+    ambiguousCount: integer("ambiguous_count").notNull().default(0),
+    conflictCount: integer("conflict_count").notNull().default(0),
+    /** Mensaje propio, sin datos sensibles; por aula si `parcial`. */
+    error: text("error"),
+    startedAt: timestamp("started_at").notNull().defaultNow(),
+    finishedAt: timestamp("finished_at"),
+  },
+  (t) => [
+    index("zoom_sync_run_org_conn_started_idx").on(
+      t.organizationId,
+      t.zoomConnectionId,
+      t.startedAt.desc()
+    ),
+    check("zoom_sync_run_trigger_valid", sql`${t.trigger} IN ('manual','periodica')`),
+    check(
+      "zoom_sync_run_status_valid",
+      sql`${t.status} IN ('corriendo','ok','parcial','error')`
     ),
   ]
 );

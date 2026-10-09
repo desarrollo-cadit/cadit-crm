@@ -640,9 +640,14 @@ describe("FR-007/FR-008 — la vista se gobierna con `cobranza.ver` y se declara
     // `alumnos.auditoria` (la pestaña «Administración» del legajo), que no
     // tiene nada que ver con finanzas.
     // 029 — `areas.configurar` (áreas de derivación del agente), tampoco de finanzas.
-    expect(
-      CAPABILITIES.filter((c) => c !== "alumnos.auditoria" && c !== "areas.configurar")
-    ).toHaveLength(17);
+    // 030 — `grabaciones.ver` / `grabaciones.gestionar` (Zoom), tampoco.
+    const posteriores = new Set<Capability>([
+      "alumnos.auditoria",
+      "areas.configurar",
+      "grabaciones.ver",
+      "grabaciones.gestionar",
+    ]);
+    expect(CAPABILITIES.filter((c) => !posteriores.has(c))).toHaveLength(17);
     expect(CAPABILITIES).not.toContain("finanzas.ver" as Capability);
   });
 

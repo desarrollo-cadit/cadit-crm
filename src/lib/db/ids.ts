@@ -77,6 +77,10 @@ const prefixes = {
   areaConfig: "ac",
   areaHandoff: "ah",
   areaHandoffEmail: "ahe",
+  // 030 — grabaciones de Zoom: la conexión, cada grabación y cada corrida.
+  zoomConnection: "zc",
+  zoomRecording: "zr",
+  zoomSyncRun: "zsr",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

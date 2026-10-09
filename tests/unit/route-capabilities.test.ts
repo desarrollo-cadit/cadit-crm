@@ -78,6 +78,11 @@ const SIN_CAPACIDAD: Record<string, string> = {
   "dev/m365-mock/[...path]/route.ts": "mockGuard",
   "dev/m365-mock/outbox/route.ts": "mockGuard",
   "dev/m365-mock/fail/route.ts": "mockGuard",
+  // 030 — zoom-mock (OAuth + API REST v2 de Zoom falsos para las grabaciones).
+  "dev/zoom-mock/[...path]/route.ts": "mockGuard",
+  "dev/zoom-mock/seed/route.ts": "mockGuard",
+  "dev/zoom-mock/fail/route.ts": "mockGuard",
+  "dev/zoom-mock/log/route.ts": "mockGuard",
 };
 
 describe("cobertura de permisos en las rutas de API", () => {

@@ -1,7 +1,34 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Versión: 1.4.0 → 1.5.0
+Versión: 1.5.0 → 1.6.0
+
+Cambios (1.6.0, 2026-10-09):
+  - Principio II: se AGREGA Zoom (API REST v2) como quinta dependencia de
+    runtime permitida, para LEER las grabaciones en la nube de las cuentas
+    del negocio y adjudicar su enlace a las clases (feature
+    030-grabaciones-zoom). Adaptador único `src/lib/zoom`; Server-to-Server
+    OAuth con scopes de solo lectura; credenciales cifradas AES-256-GCM,
+    nunca al cliente ni a logs, solo últimos 4; el CRM no descarga ni
+    almacena video (mismo criterio que Vimeo); opcional — sin Zoom el CRM
+    funciona idéntico; tests y mocks jamás llaman a Zoom real.
+  - Principio II: la viñeta del instalador suma "(opcional) una app
+    Server-to-Server OAuth de Zoom por cuenta"; la de adaptadores nombra
+    `src/lib/m365` y `src/lib/zoom`.
+  - Restricciones de Plataforma: "Aislamiento de integraciones" nombra los
+    mismos adaptadores.
+  - Retoma la DV-001 de la idea 018 (resuelta: enmienda + opcional con
+    degradación). Crear reuniones en Zoom sigue FUERA (requeriría scopes de
+    escritura y otra enmienda).
+  Bump: MINOR — amplía la lista cerrada del Principio II sin redefinir
+  principios existentes.
+
+Plantillas dependientes: plan/spec/tasks — ✅ compatibles (sin secciones nuevas).
+TODOs diferidos: webhook `recording.completed` (fuera de esta enmienda; si se
+agrega, no requiere enmienda nueva: misma dependencia y adaptador, pero sí
+un secreto más por conexión).
+
+Versión anterior: 1.4.0 → 1.5.0
 
 Cambios (1.5.0, 2026-10-08):
   - Principio II, ítem 3: el alcance de Microsoft 365 / Graph se AMPLÍA del
@@ -119,17 +146,34 @@ dependencias externas en runtime es CERRADA:
      NO hay tokens ni credenciales de API y el CRM NO almacena ni retransmite
      video. Se aísla tras UN solo componente de UI; un curso sin video funciona
      igual.
+  5. **Zoom (API REST v2)**, para LEER las grabaciones en la nube de las
+     cuentas de Zoom del propio negocio y adjudicar su enlace a las clases,
+     accedido EXCLUSIVAMENTE a través del adaptador `src/lib/zoom`.
+     Autenticación por Server-to-Server OAuth (account credentials) con
+     scopes de SOLO LECTURA (listar grabaciones en la nube y listar usuarios);
+     ningún scope de escritura, borrado ni de reuniones. Las credenciales
+     (Account ID, Client ID, Client Secret) se almacenan cifradas en reposo
+     (AES-256-GCM, `lib/crypto`), NUNCA viajan al cliente ni a logs, y solo se
+     muestran sus últimos 4 caracteres. El CRM NO descarga, almacena ni
+     retransmite video: una grabación es un ENLACE a la nube de Zoom, igual
+     que el principio del reproductor de Vimeo. Es OPCIONAL: sin conexiones de
+     Zoom configuradas el CRM funciona idéntico y la grabación se carga a mano.
+     Los tests y los entornos de prueba JAMÁS llaman a la API real de Zoom
+     (mock tras el gate de desarrollo).
 - **PROHIBIDO en v1**: almacenamiento de objetos externo (S3/R2), Stripe u otro
   billing, y servicios de Google. Cualquier feature que los requiera queda fuera
   del alcance de v1.
-- El instalador solo necesita: un VPS con Coolify o Docker, un dominio, credenciales
-  de Meta, (opcional) un token de OpenRouter y las credenciales de M365 para el
-  envío de correo. Nada más (el reproductor de Vimeo no requiere credenciales).
+- El instalador solo necesita: un VPS con Coolify o Docker, un dominio,
+  credenciales de Meta, (opcional) un token de OpenRouter, las credenciales
+  de M365 para el envío de correo y (opcional) una app Server-to-Server
+  OAuth de Zoom por cuenta para las grabaciones. Nada más (el reproductor de
+  Vimeo no requiere credenciales).
 - Las funciones core —autenticación y base de datos— corren self-hosted (Better
   Auth + PostgreSQL propios de la instancia).
 - Las integraciones externas permitidas se aíslan tras adaptadores dedicados
-  (cliente Graph API propio; adaptador LLM; componente único del reproductor de
-  Vimeo) para no acoplar el dominio a ellas.
+  (cliente Graph API propio; adaptador LLM; adaptador `src/lib/m365`;
+  adaptador `src/lib/zoom`; componente único del reproductor de Vimeo) para
+  no acoplar el dominio a ellas.
 
 **Rationale**: El producto se regala para que agencias lo desplieguen en VPS de
 clientes; cada dependencia externa adicional es un costo, un punto de fallo y una
@@ -270,9 +314,10 @@ Estas restricciones derivan de los Principios I y II y son verificables en revis
   almacenamiento en claro de secretos es una violación.
 - **Frontera de tenant**: la capa de acceso a datos exige el identificador
   de tenant; cualquier acceso que pueda omitirlo requiere justificación explícita.
-- **Aislamiento de integraciones**: las dependencias de APIs externas se acceden a
-  través de adaptadores dedicados (cliente Graph API propio, adaptador LLM
-  OpenRouter-compatible), no dispersas por el dominio.
+- **Aislamiento de integraciones**: las dependencias de APIs externas se
+  acceden a través de adaptadores dedicados (cliente Graph API propio,
+  adaptador LLM OpenRouter-compatible, `src/lib/m365`, `src/lib/zoom`), no
+  dispersas por el dominio.
 - **Instancia pública endurecida**: las rutas de mock/desarrollo devuelven 404
   incondicional en producción; el registro se cierra tras la primera organización
   (salvo habilitación explícita); los entornos de prueba internos JAMÁS alcanzan la
@@ -313,4 +358,4 @@ práctica, convención o preferencia; ante un conflicto, gana la constitución.
 - **Propagación**: al enmendar la constitución se revisan y, si procede, se actualizan
   las plantillas dependientes (plan, spec, tasks).
 
-**Version**: 1.5.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-10-08
+**Version**: 1.6.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-10-09

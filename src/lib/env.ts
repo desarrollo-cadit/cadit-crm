@@ -68,6 +68,24 @@ const envSchema = z.object({
    * margen. 0 solo en pruebas.
    */
   BULK_SEND_PAUSE_MS: z.coerce.number().int().min(0).default(2000),
+  /**
+   * 030 — Zoom (constitución 1.6.0). Bases de la API y del OAuth: vacías en
+   * producción (se usan https://api.zoom.us/v2 y https://zoom.us); en local
+   * apuntan al zoom-mock. Las CREDENCIALES no van acá: se cargan cifradas
+   * desde Configuración › Zoom, una conexión por cuenta.
+   */
+  ZOOM_API_BASE_URL: z.string().url().optional(),
+  ZOOM_OAUTH_BASE_URL: z.string().url().optional(),
+  /** Minutos entre sincronizaciones periódicas; 0 la apaga (solo botón). */
+  ZOOM_SYNC_INTERVAL_MIN: z.coerce.number().int().min(0).default(60),
+  /** Días hacia atrás de la primera corrida de una conexión. */
+  ZOOM_SYNC_BACKFILL_DAYS: z.coerce.number().int().min(1).default(90),
+  /** Días que cada corrida vuelve a mirar hacia atrás (grabaciones tardías). */
+  ZOOM_SYNC_OVERLAP_DAYS: z.coerce.number().int().min(0).default(3),
+  /** Tolerancia de adjudicación: minutos antes del inicio de la clase. */
+  ZOOM_MATCH_BEFORE_MIN: z.coerce.number().int().min(0).default(30),
+  /** Fin supuesto de una clase sin `end_time`, en minutos desde el inicio. */
+  ZOOM_MATCH_AFTER_FALLBACK_MIN: z.coerce.number().int().min(0).default(180),
   /** 007 — Envíos del formulario público permitidos por IP y ventana. */
   PUBLIC_FORM_RATE_LIMIT: z.coerce.number().int().min(1).default(5),
   PUBLIC_FORM_RATE_WINDOW_MS: z.coerce.number().int().min(1000).default(600_000),
