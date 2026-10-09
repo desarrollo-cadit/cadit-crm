@@ -28,6 +28,10 @@ type Room = {
   zoomConnectionId: string | null;
   zoomUserId: string | null;
   zoomUserEmail: string | null;
+  url: string;
+  accountEmail: string | null;
+  zoomUserPmi: string | null;
+  zoomSyncedThrough: string | null;
 };
 
 let connections: ConnectionRow[] = [];
@@ -77,12 +81,22 @@ const store: ConnectionStore = {
         zoomConnectionId: r.zoomConnectionId!,
         zoomUserId: r.zoomUserId!,
         zoomUserEmail: r.zoomUserEmail,
+        zoomUserPmi: r.zoomUserPmi,
+        url: r.url,
         archived: r.archivedAt !== null,
       }));
   },
   async getRoom(org, roomId) {
     const r = rooms.find((x) => x.organizationId === org && x.id === roomId);
-    return r ? { id: r.id, name: r.name, archivedAt: r.archivedAt } : null;
+    return r
+      ? {
+          id: r.id,
+          name: r.name,
+          archivedAt: r.archivedAt,
+          zoomConnectionId: r.zoomConnectionId,
+          zoomUserId: r.zoomUserId,
+        }
+      : null;
   },
   async roomUsing(org, connectionId, zoomUserId, excludeRoomId) {
     const r = rooms.find(
@@ -100,13 +114,24 @@ const store: ConnectionStore = {
     r.zoomConnectionId = link?.connectionId ?? null;
     r.zoomUserId = link?.zoomUserId ?? null;
     r.zoomUserEmail = link ? (link.zoomUserEmail ?? null) : null;
+    r.zoomUserPmi = link ? (link.zoomUserPmi ?? null) : null;
+    if (link?.zoomUserEmail) r.accountEmail = link.zoomUserEmail;
+    if (!link || link.resetSync) r.zoomSyncedThrough = null;
   },
-  async refreshRoomEmails(org, connectionId, users) {
+  async refreshRoomUsers(org, connectionId, users) {
     for (const r of rooms) {
       if (r.organizationId !== org || r.zoomConnectionId !== connectionId) continue;
       const u = users.find((x) => x.id === r.zoomUserId);
-      if (u) r.zoomUserEmail = u.email;
+      if (u) {
+        r.zoomUserEmail = u.email;
+        r.zoomUserPmi = u.pmi;
+      }
     }
+  },
+  async setRoomUrl(org, roomId, url, pmi) {
+    const r = rooms.find((x) => x.organizationId === org && x.id === roomId)!;
+    r.url = url;
+    r.zoomUserPmi = pmi;
   },
 };
 
@@ -130,6 +155,10 @@ function aula(id: string, name: string, extra: Partial<Room> = {}): Room {
     zoomConnectionId: null,
     zoomUserId: null,
     zoomUserEmail: null,
+    url: "https://zoom.us/j/1000000001",
+    accountEmail: null,
+    zoomUserPmi: null,
+    zoomSyncedThrough: null,
     ...extra,
   };
   rooms.push(r);
@@ -291,12 +320,12 @@ describe("Probar la conexión", () => {
       zoomUserEmail: "viejo@x",
     });
     listUsers.mockResolvedValue([
-      { id: "u1", email: "nuevo@x", displayName: "Zoom 1", type: 2, status: "active" },
+      { id: "u1", email: "nuevo@x", displayName: "Zoom 1", type: 2, status: "active", pmi: "5550001111" },
     ]);
     const r = await testConnection(ORG, c.data.id, deps);
     expect(r).toEqual({
       ok: true,
-      data: { ok: true, users: [{ id: "u1", email: "nuevo@x", displayName: "Zoom 1" }] },
+      data: { ok: true, users: [{ id: "u1", email: "nuevo@x", displayName: "Zoom 1", pmi: "5550001111" }] },
     });
     expect(listUsers).toHaveBeenCalledWith({
       connectionId: c.data.id,
@@ -307,6 +336,7 @@ describe("Probar la conexión", () => {
     expect(connections[0]).toMatchObject({ status: "ok", lastError: null });
     expect(connections[0]!.lastTestedAt).toBeInstanceOf(Date);
     expect(room.zoomUserEmail).toBe("nuevo@x");
+    expect(room.zoomUserPmi).toBe("5550001111");
   });
 
   it("credenciales inválidas: resultado legible, status error y last_error con código propio", async () => {
@@ -370,6 +400,26 @@ describe("vincular aulas", () => {
     expect(room).toMatchObject({ zoomConnectionId: zc, zoomUserId: "u1", zoomUserEmail: "z1@x" });
     expect(await linkRoom(ORG, "aula_1", null, deps)).toEqual({ ok: true, data: null });
     expect(room).toMatchObject({ zoomConnectionId: null, zoomUserId: null, zoomUserEmail: null });
+  });
+
+  it("al vincular, el correo de la cuenta del aula pasa a ser el del usuario de Zoom y se guarda su PMI", async () => {
+    const { linkRoom } = await mod();
+    const zc = await conexion();
+    const room = aula("aula_1", "Zoom 1", { accountEmail: "viejo@academia.uy" });
+    await linkRoom(ORG, "aula_1", { connectionId: zc, zoomUserId: "u1", zoomUserEmail: "zoom1@academia.uy", zoomUserPmi: "5550001111" }, deps);
+    expect(room).toMatchObject({ accountEmail: "zoom1@academia.uy", zoomUserPmi: "5550001111", name: "Zoom 1" });
+    // el enlace del aula NO se toca solo
+    expect(room.url).toBe("https://zoom.us/j/1000000001");
+  });
+
+  it("R-12: cambiar el usuario vinculado vacía la marca del aula; re-vincular el mismo no", async () => {
+    const { linkRoom } = await mod();
+    const zc = await conexion();
+    const room = aula("aula_1", "Zoom 1", { zoomConnectionId: zc, zoomUserId: "u1", zoomSyncedThrough: "2026-10-08" });
+    await linkRoom(ORG, "aula_1", { connectionId: zc, zoomUserId: "u1" }, deps);
+    expect(room.zoomSyncedThrough).toBe("2026-10-08");
+    await linkRoom(ORG, "aula_1", { connectionId: zc, zoomUserId: "u2" }, deps);
+    expect(room.zoomSyncedThrough).toBeNull();
   });
 
   it("usuario ya usado por otra aula activa de esa conexión → usuario_ya_vinculado con roomName", async () => {
@@ -438,5 +488,67 @@ describe("vincular aulas", () => {
     const lista = await listConnections(ORG, deps);
     expect(lista.find((c) => c.name === "Organización")!.rooms).toHaveLength(5);
     expect(lista.filter((c) => c.name.startsWith("Cuenta")).every((c) => c.rooms.length === 1)).toBe(true);
+  });
+});
+
+describe("el enlace del aula y la sala personal (PMI)", () => {
+  async function vinculada(extra: Partial<Room> = {}) {
+    const { createConnection } = await mod();
+    const c = await createConnection(ORG, { name: "Z", accountId: "acc-1", clientId: "cli", clientSecret: SECRETO }, null, deps);
+    if (!c.ok) throw new Error();
+    const room = aula("aula_1", "Zoom 1", { zoomConnectionId: c.data.id, zoomUserId: "u1", ...extra });
+    return { zc: c.data.id, room };
+  }
+
+  it("el DTO avisa cuando el enlace del aula NO es la sala personal, con el enlace sugerido", async () => {
+    const { listConnections } = await mod();
+    await vinculada({ zoomUserPmi: "5550001111" });
+    const [c] = await listConnections(ORG, deps);
+    expect(c!.rooms[0]).toMatchObject({
+      roomUrl: "https://zoom.us/j/1000000001",
+      zoomUserPmi: "5550001111",
+      pmiMismatch: true,
+      suggestedUrl: "https://zoom.us/j/5550001111",
+    });
+  });
+
+  it("sin aviso si coinciden (aunque el enlace tenga pwd) o si Zoom no informó el PMI", async () => {
+    const { listConnections } = await mod();
+    const { room } = await vinculada({ zoomUserPmi: "5550001111", url: "https://us02web.zoom.us/j/5550001111?pwd=abc" });
+    expect((await listConnections(ORG, deps))[0]!.rooms[0]).toMatchObject({ pmiMismatch: false, suggestedUrl: null });
+    room.zoomUserPmi = null;
+    expect((await listConnections(ORG, deps))[0]!.rooms[0]).toMatchObject({ pmiMismatch: false, suggestedUrl: null });
+  });
+
+  it("'Actualizar enlace': consulta a Zoom, pone el enlace de la sala personal y no toca el nombre", async () => {
+    const { adoptZoomPmiForRoom } = await mod();
+    const { room } = await vinculada({ zoomUserPmi: "1234" });
+    listUsers.mockResolvedValue([
+      { id: "u1", email: "z1@x", displayName: "Z1", type: 2, status: "active", pmi: "5550001111" },
+    ]);
+    expect(await adoptZoomPmiForRoom(ORG, "aula_1", deps)).toEqual({
+      ok: true,
+      data: { url: "https://zoom.us/j/5550001111" },
+    });
+    expect(room).toMatchObject({ url: "https://zoom.us/j/5550001111", zoomUserPmi: "5550001111", name: "Zoom 1" });
+  });
+
+  it("'Actualizar enlace' rechaza: aula sin vincular, usuario sin PMI, y un fallo de Zoom con mensaje propio", async () => {
+    const { adoptZoomPmiForRoom } = await mod();
+    const { room } = await vinculada();
+    aula("aula_suelta", "Suelta");
+    expect(await adoptZoomPmiForRoom(ORG, "aula_suelta", deps)).toMatchObject({ ok: false, code: "no_vinculada" });
+    expect(await adoptZoomPmiForRoom(ORG, "aula_nada", deps)).toMatchObject({ ok: false, code: "no_existe" });
+
+    listUsers.mockResolvedValue([{ id: "u1", email: "z1@x", displayName: "Z1", type: 2, status: "active", pmi: null }]);
+    expect(await adoptZoomPmiForRoom(ORG, "aula_1", deps)).toMatchObject({ ok: false, code: "sin_pmi" });
+
+    listUsers.mockRejectedValue(new ZoomError("zoom_caido", "Zoom no respondió después de varios intentos."));
+    expect(await adoptZoomPmiForRoom(ORG, "aula_1", deps)).toEqual({
+      ok: false,
+      code: "zoom_error",
+      message: "Zoom no respondió después de varios intentos.",
+    });
+    expect(room.url).toBe("https://zoom.us/j/1000000001");
   });
 });

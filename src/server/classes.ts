@@ -82,6 +82,12 @@ export type StaffClassRowDto = ClassRowDto & {
    * acá (025, FR-004). Por eso viaja el id y el nombre, jamás la URL del aula.
    */
   virtualRoomId: string | null;
+  /**
+   * 030 (US2) — De dónde salió la grabación: `"zoom"` (adjudicada por la
+   * sincronización) o `"manual"` (la pegó una persona). Solo staff: el DTO
+   * del portal no cambia.
+   */
+  recordingSource: "manual" | "zoom" | null;
 };
 
 export type CohortClassesDto = {
@@ -425,6 +431,7 @@ export async function listCohortClasses(
         }),
         ownMeetingUrl: s.meetingUrl,
         virtualRoomId: s.virtualRoomId,
+        recordingSource: s.recordingSource,
       })),
       cohortVirtualRoomId: cohort.virtualRoomId,
     };
@@ -480,6 +487,7 @@ export async function listCohortClasses(
       // ni a la cual asignarle un aula.
       ownMeetingUrl: null,
       virtualRoomId: null,
+      recordingSource: null,
     })),
     cohortVirtualRoomId: cohort.virtualRoomId,
   };
@@ -603,6 +611,7 @@ export async function listProgramClasses(
             }),
             ownMeetingUrl: s.meetingUrl,
             virtualRoomId: s.virtualRoomId,
+            recordingSource: s.recordingSource,
           })),
         };
       }
@@ -640,6 +649,7 @@ export async function listProgramClasses(
           }),
           ownMeetingUrl: null,
           virtualRoomId: null,
+          recordingSource: null,
         })),
       };
     }),

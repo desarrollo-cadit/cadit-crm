@@ -34,6 +34,8 @@ type ClassRow = {
    * Es el recurso OCUPADO, nunca de dónde sale el enlace (025, FR-004).
    */
   virtualRoomId: string | null;
+  /** 030 — De dónde salió la grabación: adjudicada desde Zoom o pegada a mano. */
+  recordingSource?: "manual" | "zoom" | null;
 };
 
 /**
@@ -374,7 +376,15 @@ export function ClassesClient({
                 <Video className="h-4 w-4" />
                 Ver grabación
               </a>
-            ) : !c.projected && c.endsAt && new Date(c.endsAt) < new Date() ? (
+            ) : null}
+            {/* 030 — De dónde salió la grabación: la trajo Zoom o la pegó alguien. */}
+            {!c.canceled && !c.meetingUrl && c.recordingUrl && c.recordingSource ? (
+              <Badge variant={c.recordingSource === "zoom" ? "success" : "secondary"}>
+                {c.recordingSource === "zoom" ? "Zoom" : "manual"}
+              </Badge>
+            ) : null}
+            {!c.canceled && !c.meetingUrl && !c.recordingUrl && !c.projected && c.endsAt &&
+            new Date(c.endsAt) < new Date() ? (
               <span className="text-muted-foreground">Grabación pendiente</span>
             ) : null}
 
@@ -402,6 +412,11 @@ export function ClassesClient({
                   <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>
                     Cancelar
                   </Button>
+                  {editing.campo === "recordingUrl" && c.recordingSource === "zoom" && (
+                    <span className="text-xs text-warning">
+                      Vas a reemplazar la grabación de Zoom: queda sin clase y la sincronización no la vuelve a poner.
+                    </span>
+                  )}
                 </span>
               ) : (
                 <span className="flex items-center gap-1">

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { UserPlus } from "lucide-react";
+import { UserMinus, UserPlus } from "lucide-react";
 import { ContactAvatar } from "@/components/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,8 @@ type Member = {
   email: string;
   createdAt: string;
   isSelf?: boolean;
+  /** 030 (addendum) — También es profesor con acceso al portal. */
+  isTeacher?: boolean;
 };
 
 /** Crear-roles — Lo que devuelve `/api/settings/team/roles`. */
@@ -43,7 +45,9 @@ export function TeamClient() {
   const [roles, setRoles] = useState<AssignableRole[]>([]);
   const [changing, setChanging] = useState<string | null>(null);
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
-  const [created, setCreated] = useState<{ email: string; password: string } | null>(null);
+  const [created, setCreated] = useState<
+    { email: string; password: string; attached: false } | { email: string; attached: true } | null
+  >(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -101,11 +105,35 @@ export function TeamClient() {
       setError(data?.error?.message ?? "No se pudo crear la cuenta");
       return;
     }
-    setCreated({ email, password: tempPassword });
+    const ok = (await res.json().catch(() => null)) as { attached?: boolean } | null;
+    setCreated(ok?.attached ? { email, attached: true } : { email, password: tempPassword, attached: false });
     setName("");
     setEmail("");
     setTempPassword("");
     setRoleKey(roles.find((r) => r.assignable)?.key ?? "");
+    void refetch();
+  }
+
+  /**
+   * 030 (addendum) — Quitar del equipo borra SOLO la membresía: si la persona
+   * es profesor, sigue entrando al portal con su misma contraseña.
+   */
+  async function removeFromTeam(member: Member) {
+    const aviso = member.isTeacher
+      ? `¿Quitar a ${member.name} del equipo? Va a seguir entrando al portal como profesor, con su misma contraseña.`
+      : `¿Quitar a ${member.name} del equipo? No va a poder entrar al panel.`;
+    if (!window.confirm(aviso)) return;
+    setChanging(member.id);
+    setRowError(null);
+    const res = await fetch(`/api/settings/team/${member.id}`, { method: "DELETE" }).catch(() => null);
+    setChanging(null);
+    if (!res?.ok) {
+      const data = (await res?.json().catch(() => null)) as {
+        error?: { message?: string };
+      } | null;
+      setRowError({ id: member.id, message: data?.error?.message ?? "No se pudo quitar del equipo" });
+      return;
+    }
     void refetch();
   }
 
@@ -194,9 +222,22 @@ export function TeamClient() {
                 Generar
               </Button>
             </div>
+            <p className="text-xs text-muted-foreground">
+              Si el correo es de un profesor con acceso al portal, dejala vacía: se usa su misma
+              cuenta y su contraseña no cambia.
+            </p>
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
-          {created && (
+          {created && created.attached && (
+            <div className="rounded-md border border-success-border bg-success-soft p-3 text-sm" data-team-attached>
+              <p className="font-medium text-success">Listo ✓</p>
+              <p className="mt-1 text-success">
+                <code>{created.email}</code> ya era profesor y ahora también es parte del equipo.
+                Entra con su misma contraseña y cambia de vista desde su cuenta.
+              </p>
+            </div>
+          )}
+          {created && !created.attached && (
             <div className="rounded-md border border-success-border bg-success-soft p-3 text-sm">
               <p className="font-medium text-success">Cuenta creada ✓</p>
               <p className="mt-1 text-success">
@@ -209,7 +250,10 @@ export function TeamClient() {
           )}
           <Button
             disabled={
-              saving || !name.trim() || !email.trim() || tempPassword.length < 8
+              saving ||
+              !name.trim() ||
+              !email.trim() ||
+              (tempPassword.length > 0 && tempPassword.length < 8)
             }
             onClick={() => void create()}
           >
@@ -237,6 +281,7 @@ export function TeamClient() {
                 <p className="truncate text-sm font-medium">{m.name}</p>
                 <p className="text-xs text-muted-foreground">{m.email}</p>
               </div>
+              {m.isTeacher && <Badge variant="outline">También profesor</Badge>}
               {/* 012 (T029) — El rótulo sale de la tabla `role`, no de un
                   `if` con nombres quemados: si la dueña renombra un rol desde
                   Roles, acá se ve el nombre nuevo. Si el rol no está sembrado,
@@ -262,6 +307,18 @@ export function TeamClient() {
                     </option>
                   ))}
                 </select>
+              )}
+              {!m.isSelf && (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  aria-label={`Quitar a ${m.name} del equipo`}
+                  title="Quitar del equipo"
+                  disabled={changing === m.id}
+                  onClick={() => void removeFromTeam(m)}
+                >
+                  <UserMinus className="h-4 w-4" />
+                </Button>
               )}
             </div>
             {rowError?.id === m.id && (

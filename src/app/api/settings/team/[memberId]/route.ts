@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { apiError, parseBody, requireCapability } from "@/lib/api";
 import { sessionCapabilities } from "@/lib/capabilities";
-import { changeMemberRole } from "@/server/team";
+import { changeMemberRole, removeMember } from "@/server/team";
 
 export const dynamic = "force-dynamic";
 
@@ -30,5 +30,26 @@ export const PATCH = requireCapability(
     );
     if (!result.ok) return apiError(result.status, result.code, result.message);
     return Response.json({ member: result.data });
+  }
+);
+
+/**
+ * 030 (addendum) — Quitar del equipo: borra SOLO la fila de `member`.
+ *
+ * Si la persona además es profesor, sigue entrando al portal con su misma
+ * contraseña: su usuario y su `account_link` no se tocan. Las reglas (no a
+ * uno mismo, sin escalada, siempre alguien a cargo) viven en `removeMember`.
+ */
+export const DELETE = requireCapability(
+  "accesos.gestionar",
+  async (session, _req: Request, ctx: Params) => {
+    const { memberId } = await ctx.params;
+    const result = await removeMember(
+      session.organizationId,
+      { userId: session.userId, capabilities: sessionCapabilities(session) },
+      memberId
+    );
+    if (!result.ok) return apiError(result.status, result.code, result.message);
+    return Response.json({ ok: true });
   }
 );

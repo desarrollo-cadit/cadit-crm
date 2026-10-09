@@ -116,6 +116,16 @@ capacidad.
 portal no tiene fila en `member`, así que falla `withAuth` por construcción,
 no por disciplina.
 
+**La cuenta dual (030).** Un PROFESOR puede ser además del equipo: el alta de
+Equipo con su correo no crea otra cuenta, le agrega una fila de `member` al
+MISMO usuario (`addTeamMember` en `src/server/team.ts`; sin contraseña nueva,
+la regla de escalada vale igual). Un correo de ALUMNO se sigue rechazando.
+La cuenta dual pasa las dos puertas porque TIENE las dos filas — ninguna
+puerta tiene un `if` para ella. Quitar del equipo borra solo `member`; dar de
+baja al profesor borra solo su `account_link` (cascada). "Ver como: Equipo /
+Profesor" aparece en las dos barras y guarda la elección en la cookie `vista`
+(`src/lib/view-preference.ts`), que solo decide a dónde lleva `/`.
+
 **RLS.** Toda tabla de dominio tiene la política `tenant_isolation`, y cada
 pedido autenticado corre dentro de una transacción que declara
 `app.current_org` (`withAuth` → `withTenantTransaction`). Consecuencias que

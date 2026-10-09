@@ -15,6 +15,9 @@ const STATUS: Record<ConnErrorCode, number> = {
   usuario_ya_vinculado: 409,
   conexion_archivada: 422,
   aula_archivada: 422,
+  no_vinculada: 422,
+  sin_pmi: 422,
+  zoom_error: 502,
 };
 
 export function connErrorResponse(result: Extract<ConnResult<unknown>, { ok: false }>): Response {

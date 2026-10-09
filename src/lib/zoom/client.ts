@@ -287,6 +287,7 @@ const usersSchema = z
           display_name: z.string().nullish(),
           type: z.number(),
           status: z.string().nullish(),
+          pmi: z.union([z.number(), z.string()]).nullish(),
         })
         .passthrough()
     ),
@@ -313,6 +314,7 @@ export async function listUsers(creds: ZoomCredentials): Promise<ZoomUser[]> {
         displayName: u.display_name || nombre || u.email,
         type: u.type,
         status: u.status ?? "active",
+        pmi: u.pmi !== null && u.pmi !== undefined && String(u.pmi) !== "" ? String(u.pmi) : null,
       });
     }
     next = page.next_page_token ?? "";
@@ -342,12 +344,25 @@ const meetingsSchema = z
           recording_play_passcode: z.string().nullish(),
           password: z.string().nullish(),
           auto_delete_date: z.string().nullish(),
+          recording_files: z
+            .array(z.object({ file_type: z.string().nullish() }).passthrough())
+            .nullish(),
         })
         .passthrough()
     ),
     next_page_token: z.string().nullish(),
   })
   .passthrough();
+
+/** Solo el TIPO de cada archivo: ni URL de descarga ni tamaño por archivo. */
+function fileTypesOf(files: { file_type?: string | null }[] | null | undefined): string[] {
+  const tipos = new Set<string>();
+  for (const f of files ?? []) {
+    const t = f.file_type?.trim().toUpperCase();
+    if (t) tipos.add(t);
+  }
+  return [...tipos].sort();
+}
 
 const isoDay = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 const dayMs = (d: string) => Date.parse(`${d}T00:00:00Z`);
@@ -401,6 +416,7 @@ export async function* listUserRecordings(
         playPasscode: m.recording_play_passcode || null,
         password: m.password || null,
         autoDeleteDate: m.auto_delete_date ?? null,
+        fileTypes: fileTypesOf(m.recording_files),
       }));
       next = page.next_page_token ?? "";
     } while (next);

@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, isNotNull, lt, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNotNull, lt, or, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { getEnv } from "@/lib/env";
 import { getDb, schema } from "@/lib/db";
@@ -26,6 +26,14 @@ const dia = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "La fecha va como AAAA-MM-DD
 
 export const RECORDING_STATES = ["asignada", "ambigua", "conflicto", "sin_clase", "pendiente", "faltante"] as const;
 
+/** Los tamaños de página que ofrece la tabla. */
+export const PAGE_SIZES = [25, 50, 100] as const;
+
+/**
+ * Paginación NUMERADA (página + tamaño) y no por cursor: la tabla muestra
+ * "página 3 de 12" y deja saltar a cualquiera, y con un `count(*)` sobre el
+ * índice `(organization_id, start_time)` el costo es el mismo.
+ */
 export const recordingsQuerySchema = z
   .object({
     connectionId: z.string().min(1).optional(),
@@ -33,8 +41,14 @@ export const recordingsQuerySchema = z
     from: dia.optional(),
     to: dia.optional(),
     state: z.enum(RECORDING_STATES).optional(),
-    cursor: z.string().min(1).optional(),
-    limit: z.coerce.number().int().min(1).max(200).default(50),
+    page: z.coerce.number().int().min(1).max(100_000).default(1),
+    pageSize: z.coerce
+      .number()
+      .int()
+      .refine((n) => (PAGE_SIZES as readonly number[]).includes(n), "El tamaño de página es 25, 50 o 100.")
+      .default(25),
+    /** Por fecha de inicio: `desc` = más recientes primero. */
+    sort: z.enum(["desc", "asc"]).default("desc"),
   })
   .strict();
 
@@ -57,20 +71,24 @@ export function dayRange(
   };
 }
 
-/** Cursor estable sobre el orden `start_time desc, id desc`. */
-export function encodeCursor(c: { startTime: Date; id: string }): string {
-  return Buffer.from(JSON.stringify({ t: c.startTime.toISOString(), id: c.id })).toString("base64url");
+/**
+ * La página que de verdad se devuelve. Una página fuera de rango (un enlace
+ * guardado cuando había más grabaciones, o un filtro que achicó el total) cae
+ * en la última en vez de mostrar una tabla vacía que parece un error.
+ */
+export function pageWindow(
+  total: number,
+  page: number,
+  pageSize: number
+): { page: number; offset: number; totalPages: number } {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const actual = Math.min(Math.max(1, page), totalPages);
+  return { page: actual, offset: (actual - 1) * pageSize, totalPages };
 }
 
-export function decodeCursor(raw: string): { startTime: Date; id: string } | null {
-  try {
-    const v = JSON.parse(Buffer.from(raw, "base64url").toString("utf8")) as { t?: unknown; id?: unknown };
-    if (typeof v.t !== "string" || typeof v.id !== "string") return null;
-    const startTime = new Date(v.t);
-    return Number.isNaN(startTime.getTime()) ? null : { startTime, id: v.id };
-  } catch {
-    return null;
-  }
+/** Zoom marca la transcripción como `TRANSCRIPT` (audio) o `CC` (subtítulos). */
+export function hasTranscript(fileTypes: readonly string[]): boolean {
+  return fileTypes.includes("TRANSCRIPT") || fileTypes.includes("CC");
 }
 
 /* ============================================================
@@ -94,6 +112,9 @@ export type RecordingRowDto = {
   passcodeEmbedded: boolean;
   autoDeleteDate: string | null;
   missingInZoom: boolean;
+  /** Solo metadatos (`MP4`, `TRANSCRIPT`…): el CRM no descarga nada. */
+  fileTypes: string[];
+  hasTranscript: boolean;
   assignment: {
     mode: "auto" | "manual";
     state: AssignmentState;
@@ -119,6 +140,7 @@ export type RecordingRow = SealedPasscode & {
   playUrl: string | null;
   passcodeEmbedded: boolean;
   autoDeleteDate: string | null;
+  fileTypes: string[];
   missingInZoomAt: Date | null;
   assignmentMode: "auto" | "manual";
   assignmentState: AssignmentState;
@@ -161,6 +183,8 @@ export function toRecordingRowDto(
     passcodeEmbedded: row.passcodeEmbedded,
     autoDeleteDate: row.autoDeleteDate,
     missingInZoom: row.missingInZoomAt !== null,
+    fileTypes: row.fileTypes,
+    hasTranscript: hasTranscript(row.fileTypes),
     assignment: {
       mode: row.assignmentMode,
       state: row.assignmentState,
@@ -182,10 +206,23 @@ export function toRecordingRowDto(
  * Listado
  * ============================================================ */
 
+export type RecordingsPage = {
+  rows: RecordingRowDto[];
+  /** Cuántas grabaciones cumplen los filtros (todas las páginas). */
+  total: number;
+  /** La página devuelta (puede ser menor que la pedida: `pageWindow`). */
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  configured: boolean;
+};
+
 export async function listRecordings(
   orgId: string,
-  q: RecordingsQuery
-): Promise<{ rows: RecordingRowDto[]; nextCursor: string | null; configured: boolean }> {
+  q: RecordingsQuery,
+  /** Interno: una sola grabación (la respuesta de asignar/desasignar). */
+  opts: { ids?: string[] } = {}
+): Promise<RecordingsPage> {
   const db = getDb();
 
   const [conexion] = await db
@@ -194,11 +231,10 @@ export async function listRecordings(
     .where(scoped(schema.zoomConnection.organizationId, orgId))
     .limit(1);
   const configured = conexion !== undefined;
-  if (!configured) return { rows: [], nextCursor: null, configured };
+  if (!configured) return { rows: [], total: 0, page: 1, pageSize: q.pageSize, totalPages: 1, configured };
 
   const tz = await organizationTimezone(orgId);
   const rango = dayRange(q.from, q.to, tz);
-  const cursor = q.cursor ? decodeCursor(q.cursor) : null;
 
   const condiciones: (SQL | undefined)[] = [
     q.connectionId ? eq(t.zoomConnectionId, q.connectionId) : undefined,
@@ -210,10 +246,14 @@ export async function listRecordings(
       : q.state
         ? eq(t.assignmentState, q.state)
         : undefined,
-    cursor
-      ? or(lt(t.startTime, cursor.startTime), and(eq(t.startTime, cursor.startTime), lt(t.id, cursor.id)))
-      : undefined,
+    opts.ids ? inArray(t.id, opts.ids) : undefined,
   ];
+  const donde = scoped(t.organizationId, orgId, ...condiciones);
+
+  // Los filtros son todos de `zoom_recording`: el total se cuenta sin joins.
+  const [{ total } = { total: 0 }] = await db.select({ total: count() }).from(t).where(donde);
+  const ventana = pageWindow(total, q.page, q.pageSize);
+  const orden = q.sort === "asc" ? [asc(t.startTime), asc(t.id)] : [desc(t.startTime), desc(t.id)];
 
   const filas = await db
     .select({
@@ -233,6 +273,7 @@ export async function listRecordings(
       passcodeTag: t.passcodeTag,
       passcodeEmbedded: t.passcodeEmbedded,
       autoDeleteDate: t.autoDeleteDate,
+      fileTypes: t.fileTypes,
       missingInZoomAt: t.missingInZoomAt,
       assignmentMode: t.assignmentMode,
       assignmentState: t.assignmentState,
@@ -245,13 +286,12 @@ export async function listRecordings(
     .from(t)
     .innerJoin(schema.zoomConnection, eq(schema.zoomConnection.id, t.zoomConnectionId))
     .leftJoin(schema.virtualRoom, eq(schema.virtualRoom.id, t.virtualRoomId))
-    .where(scoped(t.organizationId, orgId, ...condiciones))
-    .orderBy(desc(t.startTime), desc(t.id))
-    .limit(q.limit + 1);
+    .where(donde)
+    .orderBy(...orden)
+    .limit(q.pageSize)
+    .offset(ventana.offset);
 
-  const pagina = filas.slice(0, q.limit);
-  const ultima = pagina.at(-1);
-  const nextCursor = filas.length > q.limit && ultima ? encodeCursor(ultima) : null;
+  const pagina = filas;
 
   // Clases y personas de TODA la página en una consulta cada una.
   const claseIds = [
@@ -297,7 +337,14 @@ export async function listRecordings(
     for (const u of us) users.set(u.id, u.name);
   }
 
-  return { rows: pagina.map((r) => toRecordingRowDto(r, { classes, users })), nextCursor, configured };
+  return {
+    rows: pagina.map((r) => toRecordingRowDto(r, { classes, users })),
+    total,
+    page: ventana.page,
+    pageSize: q.pageSize,
+    totalPages: ventana.totalPages,
+    configured,
+  };
 }
 
 /* ============================================================
@@ -414,4 +461,213 @@ export async function getSyncStatus(orgId: string): Promise<SyncStatusDto> {
     lastRuns,
     periodicIntervalMin: getEnv().ZOOM_SYNC_INTERVAL_MIN,
   });
+}
+
+/** La fila de UNA grabación (lo que devuelven asignar, desasignar y volver a automático). */
+export async function getRecordingRowDto(orgId: string, id: string): Promise<RecordingRowDto | null> {
+  const { rows } = await listRecordings(orgId, recordingsQuerySchema.parse({}), { ids: [id] });
+  return rows[0] ?? null;
+}
+
+/* ============================================================
+ * Candidatas para asignar a mano (US3)
+ * ============================================================ */
+
+export const candidatesQuerySchema = z
+  .object({
+    /** Texto de cohorte o curso. */
+    q: z.string().trim().max(100).optional(),
+    /** Un día de la academia: las clases reales de ese día, en cualquier aula. */
+    date: dia.optional(),
+    /** Todas las clases reales de UNA cohorte (el segundo paso: cohorte → clase). */
+    cohortId: z.string().min(1).optional(),
+  })
+  .strict();
+
+export type ClassOptionDto = {
+  id: string;
+  number: number;
+  cohortId: string;
+  cohortName: string;
+  courseName: string;
+  /** YYYY-MM-DD (día de la clase). */
+  date: string;
+  startsAt: string | null;
+  roomName: string | null;
+  /** Se lista, deshabilitada: no se le puede asignar grabación. */
+  canceled: boolean;
+  /** Qué se reemplazaría al elegirla. */
+  current: { kind: "manual" | "zoom"; recordingId: string | null } | null;
+};
+
+export type ClassOptionRow = {
+  id: string;
+  number: number;
+  cohortId: string;
+  cohortName: string | null;
+  courseName: string;
+  date: Date;
+  startTime: string | null;
+  canceledAt: Date | null;
+  recordingUrl: string | null;
+  recordingSource: "manual" | "zoom" | null;
+  classRoomId: string | null;
+  cohortRoomId: string | null;
+};
+
+export function toClassOption(
+  row: ClassOptionRow,
+  ctx: { timezone: string; rooms: Map<string, string>; recByClass: Map<string, string> }
+): ClassOptionDto {
+  const roomId = row.classRoomId ?? row.cohortRoomId;
+  const rec = ctx.recByClass.get(row.id);
+  return {
+    id: row.id,
+    number: row.number,
+    cohortId: row.cohortId,
+    cohortName: row.cohortName ?? row.courseName,
+    courseName: row.courseName,
+    date: row.date.toISOString().slice(0, 10),
+    startsAt: classInstant(row.date, row.startTime, ctx.timezone)?.toISOString() ?? null,
+    roomName: roomId ? (ctx.rooms.get(roomId) ?? null) : null,
+    canceled: row.canceledAt !== null,
+    current: rec
+      ? { kind: "zoom", recordingId: rec }
+      : row.recordingUrl && row.recordingSource !== "zoom"
+        ? { kind: "manual", recordingId: null }
+        : null,
+  };
+}
+
+const porInicio = (a: ClassOptionDto, b: ClassOptionDto) =>
+  (a.startsAt ?? a.date).localeCompare(b.startsAt ?? b.date) || a.id.localeCompare(b.id);
+
+/** Candidatas del matcher primero; después las del mismo día. Sin repetir. */
+export function mergeSuggested(candidates: ClassOptionDto[], sameDay: ClassOptionDto[]): ClassOptionDto[] {
+  const vistos = new Set<string>();
+  const out: ClassOptionDto[] = [];
+  for (const o of [...[...candidates].sort(porInicio), ...[...sameDay].sort(porInicio)]) {
+    if (vistos.has(o.id)) continue;
+    vistos.add(o.id);
+    out.push(o);
+  }
+  return out;
+}
+
+export type CandidatesDto = {
+  suggested: ClassOptionDto[];
+  /** Cohortes que coinciden con `q` (para elegir cohorte → clase). */
+  cohorts: { id: string; name: string; courseName: string }[];
+  results: ClassOptionDto[];
+};
+
+/**
+ * Lo que necesita el diálogo de asignar: sugeridas, cohortes por texto y las
+ * clases de la cohorte o del día elegidos. Solo clases REALES (filas de
+ * `class_session`): una proyección no existe y no se le puede escribir nada.
+ */
+export async function listCandidates(
+  orgId: string,
+  recordingId: string,
+  q: z.infer<typeof candidatesQuerySchema>
+): Promise<CandidatesDto | null> {
+  const db = getDb();
+  const [rec] = await db
+    .select({
+      startTime: t.startTime,
+      candidateClassIds: t.candidateClassIds,
+      conflictClassSessionId: t.conflictClassSessionId,
+    })
+    .from(t)
+    .where(scoped(t.organizationId, orgId, eq(t.id, recordingId)))
+    .limit(1);
+  if (!rec) return null;
+
+  const tz = await organizationTimezone(orgId);
+  const cs = schema.classSession;
+
+  async function clases(cond: SQL, limit: number): Promise<ClassOptionDto[]> {
+    const filas = await db
+      .select({
+        id: cs.id,
+        number: cs.number,
+        cohortId: cs.cohortId,
+        cohortName: schema.cohort.name,
+        courseName: schema.course.name,
+        date: cs.date,
+        startTime: cs.startTime,
+        canceledAt: cs.canceledAt,
+        recordingUrl: cs.recordingUrl,
+        recordingSource: cs.recordingSource,
+        classRoomId: cs.virtualRoomId,
+        cohortRoomId: schema.cohort.virtualRoomId,
+      })
+      .from(cs)
+      .innerJoin(schema.cohort, eq(schema.cohort.id, cs.cohortId))
+      .innerJoin(schema.course, eq(schema.course.id, schema.cohort.courseId))
+      .where(scoped(cs.organizationId, orgId, cond))
+      .orderBy(cs.date, cs.number)
+      .limit(limit);
+    if (filas.length === 0) return [];
+
+    const roomIds = [...new Set(filas.map((f) => f.classRoomId ?? f.cohortRoomId).filter(Boolean))] as string[];
+    const rooms = new Map<string, string>();
+    if (roomIds.length > 0) {
+      const rs = await db
+        .select({ id: schema.virtualRoom.id, name: schema.virtualRoom.name })
+        .from(schema.virtualRoom)
+        .where(scoped(schema.virtualRoom.organizationId, orgId, inArray(schema.virtualRoom.id, roomIds)));
+      for (const r of rs) rooms.set(r.id, r.name);
+    }
+    const recByClass = new Map<string, string>();
+    const asignadas = await db
+      .select({ id: t.id, classSessionId: t.classSessionId })
+      .from(t)
+      .where(scoped(t.organizationId, orgId, inArray(t.classSessionId, filas.map((f) => f.id))));
+    for (const r of asignadas) if (r.classSessionId) recByClass.set(r.classSessionId, r.id);
+    return filas.map((f) => toClassOption(f, { timezone: tz, rooms, recByClass }));
+  }
+
+  // El día de la grabación en la zona de la ACADEMIA (en-CA da AAAA-MM-DD).
+  const diaLocal = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(rec.startTime);
+  const delDia = (d: string) => {
+    const inicio = new Date(`${d}T00:00:00Z`);
+    return and(gte(cs.date, inicio), lt(cs.date, new Date(inicio.getTime() + 86_400_000)))!;
+  };
+
+  const candidatasIds = [
+    ...rec.candidateClassIds,
+    ...(rec.conflictClassSessionId ? [rec.conflictClassSessionId] : []),
+  ];
+  const suggested = mergeSuggested(
+    candidatasIds.length > 0 ? await clases(inArray(cs.id, candidatasIds), 50) : [],
+    await clases(delDia(diaLocal), 50)
+  );
+
+  let cohorts: CandidatesDto["cohorts"] = [];
+  if (q.q) {
+    const patron = `%${q.q.replace(/[%_\\]/g, (m) => `\\${m}`)}%`;
+    const filas = await db
+      .select({ id: schema.cohort.id, name: schema.cohort.name, courseName: schema.course.name })
+      .from(schema.cohort)
+      .innerJoin(schema.course, eq(schema.course.id, schema.cohort.courseId))
+      .where(
+        scoped(
+          schema.cohort.organizationId,
+          orgId,
+          or(sql`${schema.cohort.name} ilike ${patron}`, sql`${schema.course.name} ilike ${patron}`)
+        )
+      )
+      .orderBy(desc(schema.cohort.startDate))
+      .limit(20);
+    cohorts = filas.map((c) => ({ id: c.id, name: c.name ?? c.courseName, courseName: c.courseName }));
+  }
+
+  const results = q.cohortId
+    ? await clases(eq(cs.cohortId, q.cohortId), 200)
+    : q.date
+      ? await clases(delDia(q.date), 50)
+      : [];
+
+  return { suggested, cohorts, results };
 }

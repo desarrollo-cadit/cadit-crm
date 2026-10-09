@@ -54,7 +54,7 @@ describe("credenciales de la conexión", () => {
         createdAt: new Date(),
         updatedAt: new Date(),
       },
-      [{ id: "aula_1", name: "Zoom 1", zoomUserId: "u1", zoomUserEmail: "z1@x" }]
+      [{ id: "aula_1", name: "Zoom 1", zoomUserId: "u1", zoomUserEmail: "z1@x", roomUrl: "https://zoom.us/j/5550001111", zoomUserPmi: "5550001111", pmiMismatch: false, suggestedUrl: null }]
     );
     expect(dto).toEqual({
       id: "zc_1",
@@ -66,7 +66,7 @@ describe("credenciales de la conexión", () => {
       lastError: null,
       lastTestedAt: "2026-10-01T10:00:00.000Z",
       archived: false,
-      rooms: [{ id: "aula_1", name: "Zoom 1", zoomUserId: "u1", zoomUserEmail: "z1@x" }],
+      rooms: [{ id: "aula_1", name: "Zoom 1", zoomUserId: "u1", zoomUserEmail: "z1@x", roomUrl: "https://zoom.us/j/5550001111", zoomUserPmi: "5550001111", pmiMismatch: false, suggestedUrl: null }],
     });
     const json = JSON.stringify(dto);
     expect(json).not.toContain(SECRETO);

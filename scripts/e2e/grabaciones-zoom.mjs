@@ -34,6 +34,15 @@ export async function seccionGrabacionesZoom({ api, ok, BASE, getCookie }) {
   const ACC = `acc-e2e-${cola}`;
   const SECRETO_MALO = `bad-secret-${cola}`;
   const SECRETO_BUENO = `good-secret-${cola}`;
+  // Números de reunión PROPIOS de cada corrida: las cohortes de corridas
+  // anteriores siguen en la base con las mismas fechas relativas, y un número
+  // repetido las volvería candidatas (la ambigüedad sería real, no un error).
+  const MEET_A = `9${cola}001`;
+  const PMI_1 = `1${cola}101`;
+  const PMI_2 = `2${cola}202`;
+  // La sala personal REAL de u2 (Zoom): distinta del enlace cargado en Zoom 2,
+  // para que Configuración › Zoom avise y ofrezca actualizar (addendum A3).
+  const PMI_2_ZOOM = `3${cola}303`;
 
   /* ---------- helpers del mock ---------- */
   const zoomSeed = (state) =>
@@ -81,11 +90,11 @@ export async function seccionGrabacionesZoom({ api, ok, BASE, getCookie }) {
   const nombreZ2 = `Zoom 2 ${cola}`;
   const z1 = await api("/api/virtual-rooms", {
     method: "POST",
-    body: JSON.stringify({ name: nombreZ1, url: "https://zoom.us/j/1110000001" }),
+    body: JSON.stringify({ name: nombreZ1, url: `https://zoom.us/j/${PMI_1}` }),
   });
   const z2 = await api("/api/virtual-rooms", {
     method: "POST",
-    body: JSON.stringify({ name: nombreZ2, url: "https://zoom.us/j/2220000002" }),
+    body: JSON.stringify({ name: nombreZ2, url: `https://zoom.us/j/${PMI_2}` }),
   });
   const aula1 = z1.json?.room?.id;
   const aula2 = z2.json?.room?.id;
@@ -102,7 +111,7 @@ export async function seccionGrabacionesZoom({ api, ok, BASE, getCookie }) {
   const cohorte = async (name, extra) =>
     (await api("/api/cohorts", { method: "POST", body: JSON.stringify({ courseId: cursoId, name, ...horario, ...extra }) }))
       .json?.cohort?.id;
-  const cohA = await cohorte(`Grab A ${cola}`, { virtualRoomId: aula1, meetingUrl: "https://zoom.us/j/9990000001?pwd=x" });
+  const cohA = await cohorte(`Grab A ${cola}`, { virtualRoomId: aula1, meetingUrl: `https://zoom.us/j/${MEET_A}?pwd=x` });
   const cohB = await cohorte(`Grab B ${cola}`, { virtualRoomId: aula2 });
   const cohC = await cohorte(`Grab C ${cola}`, { virtualRoomId: aula1 });
   for (const id of [cohA, cohB, cohC]) await api(`/api/cohorts/${id}/schedule`, { method: "POST" });
@@ -136,21 +145,28 @@ export async function seccionGrabacionesZoom({ api, ok, BASE, getCookie }) {
     ...extra,
   });
   const R = {
-    1: rec(1, 9990000001, mas(clA[0].startsAt, 4), { recording_play_passcode: null, share_url: `https://zoom.us/rec/share/R1-${cola}?pwd=embebido` }),
-    2: rec(2, 2220000002, mas(clB[0].startsAt, 2)),
-    3: rec(3, 1110000001, clA[1].startsAt),
-    4: rec(4, 9990000001, domingo, { password: "7777" }),
-    5: rec(5, 2220000002, mas(clB[1].startsAt, 3), { recording_play_passcode: "abc123" }),
-    6: rec(6, 9990000001, mas(clA[2].startsAt, 1)),
+    1: rec(1, Number(MEET_A), mas(clA[0].startsAt, 4), { recording_play_passcode: null, share_url: `https://zoom.us/rec/share/R1-${cola}?pwd=embebido` }),
+    2: rec(2, Number(PMI_2), mas(clB[0].startsAt, 2), { recording_files: [{ file_type: "MP4" }] }),
+    3: rec(3, Number(PMI_1), clA[1].startsAt),
+    4: rec(4, Number(MEET_A), domingo, { password: "7777" }),
+    5: rec(5, Number(PMI_2), mas(clB[1].startsAt, 3), {
+      recording_play_passcode: "abc123",
+      recording_files: [{ file_type: "MP4" }, { file_type: "TRANSCRIPT" }],
+    }),
+    6: rec(6, Number(MEET_A), mas(clA[2].startsAt, 1)),
   };
+  const R7 = rec(7, Number(`4${cola}404`), `${isoDia(-60)}T13:00:00Z`);
   const sembrado = await zoomSeed({
     pageSize: 2,
     accounts: [
       {
         accountId: ACC,
         users: [
-          { id: "u1", email: "zoom1@academia.test", first_name: "Zoom", last_name: "Uno", recordings: [R[1], R[3], R[4], R[6]] },
-          { id: "u2", email: "zoom2@academia.test", first_name: "Zoom", last_name: "Dos", recordings: [R[2], R[5]] },
+          { id: "u1", email: "zoom1@academia.test", first_name: "Zoom", last_name: "Uno", pmi: Number(PMI_1), recordings: [R[1], R[3], R[4], R[6]] },
+          { id: "u2", email: "zoom2@academia.test", first_name: "Zoom", last_name: "Dos", pmi: Number(PMI_2_ZOOM), recordings: [R[2], R[5]] },
+          // u3 se vincula DESPUÉS de sincronizar: su grabación de hace 60 días
+          // tiene que llegar igual (bug de la marca por conexión, R-12).
+          { id: "u3", email: "zoom3@academia.test", first_name: "Zoom", last_name: "Tres", pmi: Number(`4${cola}404`), recordings: [R7] },
         ],
       },
     ],
@@ -192,9 +208,22 @@ export async function seccionGrabacionesZoom({ api, ok, BASE, getCookie }) {
   const prueba2 = await api(`/api/settings/zoom/connections/${zc}/test`, { method: "POST" });
   const ids2 = (prueba2.json?.users ?? []).map((u) => u.id).sort();
   ok(
-    "2 — Probar con el secreto bueno lista u1 y u2",
-    prueba2.json?.ok === true && JSON.stringify(ids2) === JSON.stringify(["u1", "u2"]),
+    "2 — Probar con el secreto bueno lista u1, u2 y u3 con su sala personal (pmi)",
+    prueba2.json?.ok === true && JSON.stringify(ids2) === JSON.stringify(["u1", "u2", "u3"]) &&
+      (prueba2.json?.users ?? []).find((u) => u.id === "u2")?.pmi === PMI_2_ZOOM,
     JSON.stringify(prueba2.json)
+  );
+
+  /* ---------- addendum A1/A2: sin aulas vinculadas no hay corrida ---------- */
+  const sinAulas = await api("/api/recordings/sync", { method: "POST" });
+  const trasSinAulas = (await api("/api/recordings/sync")).json;
+  ok(
+    "A2 — Sincronizar sin aulas vinculadas → 422 sin_aulas con el mensaje, sin corrida ni marca",
+    sinAulas.res.status === 422 && sinAulas.json?.error?.code === "sin_aulas" &&
+      sinAulas.json?.error?.message === "No hay aulas vinculadas a Zoom: vinculalas en Configuración › Zoom" &&
+      (trasSinAulas?.connections ?? []).find((c) => c.id === zc)?.lastRun === null &&
+      (trasSinAulas?.connections ?? []).find((c) => c.id === zc)?.syncedThrough === null,
+    `${sinAulas.res.status} ${JSON.stringify(sinAulas.json)}`
   );
   const lista2 = await api("/api/settings/zoom/connections");
   const tras2 = (lista2.json?.connections ?? []).find((c) => c.id === zc);
@@ -213,11 +242,11 @@ export async function seccionGrabacionesZoom({ api, ok, BASE, getCookie }) {
   /* ---------- check 3: vincular aulas ---------- */
   const v1 = await api(`/api/settings/zoom/rooms/${aula1}`, {
     method: "PUT",
-    body: JSON.stringify({ connectionId: zc, zoomUserId: "u1", zoomUserEmail: "zoom1@academia.test" }),
+    body: JSON.stringify({ connectionId: zc, zoomUserId: "u1", zoomUserEmail: "zoom1@academia.test", zoomUserPmi: PMI_1 }),
   });
   const v2 = await api(`/api/settings/zoom/rooms/${aula2}`, {
     method: "PUT",
-    body: JSON.stringify({ connectionId: zc, zoomUserId: "u2", zoomUserEmail: "zoom2@academia.test" }),
+    body: JSON.stringify({ connectionId: zc, zoomUserId: "u2", zoomUserEmail: "zoom2@academia.test", zoomUserPmi: PMI_2_ZOOM }),
   });
   const v3 = await api(`/api/settings/zoom/rooms/${aula2}`, {
     method: "PUT",
@@ -235,6 +264,21 @@ export async function seccionGrabacionesZoom({ api, ok, BASE, getCookie }) {
     (conAulas?.rooms ?? []).length === 2 &&
       conAulas.rooms.find((r) => r.id === aula2)?.zoomUserId === "u2",
     JSON.stringify(conAulas?.rooms)
+  );
+  const aulasTras3 = (await api("/api/virtual-rooms")).json?.rooms ?? [];
+  ok(
+    "A3 — vincular llena el correo de la cuenta del aula con el del usuario de Zoom",
+    aulasTras3.find((r) => r.id === aula1)?.accountEmail === "zoom1@academia.test" &&
+      aulasTras3.find((r) => r.id === aula2)?.accountEmail === "zoom2@academia.test",
+    JSON.stringify(aulasTras3.filter((r) => [aula1, aula2].includes(r.id)).map((r) => [r.name, r.accountEmail]))
+  );
+  const r1Dto = conAulas?.rooms?.find((r) => r.id === aula1);
+  const r2Dto = conAulas?.rooms?.find((r) => r.id === aula2);
+  ok(
+    "A3 — Zoom 2 avisa que su enlace no es la sala personal (sugiere la del PMI); Zoom 1 no",
+    r1Dto?.pmiMismatch === false && r2Dto?.pmiMismatch === true &&
+      r2Dto?.suggestedUrl === `https://zoom.us/j/${PMI_2_ZOOM}` && r2Dto?.roomUrl === `https://zoom.us/j/${PMI_2}`,
+    JSON.stringify([r1Dto, r2Dto])
   );
 
   /* ---------- check 4: sincronizar, dos veces seguidas ---------- */
@@ -275,14 +319,51 @@ export async function seccionGrabacionesZoom({ api, ok, BASE, getCookie }) {
     JSON.stringify(porTema(5))
   );
   ok(
+    "A4 — R5 trae transcripción (TRANSCRIPT) y R2 no; solo tipos de archivo, nada de descargas",
+    porTema(5)?.hasTranscript === true && JSON.stringify(porTema(5)?.fileTypes) === JSON.stringify(["MP4", "TRANSCRIPT"]) &&
+      porTema(2)?.hasTranscript === false && !/download_url|downloadUrl/.test(JSON.stringify(lista6.json)),
+    JSON.stringify([porTema(5)?.fileTypes, porTema(2)?.fileTypes])
+  );
+  ok(
     "6 — R4 (sin pwd en el enlace): el código de acceso viaja para el staff",
     porTema(4)?.passcodeEmbedded === false && porTema(4)?.passcode === "7777",
     JSON.stringify(porTema(4))
   );
+  const estadoDe = (f) => [f?.assignment?.mode, f?.assignment?.state, f?.assignment?.classSession?.id ?? null];
   ok(
-    "6 — sin adjudicación todavía (US2): todas en estado pendiente",
-    filas.every((f) => f.assignment?.state === "pendiente" && f.assignment?.mode === "auto"),
-    JSON.stringify(filas.map((f) => f.assignment?.state))
+    "6 — US2: R1 asignada a A/1 (señal reunión), R2 a B/1 y R5 a B/2 (señal aula)",
+    JSON.stringify(estadoDe(porTema(1))) === JSON.stringify(["auto", "asignada", clA[0].id]) &&
+      JSON.stringify(estadoDe(porTema(2))) === JSON.stringify(["auto", "asignada", clB[0].id]) &&
+      JSON.stringify(estadoDe(porTema(5))) === JSON.stringify(["auto", "asignada", clB[1].id]),
+    JSON.stringify([1, 2, 5].map((n) => estadoDe(porTema(n))))
+  );
+  ok(
+    "6 — US2: R3 ambigua con A/2 y C/2 como candidatas (choque de aulas: no adivina)",
+    porTema(3)?.assignment?.state === "ambigua" &&
+      JSON.stringify((porTema(3)?.assignment?.candidates ?? []).map((c) => c.id).sort()) ===
+        JSON.stringify([clA[1].id, clC[1].id].sort()),
+    JSON.stringify(porTema(3)?.assignment)
+  );
+  ok(
+    "6 — US2: R4 (domingo) sin_clase; R6 en conflicto con el enlace manual de A/3",
+    porTema(4)?.assignment?.state === "sin_clase" &&
+      porTema(6)?.assignment?.state === "conflicto" &&
+      porTema(6)?.assignment?.conflictWith?.id === clA[2].id,
+    JSON.stringify([porTema(4)?.assignment, porTema(6)?.assignment])
+  );
+  ok(
+    "5/6 — la corrida cuenta 3 asignadas, 1 ambigua y 1 en conflicto",
+    run5?.assignedCount === 3 && run5?.ambiguousCount === 1 && run5?.conflictCount === 1,
+    JSON.stringify(run5)
+  );
+  const clasesA = (await api(`/api/cohorts/${cohA}/classes`)).json?.classes ?? [];
+  const a1 = clasesA.find((c) => c.id === clA[0].id);
+  const a3 = clasesA.find((c) => c.id === clA[2].id);
+  ok(
+    "6 — la clase A/1 ofrece la grabación de R1 (origen Zoom) y A/3 conserva el enlace manual",
+    a1?.recordingUrl === porTema(1)?.playUrl && a1?.recordingSource === "zoom" &&
+      a3?.recordingUrl === "https://drive.example.com/grabacion-manual-A3" && a3?.recordingSource === "manual",
+    JSON.stringify([a1?.recordingUrl, a1?.recordingSource, a3?.recordingUrl, a3?.recordingSource])
   );
   ok("6 — ninguna fila lleva columnas cifradas", limpio(lista6.json));
   const log6 = (await zoomLog()).slice(logAntes);
@@ -303,13 +384,21 @@ export async function seccionGrabacionesZoom({ api, ok, BASE, getCookie }) {
     JSON.stringify((filtro.json?.rows ?? []).map((f) => f.topic).sort()) === JSON.stringify(["Grabación R2", "Grabación R5"]),
     JSON.stringify((filtro.json?.rows ?? []).map((f) => f.topic))
   );
-  const pag = await api(`/api/recordings?connectionId=${zc}&limit=4`);
-  const pag2 = await api(`/api/recordings?connectionId=${zc}&limit=4&cursor=${encodeURIComponent(pag.json?.nextCursor ?? "")}`);
+  const pag = await api(`/api/recordings?connectionId=${zc}&pageSize=25&page=1`);
+  const fuera = await api(`/api/recordings?connectionId=${zc}&pageSize=25&page=9`);
+  const asc = await api(`/api/recordings?connectionId=${zc}&sort=asc`);
+  const malTam = await api(`/api/recordings?connectionId=${zc}&pageSize=30`);
   ok(
-    "6 — paginación por cursor: 4 + 2, sin repetir",
-    (pag.json?.rows ?? []).length === 4 && (pag2.json?.rows ?? []).length === 2 && pag2.json?.nextCursor === null &&
-      new Set([...pag.json.rows, ...pag2.json.rows].map((f) => f.id)).size === 6,
-    `${pag.json?.rows?.length}/${pag2.json?.rows?.length}`
+    "B — paginación numerada: total 6, 1 página; una página fuera de rango cae en la última",
+    pag.json?.total === 6 && pag.json?.totalPages === 1 && pag.json?.page === 1 && pag.json?.pageSize === 25 &&
+      fuera.json?.page === 1 && (fuera.json?.rows ?? []).length === 6,
+    `${JSON.stringify({ t: pag.json?.total, p: pag.json?.totalPages })} / ${fuera.json?.page}`
+  );
+  ok(
+    "B — orden por fecha: asc es el inverso de desc; un tamaño de página inventado → 422",
+    JSON.stringify((asc.json?.rows ?? []).map((f) => f.id)) === JSON.stringify([...(pag.json?.rows ?? [])].reverse().map((f) => f.id)) &&
+      malTam.res.status === 422,
+    `${malTam.res.status}`
   );
 
   /* ---------- idempotencia: segunda corrida ---------- */
@@ -323,9 +412,126 @@ export async function seccionGrabacionesZoom({ api, ok, BASE, getCookie }) {
       JSON.stringify(lista7.map((f) => f.id).sort()) === JSON.stringify(filas.map((f) => f.id).sort()),
     `${s3.res.status} ${JSON.stringify(run7)} ${lista7.length}`
   );
+  const resumen = (rows) => JSON.stringify(rows.map((f) => [f.id, ...estadoDe(f)]).sort());
+  ok(
+    "7 — segunda sincronización: mismos estados y clases (la adjudicación es estable)",
+    resumen(lista7) === resumen(filas),
+    resumen(lista7)
+  );
 
   /* ---------- bloque de pantalla (Playwright) ---------- */
-  await pantalla({ ok, BASE, getCookie, nombreZ2, desde: clB[0].date.slice(0, 10), hasta: clB[1].date.slice(0, 10), R5: porTema(5), secretoBueno: SECRETO_BUENO });
+  await pantalla({ ok, BASE, getCookie, nombreZ2, desde: clB[0].date.slice(0, 10), hasta: clB[1].date.slice(0, 10), R5: porTema(5), secretoBueno: SECRETO_BUENO,
+    R3: porTema(3), sugeridasR3: [clA[1].id, clC[1].id], aula2, zc });
+
+  // El clic de la pantalla cambió el enlace de Zoom 2 a la sala personal.
+  const trasPmi = ((await api("/api/settings/zoom/connections")).json?.connections ?? [])
+    .find((c) => c.id === zc)?.rooms?.find((r) => r.id === aula2);
+  const aula2Tras = ((await api("/api/virtual-rooms")).json?.rooms ?? []).find((r) => r.id === aula2);
+  ok(
+    "A3 — 'Actualizar enlace': Zoom 2 ahora es la sala personal, sin aviso, y el nombre no cambió",
+    trasPmi?.roomUrl === `https://zoom.us/j/${PMI_2_ZOOM}` && trasPmi?.pmiMismatch === false && aula2Tras?.name === nombreZ2,
+    JSON.stringify([trasPmi, aula2Tras?.name])
+  );
+
+  /* ---------- US3: asignar y desasignar a mano ---------- */
+  const sincronizar = async () => {
+    await api("/api/recordings/sync", { method: "POST" });
+    return esperarSyncLibre();
+  };
+  const fila = async (n) =>
+    ((await api(`/api/recordings?connectionId=${zc}`)).json?.rows ?? []).find((f) => f.topic === `Grabación R${n}`);
+  const asignar = (rec, classSessionId, extra = {}) =>
+    api(`/api/recordings/${rec.id}/assignment`, { method: "PUT", body: JSON.stringify({ classSessionId, ...extra }) });
+
+  const cand = await api(`/api/recordings/${porTema(3).id}/candidates`);
+  ok(
+    "US3 — candidatas de R3: A/2 y C/2 primero entre las sugeridas, con quién está en cada una",
+    JSON.stringify((cand.json?.suggested ?? []).slice(0, 2).map((c) => c.id).sort()) ===
+      JSON.stringify([clA[1].id, clC[1].id].sort()),
+    JSON.stringify((cand.json?.suggested ?? []).map((c) => c.id))
+  );
+  const busca = await api(`/api/recordings/${porTema(3).id}/candidates?q=${encodeURIComponent(`Grab C ${cola}`)}`);
+  const deC = await api(`/api/recordings/${porTema(3).id}/candidates?cohortId=${cohC}`);
+  ok(
+    "US3 — cohorte → clase: buscar 'Grab C' encuentra la cohorte y trae todas sus clases reales",
+    (busca.json?.cohorts ?? []).some((c) => c.id === cohC) &&
+      (deC.json?.results ?? []).length === clC.length && deC.json.results.every((c) => c.cohortId === cohC),
+    `${JSON.stringify(busca.json?.cohorts)} ${deC.json?.results?.length}/${clC.length}`
+  );
+
+  const r10 = await asignar(porTema(3), clC[1].id);
+  await sincronizar();
+  const r3 = await fila(3);
+  ok(
+    "10 — R3 asignada a mano a C/2 y se mantiene tras sincronizar (manual/asignada)",
+    r10.res.status === 200 && r10.json?.assignment?.mode === "manual" &&
+      JSON.stringify(estadoDe(r3)) === JSON.stringify(["manual", "asignada", clC[1].id]) &&
+      Boolean(r3?.assignment?.assignedBy),
+    `${r10.res.status} ${JSON.stringify(r3?.assignment)}`
+  );
+
+  const r11 = await api(`/api/recordings/${porTema(1).id}/assignment`, { method: "DELETE" });
+  await sincronizar();
+  const r1 = await fila(1);
+  const a1Tras = ((await api(`/api/cohorts/${cohA}/classes`)).json?.classes ?? []).find((c) => c.id === clA[0].id);
+  ok(
+    "11 — desasignar R1: manual/sin_clase, A/1 deja de ofrecer la grabación y la sincronización no la vuelve a poner",
+    r11.res.status === 200 && JSON.stringify(estadoDe(r1)) === JSON.stringify(["manual", "sin_clase", null]) &&
+      a1Tras?.recordingUrl === null,
+    `${r11.res.status} ${JSON.stringify(r1?.assignment)} ${a1Tras?.recordingUrl}`
+  );
+
+  const r12 = await api(`/api/recordings/${porTema(1).id}/assignment/reset`, { method: "POST" });
+  const r12b = await api(`/api/recordings/${porTema(1).id}/assignment/reset`, { method: "POST" });
+  ok(
+    "12 — volver a automático: R1 vuelve a A/1 (auto/asignada); repetirlo → 422 ya_automatica",
+    r12.res.status === 200 && JSON.stringify(estadoDe(r12.json)) === JSON.stringify(["auto", "asignada", clA[0].id]) &&
+      r12b.res.status === 422 && r12b.json?.error?.code === "ya_automatica",
+    `${r12.res.status} ${JSON.stringify(r12.json?.assignment)} / ${r12b.res.status}`
+  );
+
+  const r13 = await asignar(porTema(6), clA[2].id);
+  const r13b = await asignar(porTema(6), clA[2].id, { replace: true });
+  const a3Tras = ((await api(`/api/cohorts/${cohA}/classes`)).json?.classes ?? []).find((c) => c.id === clA[2].id);
+  ok(
+    "13 — R6 → A/3 sin replace: 409 requiere_reemplazo (enlace manual); con replace: 200 y la clase ofrece R6",
+    r13.res.status === 409 && r13.json?.error?.code === "requiere_reemplazo" &&
+      r13.json?.error?.current?.kind === "manual" &&
+      r13b.res.status === 200 && a3Tras?.recordingUrl === porTema(6).playUrl && a3Tras?.recordingSource === "zoom",
+    `${r13.res.status} ${JSON.stringify(r13.json)} / ${r13b.res.status} ${a3Tras?.recordingUrl}`
+  );
+
+  const r13c = await asignar(porTema(4), clB[0].id);
+  ok(
+    "13 — una clase con OTRA grabación también pide confirmar, y dice cuál",
+    r13c.res.status === 409 && r13c.json?.error?.current?.kind === "zoom" &&
+      r13c.json?.error?.current?.recordingId === porTema(2).id,
+    `${r13c.res.status} ${JSON.stringify(r13c.json)}`
+  );
+
+  const cancelada = clC[clC.length - 1];
+  await api(`/api/class-sessions/${cancelada.id}`, { method: "PATCH", body: JSON.stringify({ cancelReason: "feriado E2E 030" }) });
+  const r14 = await asignar(porTema(4), cancelada.id);
+  ok(
+    "14 — asignar a una clase cancelada → 422 clase_cancelada",
+    r14.res.status === 422 && r14.json?.error?.code === "clase_cancelada",
+    `${r14.res.status} ${JSON.stringify(r14.json)}`
+  );
+
+  // R6 del plan — pegar un enlace a mano en una clase con grabación de Zoom la libera.
+  await api(`/api/class-sessions/${clB[0].id}/links`, {
+    method: "PATCH",
+    body: JSON.stringify({ recordingUrl: "https://drive.example.com/otra-B1" }),
+  });
+  await sincronizar();
+  const r2 = await fila(2);
+  const b1 = ((await api(`/api/cohorts/${cohB}/classes`)).json?.classes ?? []).find((c) => c.id === clB[0].id);
+  ok(
+    "R6 — pegar a mano en B/1 libera R2 (manual/sin_clase) y la sincronización respeta el enlace manual",
+    JSON.stringify(estadoDe(r2)) === JSON.stringify(["manual", "sin_clase", null]) &&
+      b1?.recordingUrl === "https://drive.example.com/otra-B1" && b1?.recordingSource === "manual",
+    `${JSON.stringify(r2?.assignment)} ${b1?.recordingUrl} ${b1?.recordingSource}`
+  );
 
   /* ---------- check 17: archivar la conexión ---------- */
   await api(`/api/settings/zoom/connections/${zc}`, { method: "PATCH", body: JSON.stringify({ archived: true }) });
@@ -338,6 +544,31 @@ export async function seccionGrabacionesZoom({ api, ok, BASE, getCookie }) {
     `${s17.res.status} ${JSON.stringify(s17.json)} ${lista17.length}`
   );
   await api(`/api/settings/zoom/connections/${zc}`, { method: "PATCH", body: JSON.stringify({ archived: false }) });
+
+  /* ---------- addendum A1: un aula vinculada DESPUÉS trae su respaldo ---------- */
+  const z3 = await api("/api/virtual-rooms", {
+    method: "POST",
+    body: JSON.stringify({ name: `Zoom 3 ${cola}`, url: `https://zoom.us/j/4${cola}404` }),
+  });
+  const aula3 = z3.json?.room?.id;
+  await api(`/api/settings/zoom/rooms/${aula3}`, {
+    method: "PUT",
+    body: JSON.stringify({ connectionId: zc, zoomUserId: "u3", zoomUserEmail: "zoom3@academia.test" }),
+  });
+  const logAntesA1 = (await zoomLog()).length;
+  const estadoA1 = await sincronizar();
+  const runA1 = (estadoA1?.connections ?? []).find((c) => c.id === zc)?.lastRun;
+  const r7 = await fila(7);
+  const pedidosU3 = (await zoomLog()).slice(logAntesA1).filter((l) => l.path.includes("/users/u3/recordings"));
+  const desdeU3 = pedidosU3.map((l) => new URLSearchParams(l.query).get("from")).sort()[0] ?? "";
+  const pedidosU1 = (await zoomLog()).slice(logAntesA1).filter((l) => l.path.includes("/users/u1/recordings"));
+  const desdeU1 = pedidosU1.map((l) => new URLSearchParams(l.query).get("from")).sort()[0] ?? "";
+  ok(
+    "A1 — el aula vinculada después pide sus 90 días (u3) mientras las otras solo el solape; trae R7 de hace 60 días",
+    runA1?.status === "ok" && runA1?.newCount === 1 && Boolean(r7) && r7?.room?.id === aula3 &&
+      desdeU3 <= isoDia(-90) && desdeU1 >= isoDia(-5),
+    `${JSON.stringify(runA1)} u3 desde ${desdeU3} u1 desde ${desdeU1} R7 ${Boolean(r7)}`
+  );
 }
 
 /**
@@ -346,7 +577,7 @@ export async function seccionGrabacionesZoom({ api, ok, BASE, getCookie }) {
  * CRM no intermedia) y capturas en tema claro y oscuro. "Ver" se comprueba
  * por sus atributos y NO se abre: abrirlo saldría a zoom.us.
  */
-async function pantalla({ ok, BASE, getCookie, nombreZ2, desde, hasta, R5, secretoBueno }) {
+async function pantalla({ ok, BASE, getCookie, nombreZ2, desde, hasta, R5, secretoBueno, R3, sugeridasR3, aula2, zc }) {
   let navegador = null;
   try {
     const { chromium } = await import("playwright");
@@ -370,16 +601,20 @@ async function pantalla({ ok, BASE, getCookie, nombreZ2, desde, hasta, R5, secre
       await pagina.goto(`${BASE}/grabaciones`, { timeout: 120000 });
       await pagina.getByRole("heading", { name: "Grabaciones" }).waitFor({ timeout: 60000 });
 
+      // El resumen de la paginación solo existe cuando el cliente ya hidrató y
+      // cargó: elegir un filtro ANTES deja el select con el valor puesto y
+      // React no ve el cambio cuando se vuelve a elegir el mismo.
+      await pagina.locator("[data-pagination-summary]").waitFor({ timeout: 120000 });
       // Hasta que hidrata, el select existe pero no dispara la consulta: se reintenta.
       const filas = pagina.locator("tbody tr");
-      for (let intento = 0; intento < 20; intento++) {
+      for (let intento = 0; intento < 60; intento++) {
         await pagina.locator("#rec-room").selectOption({ label: nombreZ2 });
         await pagina.locator("#rec-from").fill(desde);
         await pagina.locator("#rec-to").fill(hasta);
         await pagina.waitForTimeout(800);
         if ((await filas.count()) === 2) break;
       }
-      const temas = await filas.locator("td:nth-child(4)").allInnerTexts();
+      const temas = await filas.locator("[data-topic]").allInnerTexts();
       if (tema === "light") {
         ok(
           "UI — filtro aula Zoom 2 + rango de la semana: solo R2 y R5",
@@ -393,6 +628,39 @@ async function pantalla({ ok, BASE, getCookie, nombreZ2, desde, hasta, R5, secre
         const portapapeles = await pagina.evaluate(() => navigator.clipboard.readText());
         ok("UI — Copiar enlace deja el playUrl en el portapapeles y avisa", portapapeles === R5?.playUrl, portapapeles);
 
+        ok(
+          "UI — duración legible ('2 h 55 min') y chip Transcripción solo en R5",
+          (await filaR5.locator("[data-duration]").innerText()) === "2 h 55 min" &&
+            (await filaR5.locator("[data-transcript]").count()) === 1 &&
+            (await filas.filter({ hasText: "Grabación R2" }).locator("[data-transcript]").count()) === 0,
+          await filaR5.innerText()
+        );
+        ok(
+          "UI — los filtros quedan en la URL",
+          /roomId=/.test(pagina.url()) && pagina.url().includes(`from=${desde}`) && pagina.url().includes(`to=${hasta}`),
+          pagina.url()
+        );
+        await pagina.reload({ timeout: 120000 });
+        await pagina.locator("[data-pagination-summary]").waitFor({ timeout: 60000 });
+        await pagina.waitForTimeout(500);
+        ok(
+          "UI — al recargar se conservan los filtros (sigue mostrando solo R2 y R5) y el total",
+          (await filas.count()) === 2 && (await pagina.locator("#rec-from").inputValue()) === desde &&
+            /^1–2 de 2/.test(await pagina.locator("[data-pagination-summary]").innerText()),
+          await pagina.locator("[data-pagination-summary]").innerText()
+        );
+        const primeraAntes = await filas.first().locator("[data-topic]").innerText();
+        await pagina.locator("[data-sort-toggle]").click();
+        await pagina.waitForURL(/sort=asc/, { timeout: 30000 });
+        await pagina.waitForTimeout(800);
+        ok(
+          "UI — ordenar por Inicio invierte el orden (sort=asc en la URL)",
+          (await filas.first().locator("[data-topic]").innerText()) !== primeraAntes,
+          primeraAntes
+        );
+        await pagina.locator("[data-sort-toggle]").click();
+        await pagina.waitForURL((u) => !u.search.includes("sort=asc"), { timeout: 30000 });
+
         const ver = filaR5.getByRole("link", { name: "Ver" });
         ok(
           "UI — Ver abre el playUrl en pestaña nueva (noopener), sin intermediar",
@@ -401,6 +669,49 @@ async function pantalla({ ok, BASE, getCookie, nombreZ2, desde, hasta, R5, secre
             /noopener/.test((await ver.getAttribute("rel")) ?? ""),
           await ver.getAttribute("href")
         );
+      }
+      if (tema === "light") {
+        // La fila ambigua se destaca y su panel ofrece A/2 y C/2 como sugeridas.
+        await pagina.locator("#rec-room").selectOption({ label: "Todas" });
+        await pagina.locator("#rec-from").fill("");
+        await pagina.locator("#rec-to").fill("");
+        // Con la base del arnés acumulando corridas, R3 puede caer en otra
+        // página: se acota a la cuenta de ESTA corrida.
+        await pagina.locator("#rec-connection").selectOption({ value: zc });
+        const filaR3 = pagina.locator(`tr[data-recording-id="${R3?.id}"]`);
+        await filaR3.waitFor({ timeout: 30000 });
+        ok("UI — la fila ambigua se marca como tal", (await filaR3.getAttribute("data-state")) === "ambigua");
+        await filaR3.getByRole("button", { name: "Asignar a clase" }).click();
+        const sugeridas = pagina.locator('[data-testid="sugeridas"] [data-class-id]');
+        await sugeridas.first().waitFor({ timeout: 30000 });
+        const ids = await sugeridas.evaluateAll((els) => els.map((e) => e.getAttribute("data-class-id")));
+        ok(
+          "UI — el panel de asignar muestra A/2 y C/2 primero entre las sugeridas",
+          JSON.stringify(ids.slice(0, 2).sort()) === JSON.stringify([...sugeridasR3].sort()),
+          JSON.stringify(ids)
+        );
+      }
+      if (tema === "light") {
+        // Celular: la página no se desplaza de costado; lo hace la tabla.
+        await pagina.setViewportSize({ width: 390, height: 800 });
+        await pagina.locator("#rec-room").selectOption({ label: "Todas" });
+        await pagina.locator("[data-recordings-table]").waitFor({ timeout: 30000 });
+        await pagina.waitForTimeout(500);
+        const anchos = await pagina.evaluate(() => {
+          const t = document.querySelector("[data-recordings-table]")?.parentElement;
+          return {
+            pagina: document.documentElement.scrollWidth,
+            vista: document.documentElement.clientWidth,
+            tabla: t ? t.scrollWidth > t.clientWidth : false,
+          };
+        });
+        ok(
+          "UI — a 390 px no hay scroll horizontal de página; la tabla se desplaza dentro de su contenedor",
+          anchos.pagina <= anchos.vista && anchos.tabla === true,
+          JSON.stringify(anchos)
+        );
+        await pagina.screenshot({ path: path.join(tmpdir(), "cadit-030-grabaciones-celular.png"), fullPage: true });
+        await pagina.setViewportSize({ width: 1280, height: 800 });
       }
       const archivo = path.join(tmpdir(), `cadit-030-grabaciones-${tema}.png`);
       await pagina.screenshot({ path: archivo, fullPage: true });
@@ -416,6 +727,13 @@ async function pantalla({ ok, BASE, getCookie, nombreZ2, desde, hasta, R5, secre
           "UI — Configuración › Zoom muestra el secreto como ••••últimos 4 y nunca entero",
           !html.includes(secretoBueno) && html.includes(`••••${secretoBueno.slice(-4)}`)
         );
+        const aviso = pagina.locator(`[data-pmi-warning="${aula2}"]`);
+        await aviso.waitFor({ timeout: 30000 });
+        await pagina.screenshot({ path: path.join(tmpdir(), "cadit-030-settings-zoom-aviso-pmi.png"), fullPage: true });
+        await aviso.getByRole("button", { name: "Actualizar enlace del aula a la sala personal de Zoom" }).click();
+        await pagina.getByText(/ahora es https:\/\/zoom\.us\/j\//).waitFor({ timeout: 30000 });
+        const seFue = await aviso.waitFor({ state: "detached", timeout: 30000 }).then(() => true, () => false);
+        ok("UI — el aviso del PMI ofrece 'Actualizar enlace' y al usarlo desaparece", seFue);
       }
       const archivoZoom = path.join(tmpdir(), `cadit-030-settings-zoom-${tema}.png`);
       await pagina.screenshot({ path: archivoZoom, fullPage: true });

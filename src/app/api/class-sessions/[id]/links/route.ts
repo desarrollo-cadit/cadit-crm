@@ -4,6 +4,7 @@ import { httpUrl } from "@/lib/url-schema";
 import { apiError, parseBody, requireCapability } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
+import { releaseForManualLink } from "@/server/zoom/assignment";
 
 export const dynamic = "force-dynamic";
 
@@ -45,8 +46,12 @@ export const PATCH = requireCapability(
         ...(body.data.meetingUrl !== undefined
           ? { meetingUrl: body.data.meetingUrl }
           : {}),
+        // 030 (DV-007) — Lo que se escribe acá lo pegó una persona.
         ...(body.data.recordingUrl !== undefined
-          ? { recordingUrl: body.data.recordingUrl }
+          ? {
+              recordingUrl: body.data.recordingUrl,
+              recordingSource: body.data.recordingUrl ? ("manual" as const) : null,
+            }
           : {}),
       })
       .where(
@@ -60,6 +65,16 @@ export const PATCH = requireCapability(
 
     const row = updated[0];
     if (!row) return apiError(404, "not_found", "Clase no encontrada");
+
+    /**
+     * 030 (R6) — Si la clase tenía una grabación de Zoom adjudicada, una
+     * persona acaba de decidir otra cosa: esa grabación pasa a
+     * `manual/sin_clase` y la sincronización no la vuelve a poner. Misma
+     * transacción que la escritura del enlace.
+     */
+    if (body.data.recordingUrl !== undefined) {
+      await releaseForManualLink(session.organizationId, id, session.userId);
+    }
 
     return Response.json({
       classSession: {

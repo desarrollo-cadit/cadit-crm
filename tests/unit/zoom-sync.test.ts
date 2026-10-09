@@ -18,7 +18,7 @@ const ORG = "org_1";
 const HOY = new Date("2026-10-09T15:00:00Z");
 
 type Conn = { id: string; name: string; syncedThrough: string | null };
-type Room = { id: string; name: string; zoomUserId: string };
+type Room = { id: string; name: string; zoomUserId: string; syncedThrough: string | null };
 
 let conns: Conn[];
 let roomsBy: Record<string, Room[]>;
@@ -26,6 +26,8 @@ let upserts: { rows: RecordingUpsert[]; seenAt: Date }[];
 let missing: unknown[];
 let runs: Map<string, Record<string, unknown>>;
 let syncedThrough: Record<string, string>;
+let roomSynced: Record<string, string>;
+let rematches: { connectionId: string; seenBefore: Date }[];
 let lastSync: Record<string, Date>;
 let pruned: unknown[];
 let leaseHeld: { owner: string; startedAt: Date } | null;
@@ -57,6 +59,9 @@ const store: SyncStore = {
   },
   async setSyncedThrough(_org, connectionId, day) {
     syncedThrough[connectionId] = day;
+  },
+  async setRoomSyncedThrough(_org, roomId, day) {
+    roomSynced[roomId] = day;
   },
   async touchLastSync(_org, connectionId, at) {
     lastSync[connectionId] = at;
@@ -94,6 +99,7 @@ function meeting(uuid: string, extra: Partial<ZoomRecordingMeeting> = {}): ZoomR
     playPasscode: null,
     password: null,
     autoDeleteDate: null,
+    fileTypes: ["MP4"],
     ...extra,
   };
 }
@@ -115,6 +121,10 @@ const deps = (): SyncDeps => ({
     clientId: "cli",
     clientSecret: "secreto-largo",
   }),
+  rematch: async (_org, connectionId, seenBefore) => {
+    rematches.push({ connectionId, seenBefore });
+    return { assigned: 0, ambiguous: 0, conflict: 0 };
+  },
   now: () => HOY,
   owner: "test:1",
   config: { backfillDays: 90, overlapDays: 3 },
@@ -122,11 +132,18 @@ const deps = (): SyncDeps => ({
 
 beforeEach(() => {
   conns = [{ id: "zc_1", name: "Zoom academia", syncedThrough: null }];
-  roomsBy = { zc_1: [{ id: "aula_1", name: "Zoom 1", zoomUserId: "u1" }, { id: "aula_2", name: "Zoom 2", zoomUserId: "u2" }] };
+  roomsBy = {
+    zc_1: [
+      { id: "aula_1", name: "Zoom 1", zoomUserId: "u1", syncedThrough: null },
+      { id: "aula_2", name: "Zoom 2", zoomUserId: "u2", syncedThrough: null },
+    ],
+  };
   upserts = [];
   missing = [];
   runs = new Map();
   syncedThrough = {};
+  roomSynced = {};
+  rematches = [];
   lastSync = {};
   pruned = [];
   leaseHeld = null;
@@ -173,6 +190,7 @@ describe("lease y arranque", () => {
 
   it("toma el lease, crea una corrida 'corriendo' por conexión y al terminar lo libera", async () => {
     conns.push({ id: "zc_2", name: "Cuenta 2", syncedThrough: "2026-10-05" });
+    roomsBy.zc_2 = [{ id: "aula_3", name: "Zoom 3", zoomUserId: "u3", syncedThrough: "2026-10-05" }];
     const { runSync } = await import("@/server/zoom/sync");
     const r = await runSync(ORG, "manual", { userId: "usr_1" }, deps());
     expect(r.ok).toBe(true);
@@ -186,6 +204,7 @@ describe("lease y arranque", () => {
 
   it("connectionId acota a esa conexión", async () => {
     conns.push({ id: "zc_2", name: "Cuenta 2", syncedThrough: null });
+    roomsBy.zc_2 = [{ id: "aula_3", name: "Zoom 3", zoomUserId: "u3", syncedThrough: null }];
     const { runSync } = await import("@/server/zoom/sync");
     await runSync(ORG, "manual", { connectionId: "zc_2" }, deps());
     expect([...runs.values()].map((x) => x.connectionId)).toEqual(["zc_2"]);
@@ -213,6 +232,7 @@ describe("corrida", () => {
     const run = runs.get("zsr_1")!;
     expect(run).toMatchObject({ status: "ok", fetchedCount: 3, newCount: 3, error: null });
     expect(syncedThrough.zc_1).toBe("2026-10-09");
+    expect(roomSynced).toEqual({ aula_1: "2026-10-09", aula_2: "2026-10-09" });
     expect(lastSync.zc_1).toEqual(HOY);
     expect(pruned).toEqual([{ connectionId: "zc_1", keep: 200 }]);
   });
@@ -243,6 +263,8 @@ describe("corrida", () => {
     expect(String(run.error)).toContain("no existe");
     expect(upserts.flatMap((u) => u.rows.map((r) => r.zoomMeetingUuid))).toEqual(["c"]);
     expect(syncedThrough.zc_1).toBeUndefined();
+    // la marca es POR AULA: la que terminó bien avanza, la que falló no
+    expect(roomSynced).toEqual({ aula_2: "2026-10-09" });
   });
 
   it("si fallan todas → 'error'; el lease se libera igual", async () => {
@@ -281,12 +303,72 @@ describe("corrida", () => {
     ]);
   });
 
-  it("sin aulas vinculadas la corrida termina 'ok' sin llamar a Zoom (Q2)", async () => {
+  /**
+   * Bug de la prueba en vivo: una corrida sin aulas "terminaba bien" y
+   * adelantaba synced_through a hoy, así que las aulas vinculadas después
+   * nunca traían sus 90 días. Ahora no hay corrida: no hay nada que marcar.
+   */
+  it("sin aulas vinculadas → sin_aulas: no toma el lease, no crea corridas, no avanza ninguna marca", async () => {
     roomsBy = {};
     const { runSync } = await import("@/server/zoom/sync");
-    await runSync(ORG, "manual", {}, deps());
+    expect(await runSync(ORG, "manual", {}, deps())).toEqual({ ok: false, error: "sin_aulas" });
     expect(calls).toEqual([]);
-    expect(runs.get("zsr_1")).toMatchObject({ status: "ok", fetchedCount: 0 });
+    expect(runs.size).toBe(0);
+    expect(leaseHeld).toBeNull();
+    expect(syncedThrough).toEqual({});
+    expect(roomSynced).toEqual({});
+  });
+
+  it("una conexión sin aulas no corre; la que tiene aulas sí", async () => {
+    conns.push({ id: "zc_2", name: "Cuenta sin aulas", syncedThrough: null });
+    const { runSync } = await import("@/server/zoom/sync");
+    await runSync(ORG, "manual", {}, deps());
+    expect([...runs.values()].map((x) => x.connectionId)).toEqual(["zc_1"]);
+    expect(syncedThrough.zc_2).toBeUndefined();
+  });
+
+  it("un aula recién vinculada trae su respaldo entero aunque las otras estén al día", async () => {
+    roomsBy.zc_1 = [
+      { id: "aula_1", name: "Zoom 1", zoomUserId: "u1", syncedThrough: "2026-10-08" },
+      { id: "aula_2", name: "Zoom 2", zoomUserId: "u2", syncedThrough: null },
+    ];
+    const { runSync } = await import("@/server/zoom/sync");
+    await runSync(ORG, "manual", {}, deps());
+    expect(calls).toEqual([
+      { userId: "u1", range: { from: "2026-10-05", to: "2026-10-09" } },
+      { userId: "u2", range: { from: "2026-07-08", to: "2026-10-09" } },
+    ]);
+    // la bitácora registra la ventana MÁS ancha de la corrida
+    expect(runs.get("zsr_1")).toMatchObject({ windowFrom: "2026-07-08", windowTo: "2026-10-09" });
+    // faltantes: cada aula con SU ventana
+    expect((missing as { roomId: string; from: Date }[]).map((m) => [m.roomId, m.from.toISOString().slice(0, 10)])).toEqual([
+      ["aula_1", "2026-10-05"],
+      ["aula_2", "2026-07-08"],
+    ]);
+  });
+
+  it("re-adjudica las grabaciones que la corrida no tocó (aulas con enlace corregido), con el inicio de la corrida", async () => {
+    const d = deps();
+    d.rematch = async (_org, connectionId, seenBefore) => {
+      rematches.push({ connectionId, seenBefore });
+      return { assigned: 2, ambiguous: 1, conflict: 0 };
+    };
+    d.afterPage = async () => ({ assigned: 1, ambiguous: 0, conflict: 0 });
+    const { runSync } = await import("@/server/zoom/sync");
+    await runSync(ORG, "manual", {}, d);
+    expect(rematches).toEqual([{ connectionId: "zc_1", seenBefore: HOY }]);
+    expect(runs.get("zsr_1")).toMatchObject({ assignedCount: 5, ambiguousCount: 1 });
+  });
+
+  it("si la re-adjudicación falla, la corrida no se cae ni la marca deja de avanzar", async () => {
+    const d = deps();
+    d.rematch = async () => {
+      throw new Error("la base se cayó");
+    };
+    const { runSync } = await import("@/server/zoom/sync");
+    await runSync(ORG, "manual", {}, d);
+    expect(runs.get("zsr_1")).toMatchObject({ status: "ok" });
+    expect(roomSynced).toEqual({ aula_1: "2026-10-09", aula_2: "2026-10-09" });
   });
 
   it("ninguna excepción escapa de executeSync", async () => {
@@ -311,5 +393,15 @@ describe("corrida", () => {
     const { runSync } = await import("@/server/zoom/sync");
     await runSync(ORG, "manual", {}, d);
     expect(pages).toEqual([["a"], ["b"], ["c"]]);
+  });
+});
+
+describe("US2 — los contadores de la adjudicación llegan a la corrida", () => {
+  it("assigned/ambiguous/conflict se suman por página", async () => {
+    const d = deps();
+    d.afterPage = async () => ({ assigned: 1, ambiguous: 1, conflict: 0 });
+    const { runSync } = await import("@/server/zoom/sync");
+    await runSync(ORG, "manual", {}, d);
+    expect(runs.get("zsr_1")).toMatchObject({ assignedCount: 3, ambiguousCount: 3, conflictCount: 0 });
   });
 });

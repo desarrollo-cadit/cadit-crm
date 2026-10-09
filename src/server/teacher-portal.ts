@@ -866,7 +866,8 @@ export async function teacherSetRecording(
 
   await db
     .update(schema.classSession)
-    .set({ recordingUrl, updatedAt: new Date() })
+    // 030 (DV-007) — Lo que pega el profesor es manual; borrar deja sin origen.
+    .set({ recordingUrl, recordingSource: recordingUrl ? "manual" : null, updatedAt: new Date() })
     .where(
       scoped(
         schema.classSession.organizationId,

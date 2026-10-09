@@ -24,6 +24,7 @@ export const PUT = requireCapability(
             connectionId: body.data.connectionId,
             zoomUserId: body.data.zoomUserId,
             zoomUserEmail: body.data.zoomUserEmail ?? null,
+            zoomUserPmi: body.data.zoomUserPmi ?? null,
           };
     const result = await linkRoom(session.organizationId, roomId, link);
     if (!result.ok) return connErrorResponse(result);

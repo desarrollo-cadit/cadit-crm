@@ -1,4 +1,7 @@
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
+import { redirect } from "next/navigation";
+import { portalTeacherId, resolvePortalSession } from "@/lib/auth/portal";
+import { landingRedirect, parseViewCookie, VIEW_COOKIE } from "@/lib/view-preference";
 import { getAuth } from "@/lib/auth";
 import { getSessionOrNull } from "@/lib/auth/session";
 import { sessionCapabilities } from "@/lib/capabilities";
@@ -23,6 +26,18 @@ export const dynamic = "force-dynamic";
  */
 export default async function HomePage() {
   const session = await getSessionOrNull();
+
+  /**
+   * 030 (addendum) — Quien es equipo Y profesor entra a la última vista que
+   * eligió ("Ver como"). Solo el INICIO redirige: un enlace directo a una
+   * pantalla del panel abre esa pantalla, elija lo que elija.
+   */
+  const vista = parseViewCookie((await cookies()).get(VIEW_COOKIE)?.value);
+  if (vista === "profesor") {
+    const portal = await resolvePortalSession();
+    const destino = landingRedirect(vista, { isTeacher: portal !== null && portalTeacherId(portal) !== null });
+    if (destino) redirect(destino);
+  }
   /**
    * 012 (T029) — Se pregunta por la CAPACIDAD, no por el nombre del rol.
    *

@@ -138,3 +138,51 @@ describe("una sesión de portal no satisface el gate del staff (FR-018)", () => 
     await expect(resolvePortalSession()).resolves.toBeNull();
   });
 });
+
+/**
+ * 030 (addendum) — La cuenta DUAL: un profesor que también es del equipo.
+ *
+ * No hay un `if` que la deje pasar: entra al panel porque TIENE `member` y al
+ * portal porque TIENE `account_link`. Cada puerta sigue preguntando lo suyo,
+ * y las cuentas de una sola puerta (arriba) siguen rebotando en la otra.
+ */
+describe("una cuenta dual pasa las DOS puertas, cada una por lo suyo", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+  });
+
+  it("con membresía, requireCapability la deja pasar", async () => {
+    getSession.mockResolvedValue({ user: { id: "usr_dual" } });
+    resolveMembership.mockResolvedValue({ organizationId: "org_1", role: "ebim_manager", capabilities: ["academico.ver"] });
+
+    const { requireCapability } = await import("@/lib/api");
+    const handler = vi.fn(async () => Response.json({ ok: true }));
+    const res = await requireCapability("academico.ver", handler)();
+    expect(res.status).toBe(200);
+  });
+
+  it("con su vínculo de profesor, resolvePortalSession la reconoce como profesor", async () => {
+    getSession.mockResolvedValue({ user: { id: "usr_dual" } });
+    vi.doMock("@/lib/db", () => ({
+      getRootDb: () => ({
+        transaction: async (fn: (tx: unknown) => unknown) => fn({ execute: async () => [] }),
+      }),
+      getDb: () => ({
+        select: () => ({
+          from: () => ({
+            where: async () => [{ organizationId: "org_1", kind: "profesor", contactId: null, teacherId: "tch_1" }],
+          }),
+        }),
+      }),
+      schema: { accountLink: {} },
+    }));
+
+    const { resolvePortalSession, portalTeacherId, studentContactId } = await import("@/lib/auth/portal");
+    const portal = await resolvePortalSession();
+    expect(portal).not.toBeNull();
+    expect(portalTeacherId(portal!)).toBe("tch_1");
+    // y NO es alumno: la cuenta dual es de profesor, nunca de alumno
+    expect(studentContactId(portal!)).toBeNull();
+  });
+});

@@ -71,3 +71,16 @@ suman al arnés con US2, US3, US5 y US6.
   (se comprueba por atributos: abrirlo saldría a zoom.us).
 - Capturas en tema claro y oscuro (`<tmp>/cadit-030-grabaciones-{light,dark}.png`).
 - *(US2/US3)* La fila ambigua se destaca y su diálogo muestra A/2 y C/2 como sugeridas.
+
+## Addendum (prueba en vivo, 2026-10-09)
+
+| # | Qué | Acción | Resultado esperado |
+|---|---|---|---|
+| A2 | Sin aulas vinculadas | Sync con la conexión probada y ninguna aula | 422 `sin_aulas` "No hay aulas vinculadas a Zoom: vinculalas en Configuración › Zoom"; sin corrida ni `syncedThrough` |
+| A3 | Vincular | `PUT /settings/zoom/rooms/{aula}` con correo y PMI | `account_email` del aula = correo de Zoom; Zoom 2 (enlace ≠ PMI) avisa con `suggestedUrl`, Zoom 1 no |
+| A3 | Actualizar enlace (UI) | Botón "Actualizar enlace del aula a la sala personal de Zoom" | El aviso desaparece; `roomUrl` = `https://zoom.us/j/<pmi>`; el nombre no cambia |
+| A4 | Transcripción | R5 con `TRANSCRIPT` | `hasTranscript` y chip "Transcripción" solo en R5; duración "2 h 55 min" |
+| B | Tabla | Página/tamaño/orden | `total` + `totalPages`; página fuera de rango → la última; `sort=asc` invierte; tamaño 30 → 422; filtros en la URL sobreviven al recargar; a 390 px solo scrollea la tabla |
+| A1 | Aula vinculada después | Zoom 3 → u3 tras sincronizar | u3 pide 90 días (u1 solo el solape); trae R7 de hace 60 días |
+
+La sección `roles` suma la cuenta dual (profesor + equipo, "Ver como").

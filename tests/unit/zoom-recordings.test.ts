@@ -13,11 +13,21 @@ vi.mock("@/lib/env", () => ({
 }));
 
 describe("query", () => {
-  it("limit default 50, máximo 200; state admite faltante; fechas YYYY-MM-DD", async () => {
+  it("página 1 de 25, más recientes primero; tamaños 25/50/100; orden asc|desc", async () => {
     const { recordingsQuerySchema } = await import("@/server/zoom/recordings");
-    expect(recordingsQuerySchema.parse({}).limit).toBe(50);
-    expect(recordingsQuerySchema.parse({ limit: "200" }).limit).toBe(200);
-    expect(recordingsQuerySchema.safeParse({ limit: "201" }).success).toBe(false);
+    expect(recordingsQuerySchema.parse({})).toMatchObject({ page: 1, pageSize: 25, sort: "desc" });
+    expect(recordingsQuerySchema.parse({ page: "3", pageSize: "100", sort: "asc" })).toMatchObject({
+      page: 3,
+      pageSize: 100,
+      sort: "asc",
+    });
+    expect(recordingsQuerySchema.safeParse({ pageSize: "30" }).success).toBe(false);
+    expect(recordingsQuerySchema.safeParse({ page: "0" }).success).toBe(false);
+    expect(recordingsQuerySchema.safeParse({ sort: "random" }).success).toBe(false);
+  });
+
+  it("state admite faltante; fechas YYYY-MM-DD; nada fuera del contrato", async () => {
+    const { recordingsQuerySchema } = await import("@/server/zoom/recordings");
     expect(recordingsQuerySchema.safeParse({ state: "faltante" }).success).toBe(true);
     expect(recordingsQuerySchema.safeParse({ state: "inventado" }).success).toBe(false);
     expect(recordingsQuerySchema.safeParse({ from: "2026-10-01", to: "2026-10-31" }).success).toBe(true);
@@ -41,13 +51,13 @@ describe("rango de fechas en la zona de la academia", () => {
   });
 });
 
-describe("cursor", () => {
-  it("ida y vuelta; basura → null", async () => {
-    const { encodeCursor, decodeCursor } = await import("@/server/zoom/recordings");
-    const c = encodeCursor({ startTime: new Date("2026-10-01T21:30:00Z"), id: "zr_1" });
-    expect(decodeCursor(c)).toEqual({ startTime: new Date("2026-10-01T21:30:00Z"), id: "zr_1" });
-    expect(decodeCursor("no-es-un-cursor")).toBeNull();
-    expect(decodeCursor(Buffer.from('{"t":"x","id":1}').toString("base64url"))).toBeNull();
+describe("página", () => {
+  it("desplazamiento y total de páginas; una página fuera de rango cae en la última", async () => {
+    const { pageWindow } = await import("@/server/zoom/recordings");
+    expect(pageWindow(0, 1, 25)).toEqual({ page: 1, offset: 0, totalPages: 1 });
+    expect(pageWindow(26, 2, 25)).toEqual({ page: 2, offset: 25, totalPages: 2 });
+    expect(pageWindow(26, 9, 25)).toEqual({ page: 2, offset: 25, totalPages: 2 });
+    expect(pageWindow(100, 4, 50)).toEqual({ page: 2, offset: 50, totalPages: 2 });
   });
 });
 
@@ -69,6 +79,7 @@ describe("RecordingRowDto", () => {
       passcodeEmbedded: false,
       ...sealPasscode("abc123"),
       autoDeleteDate: "2026-12-30",
+      fileTypes: ["MP4", "TRANSCRIPT"],
       missingInZoomAt: null as Date | null,
       assignmentMode: "auto" as const,
       assignmentState: "pendiente" as const,
@@ -97,6 +108,8 @@ describe("RecordingRowDto", () => {
       passcodeEmbedded: false,
       autoDeleteDate: "2026-12-30",
       missingInZoom: false,
+      fileTypes: ["MP4", "TRANSCRIPT"],
+      hasTranscript: true,
       assignment: {
         mode: "auto",
         state: "pendiente",
@@ -221,5 +234,15 @@ describe("estado de la sincronización", () => {
       ],
       periodicIntervalMin: 0,
     });
+  });
+});
+
+describe("transcripción", () => {
+  it("TRANSCRIPT o CC la marcan; solo video o chat, no", async () => {
+    const { hasTranscript } = await import("@/server/zoom/recordings");
+    expect(hasTranscript(["MP4", "TRANSCRIPT"])).toBe(true);
+    expect(hasTranscript(["CC"])).toBe(true);
+    expect(hasTranscript(["MP4", "M4A", "CHAT", "TIMELINE"])).toBe(false);
+    expect(hasTranscript([])).toBe(false);
   });
 });

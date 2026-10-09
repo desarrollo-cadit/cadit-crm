@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { cookies, headers } from "next/headers";
 import { getAuth } from "@/lib/auth";
 import { forcedPasswordChangeRedirect } from "@/lib/auth/password-change";
+import { getSessionOrNull } from "@/lib/auth/session";
 import {
   portalTeacherId,
   resolvePortalSession,
@@ -65,6 +66,13 @@ export default async function PortalLayout({
   const branding = await getBranding(portal.organizationId);
 
   /**
+   * 030 (addendum) — El profesor que también es del equipo ve "Ver como". Se
+   * pregunta por la sesión de STAFF (`member`), no por un campo del portal:
+   * es la misma puerta que usa el panel.
+   */
+  const isAlsoStaff = Boolean(teacherId) && (await getSessionOrNull()) !== null;
+
+  /**
    * Las cursadas del menú se leen adentro del alcance de la organización: el
    * layout corre fuera de las rutas de API, así que no hereda la transacción
    * que declara `app.current_org` y sin esto RLS devolvería cero filas.
@@ -93,6 +101,7 @@ export default async function PortalLayout({
           audience={{ isStudent: Boolean(contactId), isTeacher: Boolean(teacherId) }}
           courses={courses}
           theme={parseThemeCookie((await cookies()).get(THEME_COOKIE)?.value)}
+          isAlsoStaff={isAlsoStaff}
         />
 
         {/*

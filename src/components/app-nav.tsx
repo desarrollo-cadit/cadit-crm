@@ -9,6 +9,7 @@ import { cn, initials } from "@/lib/utils";
 import { signOut } from "@/lib/auth/client";
 import { PASSWORD_CHANGE_PATH } from "@/lib/auth/password-change";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { ViewSwitch } from "@/components/view-switch";
 import type { ThemePreference } from "@/lib/theme";
 import { IsotipoCadIT } from "@/components/logo-cadit";
 import { useEvents } from "@/components/use-events";
@@ -39,8 +40,14 @@ export function AppNav({
   roleLabel,
   capabilities,
   theme,
+  isAlsoTeacher = false,
 }: {
   branding: Branding;
+  /**
+   * 030 (addendum) — La cuenta también es profesor con portal: se muestra
+   * "Ver como: Equipo / Profesor". Viene del servidor (`account_link`).
+   */
+  isAlsoTeacher?: boolean;
   userName: string;
   /** 020 (T014) — Preferencia de tema, resuelta en el servidor. */
   theme: ThemePreference;
@@ -217,6 +224,11 @@ export function AppNav({
         90px y "María Fernanda Rodríguez" se volvía "María Fern…".
       */}
       <div className="mt-2 border-t pt-3">
+        {isAlsoTeacher && (
+          <div className="mb-3">
+            <ViewSwitch current="equipo" />
+          </div>
+        )}
         <div className="flex items-center gap-2.5 px-2.5" title={userName}>
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-soft text-xs font-semibold text-brand-text">
             {initials(userName)}

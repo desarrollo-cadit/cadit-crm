@@ -229,7 +229,7 @@ describe("listUsers / listUserRecordings", () => {
   it("listUsers pagina con status=active&page_size=300", async () => {
     apiQueue.push(() =>
       Response.json({
-        users: [{ id: "u1", email: "a@x", first_name: "Ana", last_name: "Paz", type: 2, status: "active" }],
+        users: [{ id: "u1", email: "a@x", first_name: "Ana", last_name: "Paz", type: 2, status: "active", pmi: 5551234567 }],
         next_page_token: "tok2",
       })
     );
@@ -242,8 +242,9 @@ describe("listUsers / listUserRecordings", () => {
     const { listUsers } = await client();
     const users = await listUsers(creds);
     expect(users).toEqual([
-      { id: "u1", email: "a@x", displayName: "Ana Paz", type: 2, status: "active" },
-      { id: "u2", email: "b@x", displayName: "Beto", type: 1, status: "active" },
+      // La sala personal (PMI) viaja como texto: es un número de reunión, no una cantidad.
+      { id: "u1", email: "a@x", displayName: "Ana Paz", type: 2, status: "active", pmi: "5551234567" },
+      { id: "u2", email: "b@x", displayName: "Beto", type: 1, status: "active", pmi: null },
     ]);
     const [p1, p2] = apiCalls().map((c) => new URL(c.url));
     expect(p1!.pathname).toBe("/v2/users");
@@ -314,6 +315,13 @@ describe("listUsers / listUserRecordings", () => {
             duration: 90,
             share_url: "https://zoom.us/rec/share/B",
             recording_play_passcode: "abc123",
+            recording_files: [
+              { file_type: "MP4" },
+              { file_type: "TRANSCRIPT" },
+              { file_type: "mp4" },
+              { file_type: "CC" },
+              {},
+            ],
           },
         ],
         next_page_token: "",
@@ -337,6 +345,8 @@ describe("listUsers / listUserRecordings", () => {
         playPasscode: "abc123",
         password: null,
         autoDeleteDate: null,
+        // Solo los TIPOS de archivo (metadatos): nada se descarga.
+        fileTypes: ["CC", "MP4", "TRANSCRIPT"],
       },
     ]);
   });

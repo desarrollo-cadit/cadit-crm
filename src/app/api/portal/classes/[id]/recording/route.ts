@@ -3,6 +3,7 @@ import { httpUrl } from "@/lib/url-schema";
 import { apiError, parseBody } from "@/lib/api";
 import { requireTeacherPortal } from "@/lib/portal-api";
 import { teacherSetRecording } from "@/server/teacher-portal";
+import { releaseForManualLink } from "@/server/zoom/assignment";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +39,9 @@ export const PUT = requireTeacherPortal(
       body.data.recordingUrl
     );
     if (!r.ok) return apiError(r.status, r.code, r.message);
+    // 030 (R6) — El profesor decidió otra cosa: la grabación de Zoom que tenía
+    // esta clase pasa a manual/sin_clase. No se le devuelve ningún dato nuevo.
+    await releaseForManualLink(ctx.organizationId, id, null);
     return Response.json(r.data);
   }
 );

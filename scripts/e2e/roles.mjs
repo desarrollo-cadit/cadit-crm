@@ -336,4 +336,197 @@ export async function seccionRoles({ api, ok, BASE }) {
     !(despues.json?.roles ?? []).some((r) => r.id === libre.json?.role?.id),
     `${despues.res.status}`
   );
+  await seccionCuentaDual({ api, ok, BASE });
+}
+
+/**
+ * 030 (addendum) — Un profesor que TAMBIÉN es del equipo ("EBIM manager").
+ *
+ * De punta a punta: el profesor tiene portal; Dirección lo da de alta en
+ * Equipo con su MISMO correo (sin contraseña) y desde ese momento entra a las
+ * dos puertas con la misma contraseña. Un correo de alumno se rechaza. Quitarlo
+ * del equipo le saca el panel y le deja el portal. Y "Ver como" lo lleva y lo
+ * trae entre las dos barras, recordando la última elección en `/`.
+ */
+export async function seccionCuentaDual({ api, ok, BASE }) {
+  console.log("\n== 030: cuenta dual (profesor + equipo) ==");
+  const sello = Date.now();
+  const ip = { "x-forwarded-for": "192.0.2.230" };
+
+  const rol = await api("/api/settings/roles", {
+    method: "POST",
+    body: JSON.stringify({ name: `EBIM manager ${sello}`, capabilities: ["academico.ver", "contactos.ver"] }),
+  });
+  const rolKey = rol.json?.role?.key;
+
+  // ---- Un profesor con portal.
+  const correo = `profe-dual-${sello}@example.com`;
+  const profe = await api("/api/teachers", {
+    method: "POST",
+    body: JSON.stringify({ name: `Profe Dual ${sello}`, email: correo }),
+  });
+  const teacherId = profe.json?.teacher?.id;
+  const acceso = await api(`/api/teachers/${teacherId}/access`, { method: "POST" });
+  const asignada = acceso.json?.temporaryPassword;
+  ok(
+    "dual — setup: rol EBIM manager y profesor con acceso al portal",
+    rol.res.status === 201 && Boolean(teacherId) && Boolean(asignada),
+    `${rol.res.status} ${profe.res.status} ${acceso.res.status} ${JSON.stringify(acceso.json?.error ?? null)}`
+  );
+
+  const jar = { cookie: "" };
+  const como = conJar(BASE, jar);
+  const login = await como("/api/auth/sign-in/email", {
+    method: "POST",
+    headers: ip,
+    body: JSON.stringify({ email: correo, password: asignada }),
+  });
+  // Las pantallas piden elegir contraseña propia antes de nada (la API no).
+  let clave = asignada;
+  if (login.json?.user?.mustChangePassword) {
+    const nueva = `${asignada}-propia`;
+    const cambio = await como("/api/account/password", {
+      method: "POST",
+      headers: ip,
+      body: JSON.stringify({ currentPassword: asignada, newPassword: nueva }),
+    });
+    if (cambio.res.ok) clave = nueva;
+  }
+  const antesPanel = await como("/api/courses");
+  const antesPortal = await como("/api/portal/cohorts");
+  ok(
+    "dual — antes: el profesor entra al portal (200) y NO al panel (401)",
+    login.res.ok && antesPortal.res.status === 200 && antesPanel.res.status === 401,
+    `${login.res.status} portal ${antesPortal.res.status} panel ${antesPanel.res.status}`
+  );
+
+  // ---- Alta en Equipo con el MISMO correo, sin contraseña.
+  const alta = await api("/api/settings/team", {
+    method: "POST",
+    body: JSON.stringify({ name: `Profe Dual ${sello}`, email: correo.toUpperCase(), password: "", roleKey: rolKey }),
+  });
+  ok(
+    "dual — Equipo con el correo del profesor: 201 attached (no crea otra cuenta)",
+    alta.res.status === 201 && alta.json?.attached === true,
+    `${alta.res.status} ${JSON.stringify(alta.json)}`
+  );
+  const repetida = await api("/api/settings/team", {
+    method: "POST",
+    body: JSON.stringify({ name: "x", email: correo, password: "", roleKey: rolKey }),
+  });
+  ok(
+    "dual — darlo de alta otra vez → 409 ya_es_equipo",
+    repetida.res.status === 409 && repetida.json?.error?.code === "ya_es_equipo",
+    `${repetida.res.status} ${JSON.stringify(repetida.json)}`
+  );
+
+  const despuesPanel = await como("/api/courses");
+  const despuesPortal = await como("/api/portal/cohorts");
+  const plata = await como("/api/dashboard/finance");
+  ok(
+    "dual — con la MISMA sesión: panel 200 con su rol (la plata 403) y portal 200",
+    despuesPanel.res.status === 200 && despuesPortal.res.status === 200 && plata.res.status === 403,
+    `panel ${despuesPanel.res.status} portal ${despuesPortal.res.status} plata ${plata.res.status}`
+  );
+  const relogin = await conJar(BASE, { cookie: "" })("/api/auth/sign-in/email", {
+    method: "POST",
+    headers: ip,
+    body: JSON.stringify({ email: correo, password: clave }),
+  });
+  ok("dual — su contraseña no cambió: vuelve a entrar con la misma", relogin.res.ok, `${relogin.res.status}`);
+
+  const equipo = await api("/api/settings/team");
+  const ficha = (equipo.json?.members ?? []).find((m) => m.email.toLowerCase() === correo);
+  ok("dual — Equipo lo lista como 'también profesor'", ficha?.isTeacher === true && ficha?.role === rolKey, JSON.stringify(ficha));
+
+  // ---- Un alumno NO puede ser del equipo con su cuenta.
+  const curso = await api("/api/courses", { method: "POST", body: JSON.stringify({ name: `Dual ${sello}`, published: false }) });
+  const hoy = new Date().toISOString().slice(0, 10);
+  const cohorte = await api("/api/cohorts", {
+    method: "POST",
+    body: JSON.stringify({ courseId: curso.json?.course?.id, name: `Dual ${sello}`, startDate: hoy, endDate: hoy }),
+  });
+  const correoAlumno = `alumno-dual-${sello}@example.com`;
+  const insc = await api("/api/enrollments", {
+    method: "POST",
+    body: JSON.stringify({
+      cohortId: cohorte.json?.cohort?.id,
+      contact: { firstName: "Alu", lastName: "Dual", email: correoAlumno, phone: `5989${String(sello).slice(-7)}` },
+    }),
+  });
+  const enrollmentId = insc.json?.enrollment?.id ?? insc.json?.id;
+  await api(`/api/enrollments/${enrollmentId}/access`, { method: "POST" });
+  const alumno = await api("/api/settings/team", {
+    method: "POST",
+    body: JSON.stringify({ name: "Alu", email: correoAlumno, password: "temporal-123", roleKey: rolKey }),
+  });
+  ok(
+    "dual — el correo de un alumno se rechaza con mensaje claro (409 es_alumno)",
+    alumno.res.status === 409 && alumno.json?.error?.code === "es_alumno" && /alumno/.test(alumno.json?.error?.message ?? ""),
+    `${alumno.res.status} ${JSON.stringify(alumno.json)}`
+  );
+
+  // ---- "Ver como" en el navegador, antes de quitarlo del equipo.
+  await verComo({ ok, BASE, cookie: jar.cookie });
+
+  // ---- Quitar del equipo: solo la fila de member.
+  const quitar = await api(`/api/settings/team/${ficha?.id}`, { method: "DELETE" });
+  const sinPanel = await como("/api/courses");
+  const conPortal = await como("/api/portal/cohorts");
+  ok(
+    "dual — quitar del equipo (200): panel 401, el portal sigue 200",
+    quitar.res.status === 200 && sinPanel.res.status === 401 && conPortal.res.status === 200,
+    `${quitar.res.status} panel ${sinPanel.res.status} portal ${conPortal.res.status}`
+  );
+  const yo = (await api("/api/settings/team")).json?.members?.find((m) => m.isSelf);
+  const quitarme = await api(`/api/settings/team/${yo?.id}`, { method: "DELETE" });
+  ok("dual — nadie se quita a sí mismo (422)", quitarme.res.status === 422, `${quitarme.res.status}`);
+
+  await api(`/api/settings/roles/${rol.json?.role?.id}`, { method: "DELETE" });
+}
+
+/** La barra del panel y la del portal ofrecen "Ver como", y `/` recuerda la elección. */
+async function verComo({ ok, BASE, cookie }) {
+  let navegador = null;
+  try {
+    const { chromium } = await import("playwright");
+    navegador = await chromium.launch();
+    const url = new URL(BASE);
+    const contexto = await navegador.newContext({ viewport: { width: 1280, height: 800 } });
+    await contexto.addCookies(
+      cookie
+        .split("; ")
+        .filter(Boolean)
+        .map((par) => {
+          const i = par.indexOf("=");
+          return { name: par.slice(0, i), value: par.slice(i + 1), domain: url.hostname, path: "/" };
+        })
+    );
+    const pagina = await contexto.newPage();
+    await pagina.goto(`${BASE}/`, { timeout: 120000 });
+    const enPanel = pagina.locator('aside [data-view-switch="equipo"]');
+    await enPanel.waitFor({ timeout: 60000 });
+    ok("dual UI — la barra del panel muestra 'Ver como' con Equipo elegido", await enPanel.isVisible());
+
+    await enPanel.locator('[data-view-option="profesor"]').click();
+    await pagina.waitForURL(/\/portal/, { timeout: 60000 });
+    const enPortal = pagina.locator('[data-view-switch="profesor"]').first();
+    await enPortal.waitFor({ timeout: 60000 });
+    ok("dual UI — 'Profesor' lleva al portal, que también ofrece 'Ver como'", true);
+
+    await pagina.goto(`${BASE}/`, { timeout: 120000 });
+    await pagina.waitForURL(/\/portal/, { timeout: 60000 });
+    ok("dual UI — con la última elección en Profesor, `/` abre el portal", /\/portal/.test(pagina.url()), pagina.url());
+
+    await pagina.locator('aside [data-view-switch="profesor"] [data-view-option="equipo"]').click();
+    await pagina.waitForURL((u) => !u.pathname.startsWith("/portal"), { timeout: 60000 });
+    await pagina.goto(`${BASE}/`, { timeout: 120000 });
+    await pagina.locator('aside [data-view-switch="equipo"]').waitFor({ timeout: 60000 });
+    ok("dual UI — 'Equipo' vuelve al panel y `/` lo recuerda", !pagina.url().includes("/portal"), pagina.url());
+    await contexto.close();
+  } catch (err) {
+    ok("dual UI — Ver como", false, String(err?.message ?? err));
+  } finally {
+    await navegador?.close();
+  }
 }

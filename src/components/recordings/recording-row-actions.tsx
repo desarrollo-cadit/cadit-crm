@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Copy, ExternalLink, KeyRound } from "lucide-react";
+import { Copy, ExternalLink, KeyRound, Link2 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 
 /**
@@ -16,9 +16,14 @@ import { Button, buttonVariants } from "@/components/ui/button";
 export function RecordingRowActions({
   playUrl,
   passcode,
+  onAssign,
+  assigned = false,
 }: {
   playUrl: string | null;
   passcode: string | null;
+  /** 030 US3 — Solo con `grabaciones.gestionar`: abre el panel de asignación. */
+  onAssign?: () => void;
+  assigned?: boolean;
 }) {
   const [aviso, setAviso] = useState<string | null>(null);
 
@@ -68,6 +73,11 @@ export function RecordingRowActions({
           onClick={() => void copiar(passcode, "Código copiado")}
         >
           <KeyRound className="h-3.5 w-3.5" /> Código {passcode}
+        </Button>
+      )}
+      {onAssign && (
+        <Button size="sm" variant="ghost" onClick={onAssign}>
+          <Link2 className="h-3.5 w-3.5" /> {assigned ? "Cambiar clase" : "Asignar a clase"}
         </Button>
       )}
       {aviso && (

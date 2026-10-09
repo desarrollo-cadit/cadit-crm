@@ -9,6 +9,7 @@ import { cn, initials } from "@/lib/utils";
 import { signOut } from "@/lib/auth/client";
 import { PASSWORD_CHANGE_PATH } from "@/lib/auth/password-change";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { ViewSwitch } from "@/components/view-switch";
 import type { ThemePreference } from "@/lib/theme";
 import { IsotipoCadIT } from "@/components/logo-cadit";
 import {
@@ -85,10 +86,16 @@ export function PortalNav({
   audience,
   courses,
   theme,
+  isAlsoStaff = false,
 }: {
   branding: Branding;
   userName: string;
   audience: PortalAudience;
+  /**
+   * 030 (addendum) — El profesor también es del equipo (`member`): se
+   * muestra "Ver como: Equipo / Profesor" para volver al panel.
+   */
+  isAlsoStaff?: boolean;
   /**
    * Las cursadas del alumno, para saltar a una sin pasar por el inicio. Vacío
    * para un profesor puro: un grupo con encabezado y nada debajo parece un
@@ -172,6 +179,12 @@ export function PortalNav({
       </nav>
 
       <div className="flex-1" />
+
+      {isAlsoStaff && audience.isTeacher && (
+        <div className="mt-3">
+          <ViewSwitch current="profesor" tone="portal" />
+        </div>
+      )}
 
       <div className="mt-3 flex items-center gap-2.5 rounded-md px-2.5 py-2">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-soft text-xs font-semibold text-brand-text">

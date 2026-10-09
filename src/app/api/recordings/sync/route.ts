@@ -42,6 +42,15 @@ export const POST = requireCapability("grabaciones.gestionar", async (session, r
   if (!start.ok && start.error === "sin_conexiones") {
     return apiError(422, "sin_conexiones", "No hay ninguna conexión de Zoom activa para sincronizar.");
   }
+  // Sin aulas no hay corrida: un "ok" con 0 grabaciones escondía que faltaba
+  // vincularlas (y adelantaba la marca de agua — research R-12).
+  if (!start.ok && start.error === "sin_aulas") {
+    return apiError(
+      422,
+      "sin_aulas",
+      "No hay aulas vinculadas a Zoom: vinculalas en Configuración › Zoom"
+    );
+  }
   if (!start.ok) {
     return Response.json(
       {

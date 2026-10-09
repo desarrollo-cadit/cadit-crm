@@ -2169,6 +2169,19 @@ export const virtualRoom = pgTable(
     zoomUserId: text("zoom_user_id"),
     /** Rótulo; se refresca al "Probar" la conexión. */
     zoomUserEmail: text("zoom_user_email"),
+    /**
+     * 030 (addendum) — La sala personal (PMI) del usuario de Zoom, como la
+     * informó Zoom al vincular o al "Probar". Sirve para avisar cuando el
+     * enlace del aula NO es esa sala; nunca reescribe `url` sola.
+     */
+    zoomUserPmi: text("zoom_user_pmi"),
+    /**
+     * 030 (addendum, research R-12) — Hasta qué día (UTC) ESTA aula está al
+     * día con Zoom. Por aula y no por conexión: un aula recién vinculada
+     * tiene que traer su propio respaldo de 90 días aunque la conexión ya se
+     * haya sincronizado ayer. Se vacía al cambiar el usuario vinculado.
+     */
+    zoomSyncedThrough: date("zoom_synced_through", { mode: "string" }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -2883,6 +2896,11 @@ export const zoomRecording = pgTable(
     passcodeTag: text("passcode_tag"),
     passcodeEmbedded: boolean("passcode_embedded").notNull().default(false),
     autoDeleteDate: date("auto_delete_date", { mode: "string" }),
+    /**
+     * 030 (addendum) — Tipos de archivo de la reunión (`MP4`, `TRANSCRIPT`,
+     * `CC`…). Solo METADATOS de `recording_files`: el CRM no descarga nada.
+     */
+    fileTypes: text("file_types").array().notNull().default(sql`'{}'::text[]`),
     firstSeenAt: timestamp("first_seen_at").notNull(),
     lastSeenAt: timestamp("last_seen_at").notNull(),
     /** DV-013 — dejó de aparecer en Zoom dentro de la ventana consultada. */

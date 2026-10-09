@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { cookies, headers } from "next/headers";
 import { getAuth } from "@/lib/auth";
 import { forcedPasswordChangeRedirect } from "@/lib/auth/password-change";
-import { resolvePortalSession } from "@/lib/auth/portal";
+import { portalTeacherId, resolvePortalSession } from "@/lib/auth/portal";
 import { getSessionOrNull } from "@/lib/auth/session";
 import { sessionCapabilities } from "@/lib/capabilities";
 import { parseThemeCookie, THEME_COOKIE } from "@/lib/theme";
@@ -57,6 +57,13 @@ export default async function AppLayout({
   const roles = await listRoles(session.organizationId, session.role);
   const roleLabel = roles.find((r) => r.key === session.role)?.name ?? session.role;
 
+  /**
+   * 030 (addendum) — ¿Esta cuenta del equipo también es profesor con portal?
+   * Solo decide si se ofrece "Ver como"; el panel no cambia en nada.
+   */
+  const portal = await resolvePortalSession();
+  const isAlsoTeacher = portal !== null && portalTeacherId(portal) !== null;
+
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       <AppNav
@@ -65,6 +72,7 @@ export default async function AppLayout({
         roleLabel={roleLabel}
         capabilities={sessionCapabilities(session)}
         theme={parseThemeCookie((await cookies()).get(THEME_COOKIE)?.value)}
+        isAlsoTeacher={isAlsoTeacher}
       />
       <main className="min-w-0 flex-1 overflow-hidden">{children}</main>
     </div>

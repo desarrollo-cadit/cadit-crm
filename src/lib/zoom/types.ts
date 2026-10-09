@@ -19,6 +19,11 @@ export type ZoomUser = {
   displayName: string;
   type: number;
   status: string;
+  /**
+   * Número de la sala personal (PMI), como texto: es un número de reunión, no
+   * una cantidad. `null` si Zoom no lo informa.
+   */
+  pmi: string | null;
 };
 
 export type ZoomRecordingMeeting = {
@@ -41,6 +46,12 @@ export type ZoomRecordingMeeting = {
   password: string | null;
   /** YYYY-MM-DD. */
   autoDeleteDate: string | null;
+  /**
+   * Tipos de archivo de la grabación (`MP4`, `TRANSCRIPT`, `CC`…), en
+   * mayúsculas, sin repetir y ordenados. Son METADATOS: el CRM no descarga
+   * ningún archivo (constitución 1.6.0).
+   */
+  fileTypes: string[];
 };
 
 export type ZoomErrorCode =

@@ -5,6 +5,7 @@ import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import {
+  extractMeetingId,
   forgetToken as zoomForgetToken,
   listUsers as zoomListUsers,
   ZoomError,
@@ -97,7 +98,28 @@ export type ConnectionRoomDto = {
   name: string;
   zoomUserId: string;
   zoomUserEmail: string | null;
+  /** El enlace que abre el alumno (`virtual_room.url`). */
+  roomUrl: string;
+  /** La sala personal del usuario de Zoom, si Zoom la informó. */
+  zoomUserPmi: string | null;
+  /** El enlace del aula NO es la sala personal del usuario vinculado. */
+  pmiMismatch: boolean;
+  /** El enlace que dejaría "Actualizar enlace", o `null` si no hace falta. */
+  suggestedUrl: string | null;
 };
+
+/** El enlace de una sala personal. Sin `pwd`: Zoom no lo informa al listar usuarios. */
+export const pmiUrl = (pmi: string) => `https://zoom.us/j/${pmi}`;
+
+/**
+ * ¿El enlace del aula es otro que la sala personal? Solo se afirma cuando hay
+ * con qué comparar: sin PMI (Zoom no lo informó) no hay aviso.
+ */
+export function pmiCheck(roomUrl: string, pmi: string | null): { pmiMismatch: boolean; suggestedUrl: string | null } {
+  if (!pmi) return { pmiMismatch: false, suggestedUrl: null };
+  const distinto = extractMeetingId(roomUrl) !== pmi;
+  return { pmiMismatch: distinto, suggestedUrl: distinto ? pmiUrl(pmi) : null };
+}
 
 export type ZoomConnectionDto = {
   id: string;
@@ -133,7 +155,25 @@ export function toConnectionDto(row: ConnectionRow, rooms: ConnectionRoomDto[]):
  * Almacenamiento (inyectable: los tests usan uno en memoria)
  * ============================================================ */
 
-export type LinkedRoom = ConnectionRoomDto & { zoomConnectionId: string; archived: boolean };
+export type LinkedRoom = {
+  id: string;
+  name: string;
+  zoomUserId: string;
+  zoomUserEmail: string | null;
+  zoomUserPmi: string | null;
+  url: string;
+  zoomConnectionId: string;
+  archived: boolean;
+};
+
+export type RoomLink = {
+  connectionId: string;
+  zoomUserId: string;
+  zoomUserEmail?: string | null;
+  zoomUserPmi?: string | null;
+  /** R-12 — el usuario vinculado cambió: el aula trae su respaldo de nuevo. */
+  resetSync?: boolean;
+};
 
 export interface ConnectionStore {
   list(orgId: string): Promise<ConnectionRow[]>;
@@ -143,7 +183,16 @@ export interface ConnectionStore {
   update(orgId: string, id: string, patch: Partial<NewConnectionRow>): Promise<ConnectionRow | null>;
   /** Aulas con vínculo a Zoom, archivadas incluidas. */
   linkedRooms(orgId: string): Promise<LinkedRoom[]>;
-  getRoom(orgId: string, roomId: string): Promise<{ id: string; name: string; archivedAt: Date | null } | null>;
+  getRoom(
+    orgId: string,
+    roomId: string
+  ): Promise<{
+    id: string;
+    name: string;
+    archivedAt: Date | null;
+    zoomConnectionId: string | null;
+    zoomUserId: string | null;
+  } | null>;
   /** Otra aula ACTIVA que ya usa ese usuario de esa conexión. */
   roomUsing(
     orgId: string,
@@ -151,12 +200,19 @@ export interface ConnectionStore {
     zoomUserId: string,
     excludeRoomId: string
   ): Promise<{ id: string; name: string } | null>;
-  setRoomLink(
+  /**
+   * Con un correo del usuario de Zoom, también lo deja como correo de la
+   * cuenta del aula (`account_email`): es la misma cuenta.
+   */
+  setRoomLink(orgId: string, roomId: string, link: RoomLink | null): Promise<void>;
+  /** Correo y PMI de las aulas vinculadas, como los informa Zoom al "Probar". */
+  refreshRoomUsers(
     orgId: string,
-    roomId: string,
-    link: { connectionId: string; zoomUserId: string; zoomUserEmail?: string | null } | null
+    connectionId: string,
+    users: { id: string; email: string; pmi: string | null }[]
   ): Promise<void>;
-  refreshRoomEmails(orgId: string, connectionId: string, users: { id: string; email: string }[]): Promise<void>;
+  /** "Actualizar enlace": SOLO el enlace y el PMI; el nombre no se toca. */
+  setRoomUrl(orgId: string, roomId: string, url: string, pmi: string): Promise<void>;
 }
 
 const dbStore: ConnectionStore = {
@@ -211,6 +267,8 @@ const dbStore: ConnectionStore = {
         zoomConnectionId: schema.virtualRoom.zoomConnectionId,
         zoomUserId: schema.virtualRoom.zoomUserId,
         zoomUserEmail: schema.virtualRoom.zoomUserEmail,
+        zoomUserPmi: schema.virtualRoom.zoomUserPmi,
+        url: schema.virtualRoom.url,
         archivedAt: schema.virtualRoom.archivedAt,
       })
       .from(schema.virtualRoom)
@@ -222,12 +280,20 @@ const dbStore: ConnectionStore = {
       zoomConnectionId: r.zoomConnectionId!,
       zoomUserId: r.zoomUserId!,
       zoomUserEmail: r.zoomUserEmail,
+      zoomUserPmi: r.zoomUserPmi,
+      url: r.url,
       archived: r.archivedAt !== null,
     }));
   },
   async getRoom(orgId, roomId) {
     const [row] = await getDb()
-      .select({ id: schema.virtualRoom.id, name: schema.virtualRoom.name, archivedAt: schema.virtualRoom.archivedAt })
+      .select({
+        id: schema.virtualRoom.id,
+        name: schema.virtualRoom.name,
+        archivedAt: schema.virtualRoom.archivedAt,
+        zoomConnectionId: schema.virtualRoom.zoomConnectionId,
+        zoomUserId: schema.virtualRoom.zoomUserId,
+      })
       .from(schema.virtualRoom)
       .where(scoped(schema.virtualRoom.organizationId, orgId, eq(schema.virtualRoom.id, roomId)))
       .limit(1);
@@ -259,15 +325,24 @@ const dbStore: ConnectionStore = {
         zoomConnectionId: link?.connectionId ?? null,
         zoomUserId: link?.zoomUserId ?? null,
         zoomUserEmail: link ? (link.zoomUserEmail ?? null) : null,
+        zoomUserPmi: link ? (link.zoomUserPmi ?? null) : null,
+        ...(link?.zoomUserEmail ? { accountEmail: link.zoomUserEmail } : {}),
+        ...(!link || link.resetSync ? { zoomSyncedThrough: null } : {}),
         updatedAt: new Date(),
       })
       .where(scoped(schema.virtualRoom.organizationId, orgId, eq(schema.virtualRoom.id, roomId)));
   },
-  async refreshRoomEmails(orgId, connectionId, users) {
+  async setRoomUrl(orgId, roomId, url, pmi) {
+    await getDb()
+      .update(schema.virtualRoom)
+      .set({ url, zoomUserPmi: pmi, updatedAt: new Date() })
+      .where(scoped(schema.virtualRoom.organizationId, orgId, eq(schema.virtualRoom.id, roomId)));
+  },
+  async refreshRoomUsers(orgId, connectionId, users) {
     for (const u of users) {
       await getDb()
         .update(schema.virtualRoom)
-        .set({ zoomUserEmail: u.email, updatedAt: new Date() })
+        .set({ zoomUserEmail: u.email, zoomUserPmi: u.pmi, updatedAt: new Date() })
         .where(
           scoped(
             schema.virtualRoom.organizationId,
@@ -333,7 +408,10 @@ export type ConnErrorCode =
   | "nombre_duplicado"
   | "conexion_archivada"
   | "aula_archivada"
-  | "usuario_ya_vinculado";
+  | "usuario_ya_vinculado"
+  | "no_vinculada"
+  | "sin_pmi"
+  | "zoom_error";
 
 export type ConnResult<T> =
   | { ok: true; data: T }
@@ -351,7 +429,15 @@ async function roomsByConnection(orgId: string, store: ConnectionStore) {
   for (const r of await store.linkedRooms(orgId)) {
     if (r.archived) continue;
     const lista = map.get(r.zoomConnectionId) ?? [];
-    lista.push({ id: r.id, name: r.name, zoomUserId: r.zoomUserId, zoomUserEmail: r.zoomUserEmail });
+    lista.push({
+      id: r.id,
+      name: r.name,
+      zoomUserId: r.zoomUserId,
+      zoomUserEmail: r.zoomUserEmail,
+      roomUrl: r.url,
+      zoomUserPmi: r.zoomUserPmi,
+      ...pmiCheck(r.url, r.zoomUserPmi),
+    });
     map.set(r.zoomConnectionId, lista);
   }
   return map;
@@ -464,7 +550,7 @@ export async function loadZoomCredentials(orgId: string, connectionId: string): 
 }
 
 export type TestOutcome =
-  | { ok: true; users: { id: string; email: string; displayName: string }[] }
+  | { ok: true; users: { id: string; email: string; displayName: string; pmi: string | null }[] }
   | { ok: false; error: ZoomErrorCode; message: string };
 
 /**
@@ -485,7 +571,7 @@ export async function testConnection(
     const users = await deps.zoom.listUsers(credentialsOf(row));
     outcome = {
       ok: true,
-      users: users.map((u) => ({ id: u.id, email: u.email, displayName: u.displayName })),
+      users: users.map((u) => ({ id: u.id, email: u.email, displayName: u.displayName, pmi: u.pmi })),
     };
   } catch (err) {
     outcome =
@@ -501,7 +587,7 @@ export async function testConnection(
   const ahora = new Date();
   if (outcome.ok) {
     await deps.store.update(orgId, id, { status: "ok", lastError: null, lastTestedAt: ahora });
-    await deps.store.refreshRoomEmails(orgId, id, outcome.users);
+    await deps.store.refreshRoomUsers(orgId, id, outcome.users);
   } else {
     await deps.store.update(orgId, id, {
       status: "error",
@@ -518,6 +604,8 @@ export const linkRoomSchema = z.union([
       connectionId: z.string().min(1),
       zoomUserId: z.string().trim().min(1),
       zoomUserEmail: z.string().trim().max(254).optional(),
+      /** Solo para AVISAR si el enlace del aula es otro; "Probar" lo refresca desde Zoom. */
+      zoomUserPmi: z.string().trim().regex(/^\d{9,12}$/).optional(),
     })
     .strict(),
   z.object({ connectionId: z.null() }).strict(),
@@ -527,7 +615,7 @@ export const linkRoomSchema = z.union([
 export async function linkRoom(
   orgId: string,
   roomId: string,
-  link: { connectionId: string; zoomUserId: string; zoomUserEmail?: string | null } | null,
+  link: Omit<RoomLink, "resetSync"> | null,
   deps: ZoomConnectionDeps = defaultDeps
 ): Promise<ConnResult<null>> {
   const room = await deps.store.getRoom(orgId, roomId);
@@ -551,6 +639,48 @@ export async function linkRoom(
       otra.name
     );
   }
-  await deps.store.setRoomLink(orgId, roomId, link);
+  // R-12 — otro usuario (u otra conexión) = otras grabaciones: respaldo entero.
+  const resetSync = room.zoomConnectionId !== link.connectionId || room.zoomUserId !== link.zoomUserId;
+  await deps.store.setRoomLink(orgId, roomId, { ...link, resetSync });
   return { ok: true, data: null };
+}
+
+/**
+ * "Actualizar enlace del aula a la sala personal de Zoom".
+ *
+ * El PMI se vuelve a pedir a Zoom en el momento —no se confía en el que mandó
+ * la pantalla al vincular— y solo cambia el ENLACE: el nombre del aula es de
+ * coordinación. El enlace queda sin `pwd` porque Zoom no lo informa al
+ * listar usuarios; si la sala pide código, se pega el enlace completo a mano.
+ */
+export async function adoptZoomPmiForRoom(
+  orgId: string,
+  roomId: string,
+  deps: ZoomConnectionDeps = defaultDeps
+): Promise<ConnResult<{ url: string }>> {
+  const room = await deps.store.getRoom(orgId, roomId);
+  if (!room) return fail("no_existe", "Aula no encontrada.");
+  if (!room.zoomConnectionId || !room.zoomUserId) {
+    return fail("no_vinculada", "El aula no está vinculada a un usuario de Zoom.");
+  }
+  if (room.archivedAt) return fail("aula_archivada", "El aula está dada de baja: reactivala antes de cambiarla.");
+  const conn = await deps.store.get(orgId, room.zoomConnectionId);
+  if (!conn) return fail("no_existe", "Conexión no encontrada.");
+  if (conn.archivedAt) return fail("conexion_archivada", "La conexión está archivada.");
+
+  let users: ZoomUser[];
+  try {
+    users = await deps.zoom.listUsers(credentialsOf(conn));
+  } catch (err) {
+    return fail(
+      "zoom_error",
+      err instanceof ZoomError ? err.message : "No se pudo consultar a Zoom. Probá de nuevo en un momento."
+    );
+  }
+  const pmi = users.find((u) => u.id === room.zoomUserId)?.pmi ?? null;
+  if (!pmi) return fail("sin_pmi", "Zoom no informó una sala personal para ese usuario.");
+
+  const url = pmiUrl(pmi);
+  await deps.store.setRoomUrl(orgId, roomId, url, pmi);
+  return { ok: true, data: { url } };
 }

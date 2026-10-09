@@ -22,6 +22,8 @@ export type ZoomMockRecording = {
   recording_play_passcode?: string | null;
   password?: string | null;
   auto_delete_date?: string | null;
+  /** Solo el tipo: el CRM lee metadatos, nunca descarga. */
+  recording_files?: { file_type: string }[];
 };
 
 export type ZoomMockUser = {
@@ -29,6 +31,8 @@ export type ZoomMockUser = {
   email: string;
   first_name?: string;
   last_name?: string;
+  /** Sala personal (Zoom la manda como número). */
+  pmi?: number;
   recordings?: ZoomMockRecording[];
 };
 
@@ -143,6 +147,7 @@ export function listUsersFor(
         last_name: u.last_name ?? "",
         type: 2,
         status: "active",
+        ...(u.pmi !== undefined ? { pmi: u.pmi } : {}),
       })),
     },
   };
@@ -199,7 +204,7 @@ export function listRecordingsFor(
         recording_play_passcode: r.recording_play_passcode ?? null,
         password: r.password ?? null,
         auto_delete_date: r.auto_delete_date ?? null,
-        recording_files: [],
+        recording_files: (r.recording_files ?? []).map((f) => ({ file_type: f.file_type })),
       })),
     },
   };

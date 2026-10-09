@@ -1,12 +1,11 @@
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { apiError, parseBody, requireCapability } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
-import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { signUpWithAssignedPassword } from "@/server/auth/assigned-password";
 import { sessionCapabilities } from "@/lib/capabilities";
-import { resolveRoleForNewMember } from "@/server/team";
+import { addTeamMember } from "@/server/team";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +25,28 @@ export const GET = requireCapability(
     .from(schema.member)
     .innerJoin(schema.user, eq(schema.member.userId, schema.user.id))
     .where(scoped(schema.member.organizationId, session.organizationId));
+
+  // 030 (addendum) — Quién del equipo es TAMBIÉN profesor con portal: la fila
+  // lo dice, y "Quitar del equipo" le avisa que el portal le queda.
+  const profesores = new Set(
+    members.length === 0
+      ? []
+      : (
+          await db
+            .select({ userId: schema.accountLink.userId })
+            .from(schema.accountLink)
+            .where(
+              and(
+                eq(schema.accountLink.organizationId, session.organizationId),
+                eq(schema.accountLink.kind, "profesor"),
+                inArray(
+                  schema.accountLink.userId,
+                  members.map((m) => m.userId)
+                )
+              )
+            )
+        ).map((r) => r.userId)
+  );
   return Response.json({
     members: members.map((m) => ({
       id: m.id,
@@ -39,6 +60,7 @@ export const GET = requireCapability(
       // Crear-roles — Tu propia fila no ofrece cambiar el rol: lo cambia otra
       // persona (`changeMemberRole` lo rechaza igual).
       isSelf: m.userId === session.userId,
+      isTeacher: profesores.has(m.userId),
     })),
   });
 });
@@ -46,7 +68,12 @@ export const GET = requireCapability(
 const createSchema = z.object({
   name: z.string().trim().min(1).max(120),
   email: z.string().trim().email(),
-  password: z.string().min(8).max(128),
+  /**
+   * 030 (addendum) — Opcional: si el correo es de un PROFESOR, se le agrega
+   * el equipo a su misma cuenta y su contraseña no se toca. Para una cuenta
+   * nueva sigue siendo obligatoria (`addTeamMember` lo exige).
+   */
+  password: z.union([z.literal(""), z.string().min(8).max(128)]).optional(),
   /**
    * 012 (T029) — La llave de un rol de la tabla `role`, no un enum fijo.
    *
@@ -61,52 +88,36 @@ const createSchema = z.object({
   roleKey: z.string().trim().min(1),
 });
 
-/** Alta de cuenta de equipo: email + contraseña temporal (FR-061). */
+/**
+ * Alta de cuenta de equipo: email + contraseña temporal (FR-061).
+ *
+ * El rol tiene que existir en ESTA organización (un rol inventado caería al
+ * respaldo de código y otorgaría todo) y no puede exceder a quien da el alta.
+ * La contraseña la escribe quien da el alta: al entrar por primera vez se le
+ * pide a la persona que elija la suya (`mustChangePassword`).
+ *
+ * 030 (addendum) — Si el correo es de un PROFESOR, no se crea otra cuenta: se
+ * le agrega el equipo a la suya (`attached: true`). Si es de un alumno, se
+ * rechaza con un mensaje claro. Las reglas viven en `addTeamMember`.
+ */
 export const POST = requireCapability(
   "accesos.gestionar",
   async (session, req: Request) => {
   const body = await parseBody(req, createSchema);
   if (!body.ok) return body.response;
 
-  // El rol tiene que existir en ESTA organización. Sin esto, un rol inventado
-  // cae al respaldo de código y otorga todo.
-  // Crear-roles — Y no puede exceder a quien da el alta: dar una cuenta con
-  // más permisos que los propios es la escalada más corta posible.
-  const target = await resolveRoleForNewMember(
+  const result = await addTeamMember(
     session.organizationId,
     sessionCapabilities(session),
-    body.data.roleKey
-  );
-  if (!target.ok) return apiError(target.status, target.code, target.message);
-
-  // La contraseña la escribe quien da el alta, no la persona: al entrar por
-  // primera vez se le pide que elija la suya (`mustChangePassword`).
-  let newUserId: string;
-  try {
-    ({ userId: newUserId } = await signUpWithAssignedPassword({
+    {
       name: body.data.name,
       email: body.data.email,
-      password: body.data.password,
-    }));
-  } catch (err) {
-    const message =
-      err instanceof Error ? err.message : "No se pudo crear la cuenta";
-    if (/exist/i.test(message)) {
-      return apiError(409, "duplicate", "Ya existe una cuenta con ese correo");
-    }
-    return apiError(422, "invalid", message);
-  }
-
-  const db = getDb();
-  await db
-    .insert(schema.member)
-    .values({
-      id: newId("member"),
-      organizationId: session.organizationId,
-      userId: newUserId,
-      role: body.data.roleKey,
-    })
-    .onConflictDoNothing();
-
-  return Response.json({ ok: true }, { status: 201 });
+      password: body.data.password || undefined,
+      roleKey: body.data.roleKey,
+    },
+    // La contraseña asignada enciende `mustChangePassword` (helper único).
+    { signUp: (cuenta) => signUpWithAssignedPassword(cuenta) }
+  );
+  if (!result.ok) return apiError(result.status, result.code, result.message);
+  return Response.json({ ok: true, attached: result.data.attached }, { status: 201 });
 });

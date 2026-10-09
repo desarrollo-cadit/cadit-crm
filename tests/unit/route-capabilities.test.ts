@@ -226,6 +226,24 @@ describe("cobertura de permisos en las rutas de API", () => {
   });
 
   /**
+   * 030 (addendum) — La cuenta DUAL (profesor que también es del equipo) no
+   * abre una tercera puerta: dar de alta, cambiar el rol y QUITAR del equipo
+   * son rutas de staff, cada handler con `accesos.gestionar`, y ninguna mira
+   * el portal para decidir. Que un profesor sea además del equipo lo dice la
+   * fila de `member`, no una excepción en una ruta.
+   */
+  it("equipo: cada handler pide accesos.gestionar y ninguno usa una puerta del portal", () => {
+    for (const name of ["settings/team/route.ts", "settings/team/[memberId]/route.ts"]) {
+      const src = readFileSync(path.join(API_DIR, name), "utf8");
+      const handlers = src.match(/export const (GET|POST|PATCH|PUT|DELETE) =/g) ?? [];
+      const conCapacidad = src.match(/requireCapability\(\s*"accesos\.gestionar"/g) ?? [];
+      expect(handlers.length, name).toBeGreaterThan(0);
+      expect(conCapacidad.length, name).toBe(handlers.length);
+      expect(src, name).not.toMatch(/requireTeacherPortal|requireStudentPortal|resolvePortalSession/);
+    }
+  });
+
+  /**
    * El contador que informaba el avance de la fase 2 se retiró: llegó a cero
    * y la exigencia de arriba ya no lo deja subir.
    */

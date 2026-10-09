@@ -315,3 +315,32 @@ tabla la muestra como "ya no está en Zoom"; si reaparece, se limpia la marca.
 
 **Rationale**: borrar adjudicaciones automáticamente cambiaría lo que ven los
 alumnos sin decisión humana; esconder el problema es el riesgo DV-005 de 018.
+
+## R-12 — Marca de agua POR AULA (addendum, prueba en vivo 2026-10-09)
+
+**Bug observado**: con cero aulas vinculadas, "Sincronizar" creaba una corrida
+que terminaba `ok` sin llamar a Zoom y adelantaba `zoom_connection.synced_through`
+a hoy. Al vincular las aulas después, la ventana era `hoy − 3 días` y nunca se
+traían los 90 días de respaldo.
+
+**Decision**: la marca vive en `virtual_room.zoom_synced_through` (migración
+0053). Cada aula pide su propia ventana (`syncWindow(aula.marca)`) y solo
+avanza la suya si terminó bien. Vincular el aula a OTRO usuario (u otra
+conexión) la vacía (`resetSync`); re-vincular el mismo no. Sin aulas vinculadas
+no hay corrida: `startSync` devuelve `sin_aulas` sin tomar el lease, y la ruta
+responde 422 "No hay aulas vinculadas a Zoom: vinculalas en Configuración ›
+Zoom". `zoom_connection.synced_through` queda como resumen informativo.
+
+**Alternativas descartadas**: (a) seguir por conexión y solo "no avanzar sin
+aulas": no arregla el aula vinculada DESPUÉS de una corrida buena — se quedaría
+con 3 días; (b) resetear la marca de la conexión al vincular: obliga a
+re-traer 90 días de TODAS las aulas por cada aula nueva (5× pedidos a Zoom).
+
+**Migración**: las aulas existentes quedan con marca NULL a propósito: la
+próxima corrida recupera lo que la marca vieja les saltó.
+
+**Re-adjudicación**: al final de cada conexión, `rematchUntouched` re-evalúa las
+grabaciones `auto` no asignadas que la corrida NO tocó (`last_seen_at` anterior
+al inicio), por tandas de 200. Así, corregir el enlace de un aula a su PMI y
+volver a sincronizar adjudica también lo que quedó fuera de la ventana. Las
+`manual` nunca se tocan.

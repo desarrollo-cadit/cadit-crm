@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Archive, ArchiveRestore, Link2, Pencil, PlugZap, Plus } from "lucide-react";
+import { Archive, ArchiveRestore, Link2, Pencil, PlugZap, Plus, TriangleAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,7 +10,16 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 
-type ConnectionRoom = { id: string; name: string; zoomUserId: string; zoomUserEmail: string | null };
+type ConnectionRoom = {
+  id: string;
+  name: string;
+  zoomUserId: string;
+  zoomUserEmail: string | null;
+  roomUrl: string;
+  zoomUserPmi: string | null;
+  pmiMismatch: boolean;
+  suggestedUrl: string | null;
+};
 
 type Connection = {
   id: string;
@@ -25,7 +34,7 @@ type Connection = {
   rooms: ConnectionRoom[];
 };
 
-type ZoomUser = { id: string; email: string; displayName: string };
+type ZoomUser = { id: string; email: string; displayName: string; pmi: string | null };
 
 export type ActiveRoom = { id: string; name: string };
 
@@ -69,6 +78,7 @@ export function ZoomConnectionsClient({ rooms }: { rooms: ActiveRoom[] }) {
   const [rowMsg, setRowMsg] = useState<{ id: string; text: string; tone: "ok" | "error" } | null>(null);
   const [users, setUsers] = useState<Record<string, ZoomUser[]>>({});
   const [testing, setTesting] = useState<string | null>(null);
+  const [updatingUrl, setUpdatingUrl] = useState<string | null>(null);
 
   const refetch = useCallback(async () => {
     const res = await fetch("/api/settings/zoom/connections").catch(() => null);
@@ -163,7 +173,12 @@ export function ZoomConnectionsClient({ rooms }: { rooms: ActiveRoom[] }) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(
         zoomUserId
-          ? { connectionId, zoomUserId, ...(user ? { zoomUserEmail: user.email } : {}) }
+          ? {
+              connectionId,
+              zoomUserId,
+              ...(user ? { zoomUserEmail: user.email } : {}),
+              ...(user?.pmi ? { zoomUserPmi: user.pmi } : {}),
+            }
           : { connectionId: null }
       ),
     }).catch(() => null);
@@ -175,6 +190,32 @@ export function ZoomConnectionsClient({ rooms }: { rooms: ActiveRoom[] }) {
       });
       return;
     }
+    void refetch();
+  }
+
+  /**
+   * "Actualizar enlace": un clic explícito. Vincular nunca reescribe el enlace
+   * del aula, porque es lo que abre el alumno.
+   */
+  async function usarSalaPersonal(connectionId: string, room: ConnectionRoom) {
+    setRowMsg(null);
+    setUpdatingUrl(room.id);
+    const res = await fetch(`/api/settings/zoom/rooms/${room.id}/pmi`, { method: "POST" }).catch(() => null);
+    setUpdatingUrl(null);
+    if (!res?.ok) {
+      setRowMsg({
+        id: connectionId,
+        tone: "error",
+        text: await mensajeDeError(res, "No pudimos actualizar el enlace del aula. Podés intentarlo otra vez en un momento."),
+      });
+      return;
+    }
+    const data = (await res.json()) as { url: string };
+    setRowMsg({
+      id: connectionId,
+      tone: "ok",
+      text: `El enlace de ${room.name} ahora es ${data.url}. Sincronizá en Grabaciones para volver a adjudicar las grabaciones sin clase.`,
+    });
     void refetch();
   }
 
@@ -207,33 +248,62 @@ export function ZoomConnectionsClient({ rooms }: { rooms: ActiveRoom[] }) {
           const actual = deEsta ? v.zoomUserId : "";
           const etiquetaActual = c.rooms.find((r) => r.id === room.id);
           return (
-            <div key={room.id} className="flex flex-wrap items-center gap-3 rounded-md border px-3 py-2">
-              <span className="min-w-32 text-sm font-medium">{room.name}</span>
-              {disponibles && !c.archived ? (
-                <Select
-                  aria-label={`Usuario de Zoom de ${room.name}`}
-                  className="w-72"
-                  value={actual}
-                  onChange={(e) => void vincular(room.id, c.id, e.target.value)}
+            <div key={room.id} className="space-y-2 rounded-md border px-3 py-2">
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="min-w-32 text-sm font-medium">{room.name}</span>
+                {disponibles && !c.archived ? (
+                  <Select
+                    aria-label={`Usuario de Zoom de ${room.name}`}
+                    className="w-72"
+                    value={actual}
+                    onChange={(e) => void vincular(room.id, c.id, e.target.value)}
+                  >
+                    <option value="">Sin vincular a esta conexión</option>
+                    {disponibles.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.displayName} · {u.email}
+                      </option>
+                    ))}
+                  </Select>
+                ) : (
+                  <span className="text-sm text-muted-foreground">
+                    {deEsta
+                      ? (etiquetaActual?.zoomUserEmail ?? etiquetaActual?.zoomUserId ?? "")
+                      : "Sin vincular a esta conexión"}
+                  </span>
+                )}
+                {v && !deEsta && (
+                  <span className="text-xs text-muted-foreground">Vinculada a {v.connectionName}</span>
+                )}
+                {deEsta && <Badge variant="success">Se sincroniza</Badge>}
+              </div>
+              {deEsta && etiquetaActual?.pmiMismatch && etiquetaActual.suggestedUrl && (
+                <div
+                  data-pmi-warning={room.id}
+                  className="flex flex-wrap items-start gap-2.5 rounded-md border border-warning-border bg-warning-soft p-3"
                 >
-                  <option value="">Sin vincular a esta conexión</option>
-                  {disponibles.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.displayName} · {u.email}
-                    </option>
-                  ))}
-                </Select>
-              ) : (
-                <span className="text-sm text-muted-foreground">
-                  {deEsta
-                    ? (etiquetaActual?.zoomUserEmail ?? etiquetaActual?.zoomUserId ?? "")
-                    : "Sin vincular a esta conexión"}
-                </span>
+                  <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" strokeWidth={2} aria-hidden />
+                  <div className="min-w-0 flex-1 space-y-2 text-sm text-text-2">
+                    <p className="break-words">
+                      El enlace del aula ({etiquetaActual.roomUrl}) no es la sala personal de este usuario de
+                      Zoom ({etiquetaActual.suggestedUrl}). Con un enlace distinto, las grabaciones no se
+                      pueden adjudicar por número de reunión.
+                    </p>
+                    {!c.archived && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={updatingUrl === room.id}
+                        onClick={() => void usarSalaPersonal(c.id, etiquetaActual)}
+                      >
+                        {updatingUrl === room.id
+                          ? "Actualizando…"
+                          : "Actualizar enlace del aula a la sala personal de Zoom"}
+                      </Button>
+                    )}
+                  </div>
+                </div>
               )}
-              {v && !deEsta && (
-                <span className="text-xs text-muted-foreground">Vinculada a {v.connectionName}</span>
-              )}
-              {deEsta && <Badge variant="success">Se sincroniza</Badge>}
             </div>
           );
         })}
