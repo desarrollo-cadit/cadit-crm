@@ -25,6 +25,7 @@ import {
 import type { ApprovalValue } from "@/components/portal/student-bits";
 import { StudentMilestones, type Milestone } from "@/components/portal/student-milestones";
 import { StudentSubmissions } from "@/components/portal/student-submissions";
+import { ZoomRecordingPlayer, isZoomRecording } from "@/components/portal/zoom-recording-player";
 import {
   ChipDeEstado,
   EncabezadoDePagina,
@@ -655,6 +656,11 @@ function ClasesTab({
 
 function ClassRowItem({ row, academyZone }: { row: ClassRow; academyZone: string }) {
   const marca = row.attendance ? ASISTENCIA[row.attendance] : null;
+  // 030 — Una grabación de Zoom se mira acá mismo; el iframe se monta recién
+  // al abrirla, para no cargar un reproductor por cada clase de la lista.
+  const [verGrabacion, setVerGrabacion] = useState(false);
+  const embebible = isZoomRecording(row.recordingUrl);
+  const playerId = `grabacion-${row.id ?? row.number}`;
 
   return (
     <li
@@ -687,7 +693,19 @@ function ClassRowItem({ row, academyZone }: { row: ClassRow; academyZone: string
 
       <span className="flex shrink-0 items-center gap-2">
         {/* FR-005e — una clase cancelada no ofrece grabación aunque la tenga. */}
-        {row.recordingUrl && (
+        {row.recordingUrl && embebible && (
+          <button
+            type="button"
+            aria-expanded={verGrabacion}
+            aria-controls={playerId}
+            onClick={() => setVerGrabacion((v) => !v)}
+            className="inline-flex h-9 items-center gap-1.5 rounded-md border border-input px-3 text-sm font-semibold transition-colors hover:bg-accent"
+          >
+            <Play className="h-3.5 w-3.5" strokeWidth={2} />
+            {verGrabacion ? "Ocultar grabación" : "Ver grabación"}
+          </button>
+        )}
+        {row.recordingUrl && !embebible && (
           <a
             href={row.recordingUrl}
             target="_blank"
@@ -721,6 +739,15 @@ function ClassRowItem({ row, academyZone }: { row: ClassRow; academyZone: string
           </span>
         )}
       </span>
+
+      {row.recordingUrl && embebible && verGrabacion && (
+        <ZoomRecordingPlayer
+          id={playerId}
+          url={row.recordingUrl}
+          title={`Grabación de la clase ${row.number}`}
+          className="basis-full"
+        />
+      )}
     </li>
   );
 }

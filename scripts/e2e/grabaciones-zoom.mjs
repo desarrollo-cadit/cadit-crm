@@ -22,12 +22,84 @@
  * la suya activa al terminar.
  */
 
+import { alEntrar } from "./cambio-de-contrasena.mjs";
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const isoDia = (desplazamiento) =>
   new Date(Date.now() + desplazamiento * 86_400_000).toISOString().slice(0, 10);
 
+/** Fetcher con tarro propio (alumno, profesor, cuentas del equipo); no sigue redirecciones. */
+function conJar(BASE, jar) {
+  return async (p, opts = {}) => {
+    const res = await fetch(`${BASE}${p}`, {
+      redirect: "manual",
+      ...opts,
+      headers: {
+        "content-type": "application/json",
+        origin: BASE,
+        ...(jar.cookie ? { cookie: jar.cookie } : {}),
+        ...(opts.headers ?? {}),
+      },
+    });
+    const set = res.headers.getSetCookie?.() ?? [];
+    if (set.length) jar.cookie = set.map((c) => c.split(";")[0]).join("; ");
+    const text = await res.text();
+    let json = null;
+    try {
+      json = JSON.parse(text);
+    } catch {}
+    return { res, json, text };
+  };
+}
+
+/** Cada persona entra desde su propia IP (el límite de login es por IP), de un rango de pruebas. */
+const ipDe = (() => {
+  const red = Math.floor(Math.random() * 250);
+  let n = 0;
+  return () => ({ "x-forwarded-for": `198.18.${red}.${++n}` });
+})();
+
+/**
+ * GUARD — Antes de cargar una sola credencial: la app tiene que estar
+ * hablándole al zoom-mock. Una corrida que olvidó `ZOOM_API_BASE_URL` /
+ * `ZOOM_OAUTH_BASE_URL` le mandó credenciales de mentira a zoom.us; esto no
+ * se vuelve a repetir. Se pregunta a la APP (`/api/dev/zoom-mock/config`,
+ * las bases que su adaptador usa de verdad) y, si el arnés también las trae
+ * en su entorno, tienen que ser las del mock. Devuelve `false` = abortar.
+ */
+async function exigirZoomMock({ api, ok }) {
+  const cfg = await api("/api/dev/zoom-mock/config");
+  const ajenas = ["ZOOM_API_BASE_URL", "ZOOM_OAUTH_BASE_URL"].filter(
+    (k) => process.env[k] && !/\/api\/dev\/zoom-mock(\/|$)/.test(process.env[k])
+  );
+  const bien = cfg.res.ok && cfg.json?.mock === true && ajenas.length === 0;
+  ok(
+    "guard — la app le habla al zoom-mock, no a zoom.us (ZOOM_API_BASE_URL / ZOOM_OAUTH_BASE_URL)",
+    bien,
+    `${cfg.res.status} ${JSON.stringify(cfg.json)} ${ajenas.length ? `entorno del arnés: ${ajenas.join(", ")}` : ""}`
+  );
+  if (!bien) {
+    console.error(
+      "\n  ABORTADA la sección de grabaciones: levantá la app con\n" +
+        "    ZOOM_API_BASE_URL=<app>/api/dev/zoom-mock/v2 ZOOM_OAUTH_BASE_URL=<app>/api/dev/zoom-mock\n" +
+        "  en la línea de comandos. Sin eso, el adaptador le habla a zoom.us real.\n"
+    );
+  }
+  return bien;
+}
+
 export async function seccionGrabacionesZoom({ api, ok, BASE, getCookie }) {
   console.log("\n== 030: grabaciones de Zoom — conexiones, aulas y sincronización ==");
+  if (!(await exigirZoomMock({ api, ok }))) return;
+  const periodica = (await api("/api/recordings/sync")).json?.periodicIntervalMin;
+  if (periodica !== 0) {
+    ok(
+      "guard — esta sección corre con la periódica APAGADA (ZOOM_SYNC_INTERVAL_MIN=0); la periódica tiene su sección",
+      false,
+      `periodicIntervalMin=${periodica}: una corrida periódica en medio de los checks los volvería azarosos`
+    );
+    return;
+  }
 
   const sello = Date.now();
   const cola = String(sello).slice(-6);
@@ -62,7 +134,6 @@ export async function seccionGrabacionesZoom({ api, ok, BASE, getCookie }) {
     }
     return estado;
   }
-  void zoomFail; // US5 (checks 15–16) lo usa.
 
   /** Ningún texto de la respuesta lleva el secreto ni columnas cifradas. */
   const limpio = (json, ...secretos) => {
@@ -85,6 +156,24 @@ export async function seccionGrabacionesZoom({ api, ok, BASE, getCookie }) {
   // Una corrida que quedó colgada de la vez anterior bloquearía el check 4.
   await esperarSyncLibre(20000);
 
+  /* ---------- check 18: sin conexiones activas el CRM funciona como antes ---------- */
+  const vacia = await api("/api/recordings");
+  const sinConexion = await api("/api/recordings/sync", { method: "POST" });
+  ok(
+    "18 — sin conexiones activas: Sincronizar → 422 sin_conexiones, sin corrida",
+    sinConexion.res.status === 422 && sinConexion.json?.error?.code === "sin_conexiones",
+    `${sinConexion.res.status} ${JSON.stringify(sinConexion.json)}`
+  );
+  if (vacia.json?.configured === false) {
+    ok(
+      "18 — instancia que nunca conectó Zoom: /api/recordings → configured:false, sin filas (estado vacío 'Conectá Zoom')",
+      vacia.res.ok && (vacia.json?.rows ?? []).length === 0,
+      JSON.stringify(vacia.json)
+    );
+  } else {
+    console.log("  …  18 — la base ya tuvo conexiones: el estado vacío lo cubre zoom-recordings.test.ts (configured:false)");
+  }
+
   /* ---------- preparación (quickstart §3, pasos 1–3) ---------- */
   const nombreZ1 = `Zoom 1 ${cola}`;
   const nombreZ2 = `Zoom 2 ${cola}`;
@@ -105,14 +194,21 @@ export async function seccionGrabacionesZoom({ api, ok, BASE, getCookie }) {
     body: JSON.stringify({ name: `Curso Grabaciones E2E ${cola}`, published: false }),
   });
   const cursoId = curso.json?.course?.id;
+  const profesor = async (n) => {
+    const correo = `profe${n}-grab-${cola}@example.com`;
+    const r = await api("/api/teachers", { method: "POST", body: JSON.stringify({ name: `Profe ${n} Grab ${cola}`, email: correo }) });
+    return { id: r.json?.teacher?.id ?? r.json?.id, correo };
+  };
+  const profeA = await profesor("A");
+  const profeB = await profesor("B");
   // Martes y jueves 18:30–21:30, en el PASADO: las grabaciones caen en la
   // ventana de la primera sincronización (90 días hacia atrás).
   const horario = { startDate: isoDia(-21), endDate: isoDia(-1), daysOfWeek: "1,3", startTime: "18:30", endTime: "21:30" };
   const cohorte = async (name, extra) =>
     (await api("/api/cohorts", { method: "POST", body: JSON.stringify({ courseId: cursoId, name, ...horario, ...extra }) }))
       .json?.cohort?.id;
-  const cohA = await cohorte(`Grab A ${cola}`, { virtualRoomId: aula1, meetingUrl: `https://zoom.us/j/${MEET_A}?pwd=x` });
-  const cohB = await cohorte(`Grab B ${cola}`, { virtualRoomId: aula2 });
+  const cohA = await cohorte(`Grab A ${cola}`, { virtualRoomId: aula1, meetingUrl: `https://zoom.us/j/${MEET_A}?pwd=x`, teacherId: profeA.id });
+  const cohB = await cohorte(`Grab B ${cola}`, { virtualRoomId: aula2, teacherId: profeB.id });
   const cohC = await cohorte(`Grab C ${cola}`, { virtualRoomId: aula1 });
   for (const id of [cohA, cohB, cohC]) await api(`/api/cohorts/${id}/schedule`, { method: "POST" });
   const clases = async (id) => ((await api(`/api/cohorts/${id}/classes`)).json?.classes ?? []).filter((c) => !c.projected);
@@ -419,6 +515,96 @@ export async function seccionGrabacionesZoom({ api, ok, BASE, getCookie }) {
     resumen(lista7)
   );
 
+  /* ---------- checks 8 y 9 (US6): los portales ven solo lo adjudicado a lo suyo ---------- */
+  // La huella de cada grabación es su share_url: si aparece en una respuesta
+  // de portal, esa grabación viajó. Las no adjudicadas (R3 ambigua, R4 sin
+  // clase, R6 en conflicto) no tienen clase, así que no deben aparecer NUNCA.
+  const huella = (n) => `R${n}-${cola}`;
+  const NO_ADJUDICADAS = [3, 4, 6];
+  const inscribir = async (cohortId, nombre) => {
+    const correo = `alumno-${nombre}-grab-${cola}@example.com`;
+    const r = await api("/api/enrollments", {
+      method: "POST",
+      body: JSON.stringify({ cohortId, contact: { firstName: `Alumno ${nombre}`, lastName: `Grab ${cola}`, email: correo, phone: `5989${cola}${nombre === "A" ? 1 : 2}` } }),
+    });
+    return { id: r.json?.enrollment?.id ?? r.json?.id, correo, motivo: `${r.res.status}` };
+  };
+  const entrar = async (accesoPath, correo) => {
+    const acceso = await api(accesoPath, { method: "POST", body: "{}" });
+    const jar = { cookie: "" };
+    const como = conJar(BASE, jar);
+    const ip = ipDe();
+    const clave = acceso.json?.temporaryPassword;
+    const login = await como("/api/auth/sign-in/email", {
+      method: "POST",
+      headers: ip,
+      body: JSON.stringify({ email: correo, password: clave }),
+    });
+    await alEntrar(como, login, correo, clave, ip);
+    return { como, entro: login.res.ok, motivo: `${acceso.res.status} / login ${login.res.status}` };
+  };
+  const insA = await inscribir(cohA, "A");
+  const insB = await inscribir(cohB, "B");
+  const alumnoA = await entrar(`/api/enrollments/${insA.id}/access`, insA.correo);
+  const alumnoB = await entrar(`/api/enrollments/${insB.id}/access`, insB.correo);
+  const portalA = await entrar(`/api/teachers/${profeA.id}/access`, profeA.correo);
+  const portalB = await entrar(`/api/teachers/${profeB.id}/access`, profeB.correo);
+  ok(
+    "8/9 — prep: alumno de A, alumno de B y los profesores de A y de B entran a su portal",
+    alumnoA.entro && alumnoB.entro && portalA.entro && portalB.entro,
+    [alumnoA, alumnoB, portalA, portalB].map((x) => x.motivo).join(" · ")
+  );
+
+  /** Todo lo que el portal del alumno devuelve, junto: la grabación no tiene que viajar por NINGÚN lado. */
+  const todoDelAlumno = async (como, enrollmentId) => {
+    const rutas = ["/api/portal/me", `/api/portal/me/cursadas/${enrollmentId}`, "/api/portal/me/cuenta",
+      "/api/portal/me/certificados", "/api/portal/me/entregas", "/api/portal/me/offline-courses"];
+    const r = await Promise.all(rutas.map((p) => como(p)));
+    return { cursada: r[1], texto: r.map((x) => x.text ?? "").join("\n") };
+  };
+  const vistaA = await todoDelAlumno(alumnoA.como, insA.id);
+  const claseDe = (lista, id) => (lista ?? []).find((c) => c.id === id);
+  ok(
+    "8 — el alumno de A ve la grabación de R1 en la clase 1 y el enlace manual en la clase 3",
+    claseDe(vistaA.cursada.json?.classes, clA[0].id)?.recordingUrl === porTema(1)?.playUrl &&
+      claseDe(vistaA.cursada.json?.classes, clA[2].id)?.recordingUrl === "https://drive.example.com/grabacion-manual-A3",
+    JSON.stringify((vistaA.cursada.json?.classes ?? []).map((c) => [c.number, c.recordingUrl]))
+  );
+  ok(
+    "8 — ninguna grabación sin adjudicar (R3 ambigua, R4 sin clase, R6 en conflicto) ni de otra cohorte viaja al alumno de A",
+    [...NO_ADJUDICADAS, 2, 5].every((n) => !vistaA.texto.includes(huella(n))) && !/recordingSource|zoom_recording/.test(vistaA.texto),
+    [...NO_ADJUDICADAS, 2, 5].filter((n) => vistaA.texto.includes(huella(n))).join(",")
+  );
+  const vistaB = await todoDelAlumno(alumnoB.como, insB.id);
+  const ajenaB = await alumnoB.como(`/api/portal/me/cursadas/${insA.id}`);
+  ok(
+    "9 — el alumno de B no ve R1 en ninguna pantalla ni en GET /api/portal/me/*; la cursada de A le da 404",
+    !vistaB.texto.includes(huella(1)) && NO_ADJUDICADAS.every((n) => !vistaB.texto.includes(huella(n))) &&
+      ajenaB.res.status === 404,
+    `${ajenaB.res.status} ${[1, ...NO_ADJUDICADAS].filter((n) => vistaB.texto.includes(huella(n))).join(",")}`
+  );
+  ok(
+    "9 — y sí ve las de SU cohorte (R2 en B/1)",
+    claseDe(vistaB.cursada.json?.classes, clB[0].id)?.recordingUrl === porTema(2)?.playUrl,
+    JSON.stringify((vistaB.cursada.json?.classes ?? []).map((c) => [c.number, c.recordingUrl]))
+  );
+  const delProfeA = await portalA.como(`/api/portal/cohorts/${cohA}/classes`);
+  const clasesProfeA = delProfeA.json?.classes?.classes ?? [];
+  ok(
+    "8 — el profesor de A ve la clase 1 con la grabación de R1 y la 3 con el enlace manual, sin el origen",
+    claseDe(clasesProfeA, clA[0].id)?.recordingUrl === porTema(1)?.playUrl &&
+      claseDe(clasesProfeA, clA[2].id)?.recordingUrl === "https://drive.example.com/grabacion-manual-A3" &&
+      !/recordingSource/.test(delProfeA.text ?? "") && NO_ADJUDICADAS.every((n) => !(delProfeA.text ?? "").includes(huella(n))),
+    `${delProfeA.res.status} ${JSON.stringify(clasesProfeA.map((c) => [c.number, c.recordingUrl]))}`
+  );
+  const ajenaProfe = await portalB.como(`/api/portal/cohorts/${cohA}/classes`);
+  const cohortesProfeB = await portalB.como("/api/portal/cohorts");
+  ok(
+    "9 — el profesor ajeno (de B): la cohorte A le da 404 y R1 no aparece en su portal",
+    ajenaProfe.res.status === 404 && !(cohortesProfeB.text ?? "").includes(huella(1)) && !(ajenaProfe.text ?? "").includes(huella(1)),
+    `${ajenaProfe.res.status} / ${cohortesProfeB.res.status}`
+  );
+
   /* ---------- bloque de pantalla (Playwright) ---------- */
   await pantalla({ ok, BASE, getCookie, nombreZ2, desde: clB[0].date.slice(0, 10), hasta: clB[1].date.slice(0, 10), R5: porTema(5), secretoBueno: SECRETO_BUENO,
     R3: porTema(3), sugeridasR3: [clA[1].id, clC[1].id], aula2, zc });
@@ -569,6 +755,197 @@ export async function seccionGrabacionesZoom({ api, ok, BASE, getCookie }) {
       desdeU3 <= isoDia(-90) && desdeU1 >= isoDia(-5),
     `${JSON.stringify(runA1)} u3 desde ${desdeU3} u1 desde ${desdeU1} R7 ${Boolean(r7)}`
   );
+
+  /* ---------- US6-3 (riesgo R6): el profesor pega su enlace en una clase con grabación de Zoom ---------- */
+  // A/3 ofrece R6 desde el check 13 (reemplazo confirmado). El profesor decide otra cosa.
+  const ENLACE_PROFE = `https://drive.example.com/profe-A3-${cola}`;
+  const pega = await portalA.como(`/api/portal/classes/${clA[2].id}/recording`, {
+    method: "PUT",
+    body: JSON.stringify({ recordingUrl: ENLACE_PROFE }),
+  });
+  await sincronizar();
+  const r6Tras = await fila(6);
+  const a3Profe = claseDe((await portalA.como(`/api/portal/cohorts/${cohA}/classes`)).json?.classes?.classes, clA[2].id);
+  const a3Staff = ((await api(`/api/cohorts/${cohA}/classes`)).json?.classes ?? []).find((c) => c.id === clA[2].id);
+  const a3Alumno = claseDe((await alumnoA.como(`/api/portal/me/cursadas/${insA.id}`)).json?.classes, clA[2].id);
+  ok(
+    "US6-3 — gana el enlace del profesor: R6 pasa a manual/sin_clase y una sincronización posterior no lo pisa",
+    pega.res.ok && JSON.stringify(estadoDe(r6Tras)) === JSON.stringify(["manual", "sin_clase", null]) &&
+      a3Profe?.recordingUrl === ENLACE_PROFE && a3Staff?.recordingSource === "manual" && a3Alumno?.recordingUrl === ENLACE_PROFE,
+    `${pega.res.status} ${JSON.stringify(r6Tras?.assignment)} ${a3Profe?.recordingUrl} ${a3Staff?.recordingSource}`
+  );
+
+  /* ---------- check 15 (US5): un 429 transitorio no rompe la corrida ---------- */
+  await zoomFail({ status: 429, times: 2, retryAfterSec: 1 });
+  const estado15 = await sincronizar();
+  const run15 = (estado15?.connections ?? []).find((c) => c.id === zc)?.lastRun;
+  ok(
+    "15 — Zoom responde 429 dos veces (Retry-After 1 s): el adaptador espera y la corrida termina ok",
+    run15?.status === "ok" && run15?.error === null,
+    JSON.stringify(run15)
+  );
+
+  /* ---------- check 16 (US5): Zoom caído no tumba nada y no mueve la marca ---------- */
+  const marcaAntes = (estado15?.connections ?? []).find((c) => c.id === zc)?.syncedThrough;
+  await zoomFail({ status: 500, times: 100 });
+  const s16 = await api("/api/recordings/sync", { method: "POST" });
+  const salud = await api("/api/health");
+  const clasesDurante = await api(`/api/cohorts/${cohA}/classes`);
+  const estado16 = await esperarSyncLibre(120000);
+  await zoomFail({ status: 500, times: 0 });
+  const c16 = (estado16?.connections ?? []).find((c) => c.id === zc);
+  ok(
+    "16 — Zoom con 500 persistente: la corrida termina 'error' con mensaje propio y syncedThrough no se mueve",
+    s16.res.status === 202 && c16?.lastRun?.status === "error" && /Zoom/.test(c16?.lastRun?.error ?? "") &&
+      c16?.syncedThrough === marcaAntes,
+    `${s16.res.status} ${JSON.stringify(c16)} antes=${marcaAntes}`
+  );
+  ok(
+    "16 — mientras tanto el resto del CRM responde (/api/health y la lista de clases)",
+    salud.res.ok && clasesDurante.res.ok,
+    `${salud.res.status}/${clasesDurante.res.status}`
+  );
+
+  /* ---------- check 20: capacidades ---------- */
+  const cuentaEquipo = async (nombre, roleKey) => {
+    const correo = `${nombre}-grab-${cola}@example.com`;
+    const clave = `clave-${nombre}-${cola}`;
+    const alta = await api("/api/settings/team", {
+      method: "POST",
+      body: JSON.stringify({ name: `${nombre} Grab E2E`, email: correo, password: clave, roleKey }),
+    });
+    const jar = { cookie: "" };
+    const como = conJar(BASE, jar);
+    const ip = ipDe();
+    const login = await como("/api/auth/sign-in/email", {
+      method: "POST",
+      headers: ip,
+      body: JSON.stringify({ email: correo, password: clave }),
+    });
+    await alEntrar(como, login, correo, clave, ip);
+    return { como, entro: alta.res.status === 201 && login.res.ok, motivo: `${alta.res.status} / ${login.res.status}` };
+  };
+  const soporte = await cuentaEquipo("soporte", "soporte");
+  const rolSinGrab = await api("/api/settings/roles", {
+    method: "POST",
+    body: JSON.stringify({ name: `Sin grabaciones ${cola}`, capabilities: ["contactos.ver"] }),
+  });
+  const sinVer = await cuentaEquipo("singrab", rolSinGrab.json?.role?.key);
+  ok("20 — prep: una cuenta de soporte y una sin grabaciones.ver entran", soporte.entro && sinVer.entro, `${soporte.motivo} · ${sinVer.motivo}`);
+  const sopLista = await soporte.como(`/api/recordings?connectionId=${zc}`);
+  const sopAsigna = await soporte.como(`/api/recordings/${porTema(4).id}/assignment`, {
+    method: "PUT",
+    body: JSON.stringify({ classSessionId: clB[1].id }),
+  });
+  const sopSync = await soporte.como("/api/recordings/sync", { method: "POST" });
+  const sopPagina = await soporte.como("/grabaciones");
+  ok(
+    "20 — soporte ve /grabaciones y la lista, pero asignar y sincronizar → 403",
+    sopLista.res.status === 200 && sopPagina.res.status === 200 && sopAsigna.res.status === 403 && sopSync.res.status === 403,
+    `${sopLista.res.status}/${sopPagina.res.status}/${sopAsigna.res.status}/${sopSync.res.status}`
+  );
+  const sinLista = await sinVer.como("/api/recordings");
+  const sinEstado = await sinVer.como("/api/recordings/sync");
+  const sinInicio = await sinVer.como("/contacts");
+  const conInicio = await soporte.como("/contacts");
+  ok(
+    "20 — sin grabaciones.ver: /api/recordings y su estado → 403, y el menú no ofrece Grabaciones (soporte sí)",
+    sinLista.res.status === 403 && sinEstado.res.status === 403 && sinInicio.res.status === 200 &&
+      !/href="\/grabaciones"/.test(sinInicio.text ?? "") && /href="\/grabaciones"/.test(conInicio.text ?? ""),
+    `${sinLista.res.status}/${sinEstado.res.status}/${sinInicio.res.status}/${conInicio.res.status}`
+  );
+
+  /* ---------- salida: el zoom-mock queda limpio ---------- */
+  await zoomFail({ status: 500, times: 0 });
+  await zoomReset();
+}
+
+/**
+ * 030 US5 — Check 19: la periódica, SIN tocar el botón.
+ *
+ *   ZOOM_SYNC_INTERVAL_MIN=1 en la app + E2E_SECCIONES=grabaciones-zoom-periodica
+ *
+ * Va en su propia sección porque necesita la app con la periódica ENCENDIDA,
+ * y la sección principal la necesita APAGADA (un tick en medio de sus checks
+ * los volvería azarosos). Con la periódica apagada se salta con aviso.
+ * Conexión, cuenta y usuario propios; nunca se aprieta "Sincronizar".
+ */
+export async function seccionGrabacionesZoomPeriodica({ api, ok }) {
+  console.log("\n== 030 US5: sincronización periódica (check 19) ==");
+  if (!(await exigirZoomMock({ api, ok }))) return;
+  const intervalo = (await api("/api/recordings/sync")).json?.periodicIntervalMin;
+  if (!(intervalo > 0)) {
+    console.log("  …  19 — se salta: la app corre con ZOOM_SYNC_INTERVAL_MIN=0 (periódica apagada)");
+    return;
+  }
+  const cola = String(Date.now()).slice(-6);
+  const previas = (await api("/api/settings/zoom/connections")).json?.connections ?? [];
+  for (const c of previas.filter((c) => !c.archived)) {
+    await api(`/api/settings/zoom/connections/${c.id}`, { method: "PATCH", body: JSON.stringify({ archived: true }) });
+  }
+  const ACC = `acc-per-${cola}`;
+  await api("/api/dev/zoom-mock/seed", {
+    method: "POST",
+    body: JSON.stringify({
+      accounts: [
+        {
+          accountId: ACC,
+          users: [
+            {
+              id: "u9",
+              email: "zoom9@academia.test",
+              first_name: "Zoom",
+              last_name: "Nueve",
+              pmi: Number(`9${cola}909`),
+              recordings: [
+                {
+                  uuid: `R8-${cola}==`,
+                  id: Number(`8${cola}808`),
+                  topic: "Grabación R8 (periódica)",
+                  start_time: `${isoDia(-2)}T21:30:00Z`,
+                  duration: 120,
+                  share_url: `https://zoom.us/rec/share/R8-${cola}`,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    }),
+  });
+  const alta = await api("/api/settings/zoom/connections", {
+    method: "POST",
+    body: JSON.stringify({ name: `Zoom periódica ${cola}`, accountId: ACC, clientId: `cli-per-${cola}`, clientSecret: `good-secret-${cola}` }),
+  });
+  const zc = alta.json?.connection?.id;
+  const prueba = await api(`/api/settings/zoom/connections/${zc}/test`, { method: "POST" });
+  const aula = (
+    await api("/api/virtual-rooms", { method: "POST", body: JSON.stringify({ name: `Zoom 9 ${cola}`, url: `https://zoom.us/j/9${cola}909` }) })
+  ).json?.room?.id;
+  const vinculo = await api(`/api/settings/zoom/rooms/${aula}`, {
+    method: "PUT",
+    body: JSON.stringify({ connectionId: zc, zoomUserId: "u9", zoomUserEmail: "zoom9@academia.test" }),
+  });
+  ok(
+    "19 — prep: conexión probada y aula vinculada, sin apretar Sincronizar",
+    alta.res.status === 201 && prueba.json?.ok === true && vinculo.res.ok,
+    `${alta.res.status}/${JSON.stringify(prueba.json?.ok)}/${vinculo.res.status}`
+  );
+  const limite = Date.now() + (intervalo * 60 + 150) * 1000;
+  let fila = null;
+  let ultimo = null;
+  while (Date.now() < limite && !fila) {
+    await sleep(5000);
+    fila = ((await api(`/api/recordings?connectionId=${zc}`)).json?.rows ?? []).find((f) => f.topic === "Grabación R8 (periódica)");
+    ultimo = ((await api("/api/recordings/sync")).json?.connections ?? []).find((c) => c.id === zc)?.lastRun ?? null;
+  }
+  ok(
+    `19 — sin tocar nada, la periódica (cada ${intervalo} min) trae R8 y la corrida termina ok`,
+    Boolean(fila) && ultimo?.status === "ok",
+    JSON.stringify(ultimo)
+  );
+  await api(`/api/settings/zoom/connections/${zc}`, { method: "PATCH", body: JSON.stringify({ archived: true }) });
+  await api("/api/dev/zoom-mock/seed", { method: "DELETE" });
 }
 
 /**

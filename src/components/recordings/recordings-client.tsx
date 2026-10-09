@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import type { RecordingRowDto, RecordingsPage, SyncStatusDto } from "@/server/zoom/recordings";
 import { AssignDialog } from "./assign-dialog";
 import { RecordingRowActions } from "./recording-row-actions";
+import { SyncStatus } from "./sync-status";
 
 export type RoomOption = { id: string; name: string };
 
@@ -29,13 +30,6 @@ const ESTADOS: Record<
   conflicto: { label: "En conflicto", variant: "destructive" },
   sin_clase: { label: "Sin clase", variant: "secondary" },
   pendiente: { label: "Pendiente", variant: "secondary" },
-};
-
-const CORRIDA: Record<string, string> = {
-  corriendo: "Corriendo",
-  ok: "Completa",
-  parcial: "Parcial",
-  error: "Con error",
 };
 
 const TAMANIOS = [25, 50, 100] as const;
@@ -215,34 +209,43 @@ export function RecordingsClient({
     return body;
   }, []);
 
-  /** Mientras haya una corrida, se consulta cada 5 s; al terminar, se recarga la tabla. */
-  const poll = useCallback(async () => {
+  /**
+   * US5 — Un solo sondeo del estado. Mientras haya una corrida (del botón o
+   * de la periódica, que arranca sola en el servidor) se consulta cada 5 s;
+   * sin corrida, cada minuto, para enterarse de la periódica. Cuando una
+   * corrida pasa de "corriendo" a terminada, se recarga la tabla.
+   */
+  const corriaRef = useRef(false);
+  const sondeoRef = useRef<() => Promise<void>>(async () => undefined);
+  const programar = useCallback((ms: number) => {
+    if (pollRef.current) clearTimeout(pollRef.current);
+    pollRef.current = setTimeout(() => void sondeoRef.current(), ms);
+  }, []);
+  sondeoRef.current = async () => {
     const s = await loadStatus();
     if (s?.running) {
-      pollRef.current = setTimeout(() => void poll(), 5000);
+      corriaRef.current = true;
+      setSyncing(true);
+      programar(5000);
       return;
     }
-    setSyncing(false);
-    void load();
-  }, [load, loadStatus]);
+    if (corriaRef.current) {
+      corriaRef.current = false;
+      setSyncing(false);
+      void load();
+    }
+    programar(60_000);
+  };
 
   useEffect(() => {
     void load();
   }, [load]);
 
   useEffect(() => {
-    void (async () => {
-      const s = await loadStatus();
-      if (s?.running) {
-        setSyncing(true);
-        pollRef.current = setTimeout(() => void poll(), 5000);
-      }
-    })();
+    void sondeoRef.current();
     return () => {
       if (pollRef.current) clearTimeout(pollRef.current);
     };
-    // Solo al montar: después el sondeo lo maneja `poll`.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function sincronizar() {
@@ -250,8 +253,9 @@ export function RecordingsClient({
     const res = await fetch("/api/recordings/sync", { method: "POST" }).catch(() => null);
     if (res?.status === 202) {
       setSyncing(true);
+      corriaRef.current = true;
       setSyncMsg({ tone: "ok", text: "Sincronización iniciada. La tabla se actualiza cuando termine." });
-      pollRef.current = setTimeout(() => void poll(), 1500);
+      programar(1500);
       return;
     }
     const err = await mensajeDeError(res, "No pudimos iniciar la sincronización. Probá de nuevo en un momento.");
@@ -263,7 +267,8 @@ export function RecordingsClient({
           ? `Ya hay una sincronización corriendo desde las ${hora.format(new Date(err.startedAt))}.`
           : "Ya hay una sincronización corriendo.",
       });
-      pollRef.current = setTimeout(() => void poll(), 5000);
+      corriaRef.current = true;
+      programar(5000);
       return;
     }
     setSyncMsg({
@@ -325,27 +330,7 @@ export function RecordingsClient({
             )}
           </p>
         )}
-        {conexiones.length > 0 && (
-          <ul className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
-            {conexiones.map((c) => (
-              <li key={c.id}>
-                <span className="font-medium text-foreground">{c.name}</span>
-                {c.lastRun ? (
-                  <>
-                    {" "}
-                    · última: {CORRIDA[c.lastRun.status] ?? c.lastRun.status}
-                    {c.lastRun.finishedAt && <> el {fecha.format(new Date(c.lastRun.finishedAt))}</>}
-                    {c.lastRun.status !== "corriendo" && <> · {c.lastRun.newCount} nuevas</>}
-                    {c.lastRun.error && <span className="text-destructive"> · {c.lastRun.error}</span>}
-                  </>
-                ) : (
-                  " · nunca sincronizada"
-                )}
-              </li>
-            ))}
-            {status?.periodicIntervalMin === 0 && <li>Sincronización automática apagada: solo con el botón.</li>}
-          </ul>
-        )}
+        <SyncStatus status={status} timezone={timezone} />
       </header>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-4 md:overflow-hidden md:px-6">

@@ -1,6 +1,6 @@
 import { and, desc, eq, gt, gte, inArray, isNull, lt, notInArray, or, sql } from "drizzle-orm";
 import { getEnv } from "@/lib/env";
-import { getDb, schema } from "@/lib/db";
+import { getDb, getRootDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import {
@@ -670,6 +670,93 @@ export async function rematchUntouched(orgId: string, connectionId: string, seen
   }
   return cuenta;
 }
+
+/* ============================================================
+ * Arranque (US5): corridas huérfanas y leases vencidos
+ * ============================================================ */
+
+export interface RecoveryStore {
+  organizations(): Promise<string[]>;
+  /**
+   * Pasa a `error` las corridas `corriendo` de la organización que NO tienen
+   * un lease vigente detrás. Con lease vigente, otro proceso (rolling deploy)
+   * todavía las está corriendo: tocarlas sería mentir. Devuelve cuántas.
+   */
+  failOrphanRuns(orgId: string, message: string, at: Date): Promise<number>;
+  releaseExpiredLease(orgId: string): Promise<void>;
+}
+
+export const ORPHAN_RUN_MESSAGE = "Interrumpida por un reinicio del servidor.";
+
+/**
+ * Al arrancar: lo que un reinicio dejó a medias. Una corrida "corriendo" sin
+ * nadie detrás quedaría así para siempre en la pantalla. NUNCA lanza: la base
+ * puede no estar lista y eso no puede tumbar el arranque.
+ */
+export async function recoverZoomSyncOnBoot(
+  store: RecoveryStore = dbRecoveryStore,
+  now: Date = new Date()
+): Promise<{ orphanRuns: number }> {
+  let orphanRuns = 0;
+  let orgs: string[];
+  try {
+    orgs = await store.organizations();
+  } catch (err) {
+    console.error("[zoom-sync] arranque: no se pudo revisar corridas huérfanas:", err instanceof Error ? err.name : "error");
+    return { orphanRuns };
+  }
+  for (const orgId of orgs) {
+    try {
+      orphanRuns += await store.failOrphanRuns(orgId, ORPHAN_RUN_MESSAGE, now);
+      await store.releaseExpiredLease(orgId);
+    } catch (err) {
+      console.error(`[zoom-sync] arranque: ${orgId} falló:`, err instanceof Error ? err.name : "error");
+    }
+  }
+  if (orphanRuns > 0) console.log(`[zoom-sync] arranque: ${orphanRuns} corrida(s) huérfana(s) marcada(s) como error`);
+  return { orphanRuns };
+}
+
+export const dbRecoveryStore: RecoveryStore = {
+  async organizations() {
+    const rows = await getRootDb().select({ id: schema.organization.id }).from(schema.organization);
+    return rows.map((r) => r.id);
+  },
+  failOrphanRuns(orgId, message, at) {
+    return inOrgScope(orgId, async () => {
+      const r = schema.zoomSyncRun;
+      const rows = await getDb()
+        .update(r)
+        .set({ status: "error", error: message, finishedAt: at })
+        .where(
+          scoped(
+            r.organizationId,
+            orgId,
+            eq(r.status, "corriendo"),
+            sql`not exists (
+              select 1 from zoom_sync_state s
+               where s.organization_id = ${orgId}
+                 and s.lease_until is not null
+                 and s.lease_until >= now() at time zone 'UTC'
+            )`
+          )
+        )
+        .returning({ id: r.id });
+      return rows.length;
+    });
+  },
+  releaseExpiredLease(orgId) {
+    return inOrgScope(orgId, async () => {
+      await getDb().execute(sql`
+        update zoom_sync_state
+           set lease_owner = null, lease_until = null, current_run_started_at = null, updated_at = now()
+         where organization_id = ${orgId}
+           and lease_until is not null
+           and lease_until < now() at time zone 'UTC'
+      `);
+    });
+  },
+};
 
 function defaultDeps(): SyncDeps {
   const env = getEnv();

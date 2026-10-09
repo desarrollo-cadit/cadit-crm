@@ -129,6 +129,27 @@ describe("token Server-to-Server", () => {
   });
 });
 
+describe("zoomBases — a dónde habla el adaptador (guard del arnés E2E)", () => {
+  it("sin variables: Zoom real, y lo dice", async () => {
+    delete env.ZOOM_API_BASE_URL;
+    delete env.ZOOM_OAUTH_BASE_URL;
+    const { zoomBases } = await client();
+    expect(zoomBases()).toEqual({ api: "https://api.zoom.us/v2", oauth: "https://zoom.us", mock: false });
+  });
+  it("las dos apuntando al zoom-mock → mock: true; una sola no alcanza", async () => {
+    env.ZOOM_API_BASE_URL = "http://localhost:3005/api/dev/zoom-mock/v2/";
+    env.ZOOM_OAUTH_BASE_URL = "http://localhost:3005/api/dev/zoom-mock";
+    const { zoomBases } = await client();
+    expect(zoomBases()).toEqual({
+      api: "http://localhost:3005/api/dev/zoom-mock/v2",
+      oauth: "http://localhost:3005/api/dev/zoom-mock",
+      mock: true,
+    });
+    delete env.ZOOM_OAUTH_BASE_URL;
+    expect(zoomBases().mock).toBe(false);
+  });
+});
+
 describe("política de reintentos", () => {
   it("401 → forgetToken + UN reintento con token nuevo", async () => {
     apiQueue.push(() => new Response("{}", { status: 401 }));

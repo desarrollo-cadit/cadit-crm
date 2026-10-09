@@ -83,6 +83,8 @@ const SIN_CAPACIDAD: Record<string, string> = {
   "dev/zoom-mock/seed/route.ts": "mockGuard",
   "dev/zoom-mock/fail/route.ts": "mockGuard",
   "dev/zoom-mock/log/route.ts": "mockGuard",
+  // Bases del adaptador (a dónde le habla la app): el guard del arnés E2E.
+  "dev/zoom-mock/config/route.ts": "mockGuard",
 };
 
 describe("cobertura de permisos en las rutas de API", () => {

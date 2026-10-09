@@ -261,6 +261,8 @@ gruesa cada 140 px, derivadas del acento con `color-mix`.
 
 ### Chips (badges)
 - **Style:** píldora con fondo suave, borde y texto del estado (success, warning o destructive), o acero sólido para el default.
+- **Grabaciones de Zoom (030):** reusan los chips existentes, sin tokens nuevos. Adjudicación: *Asignada* = success, *Ambigua* = warning, *En conflicto* = destructive, *Sin clase* / *Pendiente* = secondary; el modo (*Automática* / *Manual*) y *Transcripción* van en `outline`; *Ya no está en Zoom* en destructive. En la lista de clases de una cohorte, el origen de la grabación es un chip junto al enlace: *Zoom* en success, *manual* en secondary. `/grabaciones` es una tabla de densidad de staff (encabezado fijo, scroll horizontal solo dentro del contenedor) y el estado de la sincronización es texto `text-xs` en `muted-foreground`, con el error en `destructive`.
+- **Reproductor de grabación de Zoom (030, portales):** en la lista de clases del alumno y del profesor, una grabación de Zoom (`/rec/share/` o `/rec/play/`) se abre con el botón *Ver grabación* / *Ocultar grabación* (`aria-expanded`) y se ve debajo de la fila, a todo el ancho: 16:9, `rounded-lg`, borde `border`, fondo `secondary` mientras carga, `shadow-sm` (el mundo campus sube el radio por tokens). Debajo, siempre, *¿No se ve? Abrir en Zoom* en `text-xs` con el enlace en `brand-text`. Un enlace que no es de Zoom sigue siendo el botón-enlace *Grabación*. El panel del staff no embebe.
 
 ### Cards / Containers
 - **Corner Style:** 14px (20px en el portal).

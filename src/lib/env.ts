@@ -76,8 +76,12 @@ const envSchema = z.object({
    */
   ZOOM_API_BASE_URL: z.string().url().optional(),
   ZOOM_OAUTH_BASE_URL: z.string().url().optional(),
-  /** Minutos entre sincronizaciones periódicas; 0 la apaga (solo botón). */
-  ZOOM_SYNC_INTERVAL_MIN: z.coerce.number().int().min(0).default(60),
+  /**
+   * Minutos entre sincronizaciones periódicas; 0 la apaga (solo botón).
+   * Default 0: se enciende a propósito (p. ej. 60) recién después de verificar
+   * la cuenta real con el botón (030, T103). Un deploy no la prende solo.
+   */
+  ZOOM_SYNC_INTERVAL_MIN: z.coerce.number().int().min(0).default(0),
   /** Días hacia atrás de la primera corrida de una conexión. */
   ZOOM_SYNC_BACKFILL_DAYS: z.coerce.number().int().min(1).default(90),
   /** Días que cada corrida vuelve a mirar hacia atrás (grabaciones tardías). */

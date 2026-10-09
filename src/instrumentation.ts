@@ -9,7 +9,8 @@ export async function register(): Promise<void> {
       "@/server/inbox/webhook"
     );
     warnIfWebhookSignatureDisabled();
-    const { cleanupOrphanRuns } = await import("./instrumentation-node");
+    const { cleanupOrphanRuns, startZoomSyncOnBoot } = await import("./instrumentation-node");
     await cleanupOrphanRuns();
+    await startZoomSyncOnBoot();
   }
 }

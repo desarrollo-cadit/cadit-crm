@@ -446,8 +446,9 @@ export async function teacherCohortClasses(
   if (!classes) return null;
 
   // No viaja, no se filtra: se descarta acá, no en la pantalla (FR-008).
+  // 030 (US6) — `recordingSource` es de staff: el DTO del portal no cambia.
   const sinCrudos = classes.classes.map(
-    ({ ownMeetingUrl: _crudo, virtualRoomId: _aula, ...fila }) => fila
+    ({ ownMeetingUrl: _crudo, virtualRoomId: _aula, recordingSource: _origen, ...fila }) => fila
   );
   const { cohortVirtualRoomId: _aulaDeLaCohorte, ...resto } = classes;
 

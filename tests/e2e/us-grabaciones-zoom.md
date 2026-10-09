@@ -7,10 +7,21 @@ de `scripts/e2e-selftest.mjs`, también al final de la corrida completa). Solo:
 E2E_SECCIONES=grabaciones-zoom node --env-file=.env.e2e scripts/e2e-selftest.mjs
 ```
 
-Estado: **MVP (US4 + US1) automatizado** — checks 1–6 (el 6 sin estados de
-adjudicación), segunda corrida idempotente, 17 y el bloque de pantalla de
-`/grabaciones`. Los checks 6 (estados), 7–16 y 18–20 quedan escritos acá y se
-suman al arnés con US2, US3, US5 y US6.
+Estado: **los 20 checks automatizados** + el bloque de pantalla y el addendum.
+El check 19 (periódica) vive en su propia sección, `grabaciones-zoom-periodica`,
+porque necesita la app con la periódica ENCENDIDA y la sección principal la
+necesita APAGADA:
+
+```bash
+# app con ZOOM_SYNC_INTERVAL_MIN=1 (además de las ZOOM_*_BASE_URL del mock)
+E2E_SECCIONES=grabaciones-zoom-periodica node --env-file=.env.e2e scripts/e2e-selftest.mjs
+```
+
+**Guard**: las dos secciones empiezan preguntándole a la app
+`GET /api/dev/zoom-mock/config` a dónde le habla su adaptador, y ABORTAN (con
+un check en rojo) si no son las del zoom-mock — una corrida que olvidó las
+variables le mandó credenciales de mentira a zoom.us. La principal además
+aborta si la periódica está encendida.
 
 ## Preparación (por la API, como un usuario)
 
@@ -48,19 +59,20 @@ suman al arnés con US2, US3, US5 y US6.
 | 6 | US1 | `GET /api/recordings` | R1..R6, más recientes primero, con aula y cuenta; R5 `playUrl` termina en `pwd=abc123` y `passcode: null`; R4 `passcode: "7777"`; ninguna columna cifrada; log del mock con `next_page_token` y tramos ≤ 30 días; filtro por aula Zoom 2 → R2/R5; cursor 4 + 2. *(US2: estados R1 asignada A/1, R2 asignada B/1, R3 ambigua A/2–C/2, R4 sin_clase, R6 conflicto con A/3)* |
 | 6b | US1 | Segunda sincronización | Mismas 6 filas (mismos ids), `newCount = 0` |
 | 7 | US2 | Segunda sincronización | Mismos estados (idempotencia de la adjudicación) |
-| 8 | US6 | Portal del alumno de A (Playwright) | Clase 1 ofrece R1; un alumno de B no la ve |
-| 9 | US6 | Portal del profesor de A | Clase 1 muestra la grabación; la 3 conserva el enlace manual |
+| 8 | US6 | Portal del alumno de A (`/api/portal/me/*`) y del profesor de A | Clase 1 ofrece R1, la 3 el enlace manual; R3/R4/R6 (no adjudicadas) y R2/R5 (otra cohorte) no aparecen en ninguna respuesta; sin `recordingSource` |
+| 9 | US6 | Alumno de B y profesor de B | R1 no aparece en ningún `GET /api/portal/me/*`; la cursada de A → 404; la cohorte A para el profesor de B → 404; B sí ve R2 en B/1 |
+| US6-3 | US6 | El profesor de A pega su enlace en A/3 (que ofrecía R6) + sync | Gana el suyo; R6 → `manual/sin_clase`; la sincronización no lo pisa |
 | 10 | US3 | `PUT /api/recordings/R3/assignment {classSessionId: C/2}` → sync | `manual/asignada` a C/2, se mantiene |
 | 11 | US3 | `DELETE /api/recordings/R1/assignment` → sync | R1 `manual/sin_clase`; A/1 sin grabación en el portal |
 | 12 | US3 | `POST /api/recordings/R1/assignment/reset` | Vuelve a A/1 (`auto/asignada`) |
 | 13 | US3 | `PUT …/R6/assignment {A/3}` sin `replace` | 409 `requiere_reemplazo`; con `replace:true` → 200 |
 | 14 | US3 | Asignar a una clase cancelada | 422 `clase_cancelada` |
 | 15 | US5 | `zoom-mock/fail {429, times:2, retryAfterSec:1}` + sync | Termina `ok` |
-| 16 | US5 | `fail {500, times:10}` + sync | `lastRun.status = error`, `syncedThrough` sin cambio, el CRM responde |
+| 16 | US5 | `fail {500, times:100}` + sync (se apaga al terminar) | `lastRun.status = error` con mensaje propio, `syncedThrough` sin cambio, `/api/health` y las clases responden durante la corrida |
 | 17 | US1 | Archivar la conexión + sync | 422 `sin_conexiones`; las 6 siguen listadas con `connection.archived = true`; al final se desarchiva |
-| 18 | US1 | Sin Zoom (instancia limpia) | `/grabaciones` muestra "Conectá Zoom"; el enlace manual funciona igual |
-| 19 | US5 | Periódica: R7 nueva, ~70 s sin tocar | R7 aparece |
-| 20 | US1/US3 | Usuario `soporte` | Ve `/grabaciones`; `PUT …/assignment` → 403; sin `grabaciones.ver` no hay ítem y 403 |
+| 18 | US1 | Sin conexiones activas (al empezar) | Sync → 422 `sin_conexiones`; en una base que nunca conectó Zoom, `configured:false` (estado "Conectá Zoom"); el enlace manual de A/3 funciona igual |
+| 19 | US5 | Sección `grabaciones-zoom-periodica`: conexión + aula nuevas con R8, SIN apretar Sincronizar | R8 aparece sola en ≤ intervalo + 150 s y la corrida termina `ok`; con la periódica apagada se salta con aviso |
+| 20 | US1/US3 | Cuenta `soporte` y cuenta con un rol sin `grabaciones.ver` | Soporte: `/grabaciones` y la lista 200, asignar y sincronizar 403. Sin la capacidad: `/api/recordings` y su estado 403 y el menú de `/contacts` no enlaza `/grabaciones` (el de soporte sí) |
 
 ## Pantalla (`/grabaciones`, Playwright)
 
@@ -82,5 +94,7 @@ suman al arnés con US2, US3, US5 y US6.
 | A4 | Transcripción | R5 con `TRANSCRIPT` | `hasTranscript` y chip "Transcripción" solo en R5; duración "2 h 55 min" |
 | B | Tabla | Página/tamaño/orden | `total` + `totalPages`; página fuera de rango → la última; `sort=asc` invierte; tamaño 30 → 422; filtros en la URL sobreviven al recargar; a 390 px solo scrollea la tabla |
 | A1 | Aula vinculada después | Zoom 3 → u3 tras sincronizar | u3 pide 90 días (u1 solo el solape); trae R7 de hace 60 días |
+
+Al salir, la sección deja el zoom-mock vacío y sin falla programada.
 
 La sección `roles` suma la cuenta dual (profesor + equipo, "Ver como").

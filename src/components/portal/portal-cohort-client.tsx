@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { PortalAttendanceSheet } from "@/components/portal/portal-attendance-sheet";
 import { PortalOfflineAttempts } from "@/components/portal/portal-offline-attempts";
 import { PortalSubmissions } from "@/components/portal/portal-submissions";
+import { ZoomRecordingPlayer, isZoomRecording } from "@/components/portal/zoom-recording-player";
 
 type Cohort = {
   id: string;
@@ -293,6 +294,9 @@ function Clases({
   onGrabacion: (classSessionId: string, actual: string | null) => void;
 }) {
   const filas = datos.classes.classes;
+  // 030 — La grabación de Zoom abierta (una a la vez): el iframe se monta
+  // recién al abrirla, no uno por clase.
+  const [grabacionAbierta, setGrabacionAbierta] = useState<string | null>(null);
 
   if (filas.length === 0) {
     return (
@@ -364,7 +368,19 @@ function Clases({
                       <ExternalLink className="h-3.5 w-3.5" /> Ingresar a la clase
                     </a>
                   )}
-                  {c.recordingUrl && (
+                  {c.recordingUrl && c.id && isZoomRecording(c.recordingUrl) && (
+                    <button
+                      type="button"
+                      aria-expanded={grabacionAbierta === c.id}
+                      aria-controls={`grabacion-${c.id}`}
+                      onClick={() => setGrabacionAbierta((a) => (a === c.id ? null : c.id!))}
+                      className="inline-flex items-center gap-1 underline"
+                    >
+                      <Video className="h-3.5 w-3.5" />
+                      {grabacionAbierta === c.id ? "Ocultar grabación" : "Ver grabación"}
+                    </button>
+                  )}
+                  {c.recordingUrl && !(c.id && isZoomRecording(c.recordingUrl)) && (
                     <a
                       href={c.recordingUrl}
                       target="_blank"
@@ -392,6 +408,14 @@ function Clases({
                     </button>
                   )}
                 </div>
+              )}
+              {c.recordingUrl && c.id && grabacionAbierta === c.id && (
+                <ZoomRecordingPlayer
+                  id={`grabacion-${c.id}`}
+                  url={c.recordingUrl}
+                  title={`Grabación de la clase ${c.number}`}
+                  className="px-3 pb-3"
+                />
               )}
             </li>
           );

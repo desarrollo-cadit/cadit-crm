@@ -50,6 +50,7 @@ externas: el trabajo en segundo plano (agente, Laboratorio) es in-process.
 | La ingesta/envío de mensajes | `src/server/inbox/` (ingest idempotente, send con guard de sandbox, ventana 24h) |
 | Cómo se identifica a un contacto | `src/server/inbox/identity.ts` (teléfono normalizado o `bsuid:<id>`) |
 | Conectar TU propio bot en vez del agente | `src/app/api/bot/*` + `src/server/bot/auth.ts` (X-API-Key) |
+| **Grabaciones de Zoom** | `src/lib/zoom/` (adaptador ÚNICO, solo lectura) + `src/server/zoom/` (sync, lease, matching, assignment, scheduler) + `/grabaciones` + `/settings/zoom` + `/api/recordings*` + `/api/settings/zoom/*` |
 | UI | `src/components/` + `src/app/(app)/` |
 
 Los mocks del entorno de pruebas viven en `src/app/api/dev/` (wa-mock +
@@ -80,7 +81,11 @@ Ver [.specify/memory/constitution.md](.specify/memory/constitution.md).
   llama a Vimeo, sin tokens, sin almacenar video, tras un único componente) y
   Zoom para LEER las grabaciones en la nube (constitución 1.6.0, tras
   `src/lib/zoom`, solo lectura, Server-to-Server OAuth, credenciales cifradas
-  cargadas por la UI, opcional). PROHIBIDO en v1 introducir S3/R2, Stripe, Google u otros servicios externos.
+  cargadas por la UI, opcional) y, desde 1.7.0, para que el NAVEGADOR cargue
+  en un iframe el reproductor oficial de una grabación de Zoom ya adjudicada
+  (solo el navegador; el servidor no descarga, retransmite ni guarda video;
+  tras `src/components/portal/zoom-recording-player.tsx`; una clase sin
+  enlace de Zoom funciona igual). PROHIBIDO en v1 introducir S3/R2, Stripe, Google u otros servicios externos.
   Auth y BD self-hosted.
 - **Seguridad (I)**: secretos cifrados en reposo (AES-256-GCM, `lib/crypto`);
   jamás al cliente ni a logs. El token de WhatsApp solo muestra sus últimos 4.
@@ -300,6 +305,40 @@ eso es lo que impide que editar un curso altere una cohorte en marcha. El
 precio es que cada cohorte nace vacía, y por eso existe *copiar de otra
 cohorte* — copiar, no heredar. La deduplicación es por **nombre normalizado**,
 no por `id`: la copia crea filas nuevas, así que el `id` nunca coincide.
+
+## Grabaciones de Zoom (ciclo 030)
+
+- **Zoom solo en `src/lib/zoom`** (constitución 1.6.0): ninguna URL, token ni
+  `fetch` a Zoom fuera del adaptador — `tests/unit/zoom-adapter-guard.test.ts`
+  falla si aparece. **Solo lectura**: el adaptador no tiene ningún método que
+  escriba en Zoom.
+- **El reproductor embebido** (constitución 1.7.0) vive SOLO en
+  `ZoomRecordingPlayer` (`src/components/portal/zoom-recording-player.tsx`)
+  y lo que se embebe lo decide `zoomEmbedUrl()` de `src/lib/zoom/links.ts`
+  (https, `zoom.us`/`*.zoom.us`, `/rec/share/` o `/rec/play/`). Cualquier
+  otro enlace sigue siendo enlace. Lo usan los portales del alumno y del
+  profesor; el panel del staff NO embebe. Siempre lleva "Abrir en Zoom"
+  debajo: un iframe de otro origen que falla no se puede detectar.
+  `tests/unit/zoom-recording-player.test.ts` guarda las tres cosas.
+- **La adjudicación se proyecta sobre `class_session.recording_url`** (+
+  `recording_source` = `zoom`|`manual`). Los portales no se tocan: ven la
+  grabación por la misma columna de siempre, y una grabación sin adjudicar no
+  tiene por dónde llegarles (`tests/unit/portal-grabaciones.test.ts`). **Un
+  enlace manual nunca se pisa** y una decisión manual nunca la deshace la
+  sincronización.
+- **Una corrida por organización**: lease en `zoom_sync_state` (UPDATE … WHERE
+  lease vencido), no un advisory lock de sesión. El botón responde 409 si está
+  tomado. Ninguna transacción abierta durante el HTTP a Zoom: cada página se
+  guarda en su propio `inOrgScope` corto.
+- **La periódica** (`src/server/zoom/scheduler.ts`) arranca desde
+  `instrumentation-node.ts` solo si `ZOOM_SYNC_INTERVAL_MIN > 0` (**default 0
+  = apagada**), nunca en tests ni en `next build`. Quién está vencido lo dice
+  la base (`zoom_connection.last_sync_at`), así que sobrevive a reinicios; al
+  arrancar, las corridas huérfanas sin lease vigente pasan a `error`.
+- **E2E**: la app de pruebas se levanta SIEMPRE con
+  `ZOOM_API_BASE_URL=<app>/api/dev/zoom-mock/v2` y
+  `ZOOM_OAUTH_BASE_URL=<app>/api/dev/zoom-mock`; la sección
+  `grabaciones-zoom` aborta si `/api/dev/zoom-mock/config` dice que no.
 
 ## Variables de entorno
 

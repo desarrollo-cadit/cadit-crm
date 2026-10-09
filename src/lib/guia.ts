@@ -148,7 +148,7 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
 
   // ── Plataforma ─────────────────────────────────────────────────────────
   "configuracion.editar": {
-    que: "conectar WhatsApp, cambiar la marca de la instancia, las plantillas y los formularios de captación, y crear, renombrar o borrar los roles del equipo con lo que puede hacer cada uno",
+    que: "conectar WhatsApp, conectar las cuentas de Zoom y vincular cada aula a su usuario de Zoom (Ajustes → Zoom), cambiar la marca de la instancia, las plantillas y los formularios de captación, y crear, renombrar o borrar los roles del equipo con lo que puede hacer cada uno",
     donde: "/settings",
   },
   "accesos.gestionar": {

@@ -31,6 +31,19 @@ const trimSlash = (url: string) => url.replace(/\/+$/, "");
 const apiBase = () => trimSlash(getEnv().ZOOM_API_BASE_URL ?? DEFAULT_API);
 const oauthBase = () => trimSlash(getEnv().ZOOM_OAUTH_BASE_URL ?? DEFAULT_OAUTH);
 
+/**
+ * A dónde habla el adaptador AHORA. `mock` es verdadero solo si LAS DOS bases
+ * apuntan al zoom-mock de la app (`/api/dev/zoom-mock`): el arnés E2E se niega
+ * a correr la sección de grabaciones si no, para no mandarle credenciales de
+ * mentira a zoom.us. Las bases no son secretas.
+ */
+export function zoomBases(): { api: string; oauth: string; mock: boolean } {
+  const api = apiBase();
+  const oauth = oauthBase();
+  const esMock = (u: string) => /\/api\/dev\/zoom-mock(\/|$)/.test(u);
+  return { api, oauth, mock: esMock(api) && esMock(oauth) };
+}
+
 /** Pedidos en serie por conexión, con este espaciado mínimo (≤ 5 req/s). */
 const MIN_SPACING_MS = 200;
 /** Intentos totales ante 429 / 5xx / red antes de rendirse. */

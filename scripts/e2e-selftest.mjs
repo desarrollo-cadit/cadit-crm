@@ -36,7 +36,7 @@ import { seccionEnviosMasivos } from "./e2e/envios-masivos.mjs";
 import { seccionVendedores } from "./e2e/vendedores.mjs";
 import { seccionAgentePorAreas } from "./e2e/agente-por-areas.mjs";
 import { seccionRoles } from "./e2e/roles.mjs";
-import { seccionGrabacionesZoom } from "./e2e/grabaciones-zoom.mjs";
+import { seccionGrabacionesZoom, seccionGrabacionesZoomPeriodica } from "./e2e/grabaciones-zoom.mjs";
 import {
   alEntrar,
   claveVigente,
@@ -228,6 +228,8 @@ async function main() {
       "agente-por-areas": seccionAgentePorAreas,
       roles: seccionRoles,
       "grabaciones-zoom": seccionGrabacionesZoom,
+      // 030 US5 (check 19): solo con la app en ZOOM_SYNC_INTERVAL_MIN=1; si no, se salta con aviso.
+      "grabaciones-zoom-periodica": seccionGrabacionesZoomPeriodica,
     };
     for (const nombre of soloSecciones) {
       const seccion = SECCIONES[nombre];
@@ -5187,6 +5189,8 @@ async function main() {
 
   // 030 — Grabaciones de Zoom: conexiones, aulas y sincronización (zoom-mock).
   await seccionGrabacionesZoom({ api, ok, BASE, getCookie: () => cookie });
+  // 030 US5 — La periódica (check 19): se salta con aviso si la app corre con la periódica apagada.
+  await seccionGrabacionesZoomPeriodica({ api, ok, BASE, getCookie: () => cookie });
 
   console.log(`\n===== ${checks - failures}/${checks} checks OK, ${failures} fallos =====`);
   process.exit(failures > 0 ? 1 : 0);

@@ -1,7 +1,30 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Versión: 1.5.0 → 1.6.0
+Versión: 1.6.0 → 1.7.0
+
+Cambios (1.7.0, 2026-10-09):
+  - Principio II, ítem 5: el alcance de Zoom se AMPLÍA para que el NAVEGADOR
+    cargue el reproductor oficial de grabaciones de Zoom en un iframe, en los
+    portales del alumno y del profesor, para una grabación ya adjudicada a la
+    clase (`class_session.recording_url`). Mismo criterio que el ítem 4
+    (Vimeo): solo el navegador lo carga; el servidor NO descarga, retransmite
+    ni almacena video; tras UN componente
+    (`src/components/portal/zoom-recording-player.tsx`) con una lista de
+    permitidos (https, `zoom.us`/`*.zoom.us`, `/rec/share/` o `/rec/play/`);
+    una clase sin enlace de Zoom funciona igual (queda el enlace de siempre).
+    Sin credenciales ni scopes nuevos. El panel del staff no embebe.
+  - Principio II: la viñeta de adaptadores nombra el componente único del
+    reproductor de Zoom.
+  Bump: MINOR — expansión material del alcance de una dependencia ya
+  permitida (un host de Zoom pasa a cargarse en el navegador del alumno), sin
+  redefinir principios; mismo criterio que 1.5.0 (M365). No es PATCH porque
+  cambia lo que la constitución permite, no solo su redacción.
+
+Plantillas dependientes: plan/spec/tasks — ✅ compatibles (sin secciones nuevas).
+Sin Content-Security-Policy en la app: no hay `frame-src` que ampliar.
+
+Versión anterior: 1.5.0 → 1.6.0
 
 Cambios (1.6.0, 2026-10-09):
   - Principio II: se AGREGA Zoom (API REST v2) como quinta dependencia de
@@ -160,6 +183,13 @@ dependencias externas en runtime es CERRADA:
      Zoom configuradas el CRM funciona idéntico y la grabación se carga a mano.
      Los tests y los entornos de prueba JAMÁS llaman a la API real de Zoom
      (mock tras el gate de desarrollo).
+     **Además, el reproductor oficial de grabaciones de Zoom**, para que el
+     alumno y el profesor vean en el portal la grabación ya adjudicada a la
+     clase. ÚNICAMENTE el navegador carga el iframe del enlace de grabación
+     (`https`, `zoom.us` o un subdominio, rutas `/rec/share/` o
+     `/rec/play/`): el servidor NO descarga, retransmite ni almacena video y
+     no usa credenciales para esto. Se aísla tras UN solo componente de UI;
+     una clase sin enlace de Zoom funciona igual (se muestra el enlace).
 - **PROHIBIDO en v1**: almacenamiento de objetos externo (S3/R2), Stripe u otro
   billing, y servicios de Google. Cualquier feature que los requiera queda fuera
   del alcance de v1.
@@ -172,7 +202,8 @@ dependencias externas en runtime es CERRADA:
   Auth + PostgreSQL propios de la instancia).
 - Las integraciones externas permitidas se aíslan tras adaptadores dedicados
   (cliente Graph API propio; adaptador LLM; adaptador `src/lib/m365`;
-  adaptador `src/lib/zoom`; componente único del reproductor de Vimeo) para
+  adaptador `src/lib/zoom`; componente único del reproductor de Vimeo;
+  componente único del reproductor de grabaciones de Zoom) para
   no acoplar el dominio a ellas.
 
 **Rationale**: El producto se regala para que agencias lo desplieguen en VPS de
@@ -358,4 +389,4 @@ práctica, convención o preferencia; ante un conflicto, gana la constitución.
 - **Propagación**: al enmendar la constitución se revisan y, si procede, se actualizan
   las plantillas dependientes (plan, spec, tasks).
 
-**Version**: 1.6.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-10-09
+**Version**: 1.7.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-10-09

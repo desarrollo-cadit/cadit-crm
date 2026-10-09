@@ -27,3 +27,21 @@ export async function cleanupOrphanRuns(): Promise<void> {
     console.error("[boot] limpieza de corridas huérfanas falló:", err);
   }
 }
+
+/**
+ * 030 US5 — Grabaciones de Zoom al arrancar: corridas huérfanas → error,
+ * leases vencidos liberados y, si `ZOOM_SYNC_INTERVAL_MIN > 0`, la
+ * sincronización periódica. Nada de esto corre en tests ni en `next build`
+ * (`shouldStartScheduler`), y nada puede tumbar el arranque.
+ */
+export async function startZoomSyncOnBoot(): Promise<void> {
+  try {
+    const { shouldStartScheduler, startZoomScheduler } = await import("@/server/zoom/scheduler");
+    if (!shouldStartScheduler(process.env)) return;
+    const { recoverZoomSyncOnBoot } = await import("@/server/zoom/sync");
+    await recoverZoomSyncOnBoot();
+    startZoomScheduler();
+  } catch (err) {
+    console.error("[boot] sincronización de Zoom no arrancó:", err instanceof Error ? err.name : "error");
+  }
+}

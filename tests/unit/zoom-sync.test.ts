@@ -405,3 +405,106 @@ describe("US2 — los contadores de la adjudicación llegan a la corrida", () =>
     expect(runs.get("zsr_1")).toMatchObject({ assignedCount: 3, ambiguousCount: 3, conflictCount: 0 });
   });
 });
+
+/* ============================================================
+ * US5 — arranque, recuperación y la periódica
+ * ============================================================ */
+
+describe("US5 — recoverZoomSyncOnBoot", () => {
+  type Orphan = { org: string; message: string; at: Date };
+
+  function recoveryStore(over: Partial<import("@/server/zoom/sync").RecoveryStore> = {}) {
+    const failed: Orphan[] = [];
+    const releasedOrgs: string[] = [];
+    const s: import("@/server/zoom/sync").RecoveryStore = {
+      organizations: async () => ["org_1", "org_2"],
+      failOrphanRuns: async (org, message, at) => {
+        failed.push({ org, message, at });
+        return org === "org_1" ? 2 : 0;
+      },
+      releaseExpiredLease: async (org) => {
+        releasedOrgs.push(org);
+      },
+      ...over,
+    };
+    return { s, failed, releasedOrgs };
+  }
+
+  it("las corridas 'corriendo' huérfanas pasan a error ('Interrumpida por un reinicio') y se liberan los leases vencidos, por organización", async () => {
+    const { recoverZoomSyncOnBoot } = await import("@/server/zoom/sync");
+    const { s, failed, releasedOrgs } = recoveryStore();
+    const r = await recoverZoomSyncOnBoot(s, HOY);
+    expect(failed.map((f) => f.org)).toEqual(["org_1", "org_2"]);
+    expect(failed.every((f) => /Interrumpida por un reinicio/.test(f.message) && f.at === HOY)).toBe(true);
+    expect(releasedOrgs).toEqual(["org_1", "org_2"]);
+    expect(r).toEqual({ orphanRuns: 2 });
+  });
+
+  it("nunca lanza: la base caída al arrancar no tumba el servidor, y una organización que falla no frena a las otras", async () => {
+    const { recoverZoomSyncOnBoot } = await import("@/server/zoom/sync");
+    const caida = recoveryStore({
+      organizations: async () => {
+        throw new Error("ECONNREFUSED");
+      },
+    });
+    await expect(recoverZoomSyncOnBoot(caida.s, HOY)).resolves.toEqual({ orphanRuns: 0 });
+
+    const parcial = recoveryStore({
+      failOrphanRuns: async (org) => {
+        if (org === "org_1") throw new Error("timeout");
+        return 1;
+      },
+    });
+    await expect(recoverZoomSyncOnBoot(parcial.s, HOY)).resolves.toEqual({ orphanRuns: 1 });
+    expect(parcial.releasedOrgs).toEqual(["org_2"]);
+  });
+});
+
+describe("US5 — recuperación y fallos aislados", () => {
+  it("servidor apagado 3 días: la ventana siguiente cubre esos días (y el solape) sin huecos", async () => {
+    roomsBy.zc_1 = [
+      { id: "aula_1", name: "Zoom 1", zoomUserId: "u1", syncedThrough: "2026-10-06" },
+      { id: "aula_2", name: "Zoom 2", zoomUserId: "u2", syncedThrough: "2026-10-06" },
+    ];
+    const { runSync } = await import("@/server/zoom/sync");
+    await runSync(ORG, "periodica", {}, deps());
+    expect(calls.map((c) => c.range)).toEqual([
+      { from: "2026-10-03", to: "2026-10-09" },
+      { from: "2026-10-03", to: "2026-10-09" },
+    ]);
+    expect(runs.get("zsr_1")).toMatchObject({ trigger: "periodica", triggeredBy: null, status: "ok" });
+  });
+
+  it("un tropiezo transitorio que el adaptador absorbe (429 con reintento) termina 'ok'", async () => {
+    // El adaptador reintenta 429/5xx (zoom-client.test.ts); a la corrida le
+    // llega la página igual, tarde: no es un error.
+    const d = deps();
+    d.zoom = {
+      async *listUserRecordings(_c, userId, range) {
+        calls.push({ userId, range });
+        await new Promise((r) => setTimeout(r, 5));
+        yield [meeting(`late-${userId}`, { hostId: userId })];
+      },
+    };
+    const { runSync } = await import("@/server/zoom/sync");
+    await runSync(ORG, "periodica", {}, d);
+    expect(runs.get("zsr_1")).toMatchObject({ status: "ok", error: null, fetchedCount: 2 });
+  });
+
+  it("5xx persistente en una conexión: esa corrida 'error' y la otra 'ok', en la misma pasada", async () => {
+    conns.push({ id: "zc_2", name: "Cuenta 2", syncedThrough: null });
+    roomsBy.zc_2 = [{ id: "aula_3", name: "Zoom 3", zoomUserId: "u3", syncedThrough: null }];
+    recordingsBy = {
+      u1: new ZoomError("zoom_caido", "Zoom no respondió."),
+      u2: new ZoomError("zoom_caido", "Zoom no respondió."),
+      u3: [[meeting("d", { hostId: "u3" })]],
+    };
+    const { runSync } = await import("@/server/zoom/sync");
+    await runSync(ORG, "periodica", {}, deps());
+    expect(runs.get("zsr_1")).toMatchObject({ connectionId: "zc_1", status: "error" });
+    expect(runs.get("zsr_2")).toMatchObject({ connectionId: "zc_2", status: "ok", newCount: 1 });
+    expect(syncedThrough).toEqual({ zc_2: "2026-10-09" });
+    expect(roomSynced).toEqual({ aula_3: "2026-10-09" });
+    expect(released).toEqual(["test:1"]);
+  });
+});
