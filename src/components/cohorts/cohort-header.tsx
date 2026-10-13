@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight, CalendarDays } from "lucide-react";
 import type { EncabezadoDeCohorte } from "@/lib/cohort-header";
 import { Badge } from "@/components/ui/badge";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
+import { EditCohortButton } from "@/components/cohorts/edit-cohort-button";
 
 function fecha(iso: string | null): string {
   return iso ? new Date(iso).toLocaleDateString("es-UY", { timeZone: "UTC" }) : "sin fecha de fin";
@@ -14,7 +15,16 @@ function fecha(iso: string | null): string {
  *
  * Server component: llega armado desde la página y no pide nada.
  */
-export function CohortHeader({ header }: { header: EncabezadoDeCohorte }) {
+export function CohortHeader({
+  header,
+  cohortId,
+  canEdit,
+}: {
+  header: EncabezadoDeCohorte;
+  cohortId: string;
+  /** `academico.editar`, resuelto en el servidor. La ruta PATCH exige lo mismo. */
+  canEdit: boolean;
+}) {
   return (
     <header className="space-y-2 border-b px-6 pb-3 pt-4">
       <Breadcrumb items={header.crumbs} />
@@ -25,6 +35,11 @@ export function CohortHeader({ header }: { header: EncabezadoDeCohorte }) {
           <CalendarDays className="h-3.5 w-3.5" aria-hidden />
           {fecha(header.startDate)} — {fecha(header.endDate)}
         </span>
+        {canEdit ? (
+          <div className="ml-auto">
+            <EditCohortButton cohortId={cohortId} />
+          </div>
+        ) : null}
       </div>
       {header.prev || header.next ? (
         <nav aria-label="Módulos vecinos" className="flex items-center gap-2 text-xs">

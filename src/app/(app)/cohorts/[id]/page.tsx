@@ -76,7 +76,13 @@ export default async function CohortPage({
       : { isSpecialization: false, header: null };
   return (
     <div className="flex h-full flex-col">
-      {header ? <CohortHeader header={header} /> : null}
+      {header ? (
+        <CohortHeader
+          header={header}
+          cohortId={id}
+          canEdit={caps.includes("academico.editar")}
+        />
+      ) : null}
       <div className="min-h-0 flex-1">
         <CohortTabs
           cohortId={id}
