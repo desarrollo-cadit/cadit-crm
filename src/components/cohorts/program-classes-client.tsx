@@ -36,7 +36,7 @@ type Resumen = {
 };
 
 const fecha = (iso: string) =>
-  new Date(iso).toLocaleDateString("es-UY", { weekday: "short", day: "2-digit", month: "short" });
+  new Date(iso).toLocaleDateString("es-UY", { weekday: "short", day: "2-digit", month: "short", timeZone: "UTC" });
 
 /**
  * 029 — La pestaña Clases de una ESPECIALIZACIÓN: las clases de sus módulos,

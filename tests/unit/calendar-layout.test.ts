@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   cohortColor,
+  diaDeClase,
+  rangoDeSemana,
   repartirEnColumnas,
   type PositionedSession,
 } from "@/components/calendar/calendar-client";
@@ -141,5 +143,27 @@ describe("cohortColor — cada cohorte conserva SU color", () => {
     for (const id of ["", "x", "🙂", "a".repeat(200)]) {
       expect(cohortColor(id).bg).toMatch(/^bg-/);
     }
+  });
+});
+
+/**
+ * Un día de clase viaja como la medianoche UTC de ese día. El navegador en
+ * Montevideo (UTC-3) lo leía como las 21:00 del día ANTERIOR, así que una
+ * cohorte de lunes, miércoles y viernes aparecía domingo, martes y jueves.
+ */
+describe("diaDeClase / rangoDeSemana", () => {
+  it("ubica la clase en su día calendario, sin importar la zona del navegador", () => {
+    expect(diaDeClase("2026-10-14T00:00:00.000Z")).toBe("2026-10-14");
+    // Las filas viejas generadas con la zona del servidor de desarrollo.
+    expect(diaDeClase("2026-10-14T03:00:00.000Z")).toBe("2026-10-14");
+  });
+
+  it("pide la semana en días UTC, para no dejar afuera las clases del lunes", () => {
+    // Lunes 12/10 a medianoche LOCAL, como lo arma `startOfWeek`.
+    const lunes = new Date(2026, 9, 12);
+    expect(rangoDeSemana(lunes)).toEqual({
+      from: "2026-10-12T00:00:00.000Z",
+      to: "2026-10-18T23:59:59.999Z",
+    });
   });
 });

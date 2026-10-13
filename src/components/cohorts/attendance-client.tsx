@@ -59,7 +59,7 @@ const STATUS_CLASS: Record<AttendanceStatus, string> = {
 };
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("es-UY", { day: "2-digit", month: "2-digit" });
+  return new Date(iso).toLocaleDateString("es-UY", { day: "2-digit", month: "2-digit", timeZone: "UTC" });
 }
 
 /**

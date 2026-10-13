@@ -28,6 +28,27 @@ function isoDay(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+/**
+ * El día calendario de una clase. Viaja como la medianoche UTC de ese día
+ * (la convención de `classInstant`), así que se lee en UTC: con la zona del
+ * navegador, en Montevideo cada clase caía un día antes.
+ */
+export function diaDeClase(iso: string): string {
+  return iso.slice(0, 10);
+}
+
+/**
+ * El rango a pedir para la semana visible, en días UTC. `weekStart` es
+ * medianoche LOCAL; mandarlo tal cual pedía desde las 03:00 UTC del lunes y
+ * las clases del lunes (00:00 UTC) quedaban afuera.
+ */
+export function rangoDeSemana(weekStart: Date): { from: string; to: string } {
+  return {
+    from: `${isoDay(weekStart)}T00:00:00.000Z`,
+    to: `${isoDay(addDays(weekStart, 6))}T23:59:59.999Z`,
+  };
+}
+
 // 013 (T012) — `weekdayIndex` se eliminó junto con la proyección que vivía
 // acá: el servidor ya devuelve las clases que van en la semana, así que el
 // navegador no vuelve a interpretar `daysOfWeek`. La convención (0=lunes) vive
@@ -197,8 +218,7 @@ export function CalendarClient() {
   const refetch = useCallback(async () => {
     setLoading(true);
     try {
-      const from = weekStart.toISOString();
-      const to = addDays(weekStart, 7).toISOString();
+      const { from, to } = rangoDeSemana(weekStart);
       const res = await fetch(
         `/api/calendar?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
       );
@@ -243,7 +263,7 @@ export function CalendarClient() {
     weekDays.forEach((d, i) => indicePorDia.set(isoDay(d), i));
 
     for (const klass of classes) {
-      const dayIndex = indicePorDia.get(isoDay(new Date(klass.date)));
+      const dayIndex = indicePorDia.get(diaDeClase(klass.date));
       if (dayIndex === undefined) continue;
 
       const startMin = parseTimeToMinutes(klass.startTime);

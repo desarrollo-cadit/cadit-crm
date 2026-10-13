@@ -65,19 +65,25 @@ export function buildClassSchedule(
   if (days.size === 0) return [];
   if (endDate < startDate) return [];
 
+  /*
+    Todo en UTC: un día de clase es la medianoche UTC de ese día (así lo guarda
+    el formulario y así lo leen `classInstant` y `formatDate`). Con la zona del
+    PROCESO el cronograma dependía de dónde corriera el servidor, y en
+    producción (UTC) el calendario de Montevideo pintaba cada clase un día antes.
+  */
   const out: { number: number; date: Date; hours: number | null }[] = [];
   const cursor = new Date(startDate);
-  cursor.setHours(0, 0, 0, 0);
+  cursor.setUTCHours(0, 0, 0, 0);
   const last = new Date(endDate);
-  last.setHours(23, 59, 59, 999);
+  last.setUTCHours(23, 59, 59, 999);
 
   while (cursor <= last) {
-    // getDay(): 0=domingo..6=sábado. El calendario usa 0=lunes..6=domingo.
-    const index = (cursor.getDay() + 6) % 7;
+    // getUTCDay(): 0=domingo..6=sábado. El calendario usa 0=lunes..6=domingo.
+    const index = (cursor.getUTCDay() + 6) % 7;
     if (days.has(index)) {
       out.push({ number: out.length + 1, date: new Date(cursor), hours: hoursPerClass });
     }
-    cursor.setDate(cursor.getDate() + 1);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
   return out;
 }

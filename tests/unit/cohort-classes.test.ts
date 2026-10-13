@@ -19,34 +19,34 @@ describe("days_of_week cuenta desde el LUNES, no desde el domingo", () => {
   it("«0» es lunes", () => {
     // Semana del 5 al 11 de octubre de 2026: el 5 es lunes.
     const plan = buildClassSchedule(
-      new Date(2026, 9, 5),
-      new Date(2026, 9, 11),
+      new Date("2026-10-05"),
+      new Date("2026-10-11"),
       "0",
       2
     );
     expect(plan).toHaveLength(1);
-    expect(plan[0]!.date.getDate()).toBe(5);
+    expect(plan[0]!.date.getUTCDate()).toBe(5);
   });
 
   it("«6» es domingo", () => {
     const plan = buildClassSchedule(
-      new Date(2026, 9, 5),
-      new Date(2026, 9, 11),
+      new Date("2026-10-05"),
+      new Date("2026-10-11"),
       "6",
       2
     );
     expect(plan).toHaveLength(1);
-    expect(plan[0]!.date.getDate()).toBe(11);
+    expect(plan[0]!.date.getUTCDate()).toBe(11);
   });
 
   it("«0,2,4» es lunes, miércoles y viernes", () => {
     const plan = buildClassSchedule(
-      new Date(2026, 9, 5),
-      new Date(2026, 9, 11),
+      new Date("2026-10-05"),
+      new Date("2026-10-11"),
       "0,2,4",
       2
     );
-    expect(plan.map((p) => p.date.getDate())).toEqual([5, 7, 9]);
+    expect(plan.map((p) => p.date.getUTCDate())).toEqual([5, 7, 9]);
   });
 });
 

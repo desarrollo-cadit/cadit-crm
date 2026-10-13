@@ -39,6 +39,38 @@ describe("buildClassSchedule", () => {
     expect(buildClassSchedule(new Date("2026-09-01"), new Date("2026-10-01"), "", 2)).toEqual([]);
   });
 
+  /**
+   * Un día de clase es la medianoche UTC de ese día: así lo guarda el
+   * formulario ("2026-10-14" → `z.coerce.date()`) y así lo leen
+   * `classInstant` y `formatDate`. Si el cronograma usa la zona del PROCESO,
+   * el resultado cambia según dónde corra el servidor: en producción (UTC)
+   * y en desarrollo (Montevideo) salen días distintos.
+   */
+  it("no depende de la zona horaria del servidor", () => {
+    const original = process.env.TZ;
+    try {
+      for (const tz of ["UTC", "America/Montevideo", "Asia/Tokyo"]) {
+        process.env.TZ = tz;
+        // 2026-10-14 es miércoles. "0,2,4" = lunes, miércoles y viernes.
+        const plan = buildClassSchedule(
+          new Date("2026-10-14"),
+          new Date("2026-10-23"),
+          "0,2,4",
+          2
+        );
+        expect(plan.map((p) => p.date.toISOString()), tz).toEqual([
+          "2026-10-14T00:00:00.000Z",
+          "2026-10-16T00:00:00.000Z",
+          "2026-10-19T00:00:00.000Z",
+          "2026-10-21T00:00:00.000Z",
+          "2026-10-23T00:00:00.000Z",
+        ]);
+      }
+    } finally {
+      process.env.TZ = original;
+    }
+  });
+
   it("no genera nada si el rango está invertido", () => {
     expect(
       buildClassSchedule(new Date("2026-10-01"), new Date("2026-09-01"), "0", 2)

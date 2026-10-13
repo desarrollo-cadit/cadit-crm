@@ -246,11 +246,13 @@ export function ClassesClient({
     return <p className="p-6 text-sm text-muted-foreground">{error ?? "Sin datos"}</p>;
   }
 
+  // El día de clase es la medianoche UTC: en la zona del navegador caía un día antes.
   const fecha = (iso: string) =>
     new Date(iso).toLocaleDateString("es-UY", {
       weekday: "short",
       day: "2-digit",
       month: "short",
+      timeZone: "UTC",
     });
 
   /** FR-009 — Éstas se OFRECEN; las de baja sólo se nombran. */
