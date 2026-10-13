@@ -48,6 +48,8 @@ const GRANTS = [
   migracion("0051_agente_por_areas.sql"),
   // 030 — `grabaciones.ver` / `grabaciones.gestionar` (DV-009).
   migracion("0052_grabaciones_zoom.sql"),
+  // 031 — `correcciones.aprobar` (DV-006).
+  migracion("0054_correcciones_escolaridad.sql"),
 ].join("\n");
 
 function grantsPosteriores(key: string): string[] {

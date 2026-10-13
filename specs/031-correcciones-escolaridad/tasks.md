@@ -8,17 +8,17 @@ Formato: `- [ ] T### [P?] [US?] descripción con ruta`. `[P]` = archivo distinto
 
 ## Phase 1: Setup
 
-- [ ] T001 Backup de las bases locales antes de migrar en `backups/` (patrón `vocero-pre-00NN-<fecha>.sql`) y confirmar que la última migración es `0053` en `drizzle/meta/_journal.json`
+- [x] T001 Backup de las bases locales antes de migrar en `backups/` (patrón `vocero-pre-00NN-<fecha>.sql`) y confirmar que la última migración es `0053` en `drizzle/meta/_journal.json`
 
 ## Phase 2: Foundational (bloquea todas las historias)
 
-- [ ] T002 [P] Test que falla: `tests/unit/grading-template.test.ts` — `validarPlantilla` (suma 100, mínimo 1–100 obligatorio en numérica y null en pass_fail, ids únicos, nombres no vacíos, ejercicios solo en numérica), `notaDeCorreccion` (suma o directa), `validarCorreccion` (modo `draft` tolera faltantes; `submit`/`publish` exigen todo; puntaje > máximo con nombre del ejercicio; nota fuera de 1–100; campo obligatorio vacío), `aproboConNota` (nota = mínimo aprueba), `plantillaCongelada` (cambio de escala/mínimo/ids/máximos vs. cambio de nombres)
-- [ ] T003 Implementar funciones puras y tipos `Template`, `Criterion`, `TextField`, `CorrectionInput` con esquemas Zod en `src/lib/grading-template.ts` hasta poner T002 en verde
-- [ ] T004 Columnas de plantilla en `assessment` (`scale`, `min_score`, `requires_approval`, `criteria`, `text_fields`), `score` en `assessmentResult` y tabla `correction` con índices únicos parciales en `src/lib/db/schema.ts`; prefijo `correction: "cor"` en `src/lib/db/ids.ts`
-- [ ] T005 Migración re-ejecutable `drizzle/0054_correcciones_escolaridad.sql` (+ entrada en `drizzle/meta/_journal.json`): columnas con defaults y checks, tabla `correction`, RLS `tenant_isolation` a mano, backfill de `correcciones.aprobar` en roles `direccion` y `coordinacion` (patrón de `0052`)
-- [ ] T006 [P] Test que falla: agregar `correcciones.aprobar` a las expectativas de `tests/unit/capabilities.test.ts` (dirección y coordinación la tienen; soporte y administración no) 
-- [ ] T007 Agregar `correcciones.aprobar` a `CAPABILITIES` y a `SYSTEM_ROLES`/filtros en `src/lib/capabilities.ts`; etiqueta en `CAPABILITY_LABELS` y regex de `GROUPS` en `src/components/settings/roles-client.tsx`; entrada en `GUIA_CAPACIDADES` y regex de `GRUPOS_CAPACIDADES` en `src/lib/guia.ts`
-- [ ] T008 Aplicar la migración en las bases de dev y e2e y correr `pnpm typecheck && pnpm test` (incluye `rls-cobertura.test.ts` cubriendo `correction`)
+- [x] T002 [P] Test que falla: `tests/unit/grading-template.test.ts` — `validarPlantilla` (suma 100, mínimo 1–100 obligatorio en numérica y null en pass_fail, ids únicos, nombres no vacíos, ejercicios solo en numérica), `notaDeCorreccion` (suma o directa), `validarCorreccion` (modo `draft` tolera faltantes; `submit`/`publish` exigen todo; puntaje > máximo con nombre del ejercicio; nota fuera de 1–100; campo obligatorio vacío), `aproboConNota` (nota = mínimo aprueba), `plantillaCongelada` (cambio de escala/mínimo/ids/máximos vs. cambio de nombres)
+- [x] T003 Implementar funciones puras y tipos `Template`, `Criterion`, `TextField`, `CorrectionInput` con esquemas Zod en `src/lib/grading-template.ts` hasta poner T002 en verde
+- [x] T004 Columnas de plantilla en `assessment` (`scale`, `min_score`, `requires_approval`, `criteria`, `text_fields`), `score` en `assessmentResult` y tabla `correction` con índices únicos parciales en `src/lib/db/schema.ts`; prefijo `correction: "cor"` en `src/lib/db/ids.ts`
+- [x] T005 Migración re-ejecutable `drizzle/0054_correcciones_escolaridad.sql` (+ entrada en `drizzle/meta/_journal.json`): columnas con defaults y checks, tabla `correction`, RLS `tenant_isolation` a mano, backfill de `correcciones.aprobar` en roles `direccion` y `coordinacion` (patrón de `0052`)
+- [x] T006 [P] Test que falla: agregar `correcciones.aprobar` a las expectativas de `tests/unit/capabilities.test.ts` (dirección y coordinación la tienen; soporte y administración no) 
+- [x] T007 Agregar `correcciones.aprobar` a `CAPABILITIES` y a `SYSTEM_ROLES`/filtros en `src/lib/capabilities.ts`; etiqueta en `CAPABILITY_LABELS` y regex de `GROUPS` en `src/components/settings/roles-client.tsx`; entrada en `GUIA_CAPACIDADES` y regex de `GRUPOS_CAPACIDADES` en `src/lib/guia.ts`
+- [x] T008 Aplicar la migración en las bases de dev y e2e y correr `pnpm typecheck && pnpm test` (incluye `rls-cobertura.test.ts` cubriendo `correction`)
 
 **Checkpoint**: base lista; ninguna conducta visible cambió todavía.
 

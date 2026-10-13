@@ -16,6 +16,7 @@ import {
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import type { Capability } from "@/lib/capabilities";
+import type { Criterion, Scale, TextField } from "@/lib/grading-template";
 
 /**
  * 007 — Monedas admitidas en los importes. Hasta 006 los montos eran un
@@ -1626,10 +1627,34 @@ export const assessment = pgTable(
      * como tardía y decide el profesor.
      */
     dueAt: timestamp("due_at"),
+    /**
+     * 031 (DV-002) — La PLANTILLA de corrección. Revierte DV-001 de 010 de
+     * forma compatible: `assessment_result.passed` sigue siendo la verdad de
+     * aprobación y en numérica se deriva de `score >= min_score`.
+     *
+     * Las evaluaciones anteriores quedan `pass_fail` sin tocar nada (FR-001).
+     * Ejercicios y campos van en jsonb porque se leen siempre enteros junto con
+     * la evaluación y se congelan al publicar (DV-008): dos tablas hijas no
+     * compraban nada. Se validan con `leerPlantilla` al leer.
+     */
+    scale: text("scale").$type<Scale>().notNull().default("pass_fail"),
+    minScore: integer("min_score"),
+    requiresApproval: boolean("requires_approval").notNull().default(false),
+    criteria: jsonb("criteria").$type<Criterion[]>().notNull().default(sql`'[]'::jsonb`),
+    textFields: jsonb("text_fields").$type<TextField[]>().notNull().default(sql`'[]'::jsonb`),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
-  (t) => [index("assessment_org_cohort_idx").on(t.organizationId, t.cohortId, t.position)]
+  (t) => [
+    index("assessment_org_cohort_idx").on(t.organizationId, t.cohortId, t.position),
+    check("assessment_scale_valid", sql`${t.scale} in ('pass_fail', 'numeric')`),
+    // La base también lo dice: una numérica sin mínimo no tiene cómo aprobar a
+    // nadie, y un mínimo en pass_fail sería un número que nadie lee.
+    check(
+      "assessment_min_score_by_scale",
+      sql`(${t.scale} = 'pass_fail' and ${t.minScore} is null) or (${t.scale} = 'numeric' and ${t.minScore} between 1 and 100)`
+    ),
+  ]
 );
 
 /**
@@ -1654,6 +1679,12 @@ export const assessmentResult = pgTable(
       .references(() => enrollment.id, { onDelete: "cascade" }),
     /** NULL = pendiente de corrección (FR-005). true/false = aprobó o no. */
     passed: boolean("passed"),
+    /**
+     * 031 (DV-004) — La nota 1–100 de una evaluación numérica. Información
+     * para mostrar: quien decide la aprobación sigue mirando `passed`. Solo la
+     * escribe la publicación de una corrección; null en `pass_fail`.
+     */
+    score: integer("score"),
     notes: text("notes"),
     recordedBy: text("recorded_by").references(() => user.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -1663,6 +1694,8 @@ export const assessmentResult = pgTable(
     // Un resultado por alumno y evaluación: recargar CORRIGE, no duplica.
     uniqueIndex("assessment_result_uq").on(t.assessmentId, t.enrollmentId),
     index("assessment_result_org_enrollment_idx").on(t.organizationId, t.enrollmentId),
+    // 0 es posible: es la suma de ejercicios todos en cero, no "sin nota".
+    check("assessment_result_score_range", sql`${t.score} is null or ${t.score} between 0 and 100`),
   ]
 );
 
@@ -1829,6 +1862,87 @@ export const assessmentExtension = pgTable(
       t.organizationId,
       t.enrollmentId
     ),
+  ]
+);
+
+export const CORRECTION_STATUSES = ["draft", "pending", "published", "superseded"] as const;
+export type CorrectionStatus = (typeof CORRECTION_STATUSES)[number];
+
+/**
+ * 031 (DV-001) — Una VERSIÓN de la corrección de un alumno en una evaluación.
+ *
+ * Es una tabla propia y versionada porque FR-021 pide que la versión publicada
+ * siga visible mientras la nueva espera aprobación: son dos filas vivas a la
+ * vez. `submission` no servía de soporte: hay correcciones sin entrega
+ * (FR-014) y una entrega tiene varios intentos.
+ *
+ * El resultado OFICIAL (`assessment_result`) no se escribe acá: lo escribe
+ * solo la publicación (DV-003). Un borrador o una pendiente no existen para la
+ * planilla, el legajo, los certificados ni el alumno.
+ */
+export const correction = pgTable(
+  "correction",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    assessmentId: text("assessment_id")
+      .notNull()
+      .references(() => assessment.id, { onDelete: "cascade" }),
+    enrollmentId: text("enrollment_id")
+      .notNull()
+      .references(() => enrollment.id, { onDelete: "cascade" }),
+    /** FR-014 — puede no haber entrega: se corrige igual. */
+    submissionId: text("submission_id").references(() => submission.id, {
+      onDelete: "set null",
+    }),
+    status: text("status").$type<CorrectionStatus>().notNull(),
+    score: integer("score"),
+    passed: boolean("passed"),
+    /** La devolución general: el alumno la ve al publicarse. */
+    feedback: text("feedback"),
+    criterionScores: jsonb("criterion_scores")
+      .$type<{ criterionId: string; points: number | null; comment: string | null }[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    textValues: jsonb("text_values")
+      .$type<{ fieldId: string; value: string }[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    correctedBy: text("corrected_by").references(() => user.id, { onDelete: "set null" }),
+    submittedBy: text("submitted_by").references(() => user.id, { onDelete: "set null" }),
+    submittedAt: timestamp("submitted_at"),
+    reviewedBy: text("reviewed_by").references(() => user.id, { onDelete: "set null" }),
+    reviewedAt: timestamp("reviewed_at"),
+    /** FR-019 — el porqué de una devolución. NUNCA viaja al portal del alumno. */
+    reviewComment: text("review_comment"),
+    publishedBy: text("published_by").references(() => user.id, { onDelete: "set null" }),
+    publishedAt: timestamp("published_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    check(
+      "correction_status_valid",
+      sql`${t.status} in ('draft', 'pending', 'published', 'superseded')`
+    ),
+    check("correction_score_range", sql`${t.score} is null or ${t.score} between 0 and 100`),
+    /*
+      Los dos índices parciales son la garantía de DV-001: como mucho UNA
+      publicada y UNA en trámite por alumno y evaluación. Predicados sin
+      calificar por la misma razón que `submission_abierta_uq`.
+    */
+    uniqueIndex("correction_vigente_uq")
+      .on(t.assessmentId, t.enrollmentId)
+      .where(sql`status = 'published'`),
+    uniqueIndex("correction_en_tramite_uq")
+      .on(t.assessmentId, t.enrollmentId)
+      .where(sql`status in ('draft', 'pending')`),
+    // La bandeja de pendientes.
+    index("correction_org_status_idx").on(t.organizationId, t.status),
+    // El portal del alumno y la escolaridad.
+    index("correction_org_enrollment_idx").on(t.organizationId, t.enrollmentId),
   ]
 );
 

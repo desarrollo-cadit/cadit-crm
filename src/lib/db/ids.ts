@@ -81,6 +81,8 @@ const prefixes = {
   zoomConnection: "zc",
   zoomRecording: "zr",
   zoomSyncRun: "zsr",
+  // 031 — cada versión de la corrección de un alumno en una evaluación.
+  correction: "cor",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

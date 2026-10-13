@@ -19,6 +19,14 @@ export const CAPABILITIES = [
   "asistencia.editar",
   "evaluacion.ver",
   "evaluacion.editar",
+  /**
+   * 031 (DV-006) — Publicar la corrección que mandó un profesor en una
+   * evaluación que "requiere aprobación". Quien además tiene
+   * `evaluacion.editar` publica directo sus propias correcciones. Soporte no
+   * la recibe (ver `sinAprobarCorrecciones`): aprobar una nota es decidir
+   * sobre la cursada de un alumno.
+   */
+  "correcciones.aprobar",
   "certificados.emitir",
   // Comercial y financiero
   "contactos.ver",
@@ -103,6 +111,12 @@ const sinAreas = (c: Capability) => c !== "areas.configurar";
 const sinGestionarGrabaciones = (c: Capability) => c !== "grabaciones.gestionar";
 
 /**
+ * 031 (DV-006) — Soporte no aprueba correcciones: publicar una nota es de
+ * quien coordina la cursada, igual que adjudicar grabaciones.
+ */
+const sinAprobarCorrecciones = (c: Capability) => c !== "correcciones.aprobar";
+
+/**
  * Mapeo rol → capacidades, FIEL al comportamiento actual.
  *
  * Cuidado con `member`: el data-model de la fase lo proyectaba como
@@ -123,7 +137,8 @@ export const ROLE_CAPABILITIES: Record<string, readonly Capability[]> = {
       !FINANCIAL_CAPABILITIES.includes(c) &&
       sinAuditoria(c) &&
       sinAreas(c) &&
-      sinGestionarGrabaciones(c)
+      sinGestionarGrabaciones(c) &&
+      sinAprobarCorrecciones(c)
   ),
 };
 
@@ -172,7 +187,8 @@ export const SYSTEM_ROLES: readonly {
         !FINANCIAL_CAPABILITIES.includes(c) &&
         sinAuditoria(c) &&
         sinAreas(c) &&
-        sinGestionarGrabaciones(c)
+        sinGestionarGrabaciones(c) &&
+        sinAprobarCorrecciones(c)
     ),
   },
   /**

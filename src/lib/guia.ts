@@ -90,6 +90,12 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
     que: "crear las evaluaciones de una cohorte, copiarlas de otra cohorte y cargar las notas",
     donde: "Académico → la cohorte → Evaluación",
   },
+  "correcciones.aprobar": {
+    que: "revisar las correcciones que mandan los profesores y publicarlas o devolverlas con un comentario",
+    // 031 — La bandeja `/correcciones` llega con la US4 (T034); hasta
+    // entonces este `donde` apunta a la planilla, que es una ruta real.
+    donde: "Académico → la cohorte → Evaluación",
+  },
   "certificados.emitir": {
     que: "emitir el certificado de un alumno que aprobó, imprimirlo y anularlo si se emitió por error",
     donde: "Académico → la cohorte → Evaluación",
@@ -197,7 +203,9 @@ export const GRUPOS_CAPACIDADES: readonly {
   {
     titulo: "Académico",
     // 030 — Las grabaciones son de la cursada: van con lo académico.
-    incluye: (c) => /^(academico|asistencia|evaluacion|certificados|grabaciones)\./.test(c),
+    // 031 — Las correcciones también.
+    incluye: (c) =>
+      /^(academico|asistencia|evaluacion|correcciones|certificados|grabaciones)\./.test(c),
   },
   {
     titulo: "Comercial y financiero",

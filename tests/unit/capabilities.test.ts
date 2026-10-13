@@ -240,3 +240,33 @@ describe("030 — grabaciones.ver / grabaciones.gestionar", () => {
     expect(byKey("administracion").capabilities).not.toContain("grabaciones.ver");
   });
 });
+
+/**
+ * 031 (DV-006) — `correcciones.aprobar`: publicar la corrección que mandó un
+ * profesor en una evaluación que requiere aprobación.
+ *
+ * Soporte no la tiene: aprobar una nota es decidir sobre la cursada de un
+ * alumno, y eso es de quien la coordina. Administración tampoco (026: entra
+ * solo lo que hace falta para leer una fila de cobranza).
+ */
+describe("031 — correcciones.aprobar", () => {
+  const byKey = (k: string) => SYSTEM_ROLES.find((r) => r.key === k)!;
+
+  it("está en la lista cerrada", () => {
+    expect(CAPABILITIES).toContain("correcciones.aprobar");
+  });
+
+  it("dirección y coordinación la tienen; soporte y administración no", () => {
+    for (const key of ["direccion", "coordinacion"]) {
+      expect(byKey(key).capabilities).toContain("correcciones.aprobar");
+    }
+    for (const key of ["soporte", "administracion"]) {
+      expect(byKey(key).capabilities).not.toContain("correcciones.aprobar");
+    }
+  });
+
+  it("en el respaldo por código, soporte tampoco", () => {
+    expect(hasCapability("owner", "correcciones.aprobar")).toBe(true);
+    expect(hasCapability("soporte", "correcciones.aprobar")).toBe(false);
+  });
+});

@@ -35,6 +35,7 @@ const CAPABILITY_LABELS: Record<string, string> = {
   "asistencia.editar": "Tomar asistencia",
   "evaluacion.ver": "Ver evaluaciones",
   "evaluacion.editar": "Cargar y corregir evaluaciones",
+  "correcciones.aprobar": "Aprobar las correcciones de los profesores",
   "certificados.emitir": "Emitir certificados",
   "contactos.ver": "Ver contactos",
   "contactos.editar": "Crear y editar contactos",
@@ -61,7 +62,9 @@ const GROUPS: { title: string; match: (c: string) => boolean }[] = [
   {
     title: "Académico",
     // 030 — `grabaciones.*` va con lo académico, igual que en la guía.
-    match: (c) => /^(academico|asistencia|evaluacion|certificados|grabaciones)\./.test(c),
+    // 031 — `correcciones.*` también.
+    match: (c) =>
+      /^(academico|asistencia|evaluacion|correcciones|certificados|grabaciones)\./.test(c),
   },
   { title: "Comercial y financiero", match: (c) => /^(contactos|inscripciones|cobranza)\./.test(c) },
   { title: "Conversaciones", match: (c) => c.startsWith("inbox.") },

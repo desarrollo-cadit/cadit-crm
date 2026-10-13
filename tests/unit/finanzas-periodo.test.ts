@@ -641,11 +641,13 @@ describe("FR-007/FR-008 — la vista se gobierna con `cobranza.ver` y se declara
     // tiene nada que ver con finanzas.
     // 029 — `areas.configurar` (áreas de derivación del agente), tampoco de finanzas.
     // 030 — `grabaciones.ver` / `grabaciones.gestionar` (Zoom), tampoco.
+    // 031 — `correcciones.aprobar` (aprobar correcciones), tampoco.
     const posteriores = new Set<Capability>([
       "alumnos.auditoria",
       "areas.configurar",
       "grabaciones.ver",
       "grabaciones.gestionar",
+      "correcciones.aprobar",
     ]);
     expect(CAPABILITIES.filter((c) => !posteriores.has(c))).toHaveLength(17);
     expect(CAPABILITIES).not.toContain("finanzas.ver" as Capability);
