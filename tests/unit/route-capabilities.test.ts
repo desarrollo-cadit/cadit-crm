@@ -40,6 +40,7 @@ const SIN_CAPACIDAD: Record<string, string> = {
   // Superficie pública: sin sesión por diseño (007).
   "public/courses/route.ts": "catálogo público",
   "public/courses/[id]/route.ts": "detalle público del curso",
+  "public/courses/[id]/image/route.ts": "portada pública del curso (la usa el sitio)",
   "public/courses/[id]/submit/route.ts": "captación pública por curso",
   "public/forms/[formId]/submit/route.ts": "captación pública por formulario",
   "public/certificates/[code]/route.ts": "verificación pública de certificado",

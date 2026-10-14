@@ -95,6 +95,7 @@ export function CourseForm({
     initial?.hoursPerWeek?.toString() ?? ""
   );
   const [imageUrl, setImageUrl] = useState(initial?.imageUrl ?? "");
+  const [imageFile, setImageFile] = useState<File | null>(null);
   const [syllabusUrl, setSyllabusUrl] = useState(initial?.syllabusUrl ?? "");
   const [objectives, setObjectives] = useState(
     topicsToText(initial?.learningObjectives ?? [])
@@ -186,6 +187,19 @@ export function CourseForm({
     setCategoryId("");
   }
 
+  /** Devuelve el motivo si la subida falló; null si salió bien o no había archivo. */
+  async function uploadImage(courseId: string): Promise<string | null> {
+    if (!imageFile) return null;
+    const body = new FormData();
+    body.append("file", imageFile);
+    const res = await fetch(`/api/courses/${courseId}/image`, { method: "PUT", body }).catch(
+      () => null
+    );
+    if (res?.ok) return null;
+    const data = (await res?.json().catch(() => null)) as { error?: { message?: string } } | null;
+    return data?.error?.message ?? "error de red";
+  }
+
   async function submit() {
     if (!name.trim()) return;
     setSaving(true);
@@ -226,15 +240,23 @@ export function CourseForm({
       body: JSON.stringify(payload),
     }).catch(() => null);
 
-    setSaving(false);
     if (!res?.ok) {
+      setSaving(false);
       const body = (await res?.json().catch(() => null)) as {
         error?: { message?: string };
       } | null;
       notify.error(body?.error?.message ?? "No se pudo guardar el curso");
       return;
     }
-    notify.success(initial ? "Curso guardado." : "Curso creado.");
+    // La imagen va DESPUÉS de guardar los datos: en el alta recién ahí hay id.
+    const id = initial?.id ?? ((await res.json()) as { course: { id: string } }).course.id;
+    const imageError = await uploadImage(id);
+    setSaving(false);
+    if (imageError) {
+      notify.error(`El curso se guardó, pero la imagen no: ${imageError}`);
+    } else {
+      notify.success(initial ? "Curso guardado." : "Curso creado.");
+    }
     onSaved();
   }
 
@@ -443,12 +465,36 @@ export function CourseForm({
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="course-image">URL de la imagen</Label>
-              <Input
-                id="course-image"
-                value={imageUrl}
-                onChange={(e) => setImageUrl(e.target.value)}
-              />
+              <Label htmlFor="course-image">Imagen del curso</Label>
+              <div className="flex items-center gap-2.5">
+                {imageUrl && !imageFile && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={imageUrl}
+                    alt=""
+                    className="h-9 w-14 shrink-0 rounded object-cover"
+                  />
+                )}
+                <Input
+                  id="course-image"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={(e) => setImageFile(e.target.files?.[0] ?? null)}
+                />
+                {imageUrl && !imageFile && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setImageUrl("")}
+                    aria-label="Quitar imagen"
+                    title="Quitar imagen"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">JPG, PNG o WebP, hasta 5 MB.</p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="course-syllabus">URL del temario (PDF)</Label>
