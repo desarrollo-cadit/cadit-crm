@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -136,5 +138,34 @@ describe("borradorDeCorreccion", () => {
       { criterionId: "c3", points: null, comment: "" },
     ]);
     expect(b.textValues).toEqual([{ fieldId: "f1", value: "Cotas" }]);
+  });
+});
+
+/**
+ * T046 — Hallado en el navegador: la carga del panel podía llegar DESPUÉS de
+ * que el profesor ya estaba escribiendo y le vaciaba el formulario (el efecto
+ * corre dos veces en desarrollo, y la segunda respuesta pisaba lo cargado).
+ * Lo que mostraba la pantalla y lo que se iba a guardar dejaban de coincidir.
+ * Sin DOM en los tests, se fija la forma: el efecto cancela al desmontarse y
+ * la carga mira si sigue vigente después de CADA espera.
+ */
+describe("CorrectionPanel — una carga vieja no pisa lo que se está escribiendo", () => {
+  const src = readFileSync(
+    join(process.cwd(), "src/components/grading/correction-panel.tsx"),
+    "utf8"
+  );
+
+  it("el efecto de carga devuelve una limpieza que la invalida", () => {
+    expect(src).toMatch(
+      /useEffect\(\(\) => \{\s*let vigente = true;[\s\S]*?return \(\) => \{\s*vigente = false;\s*\};\s*\}, \[cargar\]\)/
+    );
+  });
+
+  it("después de cada await, la carga se descarta si ya no es vigente", () => {
+    const cuerpo = src.slice(src.indexOf("const cargar"), src.indexOf("useEffect("));
+    const esperas = cuerpo.match(/await /g)?.length ?? 0;
+    const chequeos = cuerpo.match(/if \(!sigue\(\)\) return;/g)?.length ?? 0;
+    expect(esperas).toBeGreaterThan(0);
+    expect(chequeos).toBe(esperas);
   });
 });

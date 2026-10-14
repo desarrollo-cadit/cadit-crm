@@ -54,14 +54,22 @@ export function CorrectionPanel({
   const [valor, setValor] = useState<CorreccionEnEdicion | null>(null);
   const [guardando, setGuardando] = useState(false);
 
-  const cargar = useCallback(async () => {
+  /*
+    `sigue` dice si esta carga todavía es la que vale. Una respuesta que llega
+    tarde —el efecto corre dos veces en desarrollo, o la red tarda— le
+    vaciaba el formulario a quien ya estaba corrigiendo: la pantalla mostraba
+    una cosa y se guardaba otra. Se mira después de CADA espera.
+  */
+  const cargar = useCallback(async (sigue: () => boolean = () => true) => {
     const res = await fetch(endpoint).catch(() => null);
+    if (!sigue()) return;
     if (!res?.ok) {
       // "No pude traerla" no se dibuja como "no hay corrección" (016/013).
       setFallo("No se pudo cargar la corrección.");
       return;
     }
     const data = (await res.json()) as Lectura;
+    if (!sigue()) return;
     setFallo(null);
     setLectura(data);
     // Se edita sobre lo que está en trámite; si no hay, sobre lo publicado
@@ -73,7 +81,11 @@ export function CorrectionPanel({
   }, [endpoint, entregaSugerida]);
 
   useEffect(() => {
-    void cargar();
+    let vigente = true;
+    void cargar(() => vigente);
+    return () => {
+      vigente = false;
+    };
   }, [cargar]);
 
   async function guardar(action: "draft" | "submit" | "publish") {
