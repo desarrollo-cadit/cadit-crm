@@ -13,6 +13,8 @@ import { PortalAttendanceSheet } from "@/components/portal/portal-attendance-she
 import { PortalOfflineAttempts } from "@/components/portal/portal-offline-attempts";
 import { PortalSubmissions } from "@/components/portal/portal-submissions";
 import { ZoomRecordingPlayer, isZoomRecording } from "@/components/portal/zoom-recording-player";
+import { CorrectionPanel } from "@/components/grading/correction-panel";
+import { admiteAtajo, plantillaDe, type Template } from "@/lib/grading-template";
 import { notify } from "@/lib/notify";
 
 type Cohort = {
@@ -60,8 +62,14 @@ type ClassesPayload = {
 type GradingPayload = {
   cohort: Cohort;
   editable: boolean;
-  assessments: { id: string; name: string; position: number; required: boolean }[];
-  students: { enrollmentId: string; name: string; results: Record<string, boolean | null> }[];
+  /** 031 — Cada evaluación trae su plantilla (escala, mínimo, aprobación…). */
+  assessments: ({ id: string; name: string; position: number; required: boolean } & Partial<Template>)[];
+  students: {
+    enrollmentId: string;
+    name: string;
+    results: Record<string, boolean | null>;
+    scores?: Record<string, number | null>;
+  }[];
 };
 
 type ContentPayload = {
@@ -436,6 +444,12 @@ function Clases({
 function Evaluacion({ cohortId }: { cohortId: string }) {
   const [datos, setDatos] = useState<GradingPayload | null>(null);
   const [fallo, setFallo] = useState(false);
+  const [corrigiendo, setCorrigiendo] = useState<{
+    assessmentId: string;
+    assessmentName: string;
+    enrollmentId: string;
+    studentName: string;
+  } | null>(null);
 
   const refetch = useCallback(async () => {
     const res = await fetch(`/api/portal/cohorts/${cohortId}/grading`).catch(() => null);
@@ -494,6 +508,23 @@ function Evaluacion({ cohortId }: { cohortId: string }) {
         </p>
       )}
 
+      {datos.editable && corrigiendo && (
+        <section className="space-y-2 rounded-lg border p-3">
+          <p className="text-sm font-medium">
+            Corrección · {corrigiendo.assessmentName} · {corrigiendo.studentName}
+          </p>
+          <CorrectionPanel
+            key={`${corrigiendo.assessmentId}-${corrigiendo.enrollmentId}`}
+            endpoint={`/api/portal/assessments/${corrigiendo.assessmentId}/corrections/${corrigiendo.enrollmentId}`}
+            onListo={() => {
+              setCorrigiendo(null);
+              void refetch();
+            }}
+            onCancelar={() => setCorrigiendo(null)}
+          />
+        </section>
+      )}
+
       <ul className="divide-y rounded-lg border">
         {datos.students.map((s) => (
           <li key={s.enrollmentId} className="space-y-2 p-3">
@@ -501,6 +532,54 @@ function Evaluacion({ cohortId }: { cohortId: string }) {
             <div className="space-y-2">
               {datos.assessments.map((a) => {
                 const v = s.results[a.id];
+                /*
+                  031 (DV-005) — Una numérica, o una que requiere aprobación,
+                  NO se carga con el desplegable: la ruta del atajo respondería
+                  422 `usar_correccion`. La fila muestra lo PUBLICADO y abre el
+                  formulario de corrección por la puerta del profesor — la
+                  misma decisión que la planilla del staff, con `admiteAtajo`.
+                */
+                if (!admiteAtajo(plantillaDe(a))) {
+                  const nota = s.scores?.[a.id] ?? null;
+                  const texto =
+                    nota !== null
+                      ? `${nota}/100`
+                      : v === true
+                        ? "Aprobado"
+                        : v === false
+                          ? "No aprobado"
+                          : "Sin corregir";
+                  const tono =
+                    v === true ? "text-success" : v === false ? "text-danger" : "text-muted-foreground";
+                  return (
+                    <div key={a.id} className="flex items-center justify-between gap-2">
+                      <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                        {a.name}
+                        {!a.required && " (opcional)"}
+                      </span>
+                      {datos.editable ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className={`h-11 w-32 text-xs ${tono}`}
+                          aria-label={`Corregir: ${s.name}, ${a.name}`}
+                          onClick={() =>
+                            setCorrigiendo({
+                              assessmentId: a.id,
+                              assessmentName: a.name,
+                              enrollmentId: s.enrollmentId,
+                              studentName: s.name,
+                            })
+                          }
+                        >
+                          {texto}
+                        </Button>
+                      ) : (
+                        <span className={`w-32 text-center text-xs ${tono}`}>{texto}</span>
+                      )}
+                    </div>
+                  );
+                }
                 return (
                   <div key={a.id} className="flex items-center justify-between gap-2">
                     <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">

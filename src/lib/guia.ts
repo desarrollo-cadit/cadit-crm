@@ -92,9 +92,7 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
   },
   "correcciones.aprobar": {
     que: "revisar las correcciones que mandan los profesores y publicarlas o devolverlas con un comentario",
-    // 031 — La bandeja `/correcciones` llega con la US4 (T034); hasta
-    // entonces este `donde` apunta a la planilla, que es una ruta real.
-    donde: "Académico → la cohorte → Evaluación",
+    donde: "/correcciones",
   },
   "certificados.emitir": {
     que: "emitir el certificado de un alumno que aprobó, imprimirlo y anularlo si se emitió por error",

@@ -10,6 +10,7 @@ import {
   validarCorreccion,
   type Template,
 } from "@/lib/grading-template";
+import { fullName } from "@/lib/utils";
 import { recordResults } from "@/server/grading";
 import { teacherCohortDetail, teacherReachesCohort } from "@/server/teacher-portal";
 
@@ -597,6 +598,336 @@ export async function evaluacionesCongeladas(
       )
     );
   return new Set(filas.map((f) => f.assessmentId));
+}
+
+/* ============================================================
+ * US4 (DV-012) — Aprobar o devolver antes de publicar
+ * ============================================================
+ * Enviar a aprobación no tiene función propia: es `guardarCorreccion` con
+ * `action: "submit"` (draft → pending, con quién y cuándo), porque enviar ES
+ * guardar —con la misma validación completa— y una segunda puerta de
+ * escritura sería otro lugar donde olvidarse de validar.
+ *
+ * Estas funciones las llaman SOLO rutas con `correcciones.aprobar`. No
+ * reciben la sesión ni preguntan capacidades: el permiso lo decide la ruta.
+ */
+
+export type PendienteDeAprobacion = {
+  id: string;
+  assessmentName: string;
+  cohortId: string;
+  cohortName: string;
+  studentName: string;
+  correctedByName: string | null;
+  submittedAt: string | null;
+  score: number | null;
+  passed: boolean | null;
+};
+
+export type DetalleParaAprobar = {
+  correction: CorrectionDto;
+  template: Template;
+  assessmentName: string;
+  studentName: string;
+  cohortName: string;
+  published: CorrectionDto | null;
+  submission: { url: string; title: string | null } | null;
+};
+
+/** Las columnas de la versión, más la plantilla de SU evaluación. */
+const columnasDeVersion = {
+  id: schema.correction.id,
+  assessmentId: schema.correction.assessmentId,
+  enrollmentId: schema.correction.enrollmentId,
+  submissionId: schema.correction.submissionId,
+  status: schema.correction.status,
+  score: schema.correction.score,
+  passed: schema.correction.passed,
+  feedback: schema.correction.feedback,
+  criterionScores: schema.correction.criterionScores,
+  textValues: schema.correction.textValues,
+  correctedBy: schema.correction.correctedBy,
+  submittedBy: schema.correction.submittedBy,
+  submittedAt: schema.correction.submittedAt,
+  reviewedBy: schema.correction.reviewedBy,
+  reviewedAt: schema.correction.reviewedAt,
+  reviewComment: schema.correction.reviewComment,
+  publishedAt: schema.correction.publishedAt,
+  scale: schema.assessment.scale,
+  minScore: schema.assessment.minScore,
+  requiresApproval: schema.assessment.requiresApproval,
+  criteria: schema.assessment.criteria,
+  textFields: schema.assessment.textFields,
+};
+
+async function versionConPlantilla(organizationId: string, correctionId: string) {
+  const filas = await getDb()
+    .select(columnasDeVersion)
+    .from(schema.correction)
+    .innerJoin(schema.assessment, eq(schema.assessment.id, schema.correction.assessmentId))
+    .where(
+      scoped(schema.correction.organizationId, organizationId, eq(schema.correction.id, correctionId))
+    )
+    .limit(1);
+  return filas[0] ?? null;
+}
+
+const SOLO_PENDIENTE = {
+  ok: false,
+  status: 409,
+  code: "estado_invalido",
+  message: "Esta corrección ya no está esperando aprobación.",
+} as const;
+
+const CORRECCION_NO_ENCONTRADA = {
+  ok: false,
+  status: 404,
+  code: "not_found",
+  message: "Corrección no encontrada",
+} as const;
+
+/**
+ * 031 (T032) — Aprueba una corrección pendiente: pending → published por
+ * `publicarCorreccion()`, la única puerta del resultado oficial.
+ *
+ * Antes de publicar la vuelve a validar contra la plantilla de HOY. Mientras
+ * esperaba, la plantilla pudo cambiar (no está congelada hasta la primera
+ * publicación): si subió el mínimo, la nota ya no aprueba, y publicar el
+ * `passed` que se calculó al enviar sería publicar una decisión vieja.
+ */
+export async function aprobarCorreccion(
+  organizationId: string,
+  correctionId: string,
+  userId: string
+): Promise<CorrectionResult<CorrectionDto>> {
+  const v = await versionConPlantilla(organizationId, correctionId);
+  if (!v) return CORRECCION_NO_ENCONTRADA;
+  if (v.status !== "pending") return SOLO_PENDIENTE;
+
+  const valida = validarCorreccion(
+    leerPlantilla(v),
+    {
+      score: v.score,
+      passed: v.passed,
+      criterionScores: v.criterionScores,
+      textValues: v.textValues,
+    },
+    "publish"
+  );
+  if (!valida.ok) {
+    return { ok: false, status: 422, code: valida.code, message: valida.mensaje };
+  }
+
+  const ahora = new Date();
+  await getDb()
+    .update(schema.correction)
+    .set({
+      score: valida.score,
+      passed: valida.passed,
+      reviewedBy: userId,
+      reviewedAt: ahora,
+      updatedAt: ahora,
+    })
+    .where(
+      scoped(schema.correction.organizationId, organizationId, eq(schema.correction.id, correctionId))
+    );
+
+  const publicada = await publicarCorreccion(organizationId, correctionId, userId);
+  const quienes = await nombres([publicada.correctedBy, userId]);
+  return {
+    ok: true,
+    data: aDto({ ...publicada, reviewedBy: userId, reviewedAt: ahora }, quienes),
+  };
+}
+
+/**
+ * 031 (T032, FR-019) — Devuelve una corrección pendiente al corrector:
+ * pending → draft, con el porqué. Sin comentario no se devuelve: "te la
+ * devolvieron" sin decir qué cambiar obliga a preguntar por fuera del sistema.
+ */
+export async function devolverCorreccion(
+  organizationId: string,
+  correctionId: string,
+  userId: string,
+  comentario: string
+): Promise<CorrectionResult<CorrectionDto>> {
+  const porque = comentario.trim();
+  const v = await versionConPlantilla(organizationId, correctionId);
+  if (!v) return CORRECCION_NO_ENCONTRADA;
+  if (!porque) {
+    return {
+      ok: false,
+      status: 422,
+      code: "comentario_obligatorio",
+      message: "Escribí por qué la devolvés: es lo que va a leer quien corrigió.",
+    };
+  }
+  if (v.status !== "pending") return SOLO_PENDIENTE;
+
+  const ahora = new Date();
+  const filas = await getDb()
+    .update(schema.correction)
+    .set({
+      status: "draft",
+      reviewComment: porque,
+      reviewedBy: userId,
+      reviewedAt: ahora,
+      updatedAt: ahora,
+    })
+    .where(
+      scoped(
+        schema.correction.organizationId,
+        organizationId,
+        // El estado va en el WHERE: si otro la aprobó entre la lectura y esta
+        // escritura, no se "des-publica" una corrección ya vigente.
+        and(eq(schema.correction.id, correctionId), eq(schema.correction.status, "pending"))
+      )
+    )
+    .returning();
+  const devuelta = filas[0];
+  if (!devuelta) return SOLO_PENDIENTE;
+  const quienes = await nombres([devuelta.correctedBy, userId]);
+  return { ok: true, data: aDto(devuelta, quienes) };
+}
+
+/** El nombre que se muestra de una cohorte: el propio o, si no tiene, el del curso. */
+const nombreDeCohorte = (f: { cohortName: string | null; courseName: string | null }) =>
+  f.cohortName ?? f.courseName ?? "";
+
+/** 031 (T032) — La bandeja: lo que espera aprobación, lo más viejo primero. */
+export async function listarPendientes(
+  organizationId: string,
+  filtro: { cohortId: string | null }
+): Promise<PendienteDeAprobacion[]> {
+  const filas = await getDb()
+    .select({
+      id: schema.correction.id,
+      assessmentName: schema.assessment.name,
+      cohortId: schema.cohort.id,
+      cohortName: schema.cohort.name,
+      courseName: schema.course.name,
+      firstName: schema.contact.firstName,
+      lastName: schema.contact.lastName,
+      correctedBy: schema.correction.correctedBy,
+      submittedAt: schema.correction.submittedAt,
+      score: schema.correction.score,
+      passed: schema.correction.passed,
+    })
+    .from(schema.correction)
+    .innerJoin(schema.assessment, eq(schema.assessment.id, schema.correction.assessmentId))
+    .innerJoin(schema.cohort, eq(schema.cohort.id, schema.assessment.cohortId))
+    .innerJoin(schema.course, eq(schema.course.id, schema.cohort.courseId))
+    .innerJoin(schema.enrollment, eq(schema.enrollment.id, schema.correction.enrollmentId))
+    .innerJoin(schema.contact, eq(schema.contact.id, schema.enrollment.contactId))
+    .where(
+      scoped(
+        schema.correction.organizationId,
+        organizationId,
+        and(
+          eq(schema.correction.status, "pending"),
+          filtro.cohortId ? eq(schema.cohort.id, filtro.cohortId) : undefined
+        )
+      )
+    )
+    .orderBy(schema.correction.submittedAt);
+
+  const quienes = await nombres(filas.map((f) => f.correctedBy));
+  return filas.map((f) => ({
+    id: f.id,
+    assessmentName: f.assessmentName,
+    cohortId: f.cohortId,
+    cohortName: nombreDeCohorte(f),
+    studentName: fullName(f),
+    correctedByName: (f.correctedBy && quienes.get(f.correctedBy)) || null,
+    submittedAt: iso(f.submittedAt),
+    score: f.score ?? null,
+    passed: f.passed ?? null,
+  }));
+}
+
+/**
+ * 031 (T032) — Todo lo que quien aprueba necesita para decidir: la versión en
+ * trámite, la plantilla, la vigente (si la hay, para comparar) y la entrega.
+ */
+export async function detalleParaAprobar(
+  organizationId: string,
+  correctionId: string
+): Promise<DetalleParaAprobar | null> {
+  const db = getDb();
+  const v = (
+    await db
+      .select({
+        ...columnasDeVersion,
+        assessmentName: schema.assessment.name,
+        cohortName: schema.cohort.name,
+        courseName: schema.course.name,
+        firstName: schema.contact.firstName,
+        lastName: schema.contact.lastName,
+      })
+      .from(schema.correction)
+      .innerJoin(schema.assessment, eq(schema.assessment.id, schema.correction.assessmentId))
+      .innerJoin(schema.cohort, eq(schema.cohort.id, schema.assessment.cohortId))
+      .innerJoin(schema.course, eq(schema.course.id, schema.cohort.courseId))
+      .innerJoin(schema.enrollment, eq(schema.enrollment.id, schema.correction.enrollmentId))
+      .innerJoin(schema.contact, eq(schema.contact.id, schema.enrollment.contactId))
+      .where(
+        scoped(
+          schema.correction.organizationId,
+          organizationId,
+          eq(schema.correction.id, correctionId)
+        )
+      )
+      .limit(1)
+  )[0];
+  if (!v) return null;
+
+  const [vigentes, entregas] = await Promise.all([
+    db
+      .select()
+      .from(schema.correction)
+      .where(
+        scoped(
+          schema.correction.organizationId,
+          organizationId,
+          and(
+            eq(schema.correction.assessmentId, v.assessmentId),
+            eq(schema.correction.enrollmentId, v.enrollmentId),
+            eq(schema.correction.status, "published")
+          )
+        )
+      )
+      .limit(1),
+    v.submissionId
+      ? db
+          .select({ url: schema.submission.url, title: schema.submission.title })
+          .from(schema.submission)
+          .where(
+            scoped(
+              schema.submission.organizationId,
+              organizationId,
+              eq(schema.submission.id, v.submissionId)
+            )
+          )
+          .limit(1)
+      : Promise.resolve([]),
+  ]);
+  const vigente = vigentes[0];
+  const quienes = await nombres([
+    v.correctedBy,
+    v.reviewedBy,
+    vigente?.correctedBy,
+    vigente?.reviewedBy,
+  ]);
+
+  return {
+    correction: aDto(v, quienes),
+    template: leerPlantilla(v),
+    assessmentName: v.assessmentName,
+    studentName: fullName(v),
+    cohortName: nombreDeCohorte(v),
+    published: vigente ? aDto(vigente, quienes) : null,
+    submission: entregas[0] ? { url: entregas[0].url, title: entregas[0].title ?? null } : null,
+  };
 }
 
 /* ============================================================

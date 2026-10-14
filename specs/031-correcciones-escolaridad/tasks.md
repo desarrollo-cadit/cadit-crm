@@ -69,11 +69,11 @@ Formato: `- [ ] T### [P?] [US?] descripción con ruta`. `[P]` = archivo distinto
 
 **Independent test**: profesor envía → alumno no ve, `grading` intacto; devolver con comentario → borrador; aprobar → publicada; editar publicada → la vieja sigue vigente.
 
-- [ ] T031 [P] [US4] Tests que fallan en `tests/unit/correcciones.test.ts`: `submit` → `pending`; `publish` sin permiso → 422 `requiere_aprobacion`; editar con `pending` → 409 `en_aprobacion`; aprobar → published + resultado; devolver sin comentario → 422, con comentario → draft; la publicada anterior sigue vigente mientras la nueva está en trámite; auditoría (quién/cuándo)
-- [ ] T032 [US4] `enviarCorreccion`, `aprobarCorreccion`, `devolverCorreccion`, `listarPendientes(orgId, { cohortId })`, `detalleParaAprobar` en `src/server/corrections.ts`
-- [ ] T033 [US4] Rutas `GET /api/corrections`, `GET /api/corrections/[id]`, `POST /api/corrections/[id]/approve`, `POST /api/corrections/[id]/return` con `requireCapability("correcciones.aprobar")` en `src/app/api/corrections/**`
-- [ ] T034 [P] [US4] Bandeja (lista filtrable por cohorte + detalle con la corrección y la entrega + aprobar/devolver) en `src/components/grading/correction-inbox.tsx` y página `src/app/(app)/correcciones/page.tsx`
-- [ ] T035 [US4] Entrada "Correcciones" en la barra lateral por capacidad en `src/lib/nav.ts`
+- [x] T031 [P] [US4] Tests que fallan en `tests/unit/correcciones.test.ts`: `submit` → `pending`; `publish` sin permiso → 422 `requiere_aprobacion`; editar con `pending` → 409 `en_aprobacion`; aprobar → published + resultado; devolver sin comentario → 422, con comentario → draft; la publicada anterior sigue vigente mientras la nueva está en trámite; auditoría (quién/cuándo)
+- [x] T032 [US4] `enviarCorreccion`, `aprobarCorreccion`, `devolverCorreccion`, `listarPendientes(orgId, { cohortId })`, `detalleParaAprobar` en `src/server/corrections.ts`
+- [x] T033 [US4] Rutas `GET /api/corrections`, `GET /api/corrections/[id]`, `POST /api/corrections/[id]/approve`, `POST /api/corrections/[id]/return` con `requireCapability("correcciones.aprobar")` en `src/app/api/corrections/**`
+- [x] T034 [P] [US4] Bandeja (lista filtrable por cohorte + detalle con la corrección y la entrega + aprobar/devolver) en `src/components/grading/correction-inbox.tsx` y página `src/app/(app)/correcciones/page.tsx`
+- [x] T035 [US4] Entrada "Correcciones" en la barra lateral por capacidad en `src/lib/nav.ts`
 
 ## Phase 7: US5 — Escolaridad generada automáticamente (P2)
 

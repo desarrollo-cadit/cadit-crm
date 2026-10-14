@@ -4,6 +4,7 @@ import {
   Building2,
   CalendarClock,
   CalendarDays,
+  ClipboardCheck,
   GraduationCap,
   Inbox,
   Kanban,
@@ -82,6 +83,17 @@ export const NAV_GROUPS = [
     items: [
       { href: "/academico", label: "Académico", icon: GraduationCap, capability: "academico.ver" },
       { href: "/calendar", label: "Calendario", icon: CalendarDays, capability: "academico.ver" },
+      /**
+       * 031 (US4, DV-012) — Las correcciones que esperan aprobación. Solo con
+       * `correcciones.aprobar`: quien no puede aprobar no tiene nada que hacer
+       * en una bandeja de aprobación.
+       */
+      {
+        href: "/correcciones",
+        label: "Correcciones",
+        icon: ClipboardCheck,
+        capability: "correcciones.aprobar",
+      },
       // cursos-offline — The imported LearnDash library. `academico.ver` and
       // not a capability of its own: it is course content, which is what that
       // capability already governs (no role data migration).

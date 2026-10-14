@@ -134,7 +134,11 @@ vi.mock("@/server/grading", async (original) => ({
 }));
 
 const {
+  aprobarCorreccion,
+  detalleParaAprobar,
+  devolverCorreccion,
   evaluacionesCongeladas,
+  listarPendientes,
   guardarCorreccion,
   guardarCorreccionDelProfesor,
   leerCorreccion,
@@ -603,5 +607,231 @@ describe("DV-010 — el alumno ve solo lo publicado, y solo lo suyo", () => {
 
     const r = await correccionesPublicadasDeCursada(ORG, "ct_1", ENR);
     expect(r).toEqual({ assessments: [] });
+  });
+});
+
+/* ============================================================
+ * T031 (US4, DV-012) — Aprobar o devolver antes de publicar
+ * ============================================================ */
+
+describe("US4 — el circuito de aprobación", () => {
+  const CON_APROBACION = { ...NUMERICA, requiresApproval: true };
+
+  /** La versión pendiente tal como la lee la bandeja: con la plantilla de su evaluación. */
+  const PENDIENTE = {
+    id: "cor_p",
+    assessmentId: ASM,
+    enrollmentId: ENR,
+    submissionId: null,
+    status: "pending",
+    score: 80,
+    passed: true,
+    feedback: "Bien",
+    criterionScores: [
+      { criterionId: "c1", points: 35, comment: null },
+      { criterionId: "c2", points: 20, comment: null },
+      { criterionId: "c3", points: 25, comment: null },
+    ],
+    textValues: [],
+    correctedBy: "usr_profe",
+    submittedBy: "usr_profe",
+    submittedAt: new Date("2026-10-10T12:00:00.000Z"),
+    reviewComment: null,
+    scale: "numeric",
+    minScore: 60,
+    requiresApproval: true,
+    criteria: NUMERICA.criteria,
+    textFields: [],
+  };
+
+  it("la publicada anterior sigue vigente mientras la nueva está en trámite (FR-021)", async () => {
+    contexto(CON_APROBACION);
+    responder("correction", []); // en trámite: nada (la publicada no cuenta)
+
+    const r = await guardarCorreccion(
+      ORG,
+      ASM,
+      ENR,
+      "usr_profe",
+      { action: "submit", criterionScores: PUNTAJES_80 },
+      false
+    );
+
+    expect(r.ok).toBe(true);
+    // Nadie tocó la vigente: ni `superseded` ni resultado oficial.
+    const estados = escriturasEn("correction").map((e) => e.data.status);
+    expect(estados).toEqual(["pending"]);
+    expect(llamadasAResultados).toEqual([]);
+
+    // Y la lectura muestra las dos a la vez.
+    contexto(CON_APROBACION);
+    responder("correction", [
+      { id: "cor_vieja", status: "published", score: 70, passed: true },
+      { id: "cor_p", status: "pending", score: 80, passed: true },
+    ]);
+    responder("submission", []);
+    const l = await leerCorreccion(ORG, ASM, ENR, false);
+    expect(l?.published?.id).toBe("cor_vieja");
+    expect(l?.inProgress).toMatchObject({ id: "cor_p", status: "pending" });
+  });
+
+  it("aprobar publica por la única puerta y deja quién y cuándo revisó", async () => {
+    responder("correction", [PENDIENTE]); // la aprobación la lee
+    responder("correction", [{ ...PENDIENTE }]); // publicarCorreccion la relee
+    filaDeUpdate = { ...PENDIENTE };
+
+    const r = await aprobarCorreccion(ORG, "cor_p", "usr_coord");
+
+    expect(r.ok).toBe(true);
+    const revision = escriturasEn("correction").find((e) => "reviewedBy" in e.data);
+    expect(revision?.data).toMatchObject({ reviewedBy: "usr_coord", score: 80, passed: true });
+    expect(revision?.data.reviewedAt).toBeInstanceOf(Date);
+    const estados = escriturasEn("correction")
+      .filter((e) => "status" in e.data)
+      .map((e) => e.data.status);
+    expect(estados).toEqual(["superseded", "published"]);
+    expect(llamadasAResultados).toEqual([
+      {
+        assessmentId: ASM,
+        entries: [{ enrollmentId: ENR, passed: true, score: 80 }],
+        opciones: { origen: "correccion" },
+      },
+    ]);
+  });
+
+  it("aprobar recalcula con la plantilla de HOY: si el mínimo subió, la nota ya no aprueba", async () => {
+    responder("correction", [{ ...PENDIENTE, minScore: 90 }]);
+    responder("correction", [{ ...PENDIENTE, passed: false }]);
+
+    const r = await aprobarCorreccion(ORG, "cor_p", "usr_coord");
+
+    expect(r.ok).toBe(true);
+    const revision = escriturasEn("correction").find((e) => "reviewedBy" in e.data);
+    expect(revision?.data).toMatchObject({ score: 80, passed: false });
+    expect(llamadasAResultados[0]?.entries).toEqual([
+      { enrollmentId: ENR, passed: false, score: 80 },
+    ]);
+  });
+
+  it("una pendiente que ya no cierra con la plantilla de hoy no se publica: 422", async () => {
+    responder("correction", [{ ...PENDIENTE, criterionScores: [] }]);
+    const r = await aprobarCorreccion(ORG, "cor_p", "usr_coord");
+    expect(r).toMatchObject({ ok: false, status: 422, code: "correccion_incompleta" });
+    expect(escrituras).toEqual([]);
+  });
+
+  it("solo se aprueba lo pendiente: un borrador es 409 `estado_invalido` y no escribe", async () => {
+    responder("correction", [{ ...PENDIENTE, status: "draft" }]);
+    const r = await aprobarCorreccion(ORG, "cor_p", "usr_coord");
+    expect(r).toMatchObject({ ok: false, status: 409, code: "estado_invalido" });
+    expect(escrituras).toEqual([]);
+    expect(llamadasAResultados).toEqual([]);
+  });
+
+  it("una corrección que no existe (u otra organización) es 404", async () => {
+    expect(await aprobarCorreccion(ORG, "cor_x", "usr_coord")).toMatchObject({
+      ok: false,
+      status: 404,
+    });
+    expect(await devolverCorreccion(ORG, "cor_x", "usr_coord", "Revisá")).toMatchObject({
+      ok: false,
+      status: 404,
+    });
+  });
+
+  it("devolver sin comentario → 422 y no escribe", async () => {
+    responder("correction", [PENDIENTE]);
+    const r = await devolverCorreccion(ORG, "cor_p", "usr_coord", "   ");
+    expect(r).toMatchObject({ ok: false, status: 422, code: "comentario_obligatorio" });
+    expect(escrituras).toEqual([]);
+  });
+
+  it("devolver con comentario vuelve a borrador, con quién, cuándo y por qué; no publica", async () => {
+    responder("correction", [PENDIENTE]);
+    filaDeUpdate = { ...PENDIENTE };
+
+    const r = await devolverCorreccion(ORG, "cor_p", "usr_coord", "  Revisá el render  ");
+
+    expect(r.ok).toBe(true);
+    const upd = escriturasEn("correction")[0]?.data;
+    expect(upd).toMatchObject({
+      status: "draft",
+      reviewComment: "Revisá el render",
+      reviewedBy: "usr_coord",
+    });
+    expect(upd?.reviewedAt).toBeInstanceOf(Date);
+    expect(llamadasAResultados).toEqual([]);
+    if (r.ok) expect(r.data.status).toBe("draft");
+  });
+
+  it("devolver algo que no está pendiente es 409 `estado_invalido`", async () => {
+    responder("correction", [{ ...PENDIENTE, status: "published" }]);
+    const r = await devolverCorreccion(ORG, "cor_p", "usr_coord", "Revisá");
+    expect(r).toMatchObject({ ok: false, status: 409, code: "estado_invalido" });
+    expect(escrituras).toEqual([]);
+  });
+
+  it("la bandeja lista lo pendiente con alumno, cohorte y quién la corrigió", async () => {
+    responder("correction", [
+      {
+        id: "cor_p",
+        assessmentName: "Trabajo final",
+        cohortId: "coh_1",
+        cohortName: null,
+        courseName: "Revit",
+        firstName: "Ana",
+        lastName: "Pérez",
+        correctedBy: "usr_profe",
+        submittedAt: new Date("2026-10-10T12:00:00.000Z"),
+        score: 80,
+        passed: true,
+      },
+    ]);
+    responder("user", [{ id: "usr_profe", name: "Profe Uno" }]);
+
+    const items = await listarPendientes(ORG, { cohortId: null });
+
+    expect(items).toEqual([
+      {
+        id: "cor_p",
+        assessmentName: "Trabajo final",
+        cohortId: "coh_1",
+        cohortName: "Revit",
+        studentName: "Ana Pérez",
+        correctedByName: "Profe Uno",
+        submittedAt: "2026-10-10T12:00:00.000Z",
+        score: 80,
+        passed: true,
+      },
+    ]);
+  });
+
+  it("el detalle trae la corrección, su plantilla, la vigente y la entrega", async () => {
+    responder("correction", [
+      {
+        ...PENDIENTE,
+        submissionId: "sub_1",
+        assessmentName: "Trabajo final",
+        cohortName: "Revit 2026",
+        courseName: "Revit",
+        firstName: "Ana",
+        lastName: null,
+      },
+    ]);
+    responder("correction", [{ id: "cor_vieja", status: "published", score: 70, passed: true }]);
+    responder("submission", [{ url: "https://ejemplo.uy/tp", title: "TP final" }]);
+
+    const d = await detalleParaAprobar(ORG, "cor_p");
+
+    expect(d).toMatchObject({
+      assessmentName: "Trabajo final",
+      studentName: "Ana",
+      cohortName: "Revit 2026",
+      correction: { id: "cor_p", status: "pending", score: 80 },
+      template: { scale: "numeric", minScore: 60, requiresApproval: true },
+      published: { id: "cor_vieja" },
+      submission: { url: "https://ejemplo.uy/tp", title: "TP final" },
+    });
+    expect(await detalleParaAprobar(ORG, "cor_x")).toBeNull();
   });
 });

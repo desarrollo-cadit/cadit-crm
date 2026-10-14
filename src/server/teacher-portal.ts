@@ -619,6 +619,12 @@ export type TeacherGradingDto = {
     enrollmentId: string;
     name: string;
     results: Record<string, boolean | null>;
+    /**
+     * 031 — La nota PUBLICADA de cada evaluación numérica (null si no hay):
+     * la celda la muestra y abre la corrección. Es lo mismo que el alumno ya
+     * ve en su portal; no es un dato de staff.
+     */
+    scores: Record<string, number | null>;
   }[];
 };
 
@@ -649,6 +655,7 @@ export async function teacherCohortGrading(
       enrollmentId: s.enrollmentId,
       name: s.contactName,
       results: s.results,
+      scores: s.scores,
     })),
   };
 }
