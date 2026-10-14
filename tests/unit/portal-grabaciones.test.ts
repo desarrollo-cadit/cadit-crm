@@ -99,6 +99,8 @@ describe("030 US6 — los portales no leen las tablas de Zoom", () => {
         "me/cuenta/route.ts",
         "me/cursadas/[id]/route.ts",
         "me/entregas/route.ts",
+        // 031 — la escolaridad imprimible del alumno; no lee tablas de Zoom.
+        "me/escolaridad/print/route.ts",
         "me/offline-courses/[id]/quizzes/[quizId]/attempts/route.ts",
         "me/offline-courses/[id]/quizzes/[quizId]/route.ts",
         "me/offline-courses/[id]/route.ts",

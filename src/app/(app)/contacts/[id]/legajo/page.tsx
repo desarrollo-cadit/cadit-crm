@@ -57,6 +57,7 @@ export default async function LegajoPage({
           contactId={id}
           canEnroll={caps.includes("inscripciones.editar")}
           canAudit={caps.includes("alumnos.auditoria")}
+          canPrintTranscript={caps.includes("academico.ver")}
         />
       </div>
     </div>

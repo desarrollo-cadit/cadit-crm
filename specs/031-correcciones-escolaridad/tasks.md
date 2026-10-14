@@ -79,13 +79,13 @@ Formato: `- [ ] T### [P?] [US?] descripción con ruta`. `[P]` = archivo distinto
 
 **Independent test**: alumno con un curso aprobado y otro en curso: ambos con notas y estados correctos; "Pendiente" ≠ "No aprobada"; HTML escapado e imprimible para staff y alumno.
 
-- [ ] T036 [P] [US5] Test que falla `tests/unit/escolaridad.test.ts`: `armarEscolaridad` (pendiente nunca desaprobada, `sin_datos`, opcional no define estado, especialización con módulos vía `programApprovalState`, orden cronológico, sin nota ponderada) y `renderEscolaridadHtml` (escapa nombres, sin cobranza/teléfono/correo, muestra `N/100`)
-- [ ] T037 [US5] `armarEscolaridad` y `renderEscolaridadHtml` en `src/lib/escolaridad.ts` usando `estadoDeModulo`/`programApprovalState` de `src/server/grading.ts` (o moviendo los puros a `src/lib` si importar desde server rompe la pureza)
-- [ ] T038 [US5] `escolaridadDeContacto(orgId, contactId)` en `src/server/transcript.ts` (cursadas, cohortes, cursos, evaluaciones, resultados oficiales con `score`, asistencia con `attendancePercentage`, dispensas, nombre de la academia, `national_id`); no importa `student-record.ts`
-- [ ] T039 [US5] Ruta staff `GET /api/contacts/[id]/escolaridad/print` (`academico.ver`) en `src/app/api/contacts/[id]/escolaridad/print/route.ts`
-- [ ] T040 [US5] Ruta alumno `GET /api/portal/me/escolaridad/print` (`requireStudentPortal`) en `src/app/api/portal/me/escolaridad/print/route.ts`
-- [ ] T041 [P] [US5] Enlace "Escolaridad" en el legajo en `src/components/contacts/student-record-client.tsx`
-- [ ] T042 [P] [US5] Tarjeta "Mi escolaridad" en el portal del alumno en `src/components/portal/student-dashboard.tsx`
+- [x] T036 [P] [US5] Test que falla `tests/unit/escolaridad.test.ts`: `armarEscolaridad` (pendiente nunca desaprobada, `sin_datos`, opcional no define estado, especialización con módulos vía `programApprovalState`, orden cronológico, sin nota ponderada) y `renderEscolaridadHtml` (escapa nombres, sin cobranza/teléfono/correo, muestra `N/100`)
+- [x] T037 [US5] `armarEscolaridad` y `renderEscolaridadHtml` en `src/lib/escolaridad.ts` usando `estadoDeModulo`/`programApprovalState` de `src/server/grading.ts` (o moviendo los puros a `src/lib` si importar desde server rompe la pureza)
+- [x] T038 [US5] `escolaridadDeContacto(orgId, contactId)` en `src/server/transcript.ts` (cursadas, cohortes, cursos, evaluaciones, resultados oficiales con `score`, asistencia con `attendancePercentage`, dispensas, nombre de la academia, `national_id`); no importa `student-record.ts`
+- [x] T039 [US5] Ruta staff `GET /api/contacts/[id]/escolaridad/print` (`academico.ver`) en `src/app/api/contacts/[id]/escolaridad/print/route.ts`
+- [x] T040 [US5] Ruta alumno `GET /api/portal/me/escolaridad/print` (`requireStudentPortal`) en `src/app/api/portal/me/escolaridad/print/route.ts`
+- [x] T041 [P] [US5] Enlace "Escolaridad" en el legajo en `src/components/contacts/student-record-client.tsx`
+- [x] T042 [P] [US5] Tarjeta "Mi escolaridad" en el portal del alumno en `src/components/portal/student-dashboard.tsx`
 
 ## Phase 8: Polish & cierre
 

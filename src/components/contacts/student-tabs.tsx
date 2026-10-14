@@ -16,12 +16,15 @@ export function StudentTabs({
   contactId,
   canEnroll,
   canAudit,
+  canPrintTranscript = false,
 }: {
   contactId: string;
   /** `inscripciones.editar`: el botón «Inscribir en una cohorte». */
   canEnroll: boolean;
   /** `alumnos.auditoria`: la pestaña «Administración». */
   canAudit: boolean;
+  /** 031 — `academico.ver`: el enlace «Escolaridad». */
+  canPrintTranscript?: boolean;
 }) {
   const [tab, setTab] = useState<"record" | "admin">("record");
 
@@ -55,7 +58,11 @@ export function StudentTabs({
         {tab === "admin" && canAudit ? (
           <StudentAdminActivityClient contactId={contactId} />
         ) : (
-          <StudentRecordClient contactId={contactId} canEnroll={canEnroll} />
+          <StudentRecordClient
+            contactId={contactId}
+            canEnroll={canEnroll}
+            canPrintTranscript={canPrintTranscript}
+          />
         )}
       </div>
     </div>

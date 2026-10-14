@@ -8,6 +8,7 @@ import {
   CalendarClock,
   ChevronRight,
   CircleAlert,
+  FileText,
   KeyRound,
   MapPin,
   UserRound,
@@ -276,6 +277,12 @@ export function StudentDashboard() {
                 <CertificateCard key={c.code} cert={c} />
               ))}
             </div>
+          </section>
+        )}
+        {data.courses.length > 0 && (
+          <section className="flex flex-col gap-4">
+            <TituloDeSeccion>Mi escolaridad</TituloDeSeccion>
+            <EscolaridadCard />
           </section>
         )}
       </div>
@@ -874,6 +881,36 @@ function LicenseCard({
 /* ============================================================
  * US6 — Mi certificado
  * ============================================================ */
+
+/**
+ * 031 (T042, US5) — "Mi escolaridad": el documento con todas las cursadas y
+ * sus notas, generado al momento. Se abre en otra pestaña porque es HTML para
+ * imprimir (Imprimir → Guardar como PDF), no una pantalla del portal; por eso
+ * es un `<a>` y no un `Link`.
+ */
+function EscolaridadCard() {
+  return (
+    <PortalCard className="flex items-center justify-between gap-4 py-4">
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-tint text-brand-text">
+          <FileText className="h-5 w-5" strokeWidth={1.7} />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold">Tus cursos y notas en un documento</p>
+          <p className="text-xs text-text-3">Para imprimir o guardar como PDF.</p>
+        </div>
+      </div>
+      <a
+        href="/api/portal/me/escolaridad/print"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex min-h-9 shrink-0 items-center rounded-md border border-border-strong px-3 text-sm font-semibold transition-colors hover:bg-accent"
+      >
+        Abrir
+      </a>
+    </PortalCard>
+  );
+}
 
 function CertificateCard({
   cert,

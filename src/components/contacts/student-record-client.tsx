@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Award, GraduationCap } from "lucide-react";
+import { Award, FileText, GraduationCap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EnrollLauncher } from "@/components/enrollments/enroll-launcher";
@@ -63,10 +63,16 @@ const APROBACION: Record<RecordCourse["approval"], { label: string; variant: "de
 export function StudentRecordClient({
   contactId,
   canEnroll = false,
+  canPrintTranscript = false,
 }: {
   contactId: string;
   /** Resuelto en el servidor: `inscripciones.editar`. */
   canEnroll?: boolean;
+  /**
+   * 031 (T041) — Resuelto en el servidor: `academico.ver`, la capacidad de la
+   * ruta de la escolaridad. Sin ella el enlace no se dibuja: llevaría a un 403.
+   */
+  canPrintTranscript?: boolean;
 }) {
   const [data, setData] = useState<StudentRecord | null>(null);
   const [loading, setLoading] = useState(true);
@@ -118,6 +124,21 @@ export function StudentRecordClient({
             "Sin documento cargado"
           )}
         </p>
+        {canPrintTranscript && data.courses.length > 0 && (
+          /*
+            031 (T041) — Abre el documento en otra pestaña para imprimirlo:
+            es HTML de la ruta, no una pantalla de la app.
+          */
+          <a
+            href={`/api/contacts/${contactId}/escolaridad/print`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent"
+          >
+            <FileText className="h-4 w-4" aria-hidden />
+            Escolaridad
+          </a>
+        )}
         {canEnroll && (
           <EnrollLauncher
             className="flex flex-col items-end"
