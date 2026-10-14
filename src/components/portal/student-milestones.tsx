@@ -48,7 +48,9 @@ const ESTILO: Record<
     Icon: Circle,
     punto: "border-brand bg-background text-brand",
     texto: "font-semibold text-foreground",
-    rotulo: "Etapa actual",
+    // Es el PRIMER hito pendiente con fecha: lo que viene, no algo en marcha.
+    // "Etapa actual" sobre una fecha futura hacía creer que el curso iba por ahí.
+    rotulo: "Próximo",
   },
   pendiente: {
     Icon: CircleDashed,

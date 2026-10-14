@@ -24,7 +24,12 @@ import {
   type AnnouncementDto,
   type ResourceDto,
 } from "@/server/resources";
-import type { MeetingWindow } from "@/lib/schedule-time";
+import {
+  ACADEMY_TIME_ZONE,
+  classEndsAt,
+  classHasEnded,
+  type MeetingWindow,
+} from "@/lib/schedule-time";
 
 /**
  * 015 — El ALCANCE del alumno: qué puede ver de sí mismo.
@@ -426,6 +431,7 @@ export async function studentOverview(
     resultados,
     certificados,
     licencias,
+    timezone: clock.timezone,
   };
 
   /**
@@ -476,6 +482,8 @@ export async function studentOverview(
 }
 
 type CrossData = {
+  /** Zona de la academia: decide cuándo TERMINÓ una clase (`classHasEnded`). */
+  timezone: string;
   sesiones: (typeof schema.classSession.$inferSelect)[];
   asistencias: (typeof schema.attendance.$inferSelect)[];
   evaluaciones: (typeof schema.assessment.$inferSelect)[];
@@ -521,7 +529,7 @@ function buildCourse(
    * la cuenta oficial de 009/010): esto es lo que se MUESTRA mientras la
    * cursada está en marcha.
    */
-  const dictadas = elegibles.filter((c) => c.date.getTime() <= now.getTime());
+  const dictadas = elegibles.filter((c) => classHasEnded(c, data.timezone, now));
   const presentes = dictadas.filter((c) => {
     const marca = misMarcas.find((a) => a.classSessionId === c.id)?.status;
     return marca === "presente" || marca === "tarde";
@@ -620,7 +628,7 @@ function buildCourse(
      */
     totalClasses: clases.filter((c) => !c.canceledAt).length,
     completedClasses: clases.filter(
-      (c) => !c.canceledAt && c.date.getTime() <= now.getTime()
+      (c) => !c.canceledAt && classHasEnded(c, data.timezone, now)
     ).length,
     minAttendancePct,
     approval: sinDatos ? "sin_datos" : state,
@@ -1063,6 +1071,7 @@ export async function studentCourseDetail(
     resultados,
     certificados,
     licencias,
+    timezone: clock.timezone,
   };
 
   const camadas = await nombresDeCamadasAjenas(
@@ -1155,7 +1164,11 @@ export async function studentCourseDetail(
     enrolledAt: mia.enrollment.enrolledAt,
     classes: sesiones
       .filter((s) => !s.canceledAt && s.cohortId === propia)
-      .map((s) => ({ date: s.date, number: s.number })),
+      .map((s) => ({
+        date: s.date,
+        number: s.number,
+        endsAt: classEndsAt(s.date, s.endTime, clock.timezone),
+      })),
     attendancePct: course.attendancePct,
     minAttendancePct: course.minAttendancePct,
     attendanceWaived: dispensaDeInscripcion(mia.enrollment) !== null,
@@ -1608,8 +1621,11 @@ export type StudentMilestone = {
  */
 export function buildMilestones(input: {
   enrolledAt: Date | null;
-  /** Clases NO canceladas, ordenadas por fecha. */
-  classes: { date: Date; number: number }[];
+  /**
+   * Clases NO canceladas, ordenadas por fecha. `endsAt` es cuándo TERMINA
+   * (`classEndsAt`); sin él se toma el final del día en la academia.
+   */
+  classes: { date: Date; number: number; endsAt?: Date }[];
   attendancePct: number | null;
   minAttendancePct: number | null;
   /**
@@ -1638,6 +1654,12 @@ export function buildMilestones(input: {
   const hitos: StudentMilestone[] = [];
   const ahora = input.now.getTime();
   const paso = (d: Date | null) => d !== null && d.getTime() <= ahora;
+  /**
+   * Una clase se cumplió cuando TERMINÓ, no cuando arrancó su día: el día
+   * viaja como medianoche UTC, que en Montevideo es la noche anterior.
+   */
+  const termino = (c: { date: Date; endsAt?: Date }) =>
+    paso(c.endsAt ?? classEndsAt(c.date, null, ACADEMY_TIME_ZONE));
 
   /* -- Arranque -------------------------------------------- */
   if (input.enrolledAt) {
@@ -1719,7 +1741,7 @@ export function buildMilestones(input: {
       key: "primera-clase",
       label: "Primera clase",
       detail: null,
-      state: paso(primera.date) ? "cumplido" : "pendiente",
+      state: termino(primera) ? "cumplido" : "pendiente",
       at: primera.date.toISOString(),
     });
   }
@@ -1731,7 +1753,7 @@ export function buildMilestones(input: {
       key: "mitad",
       label: "Mitad del curso",
       detail: `Clase ${mitad.number} de ${clases.length}`,
-      state: paso(mitad.date) ? "cumplido" : "pendiente",
+      state: termino(mitad) ? "cumplido" : "pendiente",
       at: mitad.date.toISOString(),
     });
   }
@@ -1788,7 +1810,7 @@ export function buildMilestones(input: {
       key: "ultima-clase",
       label: "Última clase",
       detail: null,
-      state: paso(ultima.date) ? "cumplido" : "pendiente",
+      state: termino(ultima) ? "cumplido" : "pendiente",
       at: ultima.date.toISOString(),
     });
   }

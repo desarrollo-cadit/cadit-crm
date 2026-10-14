@@ -106,6 +106,39 @@ export function classInstant(
   }
 }
 
+/**
+ * Cuándo TERMINA una clase: su hora de fin en la zona de la academia, o —sin
+ * horario cargado— el final de ese día en la academia.
+ *
+ * Existe porque comparar `class_session.date` contra "ahora" miente: el día se
+ * guarda como medianoche UTC, que en Montevideo son las 21:00 del día ANTERIOR.
+ * Con esa cuenta, la clase del 14 de octubre figuraba como dada desde la noche
+ * del 13. "¿Ya se dio esta clase?" se pregunta SIEMPRE con esta función.
+ */
+export function classEndsAt(
+  day: Date,
+  endTime: string | null | undefined,
+  timeZone: string
+): Date {
+  const fin = classInstant(day, endTime, timeZone);
+  if (fin) return fin;
+  const ultimoMinuto = classInstant(day, "23:59", timeZone);
+  if (ultimoMinuto) return new Date(ultimoMinuto.getTime() + 60_000);
+  // Zona inválida: el final del día en UTC, nunca antes de que empiece.
+  return new Date(
+    Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate() + 1)
+  );
+}
+
+/** ¿La clase ya terminó en este instante? */
+export function classHasEnded(
+  klass: { date: Date; endTime?: string | null },
+  timeZone: string,
+  now: Date
+): boolean {
+  return classEndsAt(klass.date, klass.endTime, timeZone).getTime() <= now.getTime();
+}
+
 /** La zona de la academia; la de `organization.timezone` por defecto. */
 export const ACADEMY_TIME_ZONE = "America/Montevideo";
 

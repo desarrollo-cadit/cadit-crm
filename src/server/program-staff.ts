@@ -5,6 +5,7 @@ import { fullName } from "@/lib/utils";
 import type { Capability } from "@/lib/capabilities";
 import { attendanceByModule, resolveMinAttendance } from "@/server/attendance";
 import { listProgramClasses } from "@/server/classes";
+import { ACADEMY_TIME_ZONE, classEndsAt } from "@/lib/schedule-time";
 import {
   dispensaDeInscripcion,
   estadoDeModulo,
@@ -117,7 +118,13 @@ type FilaDeModulo = {
 type ClasesDelModulo = {
   projected: boolean;
   cannotGenerateReason: string | null;
-  classes: readonly { id: string | null; projected: boolean; date: string; canceled: boolean }[];
+  classes: readonly {
+    id: string | null;
+    projected: boolean;
+    date: string;
+    endsAt?: string | null;
+    canceled: boolean;
+  }[];
 };
 
 /**
@@ -162,7 +169,12 @@ export function armarModulosDeCamada(
       minAttendancePct: m.minAttendancePct,
       clases: {
         total: clases?.classes.length ?? 0,
-        dictadas: reales.filter((c) => !c.canceled && new Date(c.date) <= ahora).length,
+        // Dictada = TERMINADA (`classEndsAt`), no "empezó su día en UTC".
+        dictadas: reales.filter(
+          (c) =>
+            !c.canceled &&
+            (c.endsAt ? new Date(c.endsAt) : classEndsAt(new Date(c.date), null, ACADEMY_TIME_ZONE)) <= ahora
+        ).length,
         canceladas: reales.filter((c) => c.canceled).length,
         // Sin ninguna fila REAL no hay cronograma, aunque haya proyección.
         sinCronograma: reales.length === 0,
