@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { ChipDeEstado } from "@/components/portal/campus";
-import { Clock, ExternalLink, MessageSquare, Upload } from "lucide-react";
+import { ClipboardCheck, Clock, ExternalLink, MessageSquare, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -46,6 +46,30 @@ type EvaluacionConEntregas = {
   estado: Estado;
   puedeEntregar: boolean;
   entregas: Entrega[];
+};
+
+/**
+ * 031 (DV-010) — Una corrección PUBLICADA, como la manda
+ * `/api/portal/me/correcciones`. Sin estado ni circuito de aprobación: lo que
+ * no está publicado no llega, así que no hay nada que esconder acá.
+ */
+export type CorreccionPublicada = {
+  assessmentId: string;
+  scale: "pass_fail" | "numeric";
+  minScore: number | null;
+  criteria: { id: string; name: string; maxPoints: number }[];
+  textFields: { id: string; name: string; required: boolean }[];
+  correction: {
+    id: string;
+    submissionId: string | null;
+    score: number | null;
+    passed: boolean | null;
+    feedback: string | null;
+    criterionScores: { criterionId: string; points: number | null; comment: string | null }[];
+    textValues: { fieldId: string; value: string }[];
+    correctedByName: string | null;
+    publishedAt: string | null;
+  };
 };
 
 type AssessmentResumen = {
@@ -96,12 +120,15 @@ export function StudentSubmissions({
   academyZone: string;
 }) {
   const [datos, setDatos] = useState<EvaluacionConEntregas[] | null>(null);
+  const [correcciones, setCorrecciones] = useState<CorreccionPublicada[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const refetch = useCallback(async () => {
-    const res = await fetch(
-      `/api/portal/me/entregas?cursada=${encodeURIComponent(enrollmentId)}`
-    ).catch(() => null);
+    const cursada = encodeURIComponent(enrollmentId);
+    const [res, resCorrecciones] = await Promise.all([
+      fetch(`/api/portal/me/entregas?cursada=${cursada}`).catch(() => null),
+      fetch(`/api/portal/me/correcciones?cursada=${cursada}`).catch(() => null),
+    ]);
     /*
       **"No entregaste" y "no pudimos traer tus entregas" son dos frases
       distintas**, y la segunda dicha como la primera es una acusación: con la
@@ -110,13 +137,19 @@ export function StudentSubmissions({
       el ciclo 013 ya pagó caro en el legajo, esta vez sobre la evidencia de
       que cumplió.
     */
-    if (!res?.ok) {
+    /*
+      031 — Lo mismo vale para las correcciones: sin ellas, la pantalla diría
+      "Pendiente de corrección" sobre un trabajo que ya está corregido.
+    */
+    if (!res?.ok || !resCorrecciones?.ok) {
       setError("No pudimos cargar tus entregas. Suele ser algo momentáneo: en unos minutos deberían aparecer.");
       return;
     }
     const body = (await res.json()) as { assessments: EvaluacionConEntregas[] };
+    const publicadas = (await resCorrecciones.json()) as { assessments: CorreccionPublicada[] };
     setError(null);
     setDatos(body.assessments);
+    setCorrecciones(publicadas.assessments);
   }, [enrollmentId]);
 
   useEffect(() => {
@@ -159,6 +192,7 @@ export function StudentSubmissions({
             key={a.id}
             resumen={a}
             entregas={datos.find((d) => d.assessmentId === a.id) ?? null}
+            correccion={correcciones.find((c) => c.assessmentId === a.id) ?? null}
             zona={academyZone}
             onCambio={refetch}
           />
@@ -171,11 +205,14 @@ export function StudentSubmissions({
 function EvaluacionItem({
   resumen,
   entregas,
+  correccion,
   zona,
   onCambio,
 }: {
   resumen: AssessmentResumen;
   entregas: EvaluacionConEntregas | null;
+  /** 031 — La corrección publicada, si la hay. */
+  correccion: CorreccionPublicada | null;
   zona: string;
   onCambio: () => void;
 }) {
@@ -215,7 +252,17 @@ function EvaluacionItem({
 
       <Plazo evaluacion={entregas} zona={zona} />
 
-      {ultima && <EntregaHecha entrega={ultima} zona={zona} />}
+      {/*
+        031 (US3) — La corrección completa, dentro de la evaluación. Con una
+        publicada, la devolución se lee acá y no se repite en la entrega. Sin
+        ninguna —y sin un resultado cargado por el camino de antes de 031—
+        es "Pendiente de corrección", jamás un desaprobado.
+      */}
+      {(correccion || resumen.passed === null) && (
+        <CorreccionDelAlumno correccion={correccion} />
+      )}
+
+      {ultima && <EntregaHecha entrega={ultima} zona={zona} conDevolucion={!correccion} />}
 
       {anteriores.length > 0 && (
         /*
@@ -231,7 +278,7 @@ function EvaluacionItem({
           </summary>
           <div className="space-y-2 border-t border-border p-3">
             {anteriores.map((e) => (
-              <EntregaHecha key={e.id} entrega={e} zona={zona} />
+              <EntregaHecha key={e.id} entrega={e} zona={zona} conDevolucion={!correccion} />
             ))}
           </div>
         </details>
@@ -300,7 +347,16 @@ function Plazo({
   );
 }
 
-function EntregaHecha({ entrega, zona }: { entrega: Entrega; zona: string }) {
+function EntregaHecha({
+  entrega,
+  zona,
+  conDevolucion = true,
+}: {
+  entrega: Entrega;
+  zona: string;
+  /** 031 — Con corrección publicada, la devolución ya se lee completa arriba. */
+  conDevolucion?: boolean;
+}) {
   return (
     <div className="space-y-2 rounded-md border border-border bg-subtle p-3">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -328,7 +384,7 @@ function EntregaHecha({ entrega, zona }: { entrega: Entrega; zona: string }) {
         otro canal. Vive en la ENTREGA y no en la nota interna del staff
         (FR-011): son dos textos con dos audiencias distintas.
       */}
-      {entrega.feedback && (
+      {conDevolucion && entrega.feedback && (
         <div className="flex items-start gap-2 border-t border-border pt-2">
           <MessageSquare
             className="mt-0.5 h-3.5 w-3.5 shrink-0 text-text-3"
@@ -345,6 +401,92 @@ function EntregaHecha({ entrega, zona }: { entrega: Entrega; zona: string }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * 031 (T030, US3) — La corrección PUBLICADA, completa: nota, cada ejercicio con
+ * su puntaje sobre el máximo y su comentario, los campos de texto, la
+ * devolución, quién corrigió y cuándo. Es lo que el dueño pidió que el alumno
+ * vea "sin pedirlo".
+ *
+ * Sin corrección publicada dice "Pendiente de corrección": un borrador o una
+ * corrección esperando aprobación no llegan hasta acá (DV-010), y su ausencia
+ * nunca se lee como un desaprobado.
+ */
+export function CorreccionDelAlumno({
+  correccion,
+}: {
+  correccion: CorreccionPublicada | null;
+}) {
+  if (!correccion) {
+    return (
+      <p className="inline-flex items-center gap-1.5 text-xs text-text-3">
+        <ClipboardCheck className="h-3.5 w-3.5" strokeWidth={1.8} />
+        Pendiente de corrección
+      </p>
+    );
+  }
+
+  const c = correccion.correction;
+  return (
+    <div className="space-y-3 rounded-md border border-border bg-subtle p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        {c.score !== null && <span className="text-lg font-semibold">{c.score}/100</span>}
+        {c.passed !== null && (
+          <ChipDeEstado tono={c.passed ? "ok" : "atencion"}>
+            {c.passed ? "Aprobada" : "No aprobada"}
+          </ChipDeEstado>
+        )}
+        {correccion.minScore !== null && (
+          <span className="text-xs text-text-3">Se aprueba con {correccion.minScore}</span>
+        )}
+      </div>
+
+      {correccion.criteria.length > 0 && (
+        <ul className="divide-y divide-border rounded-md border border-border bg-card">
+          {correccion.criteria.map((criterio) => {
+            const p = c.criterionScores.find((s) => s.criterionId === criterio.id);
+            return (
+              <li key={criterio.id} className="space-y-0.5 px-3 py-2">
+                <div className="flex items-baseline justify-between gap-2 text-sm">
+                  <span>{criterio.name}</span>
+                  <span className="shrink-0 font-medium">
+                    {p?.points ?? "—"} de {criterio.maxPoints}
+                  </span>
+                </div>
+                {p?.comment && (
+                  <p className="whitespace-pre-line text-xs text-text-2">{p.comment}</p>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {correccion.textFields.map((campo) => {
+        const valor = c.textValues.find((v) => v.fieldId === campo.id)?.value;
+        if (!valor) return null;
+        return (
+          <div key={campo.id}>
+            <p className="text-xs font-medium text-text-2">{campo.name}</p>
+            <p className="whitespace-pre-line text-sm text-text-2">{valor}</p>
+          </div>
+        );
+      })}
+
+      {c.feedback && (
+        <div className="flex items-start gap-2">
+          <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0 text-text-3" strokeWidth={1.8} />
+          <p className="whitespace-pre-line text-sm text-text-2">{c.feedback}</p>
+        </div>
+      )}
+
+      <p className="text-xs text-text-3">
+        Corrigió {c.correctedByName ?? "tu profesor"}
+        {c.publishedAt && ` · ${formatDate(c.publishedAt)}`}
+      </p>
     </div>
   );
 }

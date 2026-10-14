@@ -536,3 +536,72 @@ describe("DV-005 — ninguna puerta de atajo se declara corrección", () => {
     expect(leer("src", "server", "corrections.ts")).toMatch(/origen:\s*"correccion"/);
   });
 });
+
+/* ============================================================
+ * T028 (DV-010) — Lo que ve el alumno
+ * ============================================================ */
+
+describe("DV-010 — el alumno ve solo lo publicado, y solo lo suyo", () => {
+  const PUBLICADA = {
+    id: "cor_1",
+    assessmentId: ASM,
+    enrollmentId: ENR,
+    submissionId: "sub_1",
+    status: "published",
+    score: 80,
+    passed: true,
+    feedback: "Buen trabajo",
+    criterionScores: [{ criterionId: "c1", points: 35, comment: "Prolijo" }],
+    textValues: [{ fieldId: "f1", value: "Las cotas" }],
+    correctedBy: "usr_profe",
+    submittedBy: "usr_profe",
+    submittedAt: new Date("2026-10-10T12:00:00.000Z"),
+    reviewedBy: "usr_coord",
+    reviewedAt: new Date("2026-10-11T12:00:00.000Z"),
+    reviewComment: "Revisá el render",
+    publishedAt: new Date("2026-10-11T12:00:00.000Z"),
+  };
+
+  it("una cursada que no es del contacto es null (la ruta dice 404)", async () => {
+    const { correccionesPublicadasDeCursada } = await import("@/server/corrections");
+    // la inscripción no es de este contacto: la consulta no devuelve fila
+    expect(await correccionesPublicadasDeCursada(ORG, "ct_otro", ENR)).toBeNull();
+  });
+
+  it("trae la corrección publicada completa, sin el circuito de aprobación", async () => {
+    const { correccionesPublicadasDeCursada } = await import("@/server/corrections");
+    responder("enrollment", [{ id: ENR, cohortId: "coh_1" }]);
+    responder("assessment", [
+      { id: ASM, ...NUMERICA, textFields: [{ id: "f1", name: "A mejorar", required: true }] },
+    ]);
+    responder("correction", [PUBLICADA]);
+    responder("user", [{ id: "usr_profe", name: "Ana Profe" }]);
+
+    const r = await correccionesPublicadasDeCursada(ORG, "ct_1", ENR);
+
+    expect(r?.assessments).toHaveLength(1);
+    const item = r!.assessments[0]!;
+    expect(item).toMatchObject({ assessmentId: ASM, scale: "numeric", minScore: 60 });
+    expect(item.correction).toEqual({
+      id: "cor_1",
+      submissionId: "sub_1",
+      score: 80,
+      passed: true,
+      feedback: "Buen trabajo",
+      criterionScores: [{ criterionId: "c1", points: 35, comment: "Prolijo" }],
+      textValues: [{ fieldId: "f1", value: "Las cotas" }],
+      correctedByName: "Ana Profe",
+      publishedAt: "2026-10-11T12:00:00.000Z",
+    });
+  });
+
+  it("una evaluación sin corrección publicada no aparece (la pantalla dice «Pendiente»)", async () => {
+    const { correccionesPublicadasDeCursada } = await import("@/server/corrections");
+    responder("enrollment", [{ id: ENR, cohortId: "coh_1" }]);
+    responder("assessment", [{ id: ASM, ...NUMERICA }]);
+    responder("correction", []);
+
+    const r = await correccionesPublicadasDeCursada(ORG, "ct_1", ENR);
+    expect(r).toEqual({ assessments: [] });
+  });
+});

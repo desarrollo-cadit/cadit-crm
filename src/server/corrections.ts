@@ -598,3 +598,144 @@ export async function evaluacionesCongeladas(
     );
   return new Set(filas.map((f) => f.assessmentId));
 }
+
+/* ============================================================
+ * Lo que ve el ALUMNO (DV-010, US3)
+ * ============================================================
+ * Esta sección va al final y tiene su propio guard estructural
+ * (`correcciones-guard.test.ts`): toda función recibe `contactId`, el estado se
+ * filtra en el WHERE y el DTO no nombra el circuito de aprobación. No reusa
+ * `aDto` del staff: ese armado trae el comentario de devolución, y reusarlo es
+ * exactamente cómo termina en la pantalla equivocada.
+ */
+
+export type StudentCorrectionDto = {
+  id: string;
+  submissionId: string | null;
+  score: number | null;
+  passed: boolean | null;
+  feedback: string | null;
+  criterionScores: { criterionId: string; points: number | null; comment: string | null }[];
+  textValues: { fieldId: string; value: string }[];
+  correctedByName: string | null;
+  publishedAt: string | null;
+};
+
+export type CorreccionDelAlumnoDto = {
+  assessmentId: string;
+  scale: Template["scale"];
+  minScore: number | null;
+  criteria: Template["criteria"];
+  textFields: Template["textFields"];
+  correction: StudentCorrectionDto;
+};
+
+/**
+ * 031 (T028, DV-010) — Las correcciones PUBLICADAS de una cursada del alumno.
+ *
+ * Arranca por el contacto (FR-001 de 015): una inscripción ajena devuelve
+ * `null`, igual que una inexistente, y la ruta lo traduce a 404. Lo que no está
+ * publicado no se consulta: un borrador o una corrección esperando aprobación
+ * no existen para esta función (FR-024).
+ *
+ * Una evaluación sin corrección publicada no viaja: la pantalla la muestra
+ * "Pendiente de corrección" con lo que ya sabe de la cursada.
+ */
+export async function correccionesPublicadasDeCursada(
+  organizationId: string,
+  contactId: string,
+  enrollmentId: string
+): Promise<{ assessments: CorreccionDelAlumnoDto[] } | null> {
+  const db = getDb();
+  const inscripcion = (
+    await db
+      .select({ id: schema.enrollment.id, cohortId: schema.enrollment.cohortId })
+      .from(schema.enrollment)
+      .where(
+        scoped(
+          schema.enrollment.organizationId,
+          organizationId,
+          and(
+            eq(schema.enrollment.id, enrollmentId),
+            // La cerradura: la inscripción tiene que ser de ESTA persona.
+            eq(schema.enrollment.contactId, contactId)
+          )
+        )
+      )
+      .limit(1)
+  )[0];
+  if (!inscripcion?.cohortId) return null;
+
+  const [evaluaciones, publicadas] = await Promise.all([
+    db
+      .select({
+        id: schema.assessment.id,
+        scale: schema.assessment.scale,
+        minScore: schema.assessment.minScore,
+        requiresApproval: schema.assessment.requiresApproval,
+        criteria: schema.assessment.criteria,
+        textFields: schema.assessment.textFields,
+      })
+      .from(schema.assessment)
+      .where(
+        scoped(
+          schema.assessment.organizationId,
+          organizationId,
+          eq(schema.assessment.cohortId, inscripcion.cohortId)
+        )
+      ),
+    db
+      .select({
+        id: schema.correction.id,
+        assessmentId: schema.correction.assessmentId,
+        submissionId: schema.correction.submissionId,
+        score: schema.correction.score,
+        passed: schema.correction.passed,
+        feedback: schema.correction.feedback,
+        criterionScores: schema.correction.criterionScores,
+        textValues: schema.correction.textValues,
+        correctedBy: schema.correction.correctedBy,
+        publishedAt: schema.correction.publishedAt,
+      })
+      .from(schema.correction)
+      .where(
+        scoped(
+          schema.correction.organizationId,
+          organizationId,
+          and(
+            eq(schema.correction.enrollmentId, enrollmentId),
+            eq(schema.correction.status, "published")
+          )
+        )
+      ),
+  ]);
+
+  if (publicadas.length === 0) return { assessments: [] };
+  const quienes = await nombres(publicadas.map((c) => c.correctedBy));
+
+  const assessments: CorreccionDelAlumnoDto[] = [];
+  for (const a of evaluaciones) {
+    const c = publicadas.find((x) => x.assessmentId === a.id);
+    if (!c) continue;
+    const plantilla = leerPlantilla(a);
+    assessments.push({
+      assessmentId: a.id,
+      scale: plantilla.scale,
+      minScore: plantilla.minScore,
+      criteria: plantilla.criteria,
+      textFields: plantilla.textFields,
+      correction: {
+        id: c.id,
+        submissionId: c.submissionId ?? null,
+        score: c.score ?? null,
+        passed: c.passed ?? null,
+        feedback: c.feedback ?? null,
+        criterionScores: c.criterionScores ?? [],
+        textValues: c.textValues ?? [],
+        correctedByName: (c.correctedBy && quienes.get(c.correctedBy)) || null,
+        publishedAt: c.publishedAt?.toISOString() ?? null,
+      },
+    });
+  }
+  return { assessments };
+}

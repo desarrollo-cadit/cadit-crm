@@ -58,10 +58,10 @@ Formato: `- [ ] T### [P?] [US?] descripción con ruta`. `[P]` = archivo distinto
 
 **Independent test**: corrección publicada visible completa; borrador/pendiente invisibles; cursada ajena 404.
 
-- [ ] T027 [P] [US3] Test que falla `tests/unit/correcciones-guard.test.ts`: en `src/server/corrections.ts` las funciones para el alumno reciben `contactId`, filtran `status = 'published'` en el WHERE, no contienen `403`, y `reviewComment`/`submittedAt`/`reviewedBy` no están en `StudentCorrectionDto`; la ruta usa `requireStudentPortal` y solo exporta GET
-- [ ] T028 [US3] `correccionesPublicadasDeCursada(orgId, contactId, enrollmentId)` en `src/server/corrections.ts`
-- [ ] T029 [US3] Ruta `GET /api/portal/me/correcciones` en `src/app/api/portal/me/correcciones/route.ts`
-- [ ] T030 [US3] Mostrar nota, ejercicios (puntaje/máximo/comentario), campos de texto, devolución, corrector y fecha dentro de cada evaluación en `src/components/portal/student-submissions.tsx`; sin corrección publicada → "Pendiente de corrección"
+- [x] T027 [P] [US3] Test que falla `tests/unit/correcciones-guard.test.ts`: en `src/server/corrections.ts` las funciones para el alumno reciben `contactId`, filtran `status = 'published'` en el WHERE, no contienen `403`, y `reviewComment`/`submittedAt`/`reviewedBy` no están en `StudentCorrectionDto`; la ruta usa `requireStudentPortal` y solo exporta GET
+- [x] T028 [US3] `correccionesPublicadasDeCursada(orgId, contactId, enrollmentId)` en `src/server/corrections.ts`
+- [x] T029 [US3] Ruta `GET /api/portal/me/correcciones` en `src/app/api/portal/me/correcciones/route.ts`
+- [x] T030 [US3] Mostrar nota, ejercicios (puntaje/máximo/comentario), campos de texto, devolución, corrector y fecha dentro de cada evaluación en `src/components/portal/student-submissions.tsx`; sin corrección publicada → "Pendiente de corrección"
 
 **Checkpoint**: el pedido central del dueño ("que lo vea sin pedirlo") está cumplido.
 
