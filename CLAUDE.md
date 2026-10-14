@@ -44,6 +44,11 @@ externas: el trabajo en segundo plano (agente, Laboratorio) es in-process.
 | **El caparazón del portal** (barra lateral) | `src/app/(portal)/layout.tsx` + `src/components/portal/portal-nav.tsx` |
 | **La pantalla de acceso** | `src/app/(auth)/layout.tsx` + `src/app/(auth)/login/page.tsx` |
 | Copiar evaluaciones entre cohortes | `planAssessmentCopy()` en `src/server/grading.ts` |
+| **Plantilla de corrección** (escala, mínimo, ejercicios, campos) | `src/lib/grading-template.ts` (puro) + `guardarPlantilla()` en `src/server/grading.ts` + `/api/assessments/[id]/template` |
+| **Correcciones** (borrador, envío, publicación) | `src/server/corrections.ts` + `/api/assessments/[id]/corrections/[enrollmentId]` (staff) + `/api/portal/assessments/[id]/corrections/[enrollmentId]` (profesor) + `src/components/grading/` |
+| **Bandeja de aprobación** | `/correcciones` + `/api/corrections/*` (`correcciones.aprobar`) + `src/components/grading/correction-inbox.tsx` |
+| **Escolaridad** (documento imprimible) | `src/lib/escolaridad.ts` (armado y render puros) + `src/server/transcript.ts` + `/api/contacts/[id]/escolaridad/print` + `/api/portal/me/escolaridad/print` |
+| La regla de aprobación (cursada, módulo, programa) | `src/lib/approval.ts` (re-exportada por `src/server/grading.ts`) |
 | Baja de alumnos y profesores | `src/server/contacts-admin.ts` (`decidirBaja`) |
 | **Aislamiento entre organizaciones (RLS)** | `src/lib/db/with-tenant.ts` + `docs/rls-rol-de-conexion.md` |
 | Campos/tablas | `src/lib/db/schema.ts` → `pnpm db:generate` → migración nueva en `drizzle/` |
@@ -339,6 +344,46 @@ no por `id`: la copia crea filas nuevas, así que el `id` nunca coincide.
   `ZOOM_API_BASE_URL=<app>/api/dev/zoom-mock/v2` y
   `ZOOM_OAUTH_BASE_URL=<app>/api/dev/zoom-mock`; la sección
   `grabaciones-zoom` aborta si `/api/dev/zoom-mock/config` dice que no.
+
+## Correcciones y escolaridad (ciclo 031)
+
+- **Una sola puerta escribe el resultado oficial: `publicarCorreccion()`**
+  (`src/server/corrections.ts`). Pasa la anterior a `superseded`, publica, llama
+  a `recordResults` con origen `correccion` y espeja la devolución en la
+  entrega. **Lanza, no devuelve**: si devolviera un error, la transacción
+  quedaría con una versión `published` sin resultado. Quien quiera "publicar"
+  por otro lado está abriendo una segunda verdad.
+- **Borrador y pendiente NO VIAJAN al alumno.** `correccionesPublicadasDeCursada`
+  filtra `published` en el WHERE, y el DTO del alumno no tiene `status` ni
+  `reviewComment`: el comentario de quien aprueba es para quien corrigió.
+  Editar una publicada crea una versión nueva en trámite; el alumno sigue
+  viendo la vigente hasta que la nueva se publique.
+  `tests/unit/correcciones-guard.test.ts` guarda las dos cosas.
+- **Los atajos son solo para `pass_fail` sin aprobación** (`admiteAtajo()`).
+  La celda de la planilla, la del profesor y `PATCH /api/portal/entregas/[id]`
+  responden 422 `usar_correccion` en cualquier otra evaluación. El default
+  de `recordResults` es el origen `atajo` (el lado seguro); solo
+  `publicarCorreccion()` pasa `correccion` y solo ese camino escribe `score`.
+  La corrección vieja de la entrega, cuando aplica, igual crea y publica una
+  versión.
+- **`passed` sigue siendo la verdad de la aprobación** (DV-001 de 010
+  revertida de forma compatible): la nota 1–100 deriva `passed` contra el
+  mínimo y se muestra, pero no pondera nada.
+- **La plantilla se congela con la primera publicación**: cambiar escala,
+  mínimo o ejercicios responde 409 `plantilla_congelada` — si no, las notas
+  ya publicadas dejarían de sumar contra lo que dicen. Los ejercicios suman
+  100 o no hay ejercicios.
+- **Quién publica lo decide la ruta, no el módulo**: recibe un booleano
+  `puedeAprobar` (la capacidad `correcciones.aprobar`). El profesor nunca la
+  tiene, así que en una evaluación con aprobación solo puede enviar.
+- **La escolaridad es derivada y pura.** `armarEscolaridad` y
+  `renderEscolaridadHtml` (`src/lib/escolaridad.ts`) no leen la base; la
+  lectura está en `src/server/transcript.ts`, que **nunca lee cobranza** ni
+  importa el legajo (hay test). "Pendiente" (sin resultado oficial) no es
+  "No aprobada", y no hay nota final ponderada.
+- **La regla de aprobación vive en `src/lib/approval.ts`** para que la
+  escolaridad la use sin arrastrar el servidor; `grading.ts` la re-exporta,
+  así que los llamadores viejos no cambian.
 
 ## Variables de entorno
 

@@ -145,6 +145,11 @@ salir del sistema.
 ## Decisiones RESUELTAS (2026-08-26, decisión del dueño)
 
 - **DV-001**: escala **APROBADO / NO APROBADO**. Sin nota numérica.
+  > **Revertida de forma compatible por 031** (`specs/031-correcciones-escolaridad`):
+  > cada evaluación elige su escala en la plantilla de corrección y la numérica
+  > suma una nota 1–100 con mínimo de aprobación. `passed` sigue siendo la
+  > verdad de la aprobación (la nota es informativa y deriva `passed`), así
+  > que FR-002/FR-003 siguen sin aplicar: no hay nota final ponderada.
 - **DV-002**: el certificado se genera como **HTML para imprimir** (A4 apaisado,
   el navegador lo pasa a PDF con Ctrl+P). Sin dependencias nuevas —misma
   técnica que el estado de cuenta de 008— y editable como los HTML de correo.

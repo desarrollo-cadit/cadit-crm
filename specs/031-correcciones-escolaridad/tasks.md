@@ -90,11 +90,11 @@ Formato: `- [ ] T### [P?] [US?] descripción con ruta`. `[P]` = archivo distinto
 ## Phase 8: Polish & cierre
 
 - [ ] T043 Sección E2E `scripts/e2e/correcciones.mjs` (11 pasos de `quickstart.md` §3) registrada en `SECCIONES` y en la corrida completa de `scripts/e2e-selftest.mjs`
-- [ ] T044 Gate técnico completo: `pnpm typecheck && pnpm lint && NEXT_DIST_DIR=.next-build pnpm build && pnpm test`
+- [x] T044 Gate técnico completo: `pnpm typecheck && pnpm lint && NEXT_DIST_DIR=.next-build pnpm build && pnpm test`
 - [ ] T045 E2E en vivo: `E2E_SECCIONES=correcciones pnpm test:e2e` contra la app con mocks + suite completa en verde
 - [ ] T046 Playwright en los tres actores (profesor corrige, staff aprueba/devuelve, alumno ve y abre la escolaridad), incluido tema oscuro
-- [ ] T047 [P] Nota de reversión de DV-001 apuntando a 031 en `specs/010-evaluacion-y-certificados/spec.md`
-- [ ] T048 [P] Actualizar el mapa de código y una sección "Correcciones y escolaridad (ciclo 031)" en `CLAUDE.md`
+- [x] T047 [P] Nota de reversión de DV-001 apuntando a 031 en `specs/010-evaluacion-y-certificados/spec.md`
+- [x] T048 [P] Actualizar el mapa de código y una sección "Correcciones y escolaridad (ciclo 031)" en `CLAUDE.md`
 
 ## Dependencies
 
