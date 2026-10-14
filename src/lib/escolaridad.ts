@@ -148,7 +148,7 @@ export function armarEscolaridad(input: EscolaridadInput): Escolaridad {
  * El documento
  * ============================================================ */
 
-const ESTADO: Record<ModuleState, string> = {
+export const ESTADO: Record<ModuleState, string> = {
   aprobado: "Aprobado",
   reprobado: "No aprobado",
   pendiente: "En curso",
@@ -166,12 +166,12 @@ const dia = new Intl.DateTimeFormat("es-UY", {
   timeZone: "UTC",
 });
 
-function periodo(c: FilaDeCursada): string {
+export function periodo(c: FilaDeCursada): string {
   if (!c.desde) return "Sin fecha de inicio";
   return `${dia.format(c.desde)} – ${c.hasta ? dia.format(c.hasta) : "en curso"}`;
 }
 
-function resultado(e: EvaluacionInput): string {
+export function resultado(e: EvaluacionInput): string {
   if (e.aprobada === null) return "Pendiente";
   if (e.escala === "numeric" && e.nota !== null) return `${e.nota}/100`;
   return e.aprobada ? "Aprobada" : "No aprobada";

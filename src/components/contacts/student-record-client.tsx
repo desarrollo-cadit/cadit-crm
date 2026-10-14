@@ -126,17 +126,15 @@ export function StudentRecordClient({
         </p>
         {canPrintTranscript && data.courses.length > 0 && (
           /*
-            031 (T041) — Abre el documento en otra pestaña para imprimirlo:
-            es HTML de la ruta, no una pantalla de la app.
+            031 (T041) — Descarga el PDF de la escolaridad directamente.
           */
           <a
             href={`/api/contacts/${contactId}/escolaridad/print`}
-            target="_blank"
-            rel="noopener noreferrer"
+            download
             className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent"
           >
             <FileText className="h-4 w-4" aria-hidden />
-            Escolaridad
+            Descargar escolaridad
           </a>
         )}
         {canEnroll && (

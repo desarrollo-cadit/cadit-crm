@@ -52,6 +52,11 @@ vi.mock("@/lib/db", () => ({
   ),
 }));
 
+// El nombre de la academia sale de la MARCA, no de `organization.name`, que el alta arma como "Negocio de <usuario>".
+vi.mock("@/server/branding", () => ({
+  getBranding: async () => ({ name: "CAD IT Solution Provider", accent: "#001b5e" }),
+}));
+
 const { escolaridadDeContacto } = await import("@/server/transcript");
 
 beforeEach(() => {
@@ -110,7 +115,7 @@ describe("escolaridadDeContacto", () => {
 
     expect(r?.timezone).toBe("America/Montevideo");
     expect(r?.escolaridad.alumno).toEqual({ nombre: "Ana Pérez", documento: "1.234.567-8" });
-    expect(r?.escolaridad.academia).toBe("CAD IT");
+    expect(r?.escolaridad.academia).toBe("CAD IT Solution Provider");
     const c = r!.escolaridad.cursadas[0]!;
     expect(c).toMatchObject({ curso: "Revit", cohorte: "Revit 2026", asistenciaPct: 50 });
     expect(c.evaluaciones).toEqual([
@@ -171,14 +176,13 @@ describe("031 — la forma del módulo", () => {
 describe("031 — las dos puertas de la escolaridad (T039/T040)", () => {
   const leer = (...p: string[]) => readFileSync(path.join(process.cwd(), "src", "app", "api", ...p), "utf8");
 
-  it("staff: `academico.ver`, solo GET, HTML del armado común", () => {
+  it("staff: `academico.ver`, solo GET, el PDF del armado común", () => {
     const src = leer("contacts", "[id]", "escolaridad", "print", "route.ts");
     expect(src).toMatch(/requireCapability\(\s*"academico\.ver"/);
     expect(src).not.toContain("requireStudentPortal(");
     expect([...src.matchAll(/export const (\w+)\s*=/g)].map((m) => m[1]).filter((v) => v !== "dynamic")).toEqual(["GET"]);
     expect(src).toContain("escolaridadDeContacto(");
-    expect(src).toContain("renderEscolaridadHtml(");
-    expect(src).toContain("text/html; charset=utf-8");
+    expect(src).toContain("respuestaPdf(");
   });
 
   it("alumno: su puerta, solo GET, y el contacto sale de la SESIÓN", () => {
@@ -188,7 +192,7 @@ describe("031 — las dos puertas de la escolaridad (T039/T040)", () => {
     expect(src).not.toContain("requireTeacherPortal(");
     expect([...src.matchAll(/export const (\w+)\s*=/g)].map((m) => m[1]).filter((v) => v !== "dynamic")).toEqual(["GET"]);
     expect(src).toMatch(/escolaridadDeContacto\(\s*ctx\.organizationId,\s*ctx\.contactId\s*\)/);
-    expect(src).toContain("renderEscolaridadHtml(");
+    expect(src).toContain("respuestaPdf(");
   });
 });
 

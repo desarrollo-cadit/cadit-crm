@@ -47,7 +47,7 @@ externas: el trabajo en segundo plano (agente, Laboratorio) es in-process.
 | **Plantilla de corrección** (escala, mínimo, ejercicios, campos) | `src/lib/grading-template.ts` (puro) + `guardarPlantilla()` en `src/server/grading.ts` + `/api/assessments/[id]/template` |
 | **Correcciones** (borrador, envío, publicación) | `src/server/corrections.ts` + `/api/assessments/[id]/corrections/[enrollmentId]` (staff) + `/api/portal/assessments/[id]/corrections/[enrollmentId]` (profesor) + `src/components/grading/` |
 | **Bandeja de aprobación** | `/correcciones` + `/api/corrections/*` (`correcciones.aprobar`) + `src/components/grading/correction-inbox.tsx` |
-| **Escolaridad** (documento imprimible) | `src/lib/escolaridad.ts` (armado y render puros) + `src/server/transcript.ts` + `/api/contacts/[id]/escolaridad/print` + `/api/portal/me/escolaridad/print` |
+| **Escolaridad** (PDF descargable) | `src/lib/escolaridad.ts` (armado puro) + `src/lib/escolaridad-pdf.ts` (PDF con `pdf-lib`) + `src/server/transcript.ts` + `/api/contacts/[id]/escolaridad/print` + `/api/portal/me/escolaridad/print` |
 | La regla de aprobación (cursada, módulo, programa) | `src/lib/approval.ts` (re-exportada por `src/server/grading.ts`) |
 | Baja de alumnos y profesores | `src/server/contacts-admin.ts` (`decidirBaja`) |
 | **Aislamiento entre organizaciones (RLS)** | `src/lib/db/with-tenant.ts` + `docs/rls-rol-de-conexion.md` |

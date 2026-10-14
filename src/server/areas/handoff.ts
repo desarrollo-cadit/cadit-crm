@@ -18,6 +18,7 @@ import {
 } from "@/lib/areas";
 import type { DeriveAreaAction } from "@/server/ai/actions";
 import { recordActivity } from "@/server/activity-log";
+import { getBranding } from "@/server/branding";
 import { publish } from "@/server/events/bus";
 import { SendError } from "@/server/inbox/send";
 import { getAreaConfig, listSellers, resolveRecipients } from "@/server/areas/config";
@@ -445,7 +446,7 @@ async function loadEmailToSend(organizationId: string, emailId: string) {
   // Doble cerrojo del sandbox: aunque alguien agendara un envío de prueba, acá no sale.
   if (row.handoff.isTest) return null;
 
-  const [contactRows, orgRows, messages] = await Promise.all([
+  const [contactRows, orgRows, marca, messages] = await Promise.all([
     db
       .select({
         firstName: schema.contact.firstName,
@@ -461,6 +462,8 @@ async function loadEmailToSend(organizationId: string, emailId: string) {
       .from(schema.organization)
       .where(eq(schema.organization.id, organizationId))
       .limit(1),
+    // El nombre de la marca, no `organization.name` ("Negocio de <usuario>").
+    getBranding(organizationId),
     db
       .select({
         direction: schema.message.direction,
@@ -495,7 +498,7 @@ async function loadEmailToSend(organizationId: string, emailId: string) {
     missing: row.handoff.missing,
     replyTo: row.email.recipients.replyTo,
     contact,
-    organizationName: org?.name ?? "la academia",
+    organizationName: marca.name || "la academia",
     timeZone: org?.timezone ?? "America/Montevideo",
     createdAt: row.email.createdAt,
     transcript: messages.map((m) => ({

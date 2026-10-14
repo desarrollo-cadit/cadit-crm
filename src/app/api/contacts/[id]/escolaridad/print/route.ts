@@ -1,5 +1,5 @@
 import { apiError, requireCapability } from "@/lib/api";
-import { renderEscolaridadHtml } from "@/lib/escolaridad";
+import { respuestaPdf } from "@/lib/escolaridad-pdf";
 import { escolaridadDeContacto } from "@/server/transcript";
 
 export const dynamic = "force-dynamic";
@@ -9,8 +9,7 @@ type Params = { params: Promise<{ id: string }> };
 /**
  * 031 (T039, DV-011) — La escolaridad de un alumno, desde el legajo del STAFF.
  *
- * HTML A4 vertical para "Imprimir → Guardar como PDF", el mismo patrón que el
- * certificado. `academico.ver` y no `contactos.ver`: es un documento de la
+ * Descarga directa del PDF (A4 vertical), sin pasar por "Imprimir". `academico.ver` y no `contactos.ver`: es un documento de la
  * cursada, y no lleva nada de contacto ni de cobranza que lo justifique.
  *
  * Un contacto ajeno o sin cursadas responde 404: del lado del staff no hay
@@ -24,8 +23,6 @@ export const GET = requireCapability(
     if (!r || r.escolaridad.cursadas.length === 0) {
       return apiError(404, "not_found", "Este alumno no tiene cursadas para la escolaridad");
     }
-    return new Response(renderEscolaridadHtml(r.escolaridad, r.timezone), {
-      headers: { "content-type": "text/html; charset=utf-8" },
-    });
+    return respuestaPdf(r.escolaridad, r.timezone);
   }
 );

@@ -4,6 +4,7 @@ import { scoped } from "@/lib/db/tenant";
 import { armarEscolaridad, type CursadaInput, type Escolaridad } from "@/lib/escolaridad";
 import { fullName } from "@/lib/utils";
 import { attendancePercentage, resolveMinAttendance } from "@/server/attendance";
+import { getBranding } from "@/server/branding";
 import { dispensaDeInscripcion } from "@/server/grading";
 
 /**
@@ -41,12 +42,15 @@ export async function escolaridadDeContacto(
   )[0];
   if (!contacto) return null;
 
-  const [academia, inscripciones] = await Promise.all([
+  const [academia, marca, inscripciones] = await Promise.all([
     db
       .select({ name: schema.organization.name, timezone: schema.organization.timezone })
       .from(schema.organization)
       .where(eq(schema.organization.id, organizationId))
       .limit(1),
+    // El nombre que la academia configuró en su marca, no `organization.name`:
+    // ese lo arma el alta ("Negocio de <usuario>") y nadie lo edita.
+    getBranding(organizationId),
     db
       .select({
         enrollment: {
@@ -212,7 +216,7 @@ export async function escolaridadDeContacto(
   return {
     timezone: org?.timezone ?? "America/Montevideo",
     escolaridad: armarEscolaridad({
-      academia: org?.name ?? "",
+      academia: marca.name,
       alumno: { nombre: fullName(contacto), documento: contacto.nationalId ?? null },
       emitidaEl: new Date(),
       cursadas,
