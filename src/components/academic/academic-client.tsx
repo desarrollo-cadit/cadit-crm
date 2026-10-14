@@ -855,6 +855,10 @@ export function AcademicClient() {
             void refetch();
           }}
           onCategoryCreated={(c) => setCategories((prev) => [...prev, c])}
+          onCategoryDeleted={(id) => {
+            setCategories((prev) => prev.filter((c) => c.id !== id));
+            void refetch();
+          }}
         />
       )}
 

@@ -72,12 +72,14 @@ export function CourseForm({
   onClose,
   onSaved,
   onCategoryCreated,
+  onCategoryDeleted,
 }: {
   initial?: CourseDto | null;
   categories: CourseCategoryDto[];
   onClose: () => void;
   onSaved: () => void;
   onCategoryCreated: (category: CourseCategoryDto) => void;
+  onCategoryDeleted: (categoryId: string) => void;
 }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [slug, setSlug] = useState(initial?.slug ?? "");
@@ -160,6 +162,28 @@ export function CourseForm({
     onCategoryCreated(data.category);
     setCategoryId(data.category.id);
     setNewCategory("");
+  }
+
+  /**
+   * Borra la categoría elegida en el selector. Los cursos que la usaban quedan
+   * sin categoría (ON DELETE SET NULL), por eso se avisa antes.
+   */
+  async function deleteCategory() {
+    const category = categories.find((c) => c.id === categoryId);
+    if (!category) return;
+    const ok = window.confirm(
+      `¿Eliminar la categoría "${category.name}"? Los cursos que la usan quedan sin categoría.`
+    );
+    if (!ok) return;
+    const res = await fetch(`/api/course-categories/${category.id}`, {
+      method: "DELETE",
+    }).catch(() => null);
+    if (!res?.ok) {
+      notify.error("No se pudo eliminar la categoría");
+      return;
+    }
+    onCategoryDeleted(category.id);
+    setCategoryId("");
   }
 
   async function submit() {
@@ -307,19 +331,32 @@ export function CourseForm({
 
           <div className="space-y-1.5">
             <Label htmlFor="course-category">Categoría</Label>
-            <select
-              id="course-category"
-              className="h-9 w-full rounded-md border bg-background px-3 text-sm"
-              value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value)}
-            >
-              <option value="">Sin categoría</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+            <div className="flex gap-2">
+              <select
+                id="course-category"
+                className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                value={categoryId}
+                onChange={(e) => setCategoryId(e.target.value)}
+              >
+                <option value="">Sin categoría</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!categoryId}
+                onClick={() => void deleteCategory()}
+                aria-label="Eliminar categoría"
+                title="Eliminar categoría"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
             <div className="flex gap-2">
               <Input
                 value={newCategory}

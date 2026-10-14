@@ -210,12 +210,23 @@ async function nextCohortsByCourse(
   return map;
 }
 
-/** 006 — Categorías del catálogo, para el filtro del sitio comercial. */
+/**
+ * 006 — Categorías del catálogo, para el filtro del sitio comercial.
+ *
+ * Solo las que tienen al menos un curso PUBLICADO: una categoría vacía (o con
+ * cursos que no salen en la web) en el filtro lleva a una página sin cursos.
+ */
 export async function listPublicCategories(): Promise<PublicCategoryDto[]> {
   const organizationId = await resolveSoleOrganizationId();
   if (!organizationId) return [];
 
   const db = getDb();
+  const withPublishedCourses = db
+    .select({ id: schema.course.categoryId })
+    .from(schema.course)
+    .where(
+      scoped(schema.course.organizationId, organizationId, eq(schema.course.published, true))
+    );
   return db
     .select({
       id: schema.courseCategory.id,
@@ -223,7 +234,13 @@ export async function listPublicCategories(): Promise<PublicCategoryDto[]> {
       slug: schema.courseCategory.slug,
     })
     .from(schema.courseCategory)
-    .where(scoped(schema.courseCategory.organizationId, organizationId))
+    .where(
+      scoped(
+        schema.courseCategory.organizationId,
+        organizationId,
+        inArray(schema.courseCategory.id, withPublishedCourses)
+      )
+    )
     .orderBy(asc(schema.courseCategory.name));
 }
 
