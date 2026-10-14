@@ -28,6 +28,7 @@ const clase = (over: Partial<ClassRow> = {}): ClassRow => ({
   startTime: "18:30",
   endTime: "21:30",
   // 18:30–21:30 del 4 de septiembre en Montevideo (UTC-3).
+  startsAt: "2026-09-04T21:30:00.000Z",
   endsAt: "2026-09-05T00:30:00.000Z",
   topic: null,
   canceled: false,

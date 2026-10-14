@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useRefrescoDeClases } from "@/components/portal/use-refresco-de-clases";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -145,16 +146,24 @@ export function StudentDashboard() {
   const [data, setData] = useState<Overview | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    void (async () => {
+  const cargar = useCallback(async (refresco = false) => {
+    {
       const res = await fetch("/api/portal/me").catch(() => null);
       if (!res?.ok) {
+        if (refresco) return;
         setError("No pudimos cargar tu información. Suele ser algo momentáneo: en unos minutos debería aparecer.");
         return;
       }
       setData((await res.json()) as Overview);
-    })();
+    }
   }, []);
+
+  useEffect(() => {
+    void cargar();
+  }, [cargar]);
+
+  // El botón "Ingresar" de la próxima clase aparece solo a la hora.
+  useRefrescoDeClases(data?.nextClass ? [data.nextClass] : null, () => void cargar(true));
 
   if (error) {
     return (
@@ -884,9 +893,8 @@ function LicenseCard({
 
 /**
  * 031 (T042, US5) — "Mi escolaridad": el documento con todas las cursadas y
- * sus notas, generado al momento. Se abre en otra pestaña porque es HTML para
- * imprimir (Imprimir → Guardar como PDF), no una pantalla del portal; por eso
- * es un `<a>` y no un `Link`.
+ * sus notas, generado al momento como PDF y descargado directo. Es un `<a
+ * download>` y no un `Link`: es un archivo, no una pantalla del portal.
  */
 function EscolaridadCard() {
   return (
@@ -897,16 +905,15 @@ function EscolaridadCard() {
         </span>
         <div className="min-w-0">
           <p className="text-sm font-semibold">Tus cursos y notas en un documento</p>
-          <p className="text-xs text-text-3">Para imprimir o guardar como PDF.</p>
+          <p className="text-xs text-text-3">Tu escolaridad en PDF, lista para guardar o imprimir.</p>
         </div>
       </div>
       <a
         href="/api/portal/me/escolaridad/print"
-        target="_blank"
-        rel="noopener noreferrer"
+        download
         className="inline-flex min-h-9 shrink-0 items-center rounded-md border border-border-strong px-3 text-sm font-semibold transition-colors hover:bg-accent"
       >
-        Abrir
+        Descargar PDF
       </a>
     </PortalCard>
   );

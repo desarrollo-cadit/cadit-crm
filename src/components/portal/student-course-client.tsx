@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useRefrescoDeClases } from "@/components/portal/use-refresco-de-clases";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -173,10 +174,12 @@ export function StudentCourseClient({ enrollmentId }: { enrollmentId: string }) 
    */
   const [tab, setTab] = useState<TabKey | null>(null);
 
-  useEffect(() => {
-    void (async () => {
+  const cargar = useCallback(
+    async (refresco = false) => {
       const res = await fetch(`/api/portal/me/cursadas/${enrollmentId}`).catch(() => null);
       if (!res?.ok) {
+        // Un refresco que falla no tapa la pantalla que ya se ve.
+        if (refresco) return;
         setError(
           res?.status === 404
             ? "No se encontró este curso entre tus inscripciones."
@@ -185,8 +188,16 @@ export function StudentCourseClient({ enrollmentId }: { enrollmentId: string }) 
         return;
       }
       setData((await res.json()) as Detail);
-    })();
-  }, [enrollmentId]);
+    },
+    [enrollmentId]
+  );
+
+  useEffect(() => {
+    void cargar();
+  }, [cargar]);
+
+  // El botón "Ingresar" aparece solo a la hora, sin recargar la página.
+  useRefrescoDeClases(data?.classes ?? null, () => void cargar(true));
 
   if (error) {
     return (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRefrescoDeClases } from "@/components/portal/use-refresco-de-clases";
 import Link from "next/link";
 import { ArrowLeft, ExternalLink, Plus, Video } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -44,6 +45,8 @@ export type ClassRow = {
   date: string;
   startTime: string | null;
   endTime: string | null;
+  /** Instante de inicio ya resuelto en la zona de la academia; null sin horario. */
+  startsAt: string | null;
   /** Instante de fin ya resuelto en la zona de la academia; null sin horario. */
   endsAt: string | null;
   topic: string | null;
@@ -162,6 +165,9 @@ export function PortalCohortClient({ cohortId }: { cohortId: string }) {
   useEffect(() => {
     void refetch();
   }, [refetch]);
+
+  // El enlace de la clase aparece solo a la hora, sin recargar la página.
+  useRefrescoDeClases(datos?.classes.classes ?? null, () => void refetch());
 
   if (noEncontrada) {
     return (
