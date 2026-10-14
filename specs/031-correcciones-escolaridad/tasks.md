@@ -40,17 +40,17 @@ Formato: `- [ ] T### [P?] [US?] descripción con ruta`. `[P]` = archivo distinto
 
 **Independent test**: corregir 35/30→rechazo, 35/20/25 → 80 aprobada (mín. 60); borrador no cambia `grading`; corrección sin entrega; atajos → 422 en numérica.
 
-- [ ] T016 [P] [US2] Test que falla `tests/unit/correcciones.test.ts` (con la base de test como los demás tests de servidor): guardar borrador no toca `assessment_result` ni `submission`; publicar escribe `passed` + `score` y espeja en la entrega; republicar deja la anterior `superseded`; corrección sin entrega; inscripción de otra cohorte → 404; `recordResults` guarda `score`
-- [ ] T017 [US2] `recordResults` acepta `score` opcional y lo escribe en el upsert en `src/server/grading.ts`
-- [ ] T018 [US2] `src/server/corrections.ts`: `leerCorreccion` (publicada + en trámite + entregas + `mode`), `guardarCorreccion(…, action)` con `validarCorreccion`, y `publicarCorreccion()` (DV-003: marca published/superseded, `recordResults` con score, espeja en `submission`; LANZA ante fallo)
-- [ ] T019 [US2] Ruta staff `GET|PUT /api/assessments/[id]/corrections/[enrollmentId]` con `requireCapability("evaluacion.editar")`; `mode` según `requires_approval` y `correcciones.aprobar` de la sesión, en `src/app/api/assessments/[id]/corrections/[enrollmentId]/route.ts`
-- [ ] T020 [US2] Ruta profesor `GET|PUT /api/portal/assessments/[id]/corrections/[enrollmentId]` con `requireTeacherPortal`, alcance `teacherReachesCohort` (404) y cohorte finalizada (422), en `src/app/api/portal/assessments/[id]/corrections/[enrollmentId]/route.ts`
-- [ ] T021 [P] [US2] Test que falla en `tests/unit/correcciones.test.ts`: `PATCH results` (staff y profesor) y `PATCH /api/portal/entregas/[id]` → 422 `usar_correccion` en numérica o con aprobación; en pass_fail sin aprobación siguen funcionando y la entrega corregida deja una versión `published`
-- [ ] T022 [US2] Restringir `recordResults` vía rutas (`src/app/api/assessments/[id]/results/route.ts`, `src/app/api/portal/assessments/[id]/results/route.ts` / `teacherRecordResult` en `src/server/teacher-portal.ts`) y hacer que `corregirEntrega` en `src/server/submissions.ts` delegue en `publicarCorreccion()`
-- [ ] T023 [P] [US2] `CorrectionForm` presentacional (ejercicios con puntaje/máximo/comentario, nota calculada en vivo, campos de texto, devolución, botones según `mode`, comentario de devolución del aprobador si existe) en `src/components/grading/correction-form.tsx`
-- [ ] T024 [US2] Portal del profesor usa `CorrectionForm` (reemplaza `FormularioDeCorreccion`) y permite corregir alumnos sin entrega en `src/components/portal/portal-submissions.tsx`
-- [ ] T025 [US2] Staff abre `CorrectionForm` por alumno/evaluación desde la planilla en `src/components/cohorts/grading-client.tsx`
-- [ ] T026 [US2] Ajustar los guards de texto de UI de `tests/unit/entregas.test.ts` (691-700) a la nueva forma sin perder lo que protegen
+- [x] T016 [P] [US2] Test que falla `tests/unit/correcciones.test.ts` (con la base de test como los demás tests de servidor): guardar borrador no toca `assessment_result` ni `submission`; publicar escribe `passed` + `score` y espeja en la entrega; republicar deja la anterior `superseded`; corrección sin entrega; inscripción de otra cohorte → 404; `recordResults` guarda `score`
+- [x] T017 [US2] `recordResults` acepta `score` opcional y lo escribe en el upsert en `src/server/grading.ts`
+- [x] T018 [US2] `src/server/corrections.ts`: `leerCorreccion` (publicada + en trámite + entregas + `mode`), `guardarCorreccion(…, action)` con `validarCorreccion`, y `publicarCorreccion()` (DV-003: marca published/superseded, `recordResults` con score, espeja en `submission`; LANZA ante fallo)
+- [x] T019 [US2] Ruta staff `GET|PUT /api/assessments/[id]/corrections/[enrollmentId]` con `requireCapability("evaluacion.editar")`; `mode` según `requires_approval` y `correcciones.aprobar` de la sesión, en `src/app/api/assessments/[id]/corrections/[enrollmentId]/route.ts`
+- [x] T020 [US2] Ruta profesor `GET|PUT /api/portal/assessments/[id]/corrections/[enrollmentId]` con `requireTeacherPortal`, alcance `teacherReachesCohort` (404) y cohorte finalizada (422), en `src/app/api/portal/assessments/[id]/corrections/[enrollmentId]/route.ts`
+- [x] T021 [P] [US2] Test que falla en `tests/unit/correcciones.test.ts`: `PATCH results` (staff y profesor) y `PATCH /api/portal/entregas/[id]` → 422 `usar_correccion` en numérica o con aprobación; en pass_fail sin aprobación siguen funcionando y la entrega corregida deja una versión `published`
+- [x] T022 [US2] Restringir `recordResults` vía rutas (`src/app/api/assessments/[id]/results/route.ts`, `src/app/api/portal/assessments/[id]/results/route.ts` / `teacherRecordResult` en `src/server/teacher-portal.ts`) y hacer que `corregirEntrega` en `src/server/submissions.ts` delegue en `publicarCorreccion()`
+- [x] T023 [P] [US2] `CorrectionForm` presentacional (ejercicios con puntaje/máximo/comentario, nota calculada en vivo, campos de texto, devolución, botones según `mode`, comentario de devolución del aprobador si existe) en `src/components/grading/correction-form.tsx`
+- [x] T024 [US2] Portal del profesor usa `CorrectionForm` (reemplaza `FormularioDeCorreccion`) y permite corregir alumnos sin entrega en `src/components/portal/portal-submissions.tsx`
+- [x] T025 [US2] Staff abre `CorrectionForm` por alumno/evaluación desde la planilla en `src/components/cohorts/grading-client.tsx`
+- [x] T026 [US2] Ajustar los guards de texto de UI de `tests/unit/entregas.test.ts` (691-700) a la nueva forma sin perder lo que protegen
 
 **Checkpoint**: US1 + US2 = MVP de corrección (sin aprobación: todo publica directo).
 

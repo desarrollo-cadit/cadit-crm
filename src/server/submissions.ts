@@ -4,7 +4,8 @@ import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { classInstant } from "@/lib/schedule-time";
-import { recordResults } from "@/server/grading";
+import { admiteAtajo, plantillaDe } from "@/lib/grading-template";
+import { guardarCorreccion } from "@/server/corrections";
 import { teacherCohortDetail, teacherReachesCohort } from "@/server/teacher-portal";
 
 /**
@@ -161,7 +162,7 @@ export type EntregaDeEvaluacionDto = {
 
 export type EntregaResult<T> =
   | { ok: true; data: T }
-  | { ok: false; status: 404 | 422; code: string; message: string };
+  | { ok: false; status: 404 | 409 | 422; code: string; message: string };
 
 /* ============================================================
  * La fecha límite, compuesta en UN solo lugar
@@ -765,6 +766,9 @@ async function entregaConCohorte(organizationId: string, submissionId: string) {
       assessmentId: schema.submission.assessmentId,
       enrollmentId: schema.submission.enrollmentId,
       cohortId: schema.assessment.cohortId,
+      // 031 (DV-005) — La plantilla decide si este atajo todavía vale.
+      scale: schema.assessment.scale,
+      requiresApproval: schema.assessment.requiresApproval,
     })
     .from(schema.submission)
     .innerJoin(schema.assessment, eq(schema.submission.assessmentId, schema.assessment.id))
@@ -806,6 +810,18 @@ const EVALUACION_NO_ENCONTRADA = {
  * esquivando la regla que la planilla ya aplicaba — la misma escritura, por
  * otro camino.
  */
+/**
+ * 031 (DV-005) — La evaluación se corrige con el formulario de corrección:
+ * tiene nota numérica o requiere aprobación.
+ */
+const USAR_CORRECCION = {
+  ok: false,
+  status: 422,
+  code: "usar_correccion",
+  message:
+    "Esta evaluación tiene nota o requiere aprobación: corregila desde el formulario de corrección.",
+} as const;
+
 const COHORTE_FINALIZADA = {
   ok: false,
   status: 422,
@@ -879,46 +895,42 @@ export async function corregirEntrega(
   );
   if (!alcance.ok) return alcance;
 
-  const ahora = new Date();
-  await getDb()
-    .update(schema.submission)
-    .set({
-      passed: input.passed,
-      feedback: input.feedback,
-      correctedAt: ahora,
-      correctedBy: userId,
-      // Corregir cierra la reapertura: para volver a entregar hace falta que
-      // el profesor la reabra otra vez (FR-010).
-      reopenedAt: null,
-      reopenedBy: null,
-      updatedAt: ahora,
-    })
-    .where(
-      scoped(
-        schema.submission.organizationId,
-        organizationId,
-        eq(schema.submission.id, submissionId)
-      )
-    );
+  /*
+    031 (DV-005) — Este camino solo existe para aprobado/no aprobado sin
+    aprobación. En una numérica dejaría un `passed` sin nota; con aprobación,
+    publicaría salteando a quien aprueba. Se corta ANTES de escribir.
+  */
+  if (
+    !admiteAtajo(
+      plantillaDe({
+        scale: entrega.scale === "numeric" ? "numeric" : "pass_fail",
+        requiresApproval: entrega.requiresApproval,
+      })
+    )
+  ) {
+    return USAR_CORRECCION;
+  }
 
-  const r = await recordResults(
+  /*
+    031 (DV-003) — Corregir la entrega ya no escribe a mano la entrega y el
+    resultado: crea y PUBLICA una versión por la única puerta que escribe el
+    resultado oficial. Así hasta el camino viejo deja registro de quién
+    corrigió y cuándo, y la entrega se espeja desde el mismo lugar que en el
+    formulario nuevo.
+
+    `publicarCorreccion` LANZA si el resultado no se pudo registrar: una
+    `Response` de error no revierte la transacción, y media corrección es
+    exactamente el estado que DV-002 de 016 vino a hacer imposible.
+  */
+  const r = await guardarCorreccion(
     organizationId,
     entrega.assessmentId,
-    [{ enrollmentId: entrega.enrollmentId, passed: input.passed }],
-    userId
+    entrega.enrollmentId,
+    userId,
+    { action: "publish", submissionId, passed: input.passed, feedback: input.feedback },
+    false
   );
-  /**
-   * **Lanza, no devuelve.** La devolución ya se escribió en la entrega: una
-   * `Response` de error NO revierte la transacción del pedido, así que
-   * devolverla dejaría la entrega marcada como corregida y la planilla de 010
-   * sin el resultado. Media corrección es exactamente el estado que DV-002 vino
-   * a hacer imposible; lanzando, `withOrganizationScope` revierte las dos.
-   */
-  if (!r.ok) {
-    throw new Error(
-      `016: no se pudo registrar el resultado de la evaluación (${r.code}): ${r.message}`
-    );
-  }
+  if (!r.ok) return r;
 
   return { ok: true, data: { submissionId } };
 }

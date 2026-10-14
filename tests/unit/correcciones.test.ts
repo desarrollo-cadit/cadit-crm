@@ -1,0 +1,538 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+/**
+ * 031 (T016/T021, DV-003/DV-005) — La corrección versionada y su ÚNICA puerta
+ * de publicación.
+ *
+ * Doble de base por TABLA (y no una cola posicional única): cada consulta toma
+ * la siguiente respuesta de la tabla sobre la que hace `from(...)`. Así el test
+ * dice "la corrección en trámite es ésta" sin depender de en qué orden el
+ * módulo le pregunta a las demás tablas. Las escrituras se registran en orden,
+ * que es justo lo que DV-003 exige mirar: la vigente anterior pasa a
+ * `superseded` ANTES de que la nueva sea `published` (el índice único parcial
+ * no admite dos vigentes ni por un instante).
+ *
+ * Es el mismo criterio de los demás tests de servidor del repositorio
+ * (`entregas.test.ts`, `plantilla-correccion.test.ts`): sin base real, con la
+ * conducta conducida de punta a punta por el arnés E2E (T043).
+ */
+
+const colas = new Map<string, unknown[][]>();
+type Escritura = { op: "insert" | "update"; table: string; data: Record<string, unknown> };
+let escrituras: Escritura[] = [];
+/** La fila que devuelve un `update … returning()` (además de lo que se setea). */
+let filaDeUpdate: Record<string, unknown> = {};
+
+function responder(table: string, filas: unknown[]) {
+  colas.set(table, [...(colas.get(table) ?? []), filas]);
+}
+
+function cadena(): Record<string, unknown> {
+  let tabla = "";
+  const chain: Record<string, unknown> = {};
+  chain.from = (t: unknown) => {
+    tabla = String(t);
+    return chain;
+  };
+  for (const m of ["innerJoin", "leftJoin", "where", "orderBy", "limit", "groupBy"]) {
+    chain[m] = () => chain;
+  }
+  (chain as { then: unknown }).then = (resolve: (v: unknown) => void) =>
+    Promise.resolve(colas.get(tabla)?.shift() ?? []).then(resolve);
+  return chain;
+}
+
+vi.mock("@/lib/db", () => ({
+  getDb: () => ({
+    select: () => cadena(),
+    selectDistinct: () => cadena(),
+    insert: (table: unknown) => ({
+      values: (v: Record<string, unknown> | Record<string, unknown>[]) => {
+        const filas = Array.isArray(v) ? v : [v];
+        for (const f of filas) escrituras.push({ op: "insert", table: String(table), data: f });
+        const resultado = filas.map((f) => ({
+          createdAt: new Date("2026-10-14T12:00:00.000Z"),
+          updatedAt: new Date("2026-10-14T12:00:00.000Z"),
+          ...f,
+        }));
+        return {
+          returning: async () => resultado,
+          onConflictDoUpdate: async (cfg: { set: Record<string, unknown> }) => {
+            escrituras.push({ op: "update", table: `${String(table)}:conflicto`, data: cfg.set });
+            return [];
+          },
+        };
+      },
+    }),
+    update: (table: unknown) => ({
+      set: (s: Record<string, unknown>) => {
+        escrituras.push({ op: "update", table: String(table), data: s });
+        const chain: Record<string, unknown> = {};
+        chain.where = () => chain;
+        chain.returning = async () => [{ ...filaDeUpdate, ...s }];
+        (chain as { then: unknown }).then = (resolve: (v: unknown) => void) =>
+          Promise.resolve([]).then(resolve);
+        return chain;
+      },
+    }),
+  }),
+  schema: new Proxy(
+    {},
+    {
+      get: (_t, tableName) =>
+        new Proxy(
+          {},
+          {
+            get: (_t2, col) => {
+              if (col === "toString" || col === Symbol.toPrimitive) {
+                return () => String(tableName);
+              }
+              if (typeof col === "symbol") return undefined;
+              return `${String(tableName)}.${col}`;
+            },
+          }
+        ),
+    }
+  ),
+}));
+
+let alcanzaLaCohorte = true;
+let detalleDeCohorte: { editable: boolean } | null = { editable: true };
+
+vi.mock("@/server/teacher-portal", () => ({
+  teacherReachesCohort: async () => alcanzaLaCohorte,
+  teacherCohortDetail: async () => detalleDeCohorte,
+}));
+
+/**
+ * `recordResults` se dobla para poder ver QUÉ le llega (nota y aprobado) y
+ * para hacerlo fallar. Las pruebas de su propia escritura usan el real, con
+ * `vi.importActual`, más abajo.
+ */
+type LlamadaResultado = {
+  assessmentId: string;
+  entries: { enrollmentId: string; passed: boolean | null; score?: number | null }[];
+  opciones?: { origen?: string };
+};
+let llamadasAResultados: LlamadaResultado[] = [];
+let resultadoDeEvaluacion: unknown = { ok: true, data: { recorded: 1 } };
+
+vi.mock("@/server/grading", async (original) => ({
+  ...(await original<typeof import("@/server/grading")>()),
+  recordResults: async (
+    _org: string,
+    assessmentId: string,
+    entries: LlamadaResultado["entries"],
+    _by: string,
+    opciones?: LlamadaResultado["opciones"]
+  ) => {
+    llamadasAResultados.push({ assessmentId, entries, opciones });
+    return resultadoDeEvaluacion;
+  },
+}));
+
+const {
+  evaluacionesCongeladas,
+  guardarCorreccion,
+  guardarCorreccionDelProfesor,
+  leerCorreccion,
+  leerCorreccionDelProfesor,
+} = await import("@/server/corrections");
+const { corregirEntrega } = await import("@/server/submissions");
+const { recordResults: recordResultsReal } =
+  await vi.importActual<typeof import("@/server/grading")>("@/server/grading");
+
+beforeEach(() => {
+  colas.clear();
+  escrituras = [];
+  filaDeUpdate = {};
+  llamadasAResultados = [];
+  resultadoDeEvaluacion = { ok: true, data: { recorded: 1 } };
+  alcanzaLaCohorte = true;
+  detalleDeCohorte = { editable: true };
+});
+
+const ORG = "org_1";
+const ASM = "asm_1";
+const ENR = "enr_1";
+const USR = "usr_1";
+
+/** Trabajo final: 40/30/30, aprueba con 60 (el ejemplo del dueño). */
+const NUMERICA = {
+  assessmentId: ASM,
+  cohortId: "coh_1",
+  scale: "numeric",
+  minScore: 60,
+  requiresApproval: false,
+  criteria: [
+    { id: "c1", name: "Modelado", maxPoints: 40 },
+    { id: "c2", name: "Planos", maxPoints: 30 },
+    { id: "c3", name: "Render", maxPoints: 30 },
+  ],
+  textFields: [],
+};
+
+const PASS_FAIL = {
+  assessmentId: ASM,
+  cohortId: "coh_1",
+  scale: "pass_fail",
+  minScore: null,
+  requiresApproval: false,
+  criteria: [],
+  textFields: [],
+};
+
+/** La inscripción ES de la cohorte de la evaluación: el join devuelve fila. */
+function contexto(plantilla: Record<string, unknown>) {
+  responder("enrollment", [plantilla]);
+}
+
+const PUNTAJES_80 = [
+  { criterionId: "c1", points: 35 },
+  { criterionId: "c2", points: 20 },
+  { criterionId: "c3", points: 25 },
+];
+
+const escriturasEn = (tabla: string) => escrituras.filter((e) => e.table === tabla);
+
+describe("DV-003 — un borrador no toca el resultado oficial", () => {
+  it("guardar borrador inserta una versión `draft` y no escribe resultado ni entrega", async () => {
+    contexto(NUMERICA);
+    responder("correction", []); // nada en trámite
+
+    const r = await guardarCorreccion(ORG, ASM, ENR, USR, {
+      action: "draft",
+      criterionScores: [{ criterionId: "c1", points: 35 }],
+    }, false);
+
+    expect(r.ok).toBe(true);
+    const insert = escriturasEn("correction").find((e) => e.op === "insert");
+    expect(insert?.data).toMatchObject({ status: "draft", assessmentId: ASM, enrollmentId: ENR });
+    expect(llamadasAResultados).toEqual([]);
+    expect(escriturasEn("submission")).toEqual([]);
+  });
+
+  it("un borrador existente se actualiza, no se duplica", async () => {
+    contexto(NUMERICA);
+    responder("correction", [{ id: "cor_1", status: "draft" }]);
+    filaDeUpdate = { id: "cor_1", assessmentId: ASM, enrollmentId: ENR, status: "draft" };
+
+    const r = await guardarCorreccion(ORG, ASM, ENR, USR, { action: "draft" }, false);
+
+    expect(r.ok).toBe(true);
+    expect(escriturasEn("correction").map((e) => e.op)).toEqual(["update"]);
+    expect(llamadasAResultados).toEqual([]);
+  });
+});
+
+describe("DV-003 — publicar es la ÚNICA escritura del resultado oficial", () => {
+  it("35/20/25 → 80, aprobada con mínimo 60: escribe nota y aprobado, y espeja en la entrega", async () => {
+    contexto(NUMERICA);
+    responder("correction", []); // nada en trámite
+    responder("submission", [{ id: "sub_1" }]); // la entrega es de esta evaluación y alumno
+    // publicarCorreccion relee la versión que va a publicar
+    responder("correction", [
+      {
+        id: "cor_nueva",
+        assessmentId: ASM,
+        enrollmentId: ENR,
+        submissionId: "sub_1",
+        status: "draft",
+        score: 80,
+        passed: true,
+        feedback: "Buen trabajo",
+      },
+    ]);
+    filaDeUpdate = { id: "cor_nueva", assessmentId: ASM, enrollmentId: ENR };
+
+    const r = await guardarCorreccion(ORG, ASM, ENR, USR, {
+      action: "publish",
+      submissionId: "sub_1",
+      criterionScores: PUNTAJES_80,
+      feedback: "Buen trabajo",
+    }, false);
+
+    expect(r.ok).toBe(true);
+    expect(llamadasAResultados).toEqual([
+      {
+        assessmentId: ASM,
+        entries: [{ enrollmentId: ENR, passed: true, score: 80 }],
+        opciones: { origen: "correccion" },
+      },
+    ]);
+    const espejo = escriturasEn("submission")[0]?.data;
+    expect(espejo).toMatchObject({ passed: true, feedback: "Buen trabajo", correctedBy: USR });
+  });
+
+  it("al republicar, la vigente anterior pasa a `superseded` ANTES de publicar la nueva", async () => {
+    contexto(NUMERICA);
+    responder("correction", []);
+    responder("correction", [
+      { id: "cor_nueva", assessmentId: ASM, enrollmentId: ENR, submissionId: null, status: "draft", score: 80, passed: true, feedback: null },
+    ]);
+
+    await guardarCorreccion(ORG, ASM, ENR, USR, { action: "publish", criterionScores: PUNTAJES_80 }, false);
+
+    const estados = escriturasEn("correction")
+      .filter((e) => e.op === "update" && "status" in e.data)
+      .map((e) => e.data.status);
+    expect(estados).toEqual(["superseded", "published"]);
+  });
+
+  it("FR-014 — sin entrega se corrige igual, y no se toca ninguna entrega", async () => {
+    contexto(NUMERICA);
+    responder("correction", []);
+    responder("correction", [
+      { id: "cor_nueva", assessmentId: ASM, enrollmentId: ENR, submissionId: null, status: "draft", score: 80, passed: true, feedback: null },
+    ]);
+
+    const r = await guardarCorreccion(ORG, ASM, ENR, USR, { action: "publish", criterionScores: PUNTAJES_80 }, false);
+
+    expect(r.ok).toBe(true);
+    expect(llamadasAResultados).toHaveLength(1);
+    expect(escriturasEn("submission")).toEqual([]);
+  });
+
+  it("si el resultado no se pudo registrar, LANZA: la transacción del pedido revierte todo", async () => {
+    contexto(NUMERICA);
+    responder("correction", []);
+    responder("correction", [
+      { id: "cor_nueva", assessmentId: ASM, enrollmentId: ENR, submissionId: null, status: "draft", score: 80, passed: true, feedback: null },
+    ]);
+    resultadoDeEvaluacion = { ok: false, status: 404, code: "not_found", message: "Evaluación no encontrada" };
+
+    await expect(
+      guardarCorreccion(ORG, ASM, ENR, USR, { action: "publish", criterionScores: PUNTAJES_80 }, false)
+    ).rejects.toThrow(/not_found/);
+  });
+});
+
+describe("Lo que no se guarda", () => {
+  it("35/30 y el tercero vacío no se publica: falta un ejercicio", async () => {
+    contexto(NUMERICA);
+    responder("correction", []);
+
+    const r = await guardarCorreccion(ORG, ASM, ENR, USR, {
+      action: "publish",
+      criterionScores: [
+        { criterionId: "c1", points: 35 },
+        { criterionId: "c2", points: 30 },
+      ],
+    }, false);
+
+    expect(r).toMatchObject({ ok: false, status: 422, code: "correccion_incompleta" });
+    expect(escrituras).toEqual([]);
+  });
+
+  it("una inscripción de otra cohorte es 404, igual que una inexistente", async () => {
+    // el join inscripción × evaluación no devuelve fila
+    const r = await guardarCorreccion(ORG, ASM, "enr_ajena", USR, { action: "draft" }, false);
+    expect(r).toMatchObject({ ok: false, status: 404, code: "not_found" });
+    expect(escrituras).toEqual([]);
+    expect(await leerCorreccion(ORG, ASM, "enr_ajena", false)).toBeNull();
+  });
+
+  it("una entrega que no es de esta evaluación y alumno es 404", async () => {
+    contexto(NUMERICA);
+    responder("correction", []);
+    responder("submission", []);
+
+    const r = await guardarCorreccion(ORG, ASM, ENR, USR, {
+      action: "draft",
+      submissionId: "sub_de_otro",
+    }, false);
+
+    expect(r).toMatchObject({ ok: false, status: 404 });
+    expect(escrituras).toEqual([]);
+  });
+});
+
+describe("DV-014 — el circuito lo decide el servidor", () => {
+  const CON_APROBACION = { ...NUMERICA, requiresApproval: true };
+
+  it("publicar sin poder aprobar una evaluación que lo requiere → 422 `requiere_aprobacion`", async () => {
+    contexto(CON_APROBACION);
+    const r = await guardarCorreccion(ORG, ASM, ENR, USR, { action: "publish", criterionScores: PUNTAJES_80 }, false);
+    expect(r).toMatchObject({ ok: false, status: 422, code: "requiere_aprobacion" });
+    expect(escrituras).toEqual([]);
+  });
+
+  it("enviar deja la versión `pending` y NO toca el resultado oficial", async () => {
+    contexto(CON_APROBACION);
+    responder("correction", []);
+
+    const r = await guardarCorreccion(ORG, ASM, ENR, USR, { action: "submit", criterionScores: PUNTAJES_80 }, false);
+
+    expect(r.ok).toBe(true);
+    const insert = escriturasEn("correction").find((e) => e.op === "insert");
+    expect(insert?.data).toMatchObject({ status: "pending", submittedBy: USR });
+    expect(llamadasAResultados).toEqual([]);
+  });
+
+  it("con una versión `pending` no se edita: 409 `en_aprobacion`", async () => {
+    contexto(CON_APROBACION);
+    responder("correction", [{ id: "cor_1", status: "pending" }]);
+
+    const r = await guardarCorreccion(ORG, ASM, ENR, USR, { action: "draft" }, false);
+    expect(r).toMatchObject({ ok: false, status: 409, code: "en_aprobacion" });
+  });
+
+  it("el modo que ve la pantalla: `submit` sin la capacidad, `publish` con ella", async () => {
+    contexto(CON_APROBACION);
+    responder("correction", []);
+    responder("submission", []);
+    expect((await leerCorreccion(ORG, ASM, ENR, false))?.mode).toBe("submit");
+
+    contexto(CON_APROBACION);
+    responder("correction", []);
+    responder("submission", []);
+    expect((await leerCorreccion(ORG, ASM, ENR, true))?.mode).toBe("publish");
+  });
+});
+
+describe("La puerta del profesor", () => {
+  it("una cohorte que no alcanza es 404 (lectura y escritura)", async () => {
+    alcanzaLaCohorte = false;
+    detalleDeCohorte = null;
+    contexto(NUMERICA);
+    expect(await leerCorreccionDelProfesor(ORG, "tch_ajeno", ASM, ENR)).toBeNull();
+
+    contexto(NUMERICA);
+    const r = await guardarCorreccionDelProfesor(ORG, "tch_ajeno", USR, ASM, ENR, { action: "draft" });
+    expect(r).toMatchObject({ ok: false, status: 404 });
+    expect(escrituras).toEqual([]);
+  });
+
+  it("una cohorte finalizada no se corrige: 422 `cohorte_finalizada`", async () => {
+    detalleDeCohorte = { editable: false };
+    contexto(NUMERICA);
+    const r = await guardarCorreccionDelProfesor(ORG, "tch_1", USR, ASM, ENR, { action: "draft" });
+    expect(r).toMatchObject({ ok: false, status: 422, code: "cohorte_finalizada" });
+    expect(escrituras).toEqual([]);
+  });
+
+  it("el profesor nunca publica una evaluación con aprobación: su modo es `submit`", async () => {
+    contexto({ ...NUMERICA, requiresApproval: true });
+    responder("correction", []);
+    responder("submission", []);
+    expect((await leerCorreccionDelProfesor(ORG, "tch_1", ASM, ENR))?.mode).toBe("submit");
+  });
+});
+
+describe("DV-008 — qué evaluaciones quedaron congeladas", () => {
+  it("las que tienen una corrección publicada (o reemplazada)", async () => {
+    responder("correction", [{ assessmentId: "asm_1" }, { assessmentId: "asm_3" }]);
+    const congeladas = await evaluacionesCongeladas(ORG, "coh_1");
+    expect([...congeladas].sort()).toEqual(["asm_1", "asm_3"]);
+  });
+});
+
+/* ============================================================
+ * T021 (DV-005) — Los atajos de carga rápida
+ * ============================================================ */
+
+describe("DV-005 — `recordResults` (el real) solo admite el atajo donde no esquiva nada", () => {
+  it("numérica por el atajo → 422 `usar_correccion`, sin escribir", async () => {
+    responder("assessment", [{ id: ASM, scale: "numeric", requiresApproval: false }]);
+    const r = await recordResultsReal(ORG, ASM, [{ enrollmentId: ENR, passed: true }], USR);
+    expect(r).toMatchObject({ ok: false, status: 422, code: "usar_correccion" });
+    expect(escrituras).toEqual([]);
+  });
+
+  it("con aprobación requerida, tampoco", async () => {
+    responder("assessment", [{ id: ASM, scale: "pass_fail", requiresApproval: true }]);
+    const r = await recordResultsReal(ORG, ASM, [{ enrollmentId: ENR, passed: true }], USR);
+    expect(r).toMatchObject({ ok: false, status: 422, code: "usar_correccion" });
+  });
+
+  it("aprobado/no aprobado sin aprobación sigue funcionando y no toca la nota", async () => {
+    responder("assessment", [{ id: ASM, scale: "pass_fail", requiresApproval: false }]);
+    const r = await recordResultsReal(ORG, ASM, [{ enrollmentId: ENR, passed: true }], USR);
+    expect(r.ok).toBe(true);
+    const conflicto = escrituras.find((e) => e.table === "assessmentResult:conflicto");
+    expect(conflicto && "score" in conflicto.data).toBe(false);
+  });
+
+  it("T017 — desde la corrección guarda la nota, también en una numérica", async () => {
+    responder("assessment", [{ id: ASM, scale: "numeric", requiresApproval: true }]);
+    const r = await recordResultsReal(
+      ORG,
+      ASM,
+      [{ enrollmentId: ENR, passed: true, score: 80 }],
+      USR,
+      { origen: "correccion" }
+    );
+    expect(r.ok).toBe(true);
+    const insert = escrituras.find((e) => e.op === "insert" && e.table === "assessmentResult");
+    expect(insert?.data).toMatchObject({ score: 80, passed: true });
+    const conflicto = escrituras.find((e) => e.table === "assessmentResult:conflicto");
+    expect(conflicto && "score" in conflicto.data).toBe(true);
+  });
+});
+
+const ENTREGA = {
+  id: "sub_1",
+  assessmentId: ASM,
+  enrollmentId: ENR,
+  cohortId: "coh_1",
+};
+
+describe("DV-005 — la corrección vieja de la entrega", () => {
+  it("en una numérica responde 422 `usar_correccion` y no escribe nada", async () => {
+    responder("submission", [{ ...ENTREGA, scale: "numeric", requiresApproval: false }]);
+
+    const r = await corregirEntrega(ORG, "tch_1", USR, "sub_1", { passed: true, feedback: "Bien" });
+
+    expect(r).toMatchObject({ ok: false, status: 422, code: "usar_correccion" });
+    expect(escrituras).toEqual([]);
+  });
+
+  it("en aprobado/no aprobado delega en `publicarCorreccion`: deja una versión publicada", async () => {
+    responder("submission", [{ ...ENTREGA, scale: "pass_fail", requiresApproval: false }]);
+    contexto(PASS_FAIL);
+    responder("correction", []);
+    responder("submission", [{ id: "sub_1" }]);
+    responder("correction", [
+      { id: "cor_nueva", assessmentId: ASM, enrollmentId: ENR, submissionId: "sub_1", status: "draft", score: null, passed: false, feedback: "Faltan las cotas" },
+    ]);
+
+    const r = await corregirEntrega(ORG, "tch_1", USR, "sub_1", {
+      passed: false,
+      feedback: "Faltan las cotas",
+    });
+
+    expect(r).toMatchObject({ ok: true });
+    const estados = escriturasEn("correction")
+      .filter((e) => "status" in e.data)
+      .map((e) => e.data.status);
+    expect(estados).toContain("published");
+    expect(llamadasAResultados[0]?.entries).toEqual([
+      { enrollmentId: ENR, passed: false, score: null },
+    ]);
+    expect(escriturasEn("submission")[0]?.data).toMatchObject({
+      passed: false,
+      feedback: "Faltan las cotas",
+    });
+  });
+});
+
+describe("DV-005 — ninguna puerta de atajo se declara corrección", () => {
+  const leer = (...p: string[]) => readFileSync(path.join(process.cwd(), ...p), "utf8");
+
+  it("las rutas de carga rápida y el portal del profesor llaman al atajo restringido", () => {
+    for (const src of [
+      leer("src", "app", "api", "assessments", "[id]", "results", "route.ts"),
+      leer("src", "app", "api", "portal", "assessments", "[id]", "results", "route.ts"),
+      leer("src", "server", "teacher-portal.ts"),
+      leer("src", "server", "submissions.ts"),
+    ]) {
+      expect(src).not.toMatch(/origen:\s*"correccion"/);
+    }
+  });
+
+  it("solo `corrections.ts` publica con el origen de la corrección", () => {
+    expect(leer("src", "server", "corrections.ts")).toMatch(/origen:\s*"correccion"/);
+  });
+});

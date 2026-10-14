@@ -46,8 +46,13 @@ let entregaGanaLaCarrera = true;
 let detalleDeCohorte: { editable: boolean } | null = { editable: true };
 let alcanzaLaCohorte = true;
 
-/** Lo que contesta `recordResults` (010) cuando 016 le pasa el resultado. */
-let resultadoDeEvaluacion: unknown = { ok: true, data: { recorded: 1 } };
+/**
+ * 031 (DV-003) — Corregir la entrega delega en la corrección versionada. Lo que
+ * contesta `guardarCorreccion`, y con qué la llamaron: este archivo prueba qué
+ * hace 016 con eso; la publicación en sí la prueba `correcciones.test.ts`.
+ */
+let respuestaDeCorreccion: () => Promise<unknown> = async () => ({ ok: true, data: {} });
+let llamadaACorreccion: unknown[] | null = null;
 
 function thenableChain(rows: unknown[]) {
   const chain: Record<string, unknown> = {};
@@ -110,8 +115,11 @@ vi.mock("@/server/teacher-portal", () => ({
   teacherCohortDetail: async () => detalleDeCohorte,
 }));
 
-vi.mock("@/server/grading", () => ({
-  recordResults: async () => resultadoDeEvaluacion,
+vi.mock("@/server/corrections", () => ({
+  guardarCorreccion: async (...args: unknown[]) => {
+    llamadaACorreccion = args;
+    return respuestaDeCorreccion();
+  },
 }));
 
 beforeEach(() => {
@@ -121,7 +129,8 @@ beforeEach(() => {
   entregaGanaLaCarrera = true;
   detalleDeCohorte = { editable: true };
   alcanzaLaCohorte = true;
-  resultadoDeEvaluacion = { ok: true, data: { recorded: 1 } };
+  respuestaDeCorreccion = async () => ({ ok: true, data: {} });
+  llamadaACorreccion = null;
 });
 
 /**
@@ -508,7 +517,7 @@ describe("DV-005 — una cohorte finalizada no se corrige por la puerta de las e
     expect(r).toMatchObject({ ok: false, status: 404, code: "not_found" });
   });
 
-  it("con la cohorte en curso, corregir escribe normalmente", async () => {
+  it("con la cohorte en curso, corregir PUBLICA una versión con la devolución", async () => {
     selectQueue.push([ENTREGA_EN_COHORTE]);
 
     const r = await corregirEntrega("org_1", "ct_profe", "usr_1", "sub_1", {
@@ -517,7 +526,16 @@ describe("DV-005 — una cohorte finalizada no se corrige por la puerta de las e
     });
 
     expect(r).toMatchObject({ ok: true });
-    expect(actualizado).toMatchObject({ passed: false, feedback: "Faltan las cotas" });
+    // 031 (DV-003) — por la única puerta del resultado oficial, nunca a mano.
+    expect(llamadaACorreccion).toEqual([
+      "org_1",
+      "asm_1",
+      "enr_1",
+      "usr_1",
+      { action: "publish", submissionId: "sub_1", passed: false, feedback: "Faltan las cotas" },
+      false,
+    ]);
+    expect(actualizado).toBeNull();
   });
 });
 
@@ -532,11 +550,10 @@ describe("FR-006/DV-002 — corregir escribe las DOS cosas, o ninguna", () => {
    * vino a hacer imposible. Lanzando, `withOrganizationScope` revierte las dos.
    */
   it("si el resultado de la evaluación no se pudo registrar, LANZA y se revierte todo", async () => {
-    resultadoDeEvaluacion = {
-      ok: false,
-      status: 404,
-      code: "not_found",
-      message: "Evaluación no encontrada",
+    // `publicarCorreccion` lanza cuando `recordResults` falla
+    // (correcciones.test.ts); acá se fija que corregir NO se lo trague.
+    respuestaDeCorreccion = async () => {
+      throw new Error("031: no se pudo registrar el resultado oficial (not_found)");
     };
     selectQueue.push([ENTREGA_EN_COHORTE]);
 
@@ -804,5 +821,33 @@ describe("016 — el plazo se edita por fila, con su propia fecha", () => {
    */
   it("y cambiar de fila no arrastra lo tipeado en la anterior", () => {
     expect(PLANILLA).not.toContain("setAbierta(abierta === a.id ? null : a.id)");
+  });
+});
+
+/**
+ * 031 (T024/T026, DV-013/DV-014) — El profesor corrige con el formulario
+ * compartido y por SU puerta.
+ *
+ * El formulario viejo hacía `PATCH /api/portal/entregas/:id`, que solo sabe de
+ * aprobado/no aprobado: en una evaluación numérica o con aprobación responde
+ * 422 `usar_correccion`. Si la pantalla volviera a usarlo, el profesor no
+ * podría corregir nada de lo que 031 agrega.
+ */
+describe("031 — la corrección del profesor usa el formulario compartido", () => {
+  it("monta `CorrectionPanel` contra la ruta de correcciones del portal", () => {
+    expect(ENTREGAS_PROFE).toContain("<CorrectionPanel");
+    expect(ENTREGAS_PROFE).toContain("/api/portal/assessments/${assessmentId}/corrections/");
+  });
+
+  it("y ya no escribe la corrección por la ruta vieja de la entrega", () => {
+    expect(ENTREGAS_PROFE).not.toContain("function FormularioDeCorreccion");
+    expect(ENTREGAS_PROFE).not.toMatch(/fetch\(`\/api\/portal\/entregas\/\$\{submissionId\}`/);
+  });
+
+  it("se puede corregir a quien todavía no entregó (FR-014)", () => {
+    const sinEntrega = ENTREGAS_PROFE.indexOf("Todavía no entregó.");
+    expect(sinEntrega).toBeGreaterThan(-1);
+    const bloque = ENTREGAS_PROFE.slice(sinEntrega, ENTREGAS_PROFE.indexOf("Otorgar prórroga", sinEntrega));
+    expect(bloque).toContain("setCorrigiendo");
   });
 });

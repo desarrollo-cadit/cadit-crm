@@ -76,6 +76,8 @@ describe("030 US6 — los portales no leen las tablas de Zoom", () => {
       .sort();
     expect(rutas).toEqual(
       [
+        // 031 — la corrección versionada del profesor; no lee tablas de Zoom.
+        "assessments/[id]/corrections/[enrollmentId]/route.ts",
         "assessments/[id]/plazo/route.ts",
         "assessments/[id]/results/route.ts",
         "classes/[id]/attendance/route.ts",

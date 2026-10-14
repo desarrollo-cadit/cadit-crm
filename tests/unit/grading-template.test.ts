@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  admiteAtajo,
   aproboConNota,
   completarIds,
   leerPlantilla,
+  modoDeCorreccion,
   notaDeCorreccion,
+  plantillaDe,
   plantillaCongelada,
   validarCorreccion,
   validarPlantilla,
@@ -439,5 +442,43 @@ describe("plantillaCongelada (DV-008)", () => {
         textFields: [{ id: "f1", name: "Lo mejor", required: false }],
       })
     ).toBe(false);
+  });
+});
+
+/**
+ * 031 (T019/T022, DV-005/DV-014) — Quién decide el circuito.
+ *
+ * Son dos preguntas puras que contestan las dos puertas y los tres atajos: si
+ * una corrección se PUBLICA o se ENVÍA a aprobación, y si la carga rápida de la
+ * celda todavía vale para esta evaluación.
+ */
+describe("modoDeCorreccion", () => {
+  it("sin aprobación requerida, publica cualquiera", () => {
+    expect(modoDeCorreccion(PASS_FAIL, false)).toBe("publish");
+    expect(modoDeCorreccion(NUMERICA, false)).toBe("publish");
+  });
+
+  it("con aprobación requerida, publica solo quien puede aprobar", () => {
+    const conAprobacion = { ...NUMERICA, requiresApproval: true };
+    expect(modoDeCorreccion(conAprobacion, true)).toBe("publish");
+    expect(modoDeCorreccion(conAprobacion, false)).toBe("submit");
+  });
+});
+
+describe("admiteAtajo", () => {
+  it("solo aprobado/no aprobado sin aprobación admite la carga rápida", () => {
+    expect(admiteAtajo(PASS_FAIL)).toBe(true);
+    expect(admiteAtajo({ ...PASS_FAIL, requiresApproval: true })).toBe(false);
+    expect(admiteAtajo(NUMERICA)).toBe(false);
+  });
+});
+
+describe("plantillaDe", () => {
+  it("lo que no trae plantilla es aprobado/no aprobado, como antes de 031", () => {
+    expect(plantillaDe({})).toEqual(PASS_FAIL);
+  });
+
+  it("respeta lo que trae", () => {
+    expect(plantillaDe(NUMERICA)).toEqual(NUMERICA);
   });
 });

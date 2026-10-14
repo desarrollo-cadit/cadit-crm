@@ -305,3 +305,41 @@ export function plantillaCongelada(anterior: Template, nueva: Template): boolean
 export function etiquetaDePlantilla(t: Template): string {
   return t.scale === "numeric" ? `Numérica · aprueba con ${t.minScore}` : "Aprobado / no aprobado";
 }
+
+/**
+ * La plantilla de algo que PUEDE traerla (un DTO de evaluación, una fila de la
+ * planilla). Lo que no la trae es aprobado/no aprobado, que es lo que era toda
+ * evaluación antes de 031 (FR-001).
+ *
+ * Vive acá y no en el servidor ni en la pantalla porque las dos la necesitan:
+ * con una copia en cada lado, el default de una se corre y la otra no.
+ */
+export function plantillaDe(a: Partial<Template>): Template {
+  return {
+    scale: a.scale ?? "pass_fail",
+    minScore: a.minScore ?? null,
+    requiresApproval: a.requiresApproval ?? false,
+    criteria: a.criteria ?? [],
+    textFields: a.textFields ?? [],
+  };
+}
+
+/**
+ * DV-014/FR-018 — Si quien corrige PUBLICA o ENVÍA a aprobación. Lo decide el
+ * servidor con la plantilla y la capacidad de la sesión; la pantalla solo
+ * dibuja el botón que corresponde. El profesor nunca tiene capacidades de
+ * staff, así que su puerta pasa siempre `false`.
+ */
+export function modoDeCorreccion(t: Template, puedeAprobar: boolean): "publish" | "submit" {
+  return !t.requiresApproval || puedeAprobar ? "publish" : "submit";
+}
+
+/**
+ * DV-005 — La carga rápida (la celda de la planilla, la corrección vieja de la
+ * entrega) sigue valiendo SOLO donde no puede esquivar nada: aprobado/no
+ * aprobado y sin aprobación. En una numérica dejaría un `passed` sin nota que
+ * lo explique; con aprobación, publicaría salteando a quien aprueba.
+ */
+export function admiteAtajo(t: Template): boolean {
+  return t.scale === "pass_fail" && !t.requiresApproval;
+}

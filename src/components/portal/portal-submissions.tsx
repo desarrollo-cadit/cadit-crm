@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { CalendarClock, ExternalLink, RotateCcw } from "lucide-react";
+import { CorrectionPanel } from "@/components/grading/correction-panel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { wallClockInZone } from "@/lib/schedule-time";
 import { notify } from "@/lib/notify";
@@ -373,24 +373,39 @@ function AlumnoFila({
             </Button>
           </div>
 
-          {corrigiendo && (
-            <FormularioDeCorreccion
-              submissionId={ultima.id}
-              onListo={() => {
-                setCorrigiendo(false);
-                onCambio();
-              }}
-              onError={onError}
-            />
-          )}
         </div>
       ) : (
         <div className="flex flex-wrap items-center gap-2">
           <p className="text-xs text-muted-foreground">Todavía no entregó.</p>
+          {/*
+            031 (FR-014) — Se corrige aunque no haya entrega: un examen
+            presencial o un trabajo que llegó por otro canal también tienen
+            nota, y sin esto quedaban fuera del sistema.
+          */}
+          <Button size="sm" variant="outline" onClick={() => setCorrigiendo((v) => !v)}>
+            Corregir
+          </Button>
           <Button size="sm" variant="outline" onClick={() => setProrrogando((v) => !v)}>
             Otorgar prórroga
           </Button>
         </div>
+      )}
+
+      {/*
+        031 (T024, DV-013) — El formulario de corrección compartido, por la
+        puerta del profesor. La plantilla, la versión vigente y si se publica o
+        se envía a aprobación los trae el servidor.
+      */}
+      {corrigiendo && (
+        <CorrectionPanel
+          endpoint={`/api/portal/assessments/${assessmentId}/corrections/${alumno.enrollmentId}`}
+          entregaSugerida={ultima?.id ?? null}
+          onListo={() => {
+            setCorrigiendo(false);
+            onCambio();
+          }}
+          onCancelar={() => setCorrigiendo(false)}
+        />
       )}
 
       {prorrogando && (
@@ -612,87 +627,6 @@ function FormularioDeProrroga({
       </div>
       <Button type="submit" size="sm" disabled={!fecha || guardando}>
         Otorgar prórroga
-      </Button>
-    </form>
-  );
-}
-
-/**
- * US3/FR-007 — Corregir: aprobar o no, y escribir la devolución.
- *
- * La devolución es obligatoria y no es una validación de forma: **un "no
- * aprobado" sin explicación no le sirve de nada al alumno**, que es
- * textualmente lo que pide la fase.
- *
- * Al guardar se escribe también el resultado de la evaluación (010) en el
- * mismo movimiento: el doble paso es la razón por la que hoy los datos no se
- * cargan.
- */
-function FormularioDeCorreccion({
-  submissionId,
-  onListo,
-  onError,
-}: {
-  submissionId: string;
-  onListo: () => void;
-  onError: (m: string | null) => void;
-}) {
-  const [passed, setPassed] = useState("si");
-  const [feedback, setFeedback] = useState("");
-  const [guardando, setGuardando] = useState(false);
-
-  async function guardar(e: React.FormEvent) {
-    e.preventDefault();
-    setGuardando(true);
-    const res = await fetch(`/api/portal/entregas/${submissionId}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ passed: passed === "si", feedback: feedback.trim() }),
-    }).catch(() => null);
-    setGuardando(false);
-    if (!res?.ok) {
-      const body = (await res?.json().catch(() => null)) as
-        | { error?: { message?: string } }
-        | null;
-      onError(body?.error?.message ?? "No se pudo guardar la corrección.");
-      return;
-    }
-    notify.success("Corrección guardada.");
-    onListo();
-  }
-
-  return (
-    <form onSubmit={guardar} className="space-y-3 rounded-md border border-dashed p-3">
-      <div className="space-y-1.5">
-        <Label htmlFor={`resultado-${submissionId}`}>Resultado</Label>
-        <Select
-          id={`resultado-${submissionId}`}
-          className="h-11"
-          value={passed}
-          onChange={(e) => setPassed(e.target.value)}
-        >
-          <option value="si">Aprobado</option>
-          <option value="no">No aprobado</option>
-        </Select>
-      </div>
-      <div className="space-y-1.5">
-        <Label htmlFor={`devolucion-${submissionId}`}>Devolución</Label>
-        <textarea
-          id={`devolucion-${submissionId}`}
-          required
-          rows={3}
-          className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm"
-          placeholder="Qué está bien, qué hay que corregir y con qué criterio."
-          value={feedback}
-          onChange={(e) => setFeedback(e.target.value)}
-        />
-        <p className="text-xs text-muted-foreground">
-          El alumno podrá leer esta devolución. Al guardar, el resultado se
-          registra también en la planilla de evaluaciones.
-        </p>
-      </div>
-      <Button type="submit" size="sm" disabled={feedback.trim().length < 3 || guardando}>
-        Guardar corrección
       </Button>
     </form>
   );

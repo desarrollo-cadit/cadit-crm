@@ -4,9 +4,11 @@ import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import {
+  admiteAtajo,
   completarIds,
   leerPlantilla,
   plantillaCongelada,
+  plantillaDe,
   validarPlantilla,
   type Criterion,
   type Scale,
@@ -424,17 +426,6 @@ export type AssessmentDto = {
   textFields?: TextField[];
 };
 
-/** La plantilla de un DTO, con el default de antes de 031 si no la trae. */
-export function plantillaDe(a: AssessmentDto): Template {
-  return {
-    scale: a.scale ?? "pass_fail",
-    minScore: a.minScore ?? null,
-    requiresApproval: a.requiresApproval ?? false,
-    criteria: a.criteria ?? [],
-    textFields: a.textFields ?? [],
-  };
-}
-
 type FilaAssessment = typeof schema.assessment.$inferSelect;
 
 function assessmentDto(a: FilaAssessment): AssessmentDto {
@@ -577,17 +568,43 @@ export async function guardarPlantilla(
   return { ok: true, data: assessmentDto(actualizada[0]!) };
 }
 
-/** Carga o corrige el resultado de un alumno. Volver a cargar CORRIGE. */
+/**
+ * Carga o corrige el resultado de un alumno. Volver a cargar CORRIGE.
+ *
+ * 031 (DV-003/DV-005) — Hay DOS orígenes, y el default es el restringido:
+ *
+ * - `atajo` (la celda de la planilla, el portal del profesor, la corrección
+ *   vieja de la entrega): solo vale en aprobado/no aprobado sin aprobación.
+ *   En cualquier otra evaluación responde 422 `usar_correccion`, porque
+ *   dejaría un `passed` sin nota que lo explique o publicaría salteando a
+ *   quien aprueba.
+ * - `correccion`: lo pasa SOLO `publicarCorreccion()`, y es el único camino que
+ *   escribe `score`.
+ *
+ * El default es `atajo` a propósito: quien agregue un llamador nuevo y se
+ * olvide de pensar en esto queda del lado seguro.
+ */
 export async function recordResults(
   organizationId: string,
   assessmentId: string,
-  entries: { enrollmentId: string; passed: boolean | null; notes?: string | null }[],
-  recordedBy?: string | null
+  entries: {
+    enrollmentId: string;
+    passed: boolean | null;
+    notes?: string | null;
+    score?: number | null;
+  }[],
+  recordedBy?: string | null,
+  opciones: { origen?: "atajo" | "correccion" } = {}
 ): Promise<GradingResult<{ recorded: number }>> {
   const db = getDb();
+  const desdeCorreccion = opciones.origen === "correccion";
 
   const rows = await db
-    .select({ id: schema.assessment.id })
+    .select({
+      id: schema.assessment.id,
+      scale: schema.assessment.scale,
+      requiresApproval: schema.assessment.requiresApproval,
+    })
     .from(schema.assessment)
     .where(
       scoped(
@@ -597,8 +614,21 @@ export async function recordResults(
       )
     )
     .limit(1);
-  if (!rows[0]) {
+  const evaluacion = rows[0];
+  if (!evaluacion) {
     return { ok: false, status: 404, code: "not_found", message: "Evaluación no encontrada" };
+  }
+  if (!desdeCorreccion && !admiteAtajo(plantillaDe({
+    scale: evaluacion.scale === "numeric" ? "numeric" : "pass_fail",
+    requiresApproval: evaluacion.requiresApproval,
+  }))) {
+    return {
+      ok: false,
+      status: 422,
+      code: "usar_correccion",
+      message:
+        "Esta evaluación tiene nota o requiere aprobación: se corrige desde el formulario de corrección, no desde la celda.",
+    };
   }
 
   /**
@@ -641,6 +671,7 @@ export async function recordResults(
           assessmentId,
           enrollmentId: e.enrollmentId,
           passed: e.passed,
+          score: e.score ?? null,
           notes: e.notes ?? null,
           recordedBy: recordedBy ?? null,
         }))
@@ -649,6 +680,10 @@ export async function recordResults(
         target: [schema.assessmentResult.assessmentId, schema.assessmentResult.enrollmentId],
         set: {
           passed: sql`excluded.passed`,
+          // 031 (DV-003) — `score` lo escribe SOLO la publicación de una
+          // corrección. El atajo no lo trae y no lo toca: existe solo en
+          // aprobado/no aprobado, donde no hay puntaje que pisar.
+          ...(desdeCorreccion ? { score: sql`excluded.score` } : {}),
           /**
            * 016 — La nota interna sólo se pisa cuando quien llama la TRAE.
            *

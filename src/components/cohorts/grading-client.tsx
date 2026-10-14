@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Award, Ban, ClipboardList, Copy, Plus } from "lucide-react";
+import { CorrectionPanel } from "@/components/grading/correction-panel";
 import { TemplateEditor } from "@/components/grading/template-editor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,7 +17,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { etiquetaDePlantilla, type Template } from "@/lib/grading-template";
+import {
+  admiteAtajo,
+  etiquetaDePlantilla,
+  plantillaDe,
+  type Template,
+} from "@/lib/grading-template";
 import { wallClockInZone } from "@/lib/schedule-time";
 import { notify } from "@/lib/notify";
 
@@ -27,6 +33,11 @@ type Assessment = {
   required: boolean;
   /** 016 (FR-005) — La fecha límite del grupo. `null` = sin plazo (DV-001). */
   dueAt?: string | null;
+  /**
+   * 031 (DV-008) — Ya tiene correcciones publicadas: la escala, el mínimo y
+   * los puntajes de su plantilla quedaron fijos.
+   */
+  frozen?: boolean;
 } & Partial<Template>;
 type State = "aprobado" | "reprobado" | "pendiente";
 
@@ -56,17 +67,6 @@ type Sheet = {
   timezone: string;
   students: Student[];
 };
-
-/** 031 — La plantilla de una evaluación, con el default de antes de 031. */
-function plantillaDe(a: Assessment): Template {
-  return {
-    scale: a.scale ?? "pass_fail",
-    minScore: a.minScore ?? null,
-    requiresApproval: a.requiresApproval ?? false,
-    criteria: a.criteria ?? [],
-    textFields: a.textFields ?? [],
-  };
-}
 
 /** 014 — Lo mínimo del listado de cohortes para poder elegir el origen. */
 type CohortOption = { id: string; name: string; courseId: string; courseName: string };
@@ -119,6 +119,13 @@ export function GradingClient({
   const [origenes, setOrigenes] = useState<CohortOption[] | null>(null);
   const [origenId, setOrigenId] = useState("");
   const [copiando, setCopiando] = useState(false);
+  /** 031 (T025) — Qué corrección está abierta: una evaluación de un alumno. */
+  const [corrigiendo, setCorrigiendo] = useState<{
+    assessmentId: string;
+    assessmentName: string;
+    enrollmentId: string;
+    studentName: string;
+  } | null>(null);
 
   const refetch = useCallback(async () => {
     const res = await fetch(`/api/cohorts/${cohortId}/grading`).catch(() => null);
@@ -380,6 +387,23 @@ export function GradingClient({
         />
       )}
 
+      {canEdit && corrigiendo && (
+        <section className="space-y-2 rounded-lg border p-3">
+          <p className="text-sm font-medium">
+            Corrección · {corrigiendo.assessmentName} · {corrigiendo.studentName}
+          </p>
+          <CorrectionPanel
+            key={`${corrigiendo.assessmentId}-${corrigiendo.enrollmentId}`}
+            endpoint={`/api/assessments/${corrigiendo.assessmentId}/corrections/${corrigiendo.enrollmentId}`}
+            onListo={() => {
+              setCorrigiendo(null);
+              void refetch();
+            }}
+            onCancelar={() => setCorrigiendo(null)}
+          />
+        </section>
+      )}
+
       {sheet.assessments.length > 0 && (
         <PlazosDeEntrega
           assessments={sheet.assessments}
@@ -436,21 +460,37 @@ export function GradingClient({
                   {sheet.assessments.map((a) => {
                     const v = st.results[a.id];
                     /*
-                      031 — Una numérica NO se carga con la celda: su aprobado
-                      sale de la nota (FR-010), y un "Aprobó" sin nota sería un
-                      resultado que la plantilla no puede explicar. La celda
-                      muestra la nota publicada; se corrige con el formulario.
+                      031 (DV-005) — Una numérica, o una que requiere
+                      aprobación, NO se carga con la celda: su aprobado sale de
+                      la nota (FR-010) o tiene que pasar por quien aprueba. La
+                      celda muestra lo PUBLICADO y abre el formulario.
                     */
-                    if (a.scale === "numeric") {
+                    if (!admiteAtajo(plantillaDe(a))) {
                       const nota = st.scores?.[a.id] ?? null;
+                      const texto =
+                        nota !== null ? `${nota}/100` : v === true ? "Aprobó" : v === false ? "No" : "—";
+                      const tono =
+                        v === true ? "text-success" : v === false ? "text-danger" : "text-muted-foreground";
                       return (
                         <TableCell key={a.id} className="p-1 text-center text-xs">
-                          {nota === null ? (
-                            <span className="text-muted-foreground">—</span>
+                          {canEdit ? (
+                            <button
+                              type="button"
+                              className={`rounded px-2 py-1 underline-offset-2 hover:underline ${tono}`}
+                              aria-label={`Corregir: ${st.contactName}, ${a.name}`}
+                              onClick={() =>
+                                setCorrigiendo({
+                                  assessmentId: a.id,
+                                  assessmentName: a.name,
+                                  enrollmentId: st.enrollmentId,
+                                  studentName: st.contactName,
+                                })
+                              }
+                            >
+                              {texto}
+                            </button>
                           ) : (
-                            <span className={v ? "text-success" : "text-danger"}>
-                              {nota}/100
-                            </span>
+                            <span className={tono}>{texto}</span>
                           )}
                         </TableCell>
                       );
@@ -606,8 +646,8 @@ export function GradingClient({
  *
  * Mismo formato que los plazos: una fila por evaluación con su resumen
  * ("Numérica · aprueba con 60") y el editor abajo, una fila a la vez. El
- * congelamiento lo decide el servidor (409): el panel no sabe si hay
- * correcciones publicadas y no lo adivina.
+ * congelamiento lo dice la planilla (`frozen`, DV-008) y el servidor lo
+ * sostiene igual con 409: el editor solo evita armar un cambio que no entra.
  */
 function PlantillasDeCorreccion({
   assessments,
@@ -685,6 +725,7 @@ function PlantillasDeCorreccion({
                 onSave={() => void guardar(a.id)}
                 onCancel={() => setAbierta(null)}
                 saving={guardando}
+                frozen={a.frozen ?? false}
               />
             )}
           </li>
