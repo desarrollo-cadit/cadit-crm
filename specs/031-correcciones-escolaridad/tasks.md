@@ -26,13 +26,13 @@ Formato: `- [ ] T### [P?] [US?] descripción con ruta`. `[P]` = archivo distinto
 
 **Independent test**: crear evaluación numérica 40/30/30 + campo de texto; se guarda y relee igual; una evaluación vieja sigue pass_fail; copiar trae la plantilla; cambiar escala con correcciones publicadas → 409.
 
-- [ ] T009 [P] [US1] Test que falla en `tests/unit/assessment-copy.test.ts`: `planAssessmentCopy` copia `scale`, `minScore`, `requiresApproval`, `criteria` (ids regenerados) y `textFields`; sigue sin copiar `dueAt`
-- [ ] T010 [US1] Extender `AssessmentDto`, `listAssessments`, `planAssessmentCopy` y `copyAssessments` con la plantilla en `src/server/grading.ts`
-- [ ] T011 [US1] `guardarPlantilla(orgId, assessmentId, template)` en `src/server/grading.ts`: valida con `validarPlantilla`, genera ids faltantes, consulta si hay correcciones `published`/`superseded` y aplica `plantillaCongelada` (409 `plantilla_congelada`)
-- [ ] T012 [US1] Ruta `PUT /api/assessments/[id]/template` con `requireCapability("evaluacion.editar")` + `parseBody` en `src/app/api/assessments/[id]/template/route.ts`
-- [ ] T013 [US1] `cohortGrading` y `GET /api/cohorts/[id]/grading` devuelven la plantilla por evaluación y `scores` por alumno en `src/server/grading.ts`
-- [ ] T014 [P] [US1] Editor presentacional de plantilla (escala, mínimo, ejercicios con suma en vivo, campos de texto, "requiere aprobación") en `src/components/grading/template-editor.tsx`, solo tokens de color
-- [ ] T015 [US1] Abrir el editor desde cada evaluación y mostrar "Numérica · aprueba con N" / nota en celda en `src/components/cohorts/grading-client.tsx`
+- [x] T009 [P] [US1] Test que falla en `tests/unit/assessment-copy.test.ts`: `planAssessmentCopy` copia `scale`, `minScore`, `requiresApproval`, `criteria` (ids regenerados) y `textFields`; sigue sin copiar `dueAt`
+- [x] T010 [US1] Extender `AssessmentDto`, `listAssessments`, `planAssessmentCopy` y `copyAssessments` con la plantilla en `src/server/grading.ts`
+- [x] T011 [US1] `guardarPlantilla(orgId, assessmentId, template)` en `src/server/grading.ts`: valida con `validarPlantilla`, genera ids faltantes, consulta si hay correcciones `published`/`superseded` y aplica `plantillaCongelada` (409 `plantilla_congelada`)
+- [x] T012 [US1] Ruta `PUT /api/assessments/[id]/template` con `requireCapability("evaluacion.editar")` + `parseBody` en `src/app/api/assessments/[id]/template/route.ts`
+- [x] T013 [US1] `cohortGrading` y `GET /api/cohorts/[id]/grading` devuelven la plantilla por evaluación y `scores` por alumno en `src/server/grading.ts`
+- [x] T014 [P] [US1] Editor presentacional de plantilla (escala, mínimo, ejercicios con suma en vivo, campos de texto, "requiere aprobación") en `src/components/grading/template-editor.tsx`, solo tokens de color
+- [x] T015 [US1] Abrir el editor desde cada evaluación y mostrar "Numérica · aprueba con N" / nota en celda en `src/components/cohorts/grading-client.tsx`
 
 **Checkpoint**: US1 operable sola.
 

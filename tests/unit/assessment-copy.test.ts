@@ -41,7 +41,7 @@ describe("T014 — copiar no duplica (constitución IV)", () => {
   /** Lo obligatorio viaja: una práctica opcional no puede volverse requisito. */
   it("respeta `required` de cada evaluación", () => {
     const plan = planAssessmentCopy([ev("Práctica", 0, false), ev("Final", 1, true)], []);
-    expect(plan.aCopiar).toEqual([
+    expect(plan.aCopiar.map(({ name, required, position }) => ({ name, required, position }))).toEqual([
       { name: "Práctica", required: false, position: 0 },
       { name: "Final", required: true, position: 1 },
     ]);
@@ -99,7 +99,7 @@ describe("T014 — copiar no duplica (constitución IV)", () => {
       [ev("Diagnóstico propio", 0), ev("Parcial 1", 1)]
     );
 
-    expect(plan.aCopiar).toEqual([{ name: "Final", required: true, position: 2 }]);
+    expect(plan.aCopiar.map((a) => [a.name, a.position])).toEqual([["Final", 2]]);
     expect(plan.omitidas).toEqual(["Parcial 1"]);
   });
 
@@ -141,15 +141,91 @@ describe("T014 — copiar de una cohorte vacía avisa, no falla", () => {
 describe("T014 — lo que NO se copia", () => {
   /**
    * **Los resultados son de las personas de la otra cohorte.** El plan es un
-   * objeto plano con nombre, obligatoriedad y posición: no hay forma de que un
-   * resultado, un alumno o un `id` de origen se cuele en el insert.
+   * objeto plano con nombre, obligatoriedad, posición y la plantilla (031): no
+   * hay forma de que un resultado, un alumno, un `id` de origen o el plazo se
+   * cuelen en el insert.
    */
-  it("el plan solo lleva nombre, obligatoriedad y posición", () => {
-    const plan = planAssessmentCopy([ev("Parcial 1", 0)], []);
+  it("el plan solo lleva nombre, obligatoriedad, posición y plantilla", () => {
+    const plan = planAssessmentCopy([{ ...ev("Parcial 1", 0), dueAt: "2026-10-01T21:00:00.000Z" }], []);
     expect(Object.keys(plan.aCopiar[0] ?? {}).sort()).toEqual([
+      "criteria",
+      "minScore",
       "name",
       "position",
       "required",
+      "requiresApproval",
+      "scale",
+      "textFields",
     ]);
+  });
+});
+
+/**
+ * 031 (T009, DV-009, FR-006) — Copiar trae la plantilla de corrección.
+ *
+ * Sin esto, copiar las evaluaciones de la cohorte anterior dejaría todas en
+ * aprobado/no aprobado y habría que volver a armar cada plantilla a mano: el
+ * mismo agujero que la copia vino a tapar.
+ */
+describe("T009 — copiar trae la plantilla", () => {
+  const numerica: AssessmentDto = {
+    ...ev("Trabajo final", 0),
+    scale: "numeric",
+    minScore: 60,
+    requiresApproval: true,
+    criteria: [
+      { id: "c1", name: "Modelado", maxPoints: 40 },
+      { id: "c2", name: "Planos", maxPoints: 60 },
+    ],
+    textFields: [{ id: "f1", name: "Fortalezas", required: true }],
+  };
+
+  it("copia escala, mínimo, aprobación, ejercicios y campos", () => {
+    const [copia] = planAssessmentCopy([numerica], []).aCopiar;
+    expect(copia?.scale).toBe("numeric");
+    expect(copia?.minScore).toBe(60);
+    expect(copia?.requiresApproval).toBe(true);
+    expect(copia?.criteria.map(({ name, maxPoints }) => ({ name, maxPoints }))).toEqual([
+      { name: "Modelado", maxPoints: 40 },
+      { name: "Planos", maxPoints: 60 },
+    ]);
+    expect(copia?.textFields.map(({ name, required }) => ({ name, required }))).toEqual([
+      { name: "Fortalezas", required: true },
+    ]);
+  });
+
+  /**
+   * La copia es OTRA evaluación: si compartiera los ids de los ejercicios, una
+   * corrección de una cohorte se podría leer contra la plantilla de la otra.
+   */
+  it("regenera los ids de ejercicios y campos", () => {
+    const [copia] = planAssessmentCopy([numerica], []).aCopiar;
+    const ids = [...(copia?.criteria ?? []), ...(copia?.textFields ?? [])].map((x) => x.id);
+    expect(ids).toHaveLength(3);
+    for (const id of ids) {
+      expect(id).toBeTruthy();
+      expect(["c1", "c2", "f1"]).not.toContain(id);
+    }
+    expect(new Set(ids).size).toBe(3);
+  });
+
+  /** Una evaluación de antes de 031 (sin plantilla en el DTO) se copia como pass_fail. */
+  it("sin plantilla se copia aprobado/no aprobado", () => {
+    const [copia] = planAssessmentCopy([ev("Parcial", 0)], []).aCopiar;
+    expect(copia).toMatchObject({
+      scale: "pass_fail",
+      minScore: null,
+      requiresApproval: false,
+      criteria: [],
+      textFields: [],
+    });
+  });
+
+  it("sigue sin copiar el plazo", () => {
+    const [copia] = planAssessmentCopy(
+      [{ ...numerica, dueAt: "2026-10-01T21:00:00.000Z" }],
+      []
+    ).aCopiar;
+    expect(copia).not.toHaveProperty("dueAt");
   });
 });

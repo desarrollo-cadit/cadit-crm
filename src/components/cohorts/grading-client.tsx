@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Award, Ban, Copy, Plus } from "lucide-react";
+import { Award, Ban, ClipboardList, Copy, Plus } from "lucide-react";
+import { TemplateEditor } from "@/components/grading/template-editor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { etiquetaDePlantilla, type Template } from "@/lib/grading-template";
 import { wallClockInZone } from "@/lib/schedule-time";
 import { notify } from "@/lib/notify";
 
@@ -25,13 +27,15 @@ type Assessment = {
   required: boolean;
   /** 016 (FR-005) — La fecha límite del grupo. `null` = sin plazo (DV-001). */
   dueAt?: string | null;
-};
+} & Partial<Template>;
 type State = "aprobado" | "reprobado" | "pendiente";
 
 type Student = {
   enrollmentId: string;
   contactName: string;
   results: Record<string, boolean | null>;
+  /** 031 (DV-004) — La nota de las evaluaciones numéricas. Informativa. */
+  scores?: Record<string, number | null>;
   attendancePct: number | null;
   state: State;
   reasons: string[];
@@ -52,6 +56,17 @@ type Sheet = {
   timezone: string;
   students: Student[];
 };
+
+/** 031 — La plantilla de una evaluación, con el default de antes de 031. */
+function plantillaDe(a: Assessment): Template {
+  return {
+    scale: a.scale ?? "pass_fail",
+    minScore: a.minScore ?? null,
+    requiresApproval: a.requiresApproval ?? false,
+    criteria: a.criteria ?? [],
+    textFields: a.textFields ?? [],
+  };
+}
 
 /** 014 — Lo mínimo del listado de cohortes para poder elegir el origen. */
 type CohortOption = { id: string; name: string; courseId: string; courseName: string };
@@ -358,6 +373,14 @@ export function GradingClient({
       {loadError && <p className="text-xs text-danger">{loadError}</p>}
 
       {sheet.assessments.length > 0 && (
+        <PlantillasDeCorreccion
+          assessments={sheet.assessments}
+          canEdit={canEdit}
+          onCambio={refetch}
+        />
+      )}
+
+      {sheet.assessments.length > 0 && (
         <PlazosDeEntrega
           assessments={sheet.assessments}
           timezone={sheet.timezone}
@@ -396,6 +419,9 @@ export function GradingClient({
                     {!a.required && (
                       <span className="block text-[10px] font-normal">(opcional)</span>
                     )}
+                    <span className="block text-[10px] font-normal text-muted-foreground">
+                      {etiquetaDePlantilla(plantillaDe(a))}
+                    </span>
                   </TableHead>
                 ))}
                 <TableHead className="text-right">Asist.</TableHead>
@@ -409,6 +435,26 @@ export function GradingClient({
                   <TableCell className="font-medium">{st.contactName}</TableCell>
                   {sheet.assessments.map((a) => {
                     const v = st.results[a.id];
+                    /*
+                      031 — Una numérica NO se carga con la celda: su aprobado
+                      sale de la nota (FR-010), y un "Aprobó" sin nota sería un
+                      resultado que la plantilla no puede explicar. La celda
+                      muestra la nota publicada; se corrige con el formulario.
+                    */
+                    if (a.scale === "numeric") {
+                      const nota = st.scores?.[a.id] ?? null;
+                      return (
+                        <TableCell key={a.id} className="p-1 text-center text-xs">
+                          {nota === null ? (
+                            <span className="text-muted-foreground">—</span>
+                          ) : (
+                            <span className={v ? "text-success" : "text-danger"}>
+                              {nota}/100
+                            </span>
+                          )}
+                        </TableCell>
+                      );
+                    }
                     return (
                       <TableCell key={a.id} className="p-1 text-center">
                         <Select
@@ -551,6 +597,99 @@ export function GradingClient({
         Una evaluación sin corregir deja al alumno <strong>pendiente</strong>, nunca
         reprobado. El certificado se emite solo a los aprobados.
       </p>
+    </div>
+  );
+}
+
+/**
+ * 031 (T015, US1) — La plantilla de corrección de cada evaluación.
+ *
+ * Mismo formato que los plazos: una fila por evaluación con su resumen
+ * ("Numérica · aprueba con 60") y el editor abajo, una fila a la vez. El
+ * congelamiento lo decide el servidor (409): el panel no sabe si hay
+ * correcciones publicadas y no lo adivina.
+ */
+function PlantillasDeCorreccion({
+  assessments,
+  canEdit,
+  onCambio,
+}: {
+  assessments: Assessment[];
+  canEdit: boolean;
+  onCambio: () => void;
+}) {
+  const [abierta, setAbierta] = useState<string | null>(null);
+  const [borrador, setBorrador] = useState<Template | null>(null);
+  const [guardando, setGuardando] = useState(false);
+
+  function abrir(a: Assessment) {
+    if (abierta === a.id) {
+      setAbierta(null);
+      return;
+    }
+    setAbierta(a.id);
+    setBorrador(plantillaDe(a));
+  }
+
+  async function guardar(assessmentId: string) {
+    if (!borrador) return;
+    setGuardando(true);
+    const res = await fetch(`/api/assessments/${assessmentId}/template`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(borrador),
+    }).catch(() => null);
+    setGuardando(false);
+
+    if (!res?.ok) {
+      const body = (await res?.json().catch(() => null)) as
+        | { error?: { message?: string } }
+        | null;
+      notify.error(body?.error?.message ?? "No se pudo guardar la plantilla");
+      return;
+    }
+    notify.success("Plantilla de corrección guardada.");
+    setAbierta(null);
+    setBorrador(null);
+    onCambio();
+  }
+
+  return (
+    <div className="rounded-lg border">
+      <p className="border-b bg-subtle px-3 py-2 text-xs font-medium">
+        Cómo se corrige cada evaluación
+      </p>
+      <ul className="divide-y">
+        {assessments.map((a) => (
+          <li key={a.id} className="space-y-2 px-3 py-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="min-w-0 flex-1 truncate text-xs">
+                {a.name}
+                <span className="ml-2 text-muted-foreground">
+                  {etiquetaDePlantilla(plantillaDe(a))}
+                  {a.criteria && a.criteria.length > 0 && ` · ${a.criteria.length} ejercicios`}
+                  {a.requiresApproval && " · requiere aprobación"}
+                </span>
+              </span>
+              {canEdit && (
+                <Button size="sm" variant="outline" onClick={() => abrir(a)}>
+                  <ClipboardList className="h-4 w-4" />
+                  {abierta === a.id ? "Cerrar" : "Plantilla"}
+                </Button>
+              )}
+            </div>
+            {canEdit && abierta === a.id && borrador && (
+              <TemplateEditor
+                value={borrador}
+                onChange={setBorrador}
+                onSave={() => void guardar(a.id)}
+                onCancel={() => setAbierta(null)}
+                saving={guardando}
+              />
+            )}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

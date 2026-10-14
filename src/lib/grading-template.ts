@@ -297,3 +297,11 @@ export function plantillaCongelada(anterior: Template, nueva: Template): boolean
   const maximos = new Map(anterior.criteria.map((c) => [c.id, c.maxPoints]));
   return nueva.criteria.some((c) => maximos.get(c.id) !== c.maxPoints);
 }
+
+/**
+ * T015 — Cómo se resume la plantilla en la cabecera de la planilla. Una sola
+ * frase para que quien carga sepa qué está corrigiendo sin abrir el editor.
+ */
+export function etiquetaDePlantilla(t: Template): string {
+  return t.scale === "numeric" ? `Numérica · aprueba con ${t.minScore}` : "Aprobado / no aprobado";
+}

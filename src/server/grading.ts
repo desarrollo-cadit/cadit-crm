@@ -1,8 +1,18 @@
 import { randomBytes } from "node:crypto";
-import { asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
+import {
+  completarIds,
+  leerPlantilla,
+  plantillaCongelada,
+  validarPlantilla,
+  type Criterion,
+  type Scale,
+  type Template,
+  type TextField,
+} from "@/lib/grading-template";
 import {
   attendanceByModule,
   attendancePercentage,
@@ -40,6 +50,11 @@ export type StudentGrading = {
   contactName: string;
   /** Resultado por evaluación: `true`/`false`/`null` (pendiente). */
   results: Record<string, boolean | null>;
+  /**
+   * 031 (DV-004) — La nota 1–100 por evaluación numérica, solo informativa:
+   * el estado sigue saliendo de `results`. Sin entrada = sin nota.
+   */
+  scores: Record<string, number | null>;
   attendancePct: number | null;
   state: ApprovalState;
   /**
@@ -397,7 +412,41 @@ export type AssessmentDto = {
    * una camada no significa nada en la siguiente.
    */
   dueAt?: string | null;
+  /**
+   * 031 (DV-002) — La plantilla de corrección. Opcional por la misma razón que
+   * `dueAt`: los fixtures puros de la copia no tienen por qué conocerla. Una
+   * evaluación sin estos campos ES aprobado/no aprobado (ver `plantillaDe`).
+   */
+  scale?: Scale;
+  minScore?: number | null;
+  requiresApproval?: boolean;
+  criteria?: Criterion[];
+  textFields?: TextField[];
 };
+
+/** La plantilla de un DTO, con el default de antes de 031 si no la trae. */
+export function plantillaDe(a: AssessmentDto): Template {
+  return {
+    scale: a.scale ?? "pass_fail",
+    minScore: a.minScore ?? null,
+    requiresApproval: a.requiresApproval ?? false,
+    criteria: a.criteria ?? [],
+    textFields: a.textFields ?? [],
+  };
+}
+
+type FilaAssessment = typeof schema.assessment.$inferSelect;
+
+function assessmentDto(a: FilaAssessment): AssessmentDto {
+  return {
+    id: a.id,
+    name: a.name,
+    position: a.position,
+    required: a.required,
+    dueAt: a.dueAt?.toISOString() ?? null,
+    ...leerPlantilla(a),
+  };
+}
 
 export async function listAssessments(
   organizationId: string,
@@ -414,13 +463,7 @@ export async function listAssessments(
       )
     )
     .orderBy(asc(schema.assessment.position));
-  return rows.map((a) => ({
-    id: a.id,
-    name: a.name,
-    position: a.position,
-    required: a.required,
-    dueAt: a.dueAt?.toISOString() ?? null,
-  }));
+  return rows.map(assessmentDto);
 }
 
 export async function createAssessment(
@@ -452,11 +495,86 @@ export async function createAssessment(
     })
     .returning();
 
-  const a = inserted[0]!;
-  return {
-    ok: true,
-    data: { id: a.id, name: a.name, position: a.position, required: a.required },
-  };
+  return { ok: true, data: assessmentDto(inserted[0]!) };
+}
+
+/**
+ * 031 (T011, DV-008) — Guarda la plantilla de corrección de una evaluación.
+ *
+ * Una vez que hay una corrección publicada (o una publicada que ya fue
+ * reemplazada), escala, mínimo y ejercicios quedan CONGELADOS: cambiarlos le
+ * movería la nota a alguien que ya la vio (FR-005). Los nombres, los campos de
+ * texto y "requiere aprobación" se pueden seguir tocando.
+ */
+export async function guardarPlantilla(
+  organizationId: string,
+  assessmentId: string,
+  entrada: Template
+): Promise<GradingResult<AssessmentDto>> {
+  const db = getDb();
+
+  const rows = await db
+    .select()
+    .from(schema.assessment)
+    .where(
+      scoped(schema.assessment.organizationId, organizationId, eq(schema.assessment.id, assessmentId))
+    )
+    .limit(1);
+  const fila = rows[0];
+  if (!fila) {
+    return { ok: false, status: 404, code: "not_found", message: "Evaluación no encontrada" };
+  }
+
+  const plantilla = completarIds(entrada);
+  const valida = validarPlantilla(plantilla);
+  if (!valida.ok) {
+    return { ok: false, status: 422, code: "plantilla_invalida", message: valida.mensaje };
+  }
+
+  // Solo se pregunta por correcciones publicadas si el cambio toca lo que se
+  // congela: renombrar un ejercicio no paga la consulta.
+  if (plantillaCongelada(leerPlantilla(fila), plantilla)) {
+    const publicadas = await db
+      .select({ id: schema.correction.id })
+      .from(schema.correction)
+      .where(
+        scoped(
+          schema.correction.organizationId,
+          organizationId,
+          and(
+            eq(schema.correction.assessmentId, assessmentId),
+            inArray(schema.correction.status, ["published", "superseded"])
+          )
+        )
+      )
+      .limit(1);
+    if (publicadas[0]) {
+      return {
+        ok: false,
+        status: 409,
+        code: "plantilla_congelada",
+        message:
+          "Esta evaluación ya tiene correcciones publicadas: la escala, la nota mínima y los ejercicios no se pueden cambiar. Los nombres sí.",
+      };
+    }
+  }
+
+  const actualizada = await db
+    .update(schema.assessment)
+    .set({
+      scale: plantilla.scale,
+      minScore: plantilla.minScore,
+      requiresApproval: plantilla.requiresApproval,
+      criteria: plantilla.criteria,
+      textFields: plantilla.textFields,
+      updatedAt: new Date(),
+    })
+    .where(
+      scoped(schema.assessment.organizationId, organizationId, eq(schema.assessment.id, assessmentId))
+    )
+    .returning();
+
+  return { ok: true, data: assessmentDto(actualizada[0]!) };
 }
 
 /** Carga o corrige el resultado de un alumno. Volver a cargar CORRIGE. */
@@ -570,8 +688,12 @@ export async function recordResults(
  */
 
 export type CopyPlan = {
-  /** Las que hay que insertar, ya con su posición final. */
-  aCopiar: { name: string; required: boolean; position: number }[];
+  /**
+   * Las que hay que insertar, ya con su posición final y su plantilla (031,
+   * DV-009). El plazo no viaja: la fecha de una camada no significa nada en la
+   * siguiente.
+   */
+  aCopiar: ({ name: string; required: boolean; position: number } & Template)[];
   /** Las que ya existían en el destino, por nombre. */
   omitidas: string[];
   /** Qué contar cuando no se copió nada. Nunca es un error. */
@@ -598,7 +720,8 @@ function claveDeNombre(name: string): string {
  */
 export function planAssessmentCopy(
   origen: readonly AssessmentDto[],
-  destino: readonly AssessmentDto[]
+  destino: readonly AssessmentDto[],
+  generarId?: () => string
 ): CopyPlan {
   if (origen.length === 0) {
     return {
@@ -624,7 +747,19 @@ export function planAssessmentCopy(
       continue;
     }
     yaEstan.add(clave);
-    aCopiar.push({ name: a.name.trim(), required: a.required, position: position++ });
+    // Los ids de ejercicios y campos se REGENERAN: la copia es otra
+    // evaluación, y compartirlos dejaría leer una corrección de una cohorte
+    // contra la plantilla de la otra.
+    const plantilla = plantillaDe(a);
+    const nueva = completarIds(
+      {
+        ...plantilla,
+        criteria: plantilla.criteria.map((c) => ({ ...c, id: "" })),
+        textFields: plantilla.textFields.map((f) => ({ ...f, id: "" })),
+      },
+      generarId
+    );
+    aCopiar.push({ name: a.name.trim(), required: a.required, position: position++, ...nueva });
   }
 
   return {
@@ -645,8 +780,8 @@ export type CopyAssessmentsDto = {
 };
 
 /**
- * Copia las evaluaciones de una cohorte a otra: nombre, orden y si es
- * obligatoria. **Nunca los resultados.**
+ * Copia las evaluaciones de una cohorte a otra: nombre, orden, si es
+ * obligatoria y (031) su plantilla de corrección. **Nunca los resultados.**
  */
 export async function copyAssessments(
   organizationId: string,
@@ -705,6 +840,11 @@ export async function copyAssessments(
         name: a.name,
         position: a.position,
         required: a.required,
+        scale: a.scale,
+        minScore: a.minScore,
+        requiresApproval: a.requiresApproval,
+        criteria: a.criteria,
+        textFields: a.textFields,
       }))
     );
   }
@@ -1131,11 +1271,15 @@ export async function cohortGrading(
   ]);
 
   const resultsByEnrollment = new Map<string, Map<string, boolean | null>>();
+  const scoresByEnrollment = new Map<string, Map<string, number | null>>();
   for (const r of results) {
     const row = r.assessment_result;
     const map = resultsByEnrollment.get(row.enrollmentId) ?? new Map();
     map.set(row.assessmentId, row.passed);
     resultsByEnrollment.set(row.enrollmentId, map);
+    const notas = scoresByEnrollment.get(row.enrollmentId) ?? new Map();
+    notas.set(row.assessmentId, row.score);
+    scoresByEnrollment.set(row.enrollmentId, notas);
   }
 
   const attendanceByEnrollment = new Map<string, Map<string, string>>();
@@ -1188,6 +1332,7 @@ export async function cohortGrading(
         enrollmentId: e.id,
         contactName: [e.firstName, e.lastName].filter(Boolean).join(" "),
         results: Object.fromEntries(mine),
+        scores: Object.fromEntries(scoresByEnrollment.get(e.id) ?? new Map<string, number | null>()),
         attendancePct: pct,
         state,
         reasons,
