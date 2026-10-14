@@ -945,6 +945,12 @@ export type StudentCourseDetailDto = {
   resources: ResourceDto[];
   /** 024 — Dónde estoy, qué logré, qué falta. Ver `buildMilestones`. */
   milestones: StudentMilestone[];
+  /**
+   * La próxima clase de ESTA cursada, con el enlace para ingresar cuando está
+   * en ventana. La misma regla que el inicio (`pickNextClass`): el alumno
+   * que entra al curso tiene que encontrar el botón arriba, no en la fila 14.
+   */
+  nextClass: StudentNextClassDto | null;
 };
 
 /**
@@ -1215,6 +1221,7 @@ export async function studentCourseDetail(
     announcements,
     resources,
     milestones,
+    nextClass: pickNextClass(recorrido, sesiones, clock, now),
   };
 }
 

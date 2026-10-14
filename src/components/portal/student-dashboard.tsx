@@ -109,7 +109,7 @@ type Module = Omit<Course, "modules"> & {
   camadaName: string | null;
 };
 
-type NextClass = {
+export type NextClass = {
   enrollmentId: string;
   cohortId: string;
   cohortName: string;
@@ -347,12 +347,13 @@ export function StudentDashboard() {
  * va a estar en vez de dejar un botón muerto — un enlace visible todo el día
  * invita a entrar a una sala vacía.
  */
-function ProximaClase({
+/** También la usa la página del curso: el mismo botón en los dos lugares. */
+export function ProximaClase({
   course,
   next,
   academyZone,
 }: {
-  course: Course;
+  course: Pick<Course, "totalClasses" | "completedClasses">;
   next: NextClass | null;
   academyZone: string;
 }) {

@@ -25,6 +25,7 @@ import {
 } from "@/components/portal/student-bits";
 import type { ApprovalValue } from "@/components/portal/student-bits";
 import { StudentMilestones, type Milestone } from "@/components/portal/student-milestones";
+import { ProximaClase, type NextClass } from "@/components/portal/student-dashboard";
 import { StudentSubmissions } from "@/components/portal/student-submissions";
 import { ZoomRecordingPlayer, isZoomRecording } from "@/components/portal/zoom-recording-player";
 import {
@@ -144,6 +145,7 @@ type Detail = {
   }[];
   resources: { id: string; title: string; url: string; kind: string }[];
   milestones: Milestone[];
+  nextClass: NextClass | null;
 };
 
 /**
@@ -296,6 +298,11 @@ export function StudentCourseClient({ enrollmentId }: { enrollmentId: string }) 
           />
         )}
       </Tarjeta>
+
+      {/* La próxima clase con su botón "Ingresar", igual que en el inicio. */}
+      {course.status !== "finalizada" && (
+        <ProximaClase course={course} next={data.nextClass} academyZone={data.timezone} />
+      )}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start xl:grid-cols-[minmax(0,1fr)_26rem]">
         <div className="order-2 min-w-0 space-y-5 lg:order-1">
