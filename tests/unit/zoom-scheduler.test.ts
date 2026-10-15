@@ -66,6 +66,14 @@ describe("cuándo arranca", () => {
     expect(shouldStartScheduler({ NEXT_RUNTIME: "edge" })).toBe(false);
   });
 
+  it("arranca en el servidor standalone de producción, donde process.env NO trae NEXT_RUNTIME", async () => {
+    // Next reemplaza `process.env.NEXT_RUNTIME` en el bundle de
+    // instrumentation, pero el objeto `process.env` del proceso no lo tiene:
+    // exigirlo dejaba la periódica apagada en producción sin decir nada.
+    const { shouldStartScheduler } = await import("@/server/zoom/scheduler");
+    expect(shouldStartScheduler({ NODE_ENV: "production" })).toBe(true);
+  });
+
   it("arrancar dos veces no duplica el temporizador", async () => {
     const { startZoomScheduler } = await import("@/server/zoom/scheduler");
     expect(startZoomScheduler(deps())).toBe(true);

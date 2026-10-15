@@ -45,9 +45,17 @@ export function tickEveryMs(intervalMin: number): number {
   return Math.min(intervalMin, 5) * MIN;
 }
 
-/** Solo en el servidor Node de verdad: ni en vitest ni en `next build`. */
+/**
+ * Solo en el servidor Node de verdad: ni en vitest ni en `next build`.
+ *
+ * El runtime lo garantiza quien llama (`instrumentation.ts`, donde Next
+ * reemplaza `process.env.NEXT_RUNTIME` al compilar). El objeto `process.env`
+ * del servidor standalone NO trae `NEXT_RUNTIME`: exigirlo acá dejaba la
+ * periódica apagada en producción sin ningún log. Solo se rechaza un runtime
+ * declarado distinto de Node.
+ */
 export function shouldStartScheduler(env: Record<string, string | undefined>): boolean {
-  if (env.NEXT_RUNTIME !== "nodejs") return false;
+  if (env.NEXT_RUNTIME && env.NEXT_RUNTIME !== "nodejs") return false;
   if (env.VITEST || env.NODE_ENV === "test") return false;
   if (env.NEXT_PHASE === "phase-production-build") return false;
   return true;
