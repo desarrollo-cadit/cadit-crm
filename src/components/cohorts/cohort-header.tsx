@@ -41,6 +41,19 @@ export function CohortHeader({
           </div>
         ) : null}
       </div>
+      {/* 034 (FR-018) — De qué especialización es parte este módulo, con acceso directo. */}
+      {header.partOf ? (
+        <p className="text-xs text-muted-foreground">
+          Parte de{" "}
+          <Link
+            href={header.partOf.href}
+            className="font-medium text-foreground underline underline-offset-2 hover:no-underline"
+          >
+            {header.partOf.label}
+          </Link>
+          {header.partOf.position ? ` · ${header.partOf.position}` : null}
+        </p>
+      ) : null}
       {header.prev || header.next ? (
         <nav aria-label="Módulos vecinos" className="flex items-center gap-2 text-xs">
           {header.prev ? (

@@ -91,6 +91,8 @@ type Course = {
   assessments: Assessment[];
   certificate: { code: string; issuedAt: string; revokedAt: string | null } | null;
   license: License | null;
+  /** 034 (FR-024) — Todas las licencias de la cursada (el paquete puede traer varias). */
+  licenses?: License[];
   /**
    * 028 (US3) — Los módulos de una especialización, en orden de `position`.
    * Ausente en la cursada simple, que es el caso de la enorme mayoría.
@@ -178,9 +180,16 @@ export function StudentDashboard() {
   const nombreCorto = data.student.name.split(/\s+/)[0] ?? data.student.name;
   const activos = data.courses.filter((c) => c.status !== "finalizada");
   const cerrados = data.courses.filter((c) => c.status === "finalizada");
-  const licencias = data.courses
-    .map((c) => (c.license ? { curso: c.courseName, ...c.license } : null))
-    .filter((l): l is License & { curso: string } => l !== null);
+  /**
+   * 034 (FR-024) — Las licencias del paquete de la especialización y las de
+   * cada módulo que cursa, no sólo una por cursada.
+   */
+  const deLaCursada = (c: Pick<Course, "license" | "licenses">) =>
+    c.licenses ?? (c.license ? [c.license] : []);
+  const licencias: (License & { curso: string })[] = data.courses.flatMap((c) => [
+    ...deLaCursada(c).map((l) => ({ curso: c.courseName, ...l })),
+    ...(c.modules ?? []).flatMap((m) => deLaCursada(m).map((l) => ({ curso: m.cohortName, ...l }))),
+  ]);
   /**
    * US5 — Un certificado POR MÓDULO, y el general al final. Quien aprobó el
    * módulo 1 lo tiene sin esperar los ocho meses de la especialización, así
@@ -684,15 +693,19 @@ function Alertas({ courses, balances }: { courses: Course[]; balances: Balance[]
       }
     }
 
-    const lic = c.license;
-    if (lic?.assigned && lic.daysLeft !== null && lic.daysLeft <= 30) {
-      avisos.push({
-        key: `lic-${c.enrollmentId}`,
-        text:
-          lic.daysLeft < 0
-            ? `Tu licencia de ${lic.softwareName} venció.`
-            : `Tu licencia de ${lic.softwareName} vence en ${lic.daysLeft} ${lic.daysLeft === 1 ? "día" : "días"}.`,
-      });
+    // 034 (FR-024) — Cada licencia del paquete y de los módulos avisa por su cuenta.
+    const cursadas = [c, ...(c.modules ?? [])];
+    for (const cursada of cursadas) {
+      for (const lic of cursada.licenses ?? (cursada.license ? [cursada.license] : [])) {
+        if (!lic.assigned || lic.daysLeft === null || lic.daysLeft > 30) continue;
+        avisos.push({
+          key: `lic-${cursada.enrollmentId}-${lic.softwareName}`,
+          text:
+            lic.daysLeft < 0
+              ? `Tu licencia de ${lic.softwareName} venció.`
+              : `Tu licencia de ${lic.softwareName} vence en ${lic.daysLeft} ${lic.daysLeft === 1 ? "día" : "días"}.`,
+        });
+      }
     }
   }
 

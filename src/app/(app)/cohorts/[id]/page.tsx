@@ -95,6 +95,8 @@ export default async function CohortPage({
           canIssueCertificates={caps.includes("certificados.emitir")}
           canManageAccess={caps.includes("accesos.gestionar")}
           esEspecializacion={isSpecialization}
+          // 034 (FR-016) — un módulo es el que tiene especialización arriba.
+          esModulo={header?.partOf != null}
         />
       </div>
     </div>

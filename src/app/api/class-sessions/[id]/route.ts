@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { apiError, parseBody, requireCapability } from "@/lib/api";
 import { cancelSession, markAttendance } from "@/server/attendance";
+import { borrarClase } from "@/server/class-changes";
 
 export const dynamic = "force-dynamic";
 
@@ -55,3 +56,22 @@ export const PATCH = requireCapability(
 
   return apiError(422, "invalid_body", "Nada para actualizar");
 });
+
+/**
+ * 034 (US3, FR-012) — Borra UNA clase creada por error. Sólo si no tiene
+ * asistencia ni grabación: con historia responde 409 `clase_con_historia` y
+ * la pantalla ofrece cancelarla, que conserva la historia y la saca del
+ * cálculo de todos.
+ *
+ * `academico.editar`: borrar una clase es editar el cronograma, no tomar
+ * asistencia (cancelar sí queda en `asistencia.editar`, como siempre).
+ */
+export const DELETE = requireCapability(
+  "academico.editar",
+  async (session, _req: Request, ctx: Params) => {
+    const { id } = await ctx.params;
+    const result = await borrarClase(session.organizationId, id);
+    if (!result.ok) return apiError(result.status, result.code, result.message);
+    return Response.json(result.data);
+  }
+);

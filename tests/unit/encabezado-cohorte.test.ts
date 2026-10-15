@@ -147,3 +147,47 @@ describe("encabezadoDeCohorte — lecturas", () => {
     vi.doUnmock("@/lib/db");
   });
 });
+
+describe("034 (FR-018) — el módulo dice de qué especialización es parte", () => {
+  it("'Parte de EBIM 15 · Módulo 2 de 3', con el acceso a la especialización", async () => {
+    const { armarEncabezadoDeCohorte } = await import("@/lib/cohort-header");
+    const e = armarEncabezadoDeCohorte(
+      {
+        id: "m2",
+        name: "Coordinación BIM",
+        courseName: "Coordinación",
+        startDate: new Date("2026-05-01T00:00:00.000Z"),
+        endDate: null,
+        isSpecialization: false,
+        parentCohortId: "esp",
+        position: 20,
+      },
+      { id: "esp", name: "EBIM 15", courseName: "Especialización BIM" },
+      [
+        { id: "m1", name: "Revit", courseName: "Revit", position: 10, startDate: null },
+        { id: "m2", name: "Coordinación BIM", courseName: "Coordinación", position: 20, startDate: null },
+        { id: "m3", name: "Navisworks", courseName: "Navisworks", position: 30, startDate: null },
+      ]
+    );
+    expect(e.partOf).toEqual({ label: "EBIM 15", href: "/cohorts/esp", position: "Módulo 2 de 3" });
+  });
+
+  it("una cohorte común no tiene 'Parte de' (FR-019)", async () => {
+    const { armarEncabezadoDeCohorte } = await import("@/lib/cohort-header");
+    const e = armarEncabezadoDeCohorte(
+      {
+        id: "c1",
+        name: null,
+        courseName: "AutoCAD",
+        startDate: new Date("2026-05-01T00:00:00.000Z"),
+        endDate: null,
+        isSpecialization: false,
+        parentCohortId: null,
+        position: null,
+      },
+      null,
+      []
+    );
+    expect(e.partOf).toBeNull();
+  });
+});

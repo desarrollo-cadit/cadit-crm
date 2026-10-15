@@ -55,6 +55,7 @@ describe("buildModuleLicenseLines", () => {
         software: [{ id: "sw_revit", name: "Revit" }],
         licenseAssigned: true,
         licenseSoftwareId: "sw_revit",
+        licenseSoftwareIds: ["sw_revit"],
       },
       // Sin inscripción hija en el módulo: nota neutra, sin select.
       {
@@ -63,6 +64,7 @@ describe("buildModuleLicenseLines", () => {
         software: [],
         licenseAssigned: false,
         licenseSoftwareId: null,
+        licenseSoftwareIds: [],
       },
       // Inscripto, pero el módulo no declara software: la pantalla lo dice.
       {
@@ -71,6 +73,7 @@ describe("buildModuleLicenseLines", () => {
         software: [],
         licenseAssigned: false,
         licenseSoftwareId: null,
+        licenseSoftwareIds: [],
       },
     ]);
   });
@@ -108,6 +111,29 @@ describe("buildModuleLicenseLines", () => {
       software: [{ id: "sw_navis", name: "Navisworks" }],
       licenseAssigned: false,
       licenseSoftwareId: null,
+      licenseSoftwareIds: [],
     });
+  });
+});
+
+describe("034 (FR-020) — varias licencias en el módulo", () => {
+  it("una hija con dos programas los trae a los dos", async () => {
+    const { buildModuleLicenseLines } = await import("@/server/enrollments");
+    const [linea] = buildModuleLicenseLines(
+      MODULOS.slice(0, 1),
+      [{ id: "enr_h1", cohortId: "coh_m1", courseId: "crs_1", cohortName: null, courseName: "Revit" }],
+      SOFTWARE,
+      new Map([
+        [
+          "enr_h1",
+          [
+            { assigned: true, softwareId: "sw_revit" },
+            { assigned: true, softwareId: "sw_navis" },
+          ],
+        ],
+      ])
+    );
+    expect(linea?.licenseSoftwareIds).toEqual(["sw_revit", "sw_navis"]);
+    expect(linea?.licenseSoftwareId).toBe("sw_revit");
   });
 });

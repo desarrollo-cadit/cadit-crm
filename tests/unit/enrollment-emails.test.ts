@@ -58,7 +58,7 @@ vi.mock("@/server/email/templates", () => ({
   renderTemplate: (...a: unknown[]) => renderTemplate(...a),
 }));
 
-function contexto(over: { softwareName?: string | null; termsEmailSentAt?: Date | null } = {}) {
+function contexto(over: { termsEmailSentAt?: Date | null } = {}) {
   return {
     enrollment: { id: "enr_madre", termsEmailSentAt: over.termsEmailSentAt ?? null, welcomeEmailSentAt: null },
     contact: { id: "ct_1", firstName: "Ana", lastName: "Pérez", email: "ana@x.com" },
@@ -72,7 +72,6 @@ function contexto(over: { softwareName?: string | null; termsEmailSentAt?: Date 
     },
     course: { name: "Especialización BIM", modality: "en_vivo" },
     teacherName: null,
-    softwareName: over.softwareName ?? null,
   };
 }
 
@@ -98,6 +97,7 @@ describe("ya enviado: no se repite y se dice cuándo", () => {
 describe("términos de una especialización", () => {
   it("sin licencia propia, nombra las licencias de sus módulos", async () => {
     selectQueue.push([contexto()]);
+    selectQueue.push([]); // 034 — las propias: ninguna
     selectQueue.push([{ name: "Navisworks" }, { name: "Revit" }]);
     sendMail.mockResolvedValue({ ok: true, data: "msg_1" });
 
@@ -111,16 +111,22 @@ describe("términos de una especialización", () => {
     expect(updates).toHaveLength(1);
   });
 
-  it("con licencia propia, usa esa y no consulta los módulos", async () => {
-    selectQueue.push([contexto({ softwareName: "AutoCAD" })]);
-    selectQueue.push([{ name: "NO DEBERÍA LEERSE" }]);
+  /**
+   * 034 (FR-020/FR-021) — El paquete de la especialización (licencias de la
+   * madre) y las de sus módulos van JUNTOS, sin repetir el programa que esté
+   * en los dos lados.
+   */
+  it("nombra el paquete propio Y las de los módulos, sin repetir", async () => {
+    selectQueue.push([contexto()]);
+    selectQueue.push([{ name: "AutoCAD" }, { name: "Revit" }]);
+    selectQueue.push([{ name: "Revit" }]);
     sendMail.mockResolvedValue({ ok: true, data: "msg_1" });
 
     const { sendEnrollmentEmail } = await import("@/server/email/enrollment-emails");
     await sendEnrollmentEmail("org_1", "enr_madre", "terms");
 
     const vars = renderTemplate.mock.calls[0]?.[1] as { licencias: string };
-    expect(vars.licencias).toBe("AutoCAD");
+    expect(vars.licencias).toBe("AutoCAD y Revit");
   });
 
   it("sin licencias en ningún lado, lo declara en vez de inventar", async () => {

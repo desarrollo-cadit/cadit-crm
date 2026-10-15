@@ -10,6 +10,7 @@ import { ProgramClassesClient } from "@/components/cohorts/program-classes-clien
 import { ProgramClient } from "@/components/cohorts/program-client";
 import { ProgramSheetSwitcher } from "@/components/cohorts/program-sheet-switcher";
 import { RosterClient } from "@/components/cohorts/roster-client";
+import { ModuleRosterClient } from "@/components/cohorts/module-roster-client";
 
 /**
  * 009 — La cohorte pasa a tener dos vistas: el roster de alumnos (005) y la
@@ -28,8 +29,16 @@ export function CohortTabs({
   canIssueCertificates,
   canManageAccess,
   esEspecializacion,
+  esModulo = false,
 }: {
   cohortId: string;
+  /**
+   * 034 (US4, FR-016/FR-017) — ¿Es un MÓDULO de una especialización? Entonces
+   * la pestaña Alumnos es una lista de quién lo cursa (sin inscribir, sin
+   * portal, sin plata) y no hay Cursos offline: eso se gestiona en la
+   * especialización. Una cohorte común no cambia (FR-019).
+   */
+  esModulo?: boolean;
   canEnroll: boolean;
   /**
    * cursos-offline — `academico.ver`: the "Cursos offline" tab and the
@@ -94,7 +103,8 @@ export function CohortTabs({
             { key: "announcements", label: "Avisos" },
             // cursos-offline — Library content assigned to the cohort. Last:
             // it complements the cursada, it does not run it.
-            ...(canViewAcademic
+            // 034 (FR-016) — un módulo no asigna cursos offline: eso es de la especialización.
+            ...(canViewAcademic && !esModulo
               ? ([{ key: "offline", label: "Cursos offline" }] as const)
               : []),
           ] as const
@@ -116,13 +126,20 @@ export function CohortTabs({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {tab === "roster" ? (
+        {tab === "roster" && esModulo ? (
+          <ModuleRosterClient
+            cohortId={cohortId}
+            canEditEnrollments={canEditEnrollments}
+            canEditLicenses={canEditAcademic}
+          />
+        ) : tab === "roster" ? (
           <RosterClient
             cohortId={cohortId}
             canEnroll={canEnroll}
             canViewOfflineCourses={canViewAcademic}
             canEditOfflineCourses={canEditAcademic}
             canManageAccess={canManageAccess}
+            canEditLicenses={canEditAcademic}
           />
         ) : tab === "program" ? (
           <ProgramClient

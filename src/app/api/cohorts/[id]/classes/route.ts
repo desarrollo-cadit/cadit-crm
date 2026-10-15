@@ -1,5 +1,7 @@
-import { apiError, requireCapability } from "@/lib/api";
+import { z } from "zod";
+import { apiError, parseQuery, requireCapability } from "@/lib/api";
 import { listCohortClasses } from "@/server/classes";
+import { borrarClasesDeRango } from "@/server/class-changes";
 
 export const dynamic = "force-dynamic";
 
@@ -22,5 +24,31 @@ export const GET = requireCapability(
     const result = await listCohortClasses(session.organizationId, id);
     if (!result) return apiError(404, "not_found", "Cohorte no encontrada");
     return Response.json(result);
+  }
+);
+
+const DIA = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha en formato AAAA-MM-DD");
+const rangeSchema = z.object({ from: DIA, to: DIA });
+
+/**
+ * 034 (US3 escenario 3, FR-012) — Borra las clases de la cohorte entre dos
+ * días (inclusive). Se borran las que no tienen asistencia ni grabación; las
+ * demás se conservan y se devuelven en `kept` para que una persona decida.
+ * Las fechas de la cohorte no cambian.
+ */
+export const DELETE = requireCapability(
+  "academico.editar",
+  async (session, req: Request, ctx: Params) => {
+    const { id } = await ctx.params;
+    const query = parseQuery(new URL(req.url), rangeSchema);
+    if (!query.ok) return query.response;
+    const result = await borrarClasesDeRango(
+      session.organizationId,
+      id,
+      query.data.from,
+      query.data.to
+    );
+    if (!result.ok) return apiError(result.status, result.code, result.message);
+    return Response.json(result.data);
   }
 );

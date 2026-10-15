@@ -453,8 +453,16 @@ export async function teacherCohortClasses(
 
   // No viaja, no se filtra: se descarta acá, no en la pantalla (FR-008).
   // 030 (US6) — `recordingSource` es de staff: el DTO del portal no cambia.
+  // 034 — El vínculo de reprogramación es de la pantalla del staff.
   const sinCrudos = classes.classes.map(
-    ({ ownMeetingUrl: _crudo, virtualRoomId: _aula, recordingSource: _origen, ...fila }) => fila
+    ({
+      ownMeetingUrl: _crudo,
+      virtualRoomId: _aula,
+      recordingSource: _origen,
+      rescheduledFrom: _de,
+      rescheduledTo: _a,
+      ...fila
+    }) => fila
   );
   const { cohortVirtualRoomId: _aulaDeLaCohorte, ...resto } = classes;
 

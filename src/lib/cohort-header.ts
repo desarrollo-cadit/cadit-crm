@@ -41,6 +41,12 @@ export type EncabezadoDeCohorte = {
   endDate: string | null;
   prev: { href: string; label: string } | null;
   next: { href: string; label: string } | null;
+  /**
+   * 034 (FR-018) — En un módulo: "Parte de EBIM 15 · Módulo 3 de 4", con
+   * acceso directo a la especialización. `null` en toda cohorte que no es
+   * módulo (FR-019: las comunes no cambian).
+   */
+  partOf: { label: string; href: string; position: string | null } | null;
 };
 
 const ACADEMICO: Miga = { label: "Académico", href: "/academico" };
@@ -69,6 +75,7 @@ export function armarEncabezadoDeCohorte(
       badge: cohorte.isSpecialization ? "Especialización" : null,
       prev: null,
       next: null,
+      partOf: null,
     };
   }
 
@@ -97,6 +104,11 @@ export function armarEncabezadoDeCohorte(
       { label: title, href: null },
     ],
     badge: ordinal === null ? "Módulo" : `Módulo ${ordinal} de ${conOrden}`,
+    partOf: {
+      label: madre.name ?? madre.courseName,
+      href: `/cohorts/${madre.id}`,
+      position: ordinal === null ? null : `Módulo ${ordinal} de ${conOrden}`,
+    },
     // Un módulo sin orden no tiene "anterior" ni "siguiente" que afirmar.
     prev: ordinal === null || i <= 0 ? null : vecino(ordenados[i - 1]),
     next:

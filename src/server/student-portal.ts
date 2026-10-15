@@ -212,6 +212,12 @@ export type StudentCourseDto = {
   } | null;
   license: StudentLicenseDto | null;
   /**
+   * 034 (FR-020/FR-024) — TODAS las licencias de esta cursada: el paquete de
+   * una especialización lleva varias. `license` sigue siendo la primera, para
+   * las pantallas que todavía muestran una sola.
+   */
+  licenses: StudentLicenseDto[];
+  /**
    * 028 (FR-028) — Los módulos de una especialización, en orden de `position`.
    *
    * **`undefined` en una cursada simple, no una lista vacía**: FR-032 pide que
@@ -605,7 +611,17 @@ function buildCourse(
   const sinDatos = state === "sin_datos";
 
   const cert = data.certificados.find((c) => c.enrollmentId === enrollment.id);
-  const lic = data.licencias.find((l) => l.enrollmentId === enrollment.id);
+  // 034 (FR-020) — Varias por cursada; las asignadas primero.
+  const licencias = data.licencias
+    .filter((l) => l.enrollmentId === enrollment.id)
+    .sort((a, b) => Number(b.assigned) - Number(a.assigned))
+    .map((l) => ({
+      softwareName: l.softwareName,
+      assigned: l.assigned,
+      assignedAt: l.assignedAt?.toISOString() ?? null,
+      expiresAt: l.expiresAt?.toISOString() ?? null,
+      daysLeft: l.expiresAt ? Math.ceil((l.expiresAt.getTime() - now.getTime()) / DIA_MS) : null,
+    }));
 
   return {
     enrollmentId: enrollment.id,
@@ -651,17 +667,8 @@ function buildCourse(
      * un curso que no la necesita, o un alumno con licencia propia. Con fila y
      * `assigned: false` sí: alguien la pidió y todavía no llegó.
      */
-    license: lic
-      ? {
-          softwareName: lic.softwareName,
-          assigned: lic.assigned,
-          assignedAt: lic.assignedAt?.toISOString() ?? null,
-          expiresAt: lic.expiresAt?.toISOString() ?? null,
-          daysLeft: lic.expiresAt
-            ? Math.ceil((lic.expiresAt.getTime() - now.getTime()) / DIA_MS)
-            : null,
-        }
-      : null,
+    license: licencias[0] ?? null,
+    licenses: licencias,
   };
 }
 
@@ -1009,7 +1016,7 @@ export async function studentCourseDetail(
                 inArray(schema.classSession.cohortId, cohortIds)
               )
             )
-            .orderBy(asc(schema.classSession.number))
+            .orderBy(asc(schema.classSession.date), asc(schema.classSession.number))
         : [],
       db
         .select()

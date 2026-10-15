@@ -44,19 +44,12 @@ async function loadContext(organizationId: string, enrollmentId: string) {
       cohort: schema.cohort,
       course: schema.course,
       teacherName: schema.teacher.name,
-      // El correo de términos declara QUÉ licencia se presta. Sale de la
-      // licencia de esta inscripción, no de un texto fijo: el documento
-      // nombra el producto ("AutoCAD") y ese dato ya vive en la base.
-      // `license.enrollment_id` es UNIQUE, así que el join no duplica filas.
-      softwareName: schema.software.name,
     })
     .from(schema.enrollment)
     .innerJoin(schema.contact, eq(schema.enrollment.contactId, schema.contact.id))
     .innerJoin(schema.cohort, eq(schema.enrollment.cohortId, schema.cohort.id))
     .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
     .leftJoin(schema.teacher, eq(schema.cohort.teacherId, schema.teacher.id))
-    .leftJoin(schema.license, eq(schema.license.enrollmentId, schema.enrollment.id))
-    .leftJoin(schema.software, eq(schema.license.softwareId, schema.software.id))
     .where(
       scoped(
         schema.enrollment.organizationId,
@@ -66,6 +59,32 @@ async function loadContext(organizationId: string, enrollmentId: string) {
     )
     .limit(1);
   return rows[0] ?? null;
+}
+
+/**
+ * El correo de términos declara QUÉ licencias se prestan. Salen de las
+ * licencias de esta inscripción, no de un texto fijo: el documento nombra el
+ * producto ("AutoCAD") y ese dato ya vive en la base.
+ *
+ * 034 (FR-020) — Antes era un join (`license.enrollment_id` era UNIQUE). Con
+ * el paquete de una especialización caben varias, y un join con `limit 1`
+ * nombraba UNA al azar: ahora se listan todas.
+ */
+async function ownLicenseNames(organizationId: string, enrollmentId: string): Promise<string[]> {
+  const rows = await getDb()
+    .selectDistinct({ name: schema.software.name })
+    .from(schema.license)
+    .innerJoin(schema.software, eq(schema.license.softwareId, schema.software.id))
+    .where(
+      scoped(
+        schema.license.organizationId,
+        organizationId,
+        eq(schema.license.enrollmentId, enrollmentId),
+        eq(schema.license.assigned, true)
+      )
+    )
+    .orderBy(asc(schema.software.name));
+  return rows.map((r) => r.name);
 }
 
 /**
@@ -127,7 +146,7 @@ export async function sendEnrollmentEmail(
     return { ok: false, status: 404, code: "not_found", message: "Inscripción no encontrada" };
   }
 
-  const { enrollment, contact, cohort, course, teacherName, softwareName } = ctx;
+  const { enrollment, contact, cohort, course, teacherName } = ctx;
 
   if (!contact.email) {
     return {
@@ -179,10 +198,15 @@ export async function sendEnrollmentEmail(
   const logoUrl = `${env.APP_BASE_URL}/logo-cadit.png`;
   const soporte = env.M365_SENDER ?? "";
   const courseName = cohort.name ?? course.name;
+  // 034 — El paquete (las de esta inscripción) y las de sus módulos, sin repetir.
   const licencias =
     kind === "terms"
-      ? (softwareName ??
-        listaEnPalabras(await moduleLicenseNames(organizationId, enrollmentId)))
+      ? listaEnPalabras([
+          ...new Set([
+            ...(await ownLicenseNames(organizationId, enrollmentId)),
+            ...(await moduleLicenseNames(organizationId, enrollmentId)),
+          ]),
+        ])
       : null;
 
   const html =

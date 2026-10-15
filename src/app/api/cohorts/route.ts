@@ -78,6 +78,8 @@ export const POST = requireCapability(
       cohort: { id: result.id },
       licenseWarnings: result.licenseWarnings,
       scheduleWarnings: result.scheduleWarnings,
+      // 034 (FR-001) — cuántos alumnos de la especialización entraron solos.
+      autoEnrolled: result.autoEnrolled,
     },
     { status: 201 }
   );

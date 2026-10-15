@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { parseQuery, requireCapability } from "@/lib/api";
 import { listCalendarClasses } from "@/server/classes";
+import { recesosEnRango } from "@/server/recesses";
 
 export const dynamic = "force-dynamic";
 
@@ -19,15 +20,17 @@ const querySchema = z.object({
  * Se pide el rango por query en vez de devolver todo: son 41 cohortes y, con
  * los cronogramas generados, miles de clases. Traer un año entero para dibujar
  * una semana es trabajo que nadie va a ver.
+ *
+ * 034 (FR-011) — Y los recesos que tocan la semana, para marcar esos días:
+ * un día vacío por receso no es lo mismo que un día sin clases.
  */
 export const GET = requireCapability("academico.ver", async (session, req: Request) => {
   const query = parseQuery(new URL(req.url), querySchema);
   if (!query.ok) return query.response;
 
-  const classes = await listCalendarClasses(
-    session.organizationId,
-    query.data.from,
-    query.data.to
-  );
-  return Response.json({ classes });
+  const [classes, recesses] = await Promise.all([
+    listCalendarClasses(session.organizationId, query.data.from, query.data.to),
+    recesosEnRango(session.organizationId, query.data.from, query.data.to),
+  ]);
+  return Response.json({ classes, recesses });
 });

@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { CalendarDays, DoorOpen, Video, Link2 } from "lucide-react";
+import { CalendarClock, CalendarDays, DoorOpen, Link2, Trash2, Video } from "lucide-react";
+import { RecessManager } from "@/components/academic/recess-manager";
 import { ResourcesPanel, useClassMaterial } from "@/components/academic/resources-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -37,6 +38,9 @@ type ClassRow = {
   virtualRoomId: string | null;
   /** 030 — De dónde salió la grabación: adjudicada desde Zoom o pegada a mano. */
   recordingSource?: "manual" | "zoom" | null;
+  /** 034 (FR-013) — El vínculo de una reprogramación, en las dos puntas. */
+  rescheduledFrom?: { id: string; date: string } | null;
+  rescheduledTo?: { id: string; date: string } | null;
 };
 
 /**
@@ -44,6 +48,16 @@ type ClassRow = {
  * propósito: el aula no es una fuente de enlace (025, FR-004).
  */
 type Aula = { id: string; name: string; archivedAt: string | null };
+
+// El día de clase es la medianoche UTC: en la zona del navegador caía un día antes.
+function fecha(iso: string) {
+  return new Date(iso).toLocaleDateString("es-UY", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    timeZone: "UTC",
+  });
+}
 
 type Payload = {
   cohortId: string;
@@ -96,6 +110,18 @@ export function ClassesClient({
    * montaba su panel y pedía lo suyo: 100 clases, 100 requests.
    */
   const material = useClassMaterial(cohortId);
+  /** 034 (FR-013/FR-014) — La reprogramación abierta: qué clase y el día/hora nuevos. */
+  const [reprogramando, setReprogramando] = useState<{
+    classId: string;
+    date: string;
+    startTime: string;
+    endTime: string;
+    /** El servidor avisó que cae en un receso: hace falta confirmar. */
+    receso: string | null;
+  } | null>(null);
+  const [rangoDesde, setRangoDesde] = useState("");
+  const [rangoHasta, setRangoHasta] = useState("");
+  const [borrando, setBorrando] = useState(false);
 
   const refetch = useCallback(async () => {
     const res = await fetch(`/api/cohorts/${cohortId}/classes`).catch(() => null);
@@ -232,6 +258,89 @@ export function ClassesClient({
     void refetch();
   }
 
+  async function leerError(res: Response | null, porDefecto: string) {
+    const body = (await res?.json().catch(() => null)) as
+      | { error?: { code?: string; message?: string } }
+      | null;
+    return { code: body?.error?.code ?? null, message: body?.error?.message ?? porDefecto };
+  }
+
+  /**
+   * 034 (FR-012) — Borrar UNA clase. Con asistencia o grabación el servidor
+   * no la borra y lo dice: la salida es cancelarla (pestaña Asistencia).
+   */
+  async function borrarClase(c: ClassRow) {
+    if (!c.id) return;
+    const res = await fetch(`/api/class-sessions/${c.id}`, { method: "DELETE" }).catch(() => null);
+    if (!res?.ok) {
+      notify.error((await leerError(res, "No se pudo borrar la clase")).message);
+      return;
+    }
+    notify.success(`Clase ${c.number} borrada.`);
+    void refetch();
+  }
+
+  /** 034 (FR-012) — Las clases de un rango: se borran las que no tienen historia. */
+  async function borrarRango() {
+    setBorrando(true);
+    const res = await fetch(
+      `/api/cohorts/${cohortId}/classes?from=${rangoDesde}&to=${rangoHasta}`,
+      { method: "DELETE" }
+    ).catch(() => null);
+    setBorrando(false);
+    if (!res?.ok) {
+      notify.error((await leerError(res, "No se pudieron borrar las clases")).message);
+      return;
+    }
+    const body = (await res.json()) as { deleted: number; kept: { date: string; detalle: string }[] };
+    notify.success(
+      body.deleted === 1 ? "Se borró 1 clase." : `Se borraron ${body.deleted} clases.`,
+      body.kept.length > 0
+        ? {
+            description: `No se borraron ${body.kept.length}: ${body.kept
+              .map((k) => `${fecha(k.date)} (${k.detalle})`)
+              .join("; ")}`,
+          }
+        : undefined
+    );
+    setRangoDesde("");
+    setRangoHasta("");
+    void refetch();
+  }
+
+  /**
+   * 034 (FR-013/FR-014) — Reprogramar una cancelada. Si el día nuevo cae en un
+   * receso, el servidor responde 409 `en_receso` y la fila pide confirmar
+   * explícitamente antes de volver a mandar.
+   */
+  async function reprogramar(confirmRecess: boolean) {
+    if (!reprogramando) return;
+    const res = await fetch(`/api/class-sessions/${reprogramando.classId}/reschedule`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        date: reprogramando.date,
+        startTime: reprogramando.startTime || null,
+        endTime: reprogramando.endTime || null,
+        confirmRecess,
+      }),
+    }).catch(() => null);
+    if (!res?.ok) {
+      const { code, message } = await leerError(res, "No se pudo reprogramar la clase");
+      if (code === "en_receso") {
+        setReprogramando({ ...reprogramando, receso: message });
+        return;
+      }
+      notify.error(message);
+      return;
+    }
+    notify.success("Clase reprogramada.", {
+      description: "La nueva clase queda vinculada a la cancelada.",
+    });
+    setReprogramando(null);
+    void refetch();
+  }
+
   if (loading) {
     return (
       <div className="space-y-2 p-6">
@@ -246,14 +355,6 @@ export function ClassesClient({
     return <p className="p-6 text-sm text-muted-foreground">{error ?? "Sin datos"}</p>;
   }
 
-  // El día de clase es la medianoche UTC: en la zona del navegador caía un día antes.
-  const fecha = (iso: string) =>
-    new Date(iso).toLocaleDateString("es-UY", {
-      weekday: "short",
-      day: "2-digit",
-      month: "short",
-      timeZone: "UTC",
-    });
 
   /** FR-009 — Éstas se OFRECEN; las de baja sólo se nombran. */
   const aulasActivas = aulas?.filter((a) => a.archivedAt === null) ?? [];
@@ -352,6 +453,16 @@ export function ClassesClient({
                 />
               </span>
             )}
+
+            {/* 034 (FR-013) — El vínculo de la reprogramación, en las dos clases. */}
+            {c.rescheduledFrom ? (
+              <Badge variant="secondary">
+                Reprogramación de la clase del {fecha(c.rescheduledFrom.date)}
+              </Badge>
+            ) : null}
+            {c.canceled && c.rescheduledTo ? (
+              <Badge variant="secondary">Reprogramada al {fecha(c.rescheduledTo.date)}</Badge>
+            ) : null}
 
             {/* Cada fila ofrece lo que corresponde a SU momento (FR-005c). */}
             {c.canceled ? (
@@ -515,9 +626,123 @@ export function ClassesClient({
                 )}
               </span>
             )}
+
+            {/* 034 (US3) — Reprogramar una cancelada, y borrar una clase. */}
+            {canEdit && !c.projected && c.id ? (
+              <span className="flex items-center gap-1">
+                {c.canceled && !c.rescheduledTo ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() =>
+                      setReprogramando({
+                        classId: c.id!,
+                        date: "",
+                        startTime: c.startTime ?? "",
+                        endTime: c.endTime ?? "",
+                        receso: null,
+                      })
+                    }
+                  >
+                    <CalendarClock className="h-4 w-4" aria-hidden />
+                    Reprogramar
+                  </Button>
+                ) : null}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  aria-label={`Borrar la clase ${c.number}`}
+                  title="Borrar la clase (sólo si no tiene asistencia ni grabación)"
+                  onClick={() => void borrarClase(c)}
+                >
+                  <Trash2 className="h-4 w-4" aria-hidden />
+                </Button>
+              </span>
+            ) : null}
+
+            {reprogramando?.classId === c.id ? (
+              <span className="order-last flex w-full flex-wrap items-end gap-2 rounded-md border bg-card p-3">
+                <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                  Nuevo día
+                  <Input
+                    type="date"
+                    value={reprogramando.date}
+                    onChange={(e) =>
+                      setReprogramando({ ...reprogramando, date: e.target.value, receso: null })
+                    }
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                  Desde
+                  <Input
+                    type="time"
+                    value={reprogramando.startTime}
+                    onChange={(e) => setReprogramando({ ...reprogramando, startTime: e.target.value })}
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                  Hasta
+                  <Input
+                    type="time"
+                    value={reprogramando.endTime}
+                    onChange={(e) => setReprogramando({ ...reprogramando, endTime: e.target.value })}
+                  />
+                </label>
+                {reprogramando.receso ? (
+                  <>
+                    <span className="w-full text-xs text-warning">{reprogramando.receso}</span>
+                    <Button size="sm" onClick={() => void reprogramar(true)}>
+                      Confirmar igual
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    size="sm"
+                    disabled={!reprogramando.date}
+                    onClick={() => void reprogramar(false)}
+                  >
+                    Reprogramar
+                  </Button>
+                )}
+                <Button size="sm" variant="ghost" onClick={() => setReprogramando(null)}>
+                  Cancelar
+                </Button>
+              </span>
+            ) : null}
           </li>
         ))}
       </ul>
+
+      {/* 034 (US3 escenario 3, FR-012) — Borrar las clases de un rango. */}
+      {canEdit && !data.projected ? (
+        <div className="flex flex-wrap items-end gap-2 rounded-md border p-3">
+          <p className="w-full text-xs text-muted-foreground">
+            Borrar las clases entre dos fechas. Las que tienen asistencia o
+            grabación no se borran: se listan para que decidas.
+          </p>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Desde
+            <Input type="date" value={rangoDesde} onChange={(e) => setRangoDesde(e.target.value)} />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Hasta
+            <Input type="date" value={rangoHasta} onChange={(e) => setRangoHasta(e.target.value)} />
+          </label>
+          <Button
+            size="sm"
+            variant="outline"
+            loading={borrando}
+            disabled={!rangoDesde || !rangoHasta || rangoHasta < rangoDesde}
+            onClick={() => void borrarRango()}
+          >
+            <Trash2 className="h-4 w-4" aria-hidden />
+            Borrar clases del rango
+          </Button>
+        </div>
+      ) : null}
+
+      {/* 034 (US2, escenario 6) — Los recesos de esta cohorte. */}
+      <RecessManager cohortId={cohortId} canEdit={canEdit} onChanged={() => void refetch()} />
 
       <p className="text-xs text-muted-foreground">
         Los horarios son de {data.timezone.replaceAll("_", " ")}.

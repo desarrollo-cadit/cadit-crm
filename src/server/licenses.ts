@@ -1,8 +1,9 @@
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { computeCohortStatus } from "@/lib/cohort-status";
+import { licenciasRepetidasEnRecorrido } from "@/lib/license-rules";
 
 /**
  * 005 (T028, DV-004, US4) — pool de licencias por software: disponibles =
@@ -64,16 +65,31 @@ function serializeLicense(l: typeof schema.license.$inferSelect): LicenseDto {
 }
 
 export type AssignLicenseResult =
-  | { ok: true; license: LicenseDto }
+  | {
+      ok: true;
+      license: LicenseDto;
+      /**
+       * 034 (edge case) — Programas que quedan TANTO en el paquete (la madre)
+       * como en un módulo (una hija) de la misma persona. Está permitido —son
+       * inscripciones distintas y cada una descuenta stock—, pero casi siempre
+       * es un error de carga, así que se avisa sin bloquear.
+       */
+      warnings: string[];
+    }
   | { ok: false; status: 404; code: "not_found"; message: string }
   | { ok: false; status: 422; code: "invalid_body"; message: string }
   | { ok: false; status: 409; code: "no_stock"; message: string };
 
 /**
- * 005 (T028, FR-003) — asigna una licencia de `softwareId` a la
- * inscripción; rechaza si el pool disponible es cero. Reasignar el mismo
- * software a la misma inscripción es idempotente; reasignar OTRO software
- * mueve la fila (libera el pool anterior, consume el nuevo).
+ * 005 (T028, FR-003) — asigna una licencia de `softwareId` a la inscripción;
+ * rechaza si el pool disponible es cero.
+ *
+ * 034 (FR-020..FR-022) — Una inscripción admite VARIAS licencias, a lo sumo
+ * una por programa (índice único `enrollment_id, software_id`). Asignar un
+ * programa ya asignado es idempotente (no descuenta de nuevo); asignar OTRO
+ * agrega una licencia en vez de mover la que había, que era la regla de 005.
+ * Una licencia liberada (`assigned = false`) del mismo programa se reactiva:
+ * no se duplica la fila.
  */
 export async function assignLicense(
   organizationId: string,
@@ -83,7 +99,7 @@ export async function assignLicense(
   const db = getDb();
 
   const enrollmentRows = await db
-    .select({ id: schema.enrollment.id })
+    .select({ id: schema.enrollment.id, parentEnrollmentId: schema.enrollment.parentEnrollmentId })
     .from(schema.enrollment)
     .where(
       scoped(
@@ -109,14 +125,18 @@ export async function assignLicense(
       scoped(
         schema.license.organizationId,
         organizationId,
-        eq(schema.license.enrollmentId, enrollmentId)
+        eq(schema.license.enrollmentId, enrollmentId),
+        eq(schema.license.softwareId, softwareId)
       )
     )
     .limit(1);
   const existing = existingRows[0] ?? null;
-  const alreadyThisOne = Boolean(existing?.assigned && existing.softwareId === softwareId);
 
-  if (!alreadyThisOne && availability.available <= 0) {
+  // Idempotente: el mismo programa ya asignado no descuenta otra vez (escenario 3).
+  if (existing?.assigned) {
+    return { ok: true, license: serializeLicense(existing), warnings: [] };
+  }
+  if (availability.available <= 0) {
     return {
       ok: false,
       status: 409,
@@ -124,47 +144,103 @@ export async function assignLicense(
       message: `No hay licencias disponibles de ${availability.softwareName}`,
     };
   }
-  if (alreadyThisOne) {
-    return { ok: true, license: serializeLicense(existing!) };
-  }
 
   const now = new Date();
-  if (existing) {
-    const updated = await db
-      .update(schema.license)
-      .set({ softwareId, assigned: true, assignedAt: now })
-      .where(
-        scoped(
-          schema.license.organizationId,
-          organizationId,
-          eq(schema.license.id, existing.id)
-        )
-      )
-      .returning();
-    return { ok: true, license: serializeLicense(updated[0]!) };
-  }
-  const inserted = await db
-    .insert(schema.license)
-    .values({
-      id: newId("license"),
-      organizationId,
-      enrollmentId,
-      softwareId,
-      assigned: true,
-      assignedAt: now,
-    })
-    .returning();
-  return { ok: true, license: serializeLicense(inserted[0]!) };
+  const row = existing
+    ? (
+        await db
+          .update(schema.license)
+          .set({ assigned: true, assignedAt: now })
+          .where(
+            scoped(schema.license.organizationId, organizationId, eq(schema.license.id, existing.id))
+          )
+          .returning()
+      )[0]!
+    : (
+        await db
+          .insert(schema.license)
+          .values({
+            id: newId("license"),
+            organizationId,
+            enrollmentId,
+            softwareId,
+            assigned: true,
+            assignedAt: now,
+          })
+          .returning()
+      )[0]!;
+
+  const warnings = await licenciasRepetidasDeLaPersona(
+    organizationId,
+    enrollmentId,
+    enrollmentRows[0].parentEnrollmentId ?? null
+  );
+  return { ok: true, license: serializeLicense(row), warnings };
 }
 
 /**
- * 005 (T028, FR-002/FR-003 escenario 3) — libera la licencia asignada de
- * una inscripción (vuelve al pool disponible). Idempotente: si no había
- * licencia asignada, no hace nada y devuelve null.
+ * 034 — Los programas repetidos entre el paquete y los módulos del mismo
+ * recorrido. Si la inscripción es una hija, se compara con su madre; si es una
+ * madre, con todas sus hijas. Una inscripción suelta no tiene con qué
+ * compararse y no consulta nada más.
+ */
+async function licenciasRepetidasDeLaPersona(
+  organizationId: string,
+  enrollmentId: string,
+  parentEnrollmentId: string | null
+): Promise<string[]> {
+  const db = getDb();
+  const madreId = parentEnrollmentId ?? enrollmentId;
+  const hijas = parentEnrollmentId
+    ? [enrollmentId]
+    : (
+        await db
+          .select({ id: schema.enrollment.id })
+          .from(schema.enrollment)
+          .where(
+            scoped(
+              schema.enrollment.organizationId,
+              organizationId,
+              eq(schema.enrollment.parentEnrollmentId, enrollmentId)
+            )
+          )
+      ).map((h) => h.id);
+  if (hijas.length === 0) return [];
+
+  const filas = await db
+    .select({
+      enrollmentId: schema.license.enrollmentId,
+      softwareId: schema.license.softwareId,
+      softwareName: schema.software.name,
+    })
+    .from(schema.license)
+    .innerJoin(schema.software, eq(schema.license.softwareId, schema.software.id))
+    .where(
+      scoped(
+        schema.license.organizationId,
+        organizationId,
+        eq(schema.license.assigned, true),
+        inArray(schema.license.enrollmentId, [madreId, ...hijas])
+      )
+    );
+  return licenciasRepetidasEnRecorrido(
+    filas.filter((f) => f.enrollmentId === madreId),
+    filas.filter((f) => f.enrollmentId !== madreId)
+  );
+}
+
+/**
+ * 005 (T028, FR-002/FR-003 escenario 3) — libera licencias de una
+ * inscripción (vuelven al pool disponible). Idempotente.
+ *
+ * 034 — Con `softwareId`, sólo la de ese programa; sin él, todas las de la
+ * inscripción (el comportamiento de antes, cuando había una sola). Devuelve
+ * la primera liberada, o `null` si no había ninguna asignada.
  */
 export async function unassignLicense(
   organizationId: string,
-  enrollmentId: string
+  enrollmentId: string,
+  softwareId?: string
 ): Promise<LicenseDto | null> {
   const db = getDb();
   const updated = await db
@@ -175,13 +251,38 @@ export async function unassignLicense(
         schema.license.organizationId,
         organizationId,
         eq(schema.license.enrollmentId, enrollmentId),
-        eq(schema.license.assigned, true)
+        eq(schema.license.assigned, true),
+        softwareId ? eq(schema.license.softwareId, softwareId) : undefined
       )
     )
     .returning();
   const row = updated[0];
   return row ? serializeLicense(row) : null;
 }
+
+export type EnrollmentLicenseDto = LicenseDto & { softwareName: string };
+
+/** 034 (FR-020) — Las licencias ASIGNADAS de una inscripción, con el nombre del programa. */
+export async function listEnrollmentLicenses(
+  organizationId: string,
+  enrollmentId: string
+): Promise<EnrollmentLicenseDto[]> {
+  const filas = await getDb()
+    .select({ license: schema.license, softwareName: schema.software.name })
+    .from(schema.license)
+    .innerJoin(schema.software, eq(schema.license.softwareId, schema.software.id))
+    .where(
+      scoped(
+        schema.license.organizationId,
+        organizationId,
+        eq(schema.license.enrollmentId, enrollmentId),
+        eq(schema.license.assigned, true)
+      )
+    )
+    .orderBy(asc(schema.software.name));
+  return filas.map((f) => ({ ...serializeLicense(f.license), softwareName: f.softwareName }));
+}
+
 
 /**
  * 023 — ¿Esta licencia está ocupando un lugar del inventario?

@@ -61,7 +61,8 @@ export function CohortForm({
   /** 028 (seguimiento) — Presente = alta de un módulo de esa especialización. */
   moduloDe?: ModuloDe | null;
   onClose: () => void;
-  onSaved: () => void;
+  /** 034 (FR-001) — `autoEnrolled`: cuántos alumnos entraron solos al módulo nuevo. */
+  onSaved: (info?: { autoEnrolled?: number }) => void;
   onTeacherCreated: (teacher: TeacherDto) => void;
 }) {
   /**
@@ -317,6 +318,7 @@ export function CohortForm({
     const body = (await res.json().catch(() => null)) as {
       licenseWarnings?: { softwareName: string; capacity: number; available: number }[];
       scheduleWarnings?: { courseName: string; startDate: string; endDate: string | null }[];
+      autoEnrolled?: number;
     } | null;
     const messages = [
       ...(body?.licenseWarnings ?? []).map(
@@ -334,7 +336,7 @@ export function CohortForm({
       return; // la cohorte ya está guardada; el usuario cierra el aviso para continuar.
     }
     notify.success("Cohorte guardada.", { id: "cohorte-guardada" });
-    onSaved();
+    onSaved({ autoEnrolled: body?.autoEnrolled });
   }
 
   return (
@@ -797,7 +799,7 @@ export function CohortForm({
 
         <div className="mt-4 flex justify-end gap-2">
           {warnings ? (
-            <Button onClick={onSaved}>Entendido</Button>
+            <Button onClick={() => onSaved()}>Entendido</Button>
           ) : (
             <>
               <Button variant="ghost" onClick={onClose}>

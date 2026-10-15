@@ -6,7 +6,6 @@ import type { CohortRosterDto, ModuleLicenseLine, RosterEntryDto } from "@/serve
 import type { CompanyDto } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Select } from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -21,6 +20,7 @@ import { BillingBulkPanel } from "@/components/cohorts/billing-bulk-panel";
 import { BillingPanel } from "@/components/cohorts/billing-panel";
 import { OfflineCoursesPanel } from "@/components/offline-courses/offline-courses-panel";
 import { EnrollForm } from "@/components/enrollments/enroll-form";
+import { LicenseList } from "@/components/enrollments/license-list";
 import { EnrollmentCommercialForm } from "@/components/enrollments/enrollment-commercial-form";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BulkSendsPanel } from "@/components/cohorts/bulk-sends-panel";
@@ -104,8 +104,15 @@ export function RosterClient({
   canViewOfflineCourses = false,
   canEditOfflineCourses = false,
   canManageAccess = false,
+  canEditLicenses = true,
 }: {
   cohortId: string;
+  /**
+   * 034 — `academico.editar`, la capacidad de `PUT/DELETE
+   * /api/enrollments/[id]/license`. Sin ella, las licencias se ven y no se
+   * ofrecen botones que devolverían 403.
+   */
+  canEditLicenses?: boolean;
   /** 2026-10-05 — `accesos.gestionar`: ofrecer el acceso al portal a toda la cohorte. */
   canManageAccess?: boolean;
   /** cursos-offline — `academico.ver`: draw the per-student library panel. */
@@ -170,6 +177,23 @@ export function RosterClient({
   useEffect(() => {
     void refetch();
   }, [refetch]);
+
+  /**
+   * 034 (US5) — El PAQUETE de una especialización se arma con cualquier
+   * programa del catálogo: la especialización no declara software propio. Se
+   * pide sólo en una especialización; una cohorte común ofrece el suyo.
+   */
+  const [catalogo, setCatalogo] = useState<{ id: string; name: string }[]>([]);
+  const esEspecializacion = roster?.cohort.isSpecialization ?? false;
+  useEffect(() => {
+    if (!esEspecializacion) return;
+    void (async () => {
+      const res = await fetch("/api/software").catch(() => null);
+      if (!res?.ok) return;
+      const body = (await res.json()) as { software: { id: string; name: string }[] };
+      setCatalogo(body.software.map((s) => ({ id: s.id, name: s.name })));
+    })();
+  }, [esEspecializacion]);
 
   useEffect(() => {
     void (async () => {
@@ -303,32 +327,6 @@ export function RosterClient({
           "Esa persona ya tenía cuenta; se le habilitó el portal y entra con su contraseña de siempre."
         );
       }
-    }
-    void refetch();
-  }
-
-  async function assignLicense(enrollmentId: string, softwareId: string) {
-    const res = await fetch(`/api/enrollments/${enrollmentId}/license`, {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ softwareId }),
-    }).catch(() => null);
-    if (!res?.ok) {
-      notify.error(await errorMessage(res, "No se pudo asignar la licencia"));
-    } else {
-      notify.success("Licencia asignada.");
-    }
-    void refetch();
-  }
-
-  async function unassignLicense(enrollmentId: string) {
-    const res = await fetch(`/api/enrollments/${enrollmentId}/license`, {
-      method: "DELETE",
-    }).catch(() => null);
-    if (!res?.ok) {
-      notify.error(await errorMessage(res, "No se pudo liberar la licencia"));
-    } else {
-      notify.success("Licencia liberada.");
     }
     void refetch();
   }
@@ -475,22 +473,22 @@ export function RosterClient({
                             </TableCell>
                           )}
                           <TableCell className="text-xs">
-                            {e.moduleLicenses?.some((l) => l.licenseAssigned) ? (
+                            {/* 034 (FR-020) — el paquete y las de cada módulo, todas. */}
+                            {e.checklist.licenseAssigned ||
+                            e.moduleLicenses?.some((l) => l.licenseAssigned) ? (
                               <Badge variant="success">
-                                {e.moduleLicenses
-                                  .filter((l) => l.licenseAssigned)
-                                  .map(
-                                    (l) =>
-                                      l.software.find((s) => s.id === l.licenseSoftwareId)?.name ??
-                                      "Asignada"
-                                  )
-                                  .join(", ")}
-                              </Badge>
-                            ) : e.checklist.licenseAssigned ? (
-                              <Badge variant="success">
-                                {roster.cohort.software.find(
-                                  (s) => s.id === e.checklist.licenseSoftwareId
-                                )?.name ?? "Asignada"}
+                                {[
+                                  ...e.checklist.licenseSoftwareIds.map(
+                                    (id) =>
+                                      [...roster.cohort.software, ...catalogo].find((s) => s.id === id)
+                                        ?.name ?? "Asignada"
+                                  ),
+                                  ...(e.moduleLicenses ?? []).flatMap((l) =>
+                                    l.licenseSoftwareIds.map(
+                                      (id) => l.software.find((s) => s.id === id)?.name ?? "Asignada"
+                                    )
+                                  ),
+                                ].join(", ")}
                               </Badge>
                             ) : e.checklist.hadOwnLicense ? (
                               <span className="text-muted-foreground">propia</span>
@@ -520,50 +518,31 @@ export function RosterClient({
                       acción propia (PUT/DELETE /api/enrollments/:id/license) en
                       vez de un checkbox del checklist genérico. */}
                   {roster.cohort.isSpecialization ? (
-                    <ModuleLicenses
-                      lines={e.moduleLicenses ?? []}
-                      onAssign={(childId, softwareId) => void assignLicense(childId, softwareId)}
-                      onUnassign={(childId) => void unassignLicense(childId)}
-                    />
-                  ) : e.checklist.licenseAssigned ? (
-                    <span className="flex items-center gap-1.5">
-                      <Checkbox checked readOnly />
-                      Licencia:{" "}
-                      {roster.cohort.software.find(
-                        (s) => s.id === e.checklist.licenseSoftwareId
-                      )?.name ?? e.checklist.licenseSoftwareId}
-                      <button
-                        type="button"
-                        className="text-muted-foreground underline"
-                        onClick={() => void unassignLicense(e.id)}
-                      >
-                        liberar
-                      </button>
+                    <span className="flex basis-full flex-col gap-1">
+                      {/* 034 (US5) — El PAQUETE: vale para todo el programa. */}
+                      <LicenseList
+                        label="Paquete de la especialización"
+                        enrollmentId={e.id}
+                        assignedIds={e.checklist.licenseSoftwareIds}
+                        options={catalogo}
+                        canEdit={canEditLicenses}
+                        onChanged={() => void refetch()}
+                      />
+                      <ModuleLicenses
+                        lines={e.moduleLicenses ?? []}
+                        canEdit={canEditLicenses}
+                        onChanged={() => void refetch()}
+                      />
                     </span>
-                  ) : roster.cohort.software.length > 0 ? (
-                    <label className="flex items-center gap-1.5">
-                      Licencia:
-                      <Select
-                        className="h-7 w-auto px-1.5 py-0.5 text-xs"
-                        defaultValue=""
-                        onChange={(ev) => {
-                          if (ev.target.value) void assignLicense(e.id, ev.target.value);
-                        }}
-                      >
-                        <option value="" disabled>
-                          asignar…
-                        </option>
-                        {roster.cohort.software.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.name}
-                          </option>
-                        ))}
-                      </Select>
-                    </label>
                   ) : (
-                    <span className="text-muted-foreground">
-                      Sin software declarado en la cohorte
-                    </span>
+                    <LicenseList
+                      label="Licencias"
+                      enrollmentId={e.id}
+                      assignedIds={e.checklist.licenseSoftwareIds}
+                      options={roster.cohort.software}
+                      canEdit={canEditLicenses}
+                      onChanged={() => void refetch()}
+                    />
                   )}
                   {CHECKLIST_ITEMS.map((item) => (
                     <Fragment key={item.key}>
@@ -985,12 +964,13 @@ function resendSentence(r: { contactName: string; sentAt: string | null }) {
  */
 function ModuleLicenses({
   lines,
-  onAssign,
-  onUnassign,
+  canEdit,
+  onChanged,
 }: {
   lines: ModuleLicenseLine[];
-  onAssign: (childEnrollmentId: string, softwareId: string) => void;
-  onUnassign: (childEnrollmentId: string) => void;
+  /** `academico.editar` — la capacidad de la ruta de licencias. */
+  canEdit: boolean;
+  onChanged: () => void;
 }) {
   if (lines.length === 0) {
     return (
@@ -1006,42 +986,16 @@ function ModuleLicenses({
           <span className="font-medium text-foreground">{l.moduleName}:</span>
           {!l.enrollmentId ? (
             <span className="text-muted-foreground">no está inscripto en este módulo.</span>
-          ) : l.licenseAssigned ? (
-            <>
-              <Checkbox checked readOnly aria-label={`Licencia asignada en ${l.moduleName}`} />
-              Licencia:{" "}
-              {l.software.find((s) => s.id === l.licenseSoftwareId)?.name ?? l.licenseSoftwareId}
-              <button
-                type="button"
-                className="text-muted-foreground underline"
-                onClick={() => onUnassign(l.enrollmentId!)}
-              >
-                liberar
-              </button>
-            </>
-          ) : l.software.length > 0 ? (
-            <label className="flex items-center gap-1.5">
-              Licencia:
-              <Select
-                className="h-7 w-auto px-1.5 py-0.5 text-xs"
-                defaultValue=""
-                aria-label={`Asignar licencia en ${l.moduleName}`}
-                onChange={(ev) => {
-                  if (ev.target.value) onAssign(l.enrollmentId!, ev.target.value);
-                }}
-              >
-                <option value="" disabled>
-                  asignar…
-                </option>
-                {l.software.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </Select>
-            </label>
           ) : (
-            <span className="text-muted-foreground">el módulo no tiene software declarado.</span>
+            // 034 (FR-020/FR-021) — varias por módulo, una por programa.
+            <LicenseList
+              label="Licencias del módulo"
+              enrollmentId={l.enrollmentId}
+              assignedIds={l.licenseSoftwareIds}
+              options={l.software}
+              canEdit={canEdit}
+              onChanged={onChanged}
+            />
           )}
         </li>
       ))}

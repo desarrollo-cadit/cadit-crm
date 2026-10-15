@@ -168,7 +168,9 @@ export function armarModulosDeCamada(
       endDate: m.endDate?.toISOString() ?? null,
       minAttendancePct: m.minAttendancePct,
       clases: {
-        total: clases?.classes.length ?? 0,
+        // 034 (FR-015) — Una cancelada no cuenta para el total; su
+        // reprogramación es una clase más y sí cuenta.
+        total: (clases?.classes ?? []).filter((c) => !c.canceled).length,
         // Dictada = TERMINADA (`classEndsAt`), no "empezó su día en UTC".
         dictadas: reales.filter(
           (c) =>

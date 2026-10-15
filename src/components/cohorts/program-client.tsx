@@ -10,6 +10,7 @@ import {
   Plus,
   RotateCcw,
   ShieldCheck,
+  UserMinus,
 } from "lucide-react";
 import type { CourseDto, SoftwareDto, TeacherDto } from "@/lib/types";
 import { CohortForm } from "@/components/academic/cohort-form";
@@ -19,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RecorridoGrid } from "@/components/cohorts/recorrido-grid";
+import { ModuleEnrollmentBanner } from "@/components/cohorts/module-enrollment-banner";
 import { notify } from "@/lib/notify";
 
 type State = "aprobado" | "reprobado" | "pendiente";
@@ -107,7 +109,7 @@ type CohortOption = {
  * uno su motivo, y quien revoca tiene que escribir por qué igual que quien
  * otorgó.
  */
-type Via = "baja" | "recursada" | "dispensar" | "revocar-dispensa";
+type Via = "baja" | "recursada" | "dispensar" | "revocar-dispensa" | "sacar";
 
 function fecha(iso: string | null): string {
   return iso ? new Date(iso).toLocaleDateString("es-UY", { timeZone: "UTC" }) : "—";
@@ -176,6 +178,8 @@ export function ProgramClient({
   const [catalogo, setCatalogo] = useState<Catalogo | null>(null);
   const [abriendoAlta, setAbriendoAlta] = useState(false);
   const [reordenando, setReordenando] = useState(false);
+  /** 034 — Cada recarga del programa vuelve a pedir el faltante de inscripciones. */
+  const [version, setVersion] = useState(0);
 
   /**
    * Abre el formulario en modo módulo. Los tres listados se piden juntos y
@@ -243,6 +247,7 @@ export function ProgramClient({
     setData((await res.json()) as Programa);
     setError(null);
     setLoading(false);
+    setVersion((v) => v + 1);
   }, [cohortId]);
 
   useEffect(() => {
@@ -293,6 +298,33 @@ export function ProgramClient({
 
   const esDispensa =
     accion?.via === "dispensar" || accion?.via === "revocar-dispensa";
+  const esSacar = accion?.via === "sacar";
+
+  /**
+   * 034 (FR-004) — Sacar a la persona de ESTE módulo. La madre y los otros
+   * módulos no se tocan; si ya tiene historia en el módulo, el servidor lo
+   * rechaza diciendo qué hay (y la salida es mudarla, no borrarla).
+   */
+  async function confirmarSacar() {
+    if (!accion) return;
+    setGuardando(true);
+    const res = await fetch(`/api/enrollments/${accion.modulo.enrollmentId}/module`, {
+      method: "DELETE",
+    }).catch(() => null);
+    setGuardando(false);
+    if (!res?.ok) {
+      const body = (await res?.json().catch(() => null)) as
+        | { error?: { message?: string } }
+        | null;
+      notify.error(body?.error?.message ?? "No se pudo sacar al alumno del módulo");
+      return;
+    }
+    setAccion(null);
+    notify.success("Alumno fuera del módulo.", {
+      description: "Su inscripción a la especialización y a los otros módulos quedó igual.",
+    });
+    void refetch();
+  }
 
   /**
    * US6 — Otorgar y revocar la dispensa de asistencia.
@@ -430,10 +462,18 @@ export function ProgramClient({
         endDate: data.endDate,
       }}
       onClose={() => setCatalogo(null)}
-      onSaved={() => {
+      onSaved={(info) => {
         setCatalogo(null);
         // Mismo id que el "Cohorte guardada." del formulario: lo reemplaza.
-        notify.success("Módulo agregado al final de la especialización.", { id: "cohorte-guardada" });
+        // 034 (FR-001) — y dice cuántos alumnos entraron solos al módulo.
+        const n = info?.autoEnrolled ?? 0;
+        notify.success("Módulo agregado al final de la especialización.", {
+          id: "cohorte-guardada",
+          description:
+            n > 0
+              ? `${n} ${n === 1 ? "alumno quedó inscripto" : "alumnos quedaron inscriptos"} en el módulo.`
+              : undefined,
+        });
         void refetch();
       }}
       onTeacherCreated={(t) =>
@@ -485,6 +525,14 @@ export function ProgramClient({
           {botonAgregar}
         </div>
       ) : null}
+
+      {/* 034 (FR-005/FR-005a) — El faltante de inscripciones a módulos y su regularización. */}
+      <ModuleEnrollmentBanner
+        key={version}
+        cohortId={cohortId}
+        canEditEnrollments={canEditEnrollments}
+        onDone={() => void refetch()}
+      />
 
       {/* Los módulos en orden, cada uno con su profesor, sus fechas y su avance. */}
       <section
@@ -598,6 +646,11 @@ export function ProgramClient({
                           <RotateCcw className="mr-1 h-3 w-3" aria-hidden />
                           Recursar
                         </Button>
+                        {/* 034 (FR-004) — no va a cursar este módulo. */}
+                        <Button variant="ghost" size="sm" onClick={() => abrir(a, celda, "sacar")}>
+                          <UserMinus className="mr-1 h-3 w-3" aria-hidden />
+                          Sacar del módulo
+                        </Button>
                       </>
                     ) : null}
                     {/*
@@ -679,7 +732,30 @@ export function ProgramClient({
         </div>
       ) : null}
 
-      {accion && !esDispensa ? (
+      {accion && esSacar ? (
+        <div className="rounded-lg border bg-card p-4">
+          <h4 className="text-sm font-semibold text-foreground">
+            {`Sacar a ${accion.alumno.contact.name} de ${accion.modulo.label}`}
+          </h4>
+          <p className="mt-1 text-xs text-muted-foreground">
+            No va a cursar este módulo: se borra su inscripción al módulo y se
+            liberan sus licencias del módulo. Su inscripción a la especialización
+            y a los otros módulos no cambia, y la inscripción automática no lo
+            vuelve a meter. Si ya tiene asistencia o notas en el módulo no se
+            puede: en ese caso mudalo a otra camada.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button variant="destructive" onClick={() => void confirmarSacar()} disabled={guardando}>
+              {guardando ? "Sacando…" : "Sacar del módulo"}
+            </Button>
+            <Button variant="ghost" onClick={() => setAccion(null)}>
+              Cancelar
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {accion && !esDispensa && !esSacar ? (
         <div className="rounded-lg border bg-card p-4">
           <h4 className="text-sm font-semibold text-foreground">
             {accion.via === "baja"

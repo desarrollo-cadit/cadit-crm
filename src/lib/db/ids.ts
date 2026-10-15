@@ -85,6 +85,9 @@ const prefixes = {
   correction: "cor",
   // 033 — lo propio de una persona anotada a un taller (1:1 con su inscripción).
   workshopRegistration: "wreg",
+  // 034 — los recesos (días sin clase) y "esta persona no cursa este módulo".
+  recess: "rcs",
+  moduleExclusion: "mex",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

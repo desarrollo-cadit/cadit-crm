@@ -19,6 +19,8 @@ import {
   listarModulos,
   verificarVinculoDeInscripcion,
 } from "@/server/program-modules";
+import { inscribirEnModulos, olvidarExclusion } from "@/server/module-enrollment";
+import { resumirLicencias } from "@/lib/license-rules";
 
 /** 005 (US2, contracts/enrollments.md) — alta comercial de una inscripción. */
 export type CreateEnrollmentInput = {
@@ -89,6 +91,8 @@ export async function createEnrollment(
       parentCohortId: schema.cohort.parentCohortId,
       // 033 (FR-004) — una cohorte de taller no exige vendedor.
       courseKind: schema.course.kind,
+      // 034 (FR-002) — inscribir en una especialización inscribe en sus módulos.
+      isSpecialization: schema.cohort.isSpecialization,
     })
     .from(schema.cohort)
     .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
@@ -239,8 +243,20 @@ export async function createEnrollment(
       companyId: input.companyId ?? null,
     })
     .returning();
+  const creada = inserted[0]!;
 
-  return { ok: true, enrollment: serializeEnrollmentCommercial(inserted[0]!) };
+  if (input.parentEnrollmentId) {
+    // 034 (FR-004) — Volver a un módulo por el alta manual de 028 pisa la
+    // decisión de haberlo sacado: la regularización deja de excluirlo.
+    await olvidarExclusion(organizationId, input.parentEnrollmentId, input.cohortId);
+  } else if (cohortRows[0].isSpecialization) {
+    // 034 (FR-002/FR-003) — La madre nueva entra a cada módulo que ya existe,
+    // en la misma transacción, sin cuotas ni vendedor. Si falla, LANZA: no
+    // queda una inscripción a la especialización con la mitad de los módulos.
+    await inscribirEnModulos(organizationId, input.cohortId, { madreIds: [creada.id] });
+  }
+
+  return { ok: true, enrollment: serializeEnrollmentCommercial(creada) };
 }
 
 export type EnrollmentCommercialDto = {
@@ -294,8 +310,12 @@ export type CohortRosterDto = {
  *
  * La licencia se asigna a la inscripción HIJA del módulo (`enrollmentId`), con
  * el software de ESE módulo: una persona puede necesitar Revit en uno y
- * Navisworks en otro, y `license.enrollment_id` es UNIQUE. `enrollmentId`
- * null = no cursa ese módulo; la pantalla lo dice sin ofrecer nada.
+ * Navisworks en otro. `enrollmentId` null = no cursa ese módulo; la pantalla
+ * lo dice sin ofrecer nada.
+ *
+ * 034 (FR-020) — Una hija puede tener VARIAS licencias (una por programa):
+ * `licenseSoftwareIds` las trae todas; `licenseSoftwareId` sigue siendo la
+ * primera, para quien todavía lee la forma vieja.
  */
 export type ModuleLicenseLine = {
   moduleName: string;
@@ -303,6 +323,7 @@ export type ModuleLicenseLine = {
   software: { id: string; name: string }[];
   licenseAssigned: boolean;
   licenseSoftwareId: string | null;
+  licenseSoftwareIds: string[];
 };
 
 export type RosterEntryDto = {
@@ -321,6 +342,12 @@ export type RosterEntryDto = {
     licenseAssigned: boolean;
     /** software.id de la licencia asignada, si `licenseAssigned` es true. */
     licenseSoftwareId: string | null;
+    /**
+     * 034 (FR-020) — TODAS las licencias asignadas (el paquete de una
+     * especialización puede llevar Revit, Navisworks y AutoCAD).
+     * `licenseSoftwareId` es la primera de esta lista.
+     */
+    licenseSoftwareIds: string[];
     termsEmailSentAt: string | null;
     softwareInstalledAt: string | null;
     hadOwnLicense: boolean;
@@ -380,7 +407,14 @@ export function buildRosterEntry(
   capabilities: readonly Capability[],
   enrollment: typeof schema.enrollment.$inferSelect,
   contact: typeof schema.contact.$inferSelect,
-  license: typeof schema.license.$inferSelect | null,
+  /**
+   * 034 (FR-020) — Las licencias de la inscripción: una lista desde que caben
+   * varias. Una fila suelta o `null` se siguen aceptando (la forma de 005).
+   */
+  license:
+    | Pick<typeof schema.license.$inferSelect, "assigned" | "softwareId">
+    | readonly Pick<typeof schema.license.$inferSelect, "assigned" | "softwareId">[]
+    | null,
   /** 012 — vínculo de portal del alumno; `null` = todavía no tiene acceso. */
   accountLink: typeof schema.accountLink.$inferSelect | null = null,
   /** 2026-10-06 — el vendedor de la inscripción; `null` = sin vendedor. */
@@ -388,6 +422,9 @@ export function buildRosterEntry(
   /** 033 (FR-004) — el tipo del curso de la cohorte: un taller no lleva vendedor. */
   courseKind: CourseKind | null = null
 ): RosterEntryDto {
+  const licencias = resumirLicencias(
+    license === null ? [] : "softwareId" in license ? [license] : license
+  );
   const base: RosterEntryDto = {
     id: enrollment.id,
     contact: {
@@ -405,8 +442,7 @@ export function buildRosterEntry(
       emailSentAt: accountLink?.invitationEmailSentAt?.toISOString() ?? null,
     },
     checklist: {
-      licenseAssigned: license?.assigned ?? false,
-      licenseSoftwareId: license?.assigned ? license.softwareId : null,
+      ...licencias,
       termsEmailSentAt: enrollment.termsEmailSentAt?.toISOString() ?? null,
       softwareInstalledAt: enrollment.softwareInstalledAt?.toISOString() ?? null,
       hadOwnLicense: enrollment.hadOwnLicense,
@@ -510,12 +546,25 @@ export async function getCohortRoster(
     )
     .orderBy(asc(schema.contact.firstName));
 
-  const enrollments = rows.map((r) =>
+  /**
+   * 034 (FR-020) — Con varias licencias por inscripción, el leftJoin trae una
+   * fila POR LICENCIA. Se agrupan acá por inscripción (respetando el orden):
+   * sin esto, una persona con el paquete de tres programas aparecía tres veces
+   * en el roster.
+   */
+  const porInscripcion = new Map<string, { fila: (typeof rows)[number]; licencias: NonNullable<(typeof rows)[number]["license"]>[] }>();
+  for (const r of rows) {
+    const grupo = porInscripcion.get(r.enrollment.id) ?? { fila: r, licencias: [] };
+    if (r.license) grupo.licencias.push(r.license);
+    porInscripcion.set(r.enrollment.id, grupo);
+  }
+
+  const enrollments = [...porInscripcion.values()].map(({ fila: r, licencias }) =>
     buildRosterEntry(
       capabilities,
       r.enrollment,
       r.contact,
-      r.license,
+      licencias,
       r.accountLink,
       r.seller,
       cohort.courseKind
@@ -575,7 +624,11 @@ export function buildModuleLicenseLines(
   modules: readonly ModuloDeEspecializacion[],
   children: readonly InscripcionHija[],
   softwareByCohort: ReadonlyMap<string, { id: string; name: string }[]>,
-  licenseByEnrollment: ReadonlyMap<string, { assigned: boolean; softwareId: string }>
+  /** 034 — Una o VARIAS licencias por hija (la forma de 005 se sigue aceptando). */
+  licenseByEnrollment: ReadonlyMap<
+    string,
+    { assigned: boolean; softwareId: string } | readonly { assigned: boolean; softwareId: string }[]
+  >
 ): ModuleLicenseLine[] {
   const usadas = new Set<string>();
   return modules.map((m) => {
@@ -589,6 +642,7 @@ export function buildModuleLicenseLines(
         software: [],
         licenseAssigned: false,
         licenseSoftwareId: null,
+        licenseSoftwareIds: [],
       };
     }
     usadas.add(hija.id);
@@ -597,8 +651,9 @@ export function buildModuleLicenseLines(
       moduleName: hija.cohortName ?? hija.courseName ?? m.name ?? m.courseName,
       enrollmentId: hija.id,
       software: (hija.cohortId && softwareByCohort.get(hija.cohortId)) || [],
-      licenseAssigned: licencia?.assigned ?? false,
-      licenseSoftwareId: licencia?.assigned ? licencia.softwareId : null,
+      ...resumirLicencias(
+        licencia === undefined ? [] : "softwareId" in licencia ? [licencia] : licencia
+      ),
     };
   });
 }
@@ -666,9 +721,14 @@ async function moduleLicensesFor(
           )
         )
     : [];
-  const licenseByEnrollment = new Map(
-    licencias.map((l) => [l.enrollmentId, { assigned: l.assigned, softwareId: l.softwareId }])
-  );
+  // 034 (FR-020) — varias licencias por hija: se agrupan, no se pisan.
+  const licenseByEnrollment = new Map<string, { assigned: boolean; softwareId: string }[]>();
+  for (const l of licencias) {
+    licenseByEnrollment.set(l.enrollmentId, [
+      ...(licenseByEnrollment.get(l.enrollmentId) ?? []),
+      { assigned: l.assigned, softwareId: l.softwareId },
+    ]);
+  }
 
   const modules = modulos.map((m) => ({
     id: m.id,

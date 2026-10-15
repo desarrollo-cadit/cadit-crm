@@ -273,6 +273,12 @@ export const SETTINGS_TABS = [
    * configuración con secretos. Al final: no cambia a dónde entra nadie.
    */
   { href: "/settings/zoom", label: "Zoom", capability: "configuracion.editar" },
+  /**
+   * 034 (US2) — Los recesos de la academia. `academico.editar` y no
+   * `configuracion.editar`: cargar un receso saca clases del cronograma, que
+   * es lo que hace Coordinación. Al final: no cambia a dónde entra nadie.
+   */
+  { href: "/settings/recesos", label: "Recesos", capability: "academico.editar" },
 ] as const;
 
 /**

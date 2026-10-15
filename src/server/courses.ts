@@ -8,6 +8,7 @@ import { scoped } from "@/lib/db/tenant";
 import { slugify } from "@/lib/utils";
 import { computeCohortStatus } from "@/lib/cohort-status";
 import { availableLicenses } from "@/server/licenses";
+import { inscribirEnModulos } from "@/server/module-enrollment";
 import {
   writeCourseModules,
   type CourseModuleInput,
@@ -514,6 +515,11 @@ export type CreateCohortResult =
       licenseWarnings: LicenseWarning[];
       /** 005 (T034, FR-008) — no bloqueante. */
       scheduleWarnings: ScheduleConflict[];
+      /**
+       * 034 (FR-001) — Cuántas inscripciones a este módulo se crearon solas
+       * (los alumnos activos de la especialización). 0 en una cohorte común.
+       */
+      autoEnrolled: number;
     }
   | { ok: false; status: 422; code: "invalid_body"; message: string };
 
@@ -692,6 +698,18 @@ export async function createCohort(
     );
   }
 
+  /**
+   * 034 (FR-001/FR-003) — Un módulo nuevo inscribe a cada alumno ACTIVO de su
+   * especialización, en la misma transacción: si algo falla, lanza y no queda
+   * ni el módulo ni la mitad de las inscripciones. Sin cuotas ni vendedor (la
+   * venta es la madre). Cubre los dos caminos de 032: "Módulo nuevo" llega
+   * acá por `createModuloConCursoPropio`. Una cohorte común no paga nada.
+   */
+  const autoEnrolled = input.parentCohortId
+    ? (await inscribirEnModulos(organizationId, input.parentCohortId, { moduloIds: [id] }))
+        .aCrear.length
+    : 0;
+
   const licenseWarnings = await computeLicenseWarnings(
     organizationId,
     input.softwareIds ?? [],
@@ -707,7 +725,7 @@ export async function createCohort(
       )
     : [];
 
-  return { ok: true, id, licenseWarnings, scheduleWarnings };
+  return { ok: true, id, licenseWarnings, scheduleWarnings, autoEnrolled };
 }
 
 /**

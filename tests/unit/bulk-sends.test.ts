@@ -145,6 +145,7 @@ describe("partitionRecipients — quién lo recibe y quién no", () => {
         checklist: {
           licenseAssigned: false,
           licenseSoftwareId: null,
+          licenseSoftwareIds: [],
           termsEmailSentAt: AYER.toISOString(),
           softwareInstalledAt: null,
           hadOwnLicense: false,

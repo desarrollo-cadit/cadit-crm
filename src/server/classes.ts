@@ -14,6 +14,8 @@ import {
 import { listarModulos } from "@/server/program-modules";
 import { etiquetaDeModulo, modulosConOrdinal } from "@/lib/program-order";
 import { resolveMeetingUrl } from "@/server/virtual-rooms";
+import { recesosDeCohorte } from "@/lib/recess";
+import { leerRecesos } from "@/server/recesses";
 
 /**
  * 013 (T008, DV-006) — La lista de clases de una cohorte, que es UNA sola.
@@ -88,6 +90,13 @@ export type StaffClassRowDto = ClassRowDto & {
    * del portal no cambia.
    */
   recordingSource: "manual" | "zoom" | null;
+  /**
+   * 034 (FR-013) — El vínculo de una reprogramación, en las DOS puntas: la
+   * nueva dice "reprogramación de la clase del …" y la cancelada dice
+   * "reprogramada al …". `null` = no hay vínculo.
+   */
+  rescheduledFrom: { id: string; date: string } | null;
+  rescheduledTo: { id: string; date: string } | null;
 };
 
 export type CohortClassesDto = {
@@ -112,6 +121,29 @@ export type CohortClassesDto = {
   cohortVirtualRoomId: string | null;
   classes: StaffClassRowDto[];
 };
+
+/**
+ * 034 (FR-013) — Los vínculos de reprogramación de un conjunto de clases.
+ * PURA. El vínculo vive en la clase NUEVA (`rescheduled_from_id`); la vuelta
+ * ("reprogramada al …") se arma acá invirtiéndolo, sin otra consulta.
+ */
+export function vinculosDeReprogramacion(
+  clases: readonly { id: string; date: Date; rescheduledFromId: string | null }[]
+): Map<string, Pick<StaffClassRowDto, "rescheduledFrom" | "rescheduledTo">> {
+  const porId = new Map(clases.map((c) => [c.id, c]));
+  const out = new Map<string, Pick<StaffClassRowDto, "rescheduledFrom" | "rescheduledTo">>();
+  const de = (id: string) => out.get(id) ?? { rescheduledFrom: null, rescheduledTo: null };
+  for (const c of clases) {
+    if (!c.rescheduledFromId) continue;
+    const original = porId.get(c.rescheduledFromId);
+    if (!original) continue;
+    out.set(c.id, { ...de(c.id), rescheduledFrom: { id: original.id, date: original.date.toISOString() } });
+    out.set(original.id, { ...de(original.id), rescheduledTo: { id: c.id, date: c.date.toISOString() } });
+  }
+  return out;
+}
+
+const SIN_VINCULO = { rescheduledFrom: null, rescheduledTo: null } as const;
 
 /**
  * 013 (T008) — Decide si una cohorte puede generar cronograma, y si no, por qué.
@@ -321,6 +353,12 @@ export async function listCalendarClasses(
 
   const dentro = (d: Date) => d >= from && d <= to;
   const out: CalendarClassDto[] = [];
+  /**
+   * 034 (FR-007) — Una cohorte SIN cronograma tampoco proyecta clases en días
+   * de receso (edge case). Se leen una vez para toda la organización: son
+   * decenas de filas, no miles.
+   */
+  const recesos = await leerRecesos(db, organizationId);
 
   for (const c of cohorts) {
     const reales = porCohorte.get(c.id);
@@ -344,7 +382,13 @@ export async function listCalendarClasses(
     // Sin cronograma: se dibuja, con la misma función de siempre.
     if (madres.has(c.id)) continue;
     if (!c.endDate) continue;
-    for (const p of buildClassSchedule(c.startDate, c.endDate, c.daysOfWeek, null)) {
+    for (const p of buildClassSchedule(
+      c.startDate,
+      c.endDate,
+      c.daysOfWeek,
+      null,
+      recesosDeCohorte(recesos, c.id)
+    )) {
       if (!dentro(p.date)) continue;
       out.push({
         ...comun,
@@ -398,7 +442,8 @@ export async function listCohortClasses(
         eq(schema.classSession.cohortId, cohortId)
       )
     )
-    .orderBy(asc(schema.classSession.number));
+    // 034 — por FECHA: una reprogramación lleva el último número pero va en su día.
+    .orderBy(asc(schema.classSession.date), asc(schema.classSession.number));
 
   const window: MeetingWindow = { beforeMin: org.before, afterMin: org.after };
   const comun = {
@@ -409,12 +454,14 @@ export async function listCohortClasses(
   };
 
   if (sessions.length > 0) {
+    const vinculos = vinculosDeReprogramacion(sessions);
     return {
       cohortId,
       projected: false,
       cannotGenerateReason: null,
       timezone: org.timezone,
       classes: sessions.map((s) => ({
+        ...(vinculos.get(s.id) ?? SIN_VINCULO),
         ...buildClassRow({
           id: s.id,
           number: s.number,
@@ -459,7 +506,9 @@ export async function listCohortClasses(
         cohort.startDate,
         cohort.endDate,
         cohort.daysOfWeek,
-        hoursFromTimes(cohort.startTime, cohort.endTime)
+        hoursFromTimes(cohort.startTime, cohort.endTime),
+        // 034 (FR-007) — la proyección saltea los recesos, igual que la generación.
+        recesosDeCohorte(await leerRecesos(db, organizationId, [cohortId]), cohortId)
       )
     : [];
 
@@ -488,6 +537,7 @@ export async function listCohortClasses(
       ownMeetingUrl: null,
       virtualRoomId: null,
       recordingSource: null,
+      ...SIN_VINCULO,
     })),
     cohortVirtualRoomId: cohort.virtualRoomId,
   };
@@ -571,9 +621,23 @@ export async function listProgramClasses(
         )
       )
     )
-    .orderBy(asc(schema.classSession.number));
+    // 034 — por FECHA: una reprogramación lleva el último número pero va en su día.
+    .orderBy(asc(schema.classSession.date), asc(schema.classSession.number));
 
   const window: MeetingWindow = { beforeMin: org.before, afterMin: org.after };
+  const vinculos = vinculosDeReprogramacion(sessions);
+  /**
+   * 034 (FR-007) — Los recesos sólo hacen falta para DIBUJAR: un módulo con
+   * cronograma ya tiene sus clases reales. Se leen sólo si algún módulo
+   * todavía se proyecta.
+   */
+  const recesos = modulos.some((m) => !sessions.some((s) => s.cohortId === m.id))
+    ? await leerRecesos(
+        db,
+        organizationId,
+        modulos.map((m) => m.id)
+      )
+    : [];
 
   return {
     cohortId: parentCohortId,
@@ -595,6 +659,7 @@ export async function listProgramClasses(
           projected: false,
           cannotGenerateReason: null,
           classes: propias.map((s) => ({
+            ...(vinculos.get(s.id) ?? SIN_VINCULO),
             ...buildClassRow({
               id: s.id,
               number: s.number,
@@ -622,7 +687,8 @@ export async function listProgramClasses(
             m.startDate,
             m.endDate,
             m.daysOfWeek,
-            hoursFromTimes(m.startTime, m.endTime)
+            hoursFromTimes(m.startTime, m.endTime),
+            recesosDeCohorte(recesos, m.id)
           )
         : [];
 
@@ -650,6 +716,7 @@ export async function listProgramClasses(
           ownMeetingUrl: null,
           virtualRoomId: null,
           recordingSource: null,
+          ...SIN_VINCULO,
         })),
       };
     }),

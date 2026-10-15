@@ -271,7 +271,8 @@ describe("armarModulosDeCamada — el orden, la etiqueta y el avance", () => {
     expect(out).toHaveLength(2);
     const conCronograma = out[0]!.clases;
     expect(conCronograma.sinCronograma).toBe(false);
-    expect(conCronograma.total).toBe(3);
+    // 034 (FR-015) — la cancelada no cuenta para el total.
+    expect(conCronograma.total).toBe(2);
     // Dictada = real, no cancelada y con fecha ya pasada.
     expect(conCronograma.dictadas).toBe(1);
     expect(conCronograma.canceladas).toBe(1);
@@ -398,6 +399,10 @@ function colaDeCamada(input: {
   selectQueue.push([{ timezone: "America/Montevideo", before: 15, after: 30 }]); // 3
   selectQueue.push(input.modulos); // 4 — listarModulos, dentro de listProgramClasses
   selectQueue.push(input.clases ?? []); // 5 — class_session de los módulos
+  // 5b — 034: los recesos, sólo si algún módulo todavía se proyecta.
+  const ids = (input.modulos as { id: string }[]).map((m) => m.id);
+  const conClases = new Set(((input.clases ?? []) as { cohortId: string }[]).map((c) => c.cohortId));
+  if (ids.some((id) => !conClases.has(id))) selectQueue.push([]);
   selectQueue.push(input.profesores ?? []); // 6
   selectQueue.push(input.cursos ?? []); // 7
   selectQueue.push(input.madres ?? []); // 8 — las inscripciones madre

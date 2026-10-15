@@ -195,8 +195,27 @@ export function repartirEnColumnas(sesiones: PositionedSession[]): PositionedSes
  * [startDate, endDate] — antes aparecía en TODOS los días del rango
  * (fines de semana incluidos) porque ese campo no existía.
  */
+/** 034 (FR-011) — Un receso que toca la semana visible. */
+type CalendarRecess = {
+  id: string;
+  name: string;
+  fromDate: string;
+  toDate: string;
+  cohortId: string | null;
+  cohortName: string | null;
+};
+
+/** 034 — Los recesos que cubren un día ("YYYY-MM-DD", inclusive en las dos puntas). */
+export function recesosDelDia<R extends { fromDate: string; toDate: string }>(
+  dia: string,
+  recesos: readonly R[]
+): R[] {
+  return recesos.filter((r) => r.fromDate <= dia && dia <= r.toDate);
+}
+
 export function CalendarClient() {
   const [classes, setClasses] = useState<CalendarClass[]>([]);
+  const [recesses, setRecesses] = useState<CalendarRecess[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
@@ -223,8 +242,12 @@ export function CalendarClient() {
         `/api/calendar?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
       );
       if (!res.ok) throw new Error(String(res.status));
-      const data = (await res.json()) as { classes: CalendarClass[] };
+      const data = (await res.json()) as {
+        classes: CalendarClass[];
+        recesses?: CalendarRecess[];
+      };
       setClasses(data.classes);
+      setRecesses(data.recesses ?? []);
       setLoadError(false);
     } catch {
       setLoadError(true);
@@ -376,6 +399,9 @@ export function CalendarClient() {
                   key={i}
                   className={cn(
                     "rounded-t-md bg-subtle px-2 py-1.5 text-center text-xs font-medium",
+                    // 034 (FR-011) — un día de receso de la academia se ve distinto.
+                    recesosDelDia(isoDay(day), recesses).some((r) => r.cohortId === null) &&
+                      "bg-warning-soft",
                     isoDay(day) === today && "bg-brand-tint text-brand-text"
                   )}
                 >
@@ -387,8 +413,19 @@ export function CalendarClient() {
             {/* Fila de "todo el día" (cohortes sin startTime/endTime) */}
             <div className="grid grid-cols-[56px_repeat(7,1fr)] gap-px border-b">
               <div className="py-1 text-right text-[10px] text-muted-foreground">todo el día</div>
-              {weekDays.map((_, i) => (
+              {weekDays.map((day, i) => (
                 <div key={i} className="flex flex-col gap-0.5 border-l p-1">
+                  {/* 034 (FR-011) — Los días de receso, marcados con su nombre. */}
+                  {recesosDelDia(isoDay(day), recesses).map((r) => (
+                    <span
+                      key={r.id}
+                      title={`${r.name}${r.cohortName ? ` (${r.cohortName})` : ""}: del ${r.fromDate} al ${r.toDate}`}
+                      className="block truncate rounded border border-warning-border bg-warning-soft px-1 py-0.5 text-[10.5px] font-medium text-foreground"
+                    >
+                      Receso: {r.name}
+                      {r.cohortName ? ` · ${r.cohortName}` : ""}
+                    </span>
+                  ))}
                   {(allDayByDay.get(i) ?? []).map((c) => (
                     <Link
                       key={`${c.cohortId}-${c.date}`}

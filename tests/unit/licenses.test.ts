@@ -191,6 +191,54 @@ describe("assignLicense (T028, FR-003)", () => {
   });
 });
 
+describe("034 (FR-020) — varias licencias por inscripción", () => {
+  it("un segundo programa AGREGA una licencia: no mueve la que había", async () => {
+    const { assignLicense } = await import("@/server/licenses");
+    selectQueue.push(
+      [{ id: "enr_1", parentEnrollmentId: null }],
+      [{ name: "Navisworks", totalLicenses: 5 }],
+      [], // nada ocupado de Navisworks
+      [] // no hay fila de ESTE programa (la de Revit no se mira)
+    );
+    const result = await assignLicense("org_1", "enr_1", "sw_navis");
+    expect(result.ok).toBe(true);
+    expect(updates).toHaveLength(0);
+    expect(inserts).toHaveLength(1);
+    expect((inserts[0]!.values as { softwareId: string }).softwareId).toBe("sw_navis");
+  });
+
+  it("una licencia liberada del mismo programa se REACTIVA, sin duplicar la fila", async () => {
+    const { assignLicense } = await import("@/server/licenses");
+    selectQueue.push(
+      [{ id: "enr_1", parentEnrollmentId: null }],
+      [{ name: "Revit", totalLicenses: 5 }],
+      [],
+      [{ id: "lic_1", enrollmentId: "enr_1", softwareId: "sw_1", assigned: false, assignedAt: null }]
+    );
+    const result = await assignLicense("org_1", "enr_1", "sw_1");
+    expect(result.ok).toBe(true);
+    expect(inserts).toHaveLength(0);
+    expect(updates).toHaveLength(1);
+    expect((updates[0]!.set as { assigned: boolean }).assigned).toBe(true);
+  });
+
+  it("avisa (sin bloquear) del programa repetido entre el paquete y un módulo", async () => {
+    const { assignLicense } = await import("@/server/licenses");
+    selectQueue.push(
+      [{ id: "enr_hija", parentEnrollmentId: "enr_madre" }],
+      [{ name: "Revit", totalLicenses: 5 }],
+      [],
+      [],
+      [
+        { enrollmentId: "enr_madre", softwareId: "sw_1", softwareName: "Revit" },
+        { enrollmentId: "enr_hija", softwareId: "sw_1", softwareName: "Revit" },
+      ]
+    );
+    const result = await assignLicense("org_1", "enr_hija", "sw_1");
+    expect(result.ok && result.warnings).toEqual(["Revit"]);
+  });
+});
+
 describe("unassignLicense (T028, FR-002 escenario 3)", () => {
   it("libera la licencia asignada (assigned=false, assignedAt=null)", async () => {
     const { unassignLicense } = await import("@/server/licenses");

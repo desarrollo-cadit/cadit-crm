@@ -3,6 +3,8 @@ import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { etiquetaDeModulo, modulosConOrdinal } from "@/lib/program-order";
+import { fechaEnReceso, recesosDeCohorte, type Receso } from "@/lib/recess";
+import { leerRecesos } from "@/server/recesses";
 
 /**
  * 009 — Clases dictadas y asistencia.
@@ -53,7 +55,14 @@ export function buildClassSchedule(
   startDate: Date,
   endDate: Date,
   daysOfWeek: string | null,
-  hoursPerClass: number | null
+  hoursPerClass: number | null,
+  /**
+   * 034 (FR-007) — Los recesos que alcanzan a esta cohorte (los de la academia
+   * más los suyos, `recesosDeCohorte`). Un día de receso no genera clase ni se
+   * proyecta, y la numeración sigue corrida: la clase 5 es la quinta que se
+   * dicta, no la quinta que habría habido. Vacío = exactamente lo de antes.
+   */
+  recesos: readonly Pick<Receso, "fromDate" | "toDate">[] = []
 ): { number: number; date: Date; hours: number | null }[] {
   if (!daysOfWeek) return [];
   const days = new Set(
@@ -80,7 +89,7 @@ export function buildClassSchedule(
   while (cursor <= last) {
     // getUTCDay(): 0=domingo..6=sábado. El calendario usa 0=lunes..6=domingo.
     const index = (cursor.getUTCDay() + 6) % 7;
-    if (days.has(index)) {
+    if (days.has(index) && !fechaEnReceso(cursor, recesos)) {
       out.push({ number: out.length + 1, date: new Date(cursor), hours: hoursPerClass });
     }
     cursor.setUTCDate(cursor.getUTCDate() + 1);
@@ -319,11 +328,15 @@ export async function generateSchedule(
   }
 
   const hoursPerClass = hoursFromTimes(cohort.startTime, cohort.endTime);
+  // 034 (FR-007, SC-003) — Regenerar después de cargar un receso no crea
+  // ninguna clase dentro del receso: los de la academia y los de la cohorte.
+  const recesos = recesosDeCohorte(await leerRecesos(db, organizationId, [cohortId]), cohortId);
   const plan = buildClassSchedule(
     cohort.startDate,
     cohort.endDate,
     cohort.daysOfWeek,
-    hoursPerClass
+    hoursPerClass,
+    recesos
   );
   if (plan.length === 0) {
     return {
@@ -405,7 +418,9 @@ const MOTIVO_DE_SALTEO: Record<MotivoDeSalteo, string> = {
  */
 export function planDeCronogramaDelPrograma(
   modulos: readonly ModuloParaCronograma[],
-  conClases: ReadonlySet<string>
+  conClases: ReadonlySet<string>,
+  /** 034 (FR-007) — Todos los recesos que alcanzan a algún módulo; se filtran por módulo. */
+  recesos: readonly Pick<Receso, "fromDate" | "toDate" | "cohortId">[] = []
 ) {
   const filas: {
     cohortId: string;
@@ -439,7 +454,8 @@ export function planDeCronogramaDelPrograma(
       m.startDate,
       m.endDate,
       m.daysOfWeek,
-      hoursFromTimes(m.startTime, m.endTime)
+      hoursFromTimes(m.startTime, m.endTime),
+      recesosDeCohorte(recesos, m.id)
     );
     if (plan.length === 0) {
       saltear("sin_clases");
@@ -535,7 +551,12 @@ export async function generateProgramSchedule(
     ).map((r) => r.cohortId)
   );
 
-  const { filas, generated, skipped } = planDeCronogramaDelPrograma(modulos, conClases);
+  const recesos = await leerRecesos(
+    db,
+    organizationId,
+    modulos.map((m) => m.id)
+  );
+  const { filas, generated, skipped } = planDeCronogramaDelPrograma(modulos, conClases, recesos);
   if (filas.length > 0) {
     await db
       .insert(schema.classSession)
@@ -558,7 +579,8 @@ export async function listSessions(
         eq(schema.classSession.cohortId, cohortId)
       )
     )
-    .orderBy(asc(schema.classSession.number));
+    // 034 — por FECHA: una reprogramación lleva el último número pero va en su día.
+    .orderBy(asc(schema.classSession.date), asc(schema.classSession.number));
   return rows.map((s) => ({
     id: s.id,
     number: s.number,

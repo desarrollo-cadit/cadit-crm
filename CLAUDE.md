@@ -35,6 +35,10 @@ externas: el trabajo en segundo plano (agente, Laboratorio) es in-process.
 | **Quién puede qué** | `src/lib/capabilities.ts` (lista CERRADA) + `src/server/roles.ts` + `/settings/roles` |
 | Clases, cronograma y calendario | `src/server/classes.ts` + `/api/cohorts/[id]/{classes,schedule}` + `/api/calendar` |
 | Horarios con zona horaria | `src/lib/schedule-time.ts` — **el único lugar** que compone fechas de clase |
+| **Recesos** (días sin clase) y borrar / reprogramar clases | `src/lib/recess.ts` (puro) + `src/server/recesses.ts` + `src/server/class-changes.ts` + `/api/recesses` + `/settings/recesos` + `/api/class-sessions/[id]/reschedule` |
+| **Inscripción automática a módulos** (especializaciones) | `src/lib/module-auto-enroll.ts` (puro) + `src/server/module-enrollment.ts` + `/api/cohorts/[id]/modules/enrollments` (vista previa + regularización) + `/api/enrollments/[id]/module` (sacar de un módulo) |
+| La pestaña Alumnos de un módulo | `src/server/module-roster.ts` + `src/components/cohorts/module-roster-client.tsx` |
+| Licencias (varias por inscripción, una por programa) | `src/server/licenses.ts` + `src/lib/license-rules.ts` + `src/components/enrollments/license-list.tsx` |
 | Material y avisos | `src/server/resources.ts` + `/api/resources` + `/api/cohorts/[id]/announcements` |
 | Legajo del alumno | `src/server/student-record.ts` + `/contacts/[id]/legajo` |
 | Reporte por empresa | `src/server/company-report.ts` + `/empresas` |

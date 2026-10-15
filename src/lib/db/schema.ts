@@ -993,7 +993,15 @@ export const workshopRegistration = pgTable(
   ]
 );
 
-/** 004 — Licencia de software asociada (0 o 1) a una inscripción. */
+/**
+ * 004 — Licencia de software asociada a una inscripción.
+ *
+ * 034 (FR-020) — Hasta 033 era 0 o 1 por inscripción (`enrollment_id`
+ * UNIQUE). Ahora son varias, A LO SUMO UNA POR PROGRAMA: el paquete de una
+ * especialización lleva Revit, Navisworks y AutoCAD en la inscripción madre,
+ * y un módulo puede llevar la suya en su inscripción hija. Las filas de antes
+ * no cambian (FR-023): cumplían la regla vieja, así que cumplen la nueva.
+ */
 export const license = pgTable(
   "license",
   {
@@ -1003,7 +1011,6 @@ export const license = pgTable(
       .references(() => organization.id, { onDelete: "cascade" }),
     enrollmentId: text("enrollment_id")
       .notNull()
-      .unique()
       .references(() => enrollment.id, { onDelete: "cascade" }),
     /** 005 (DV-004) — de qué software del catálogo es esta licencia. */
     softwareId: text("software_id")
@@ -1016,6 +1023,44 @@ export const license = pgTable(
   (t) => [
     index("license_org_idx").on(t.organizationId),
     index("license_software_idx").on(t.softwareId),
+    // 034 (FR-020) — Una por programa y por inscripción: asignar dos veces el
+    // mismo programa a la misma inscripción no tiene sentido (escenario 3).
+    uniqueIndex("license_enrollment_software_uq").on(t.enrollmentId, t.softwareId),
+  ]
+);
+
+/**
+ * 034 (US1, FR-004) — "Esta persona NO cursa este módulo", decidido por la
+ * coordinación.
+ *
+ * Sacar a alguien de un módulo borra su inscripción hija (sólo si no tiene
+ * historia, `decidirSalidaDeModulo`). Pero la regularización de FR-005 es
+ * idempotente: vuelve a crear toda hija que falte, y sin este registro la
+ * persona que acabás de sacar entraría de nuevo con el próximo clic. La fila
+ * se borra sola si la persona vuelve a ese módulo por el alta manual (028).
+ *
+ * Cuelga de la MADRE y no del contacto: la decisión es "en este recorrido no
+ * cursa este módulo", no "esta persona nunca lo va a cursar".
+ */
+export const moduleExclusion = pgTable(
+  "module_exclusion",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    parentEnrollmentId: text("parent_enrollment_id")
+      .notNull()
+      .references(() => enrollment.id, { onDelete: "cascade" }),
+    moduleCohortId: text("module_cohort_id")
+      .notNull()
+      .references(() => cohort.id, { onDelete: "cascade" }),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("module_exclusion_parent_module_uq").on(t.parentEnrollmentId, t.moduleCohortId),
+    index("module_exclusion_org_module_idx").on(t.organizationId, t.moduleCohortId),
   ]
 );
 
@@ -1596,10 +1641,35 @@ export const classSession = pgTable(
      * alguien cargó a mano.
      */
     recordingSource: text("recording_source", { enum: ["manual", "zoom"] }),
+    /**
+     * 034 (FR-013) — La clase CANCELADA que ésta reprograma. NULL = una clase
+     * normal del cronograma.
+     *
+     * El vínculo vive en la clase NUEVA y apunta hacia atrás: así la cancelada
+     * no cambia de forma (sigue cancelada, sigue sin contar para la
+     * asistencia, FR-015) y la nueva es una clase como cualquier otra —con su
+     * asistencia, su enlace y su grabación de Zoom—. "Reprogramada al …" se
+     * lee al revés, por el índice único de abajo.
+     *
+     * `set null`: borrar la nueva no tiene por qué borrar la cancelada, ni
+     * viceversa; se pierde el vínculo y nada más.
+     */
+    rescheduledFromId: text("rescheduled_from_id").references(
+      (): AnyPgColumn => classSession.id,
+      { onDelete: "set null" }
+    ),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [
+    /**
+     * 034 (edge case) — Una cancelada se reprograma UNA vez. Si la nueva
+     * también se cae, se reprograma la nueva. El índice lo sostiene aunque dos
+     * pestañas aprieten a la vez.
+     */
+    uniqueIndex("class_session_rescheduled_from_uq")
+      .on(t.rescheduledFromId)
+      .where(sql`${t.rescheduledFromId} IS NOT NULL`),
     check(
       "class_session_recording_source_valid",
       sql`${t.recordingSource} IS NULL OR ${t.recordingSource} IN ('manual','zoom')`
@@ -1660,6 +1730,40 @@ export const attendance = pgTable(
       t.enrollmentId
     ),
     index("attendance_org_enrollment_idx").on(t.organizationId, t.enrollmentId),
+  ]
+);
+
+/**
+ * 034 (US2, FR-006..FR-011) — Un receso: días en los que no hay clase.
+ *
+ * Alcance **academia** (`cohort_id` NULL: todas las cohortes) o de **una
+ * cohorte**. Los dos se suman: ningún día de ninguno tiene clase.
+ *
+ * Las fechas son `date` y no `timestamp`: un receso es un rango de DÍAS
+ * ("del 15/12 al 31/01"), inclusive en las dos puntas, y se compara contra el
+ * día UTC de cada clase (`fechaEnReceso`, `src/lib/recess.ts`). No mueve
+ * ninguna fecha de cohorte (FR-009) y borrarlo no recrea nada (FR-010): el
+ * cronograma se regenera cuando alguien lo pide.
+ */
+export const recess = pgTable(
+  "recess",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** NULL = receso de la academia. */
+    cohortId: text("cohort_id").references(() => cohort.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    fromDate: date("from_date", { mode: "string" }).notNull(),
+    toDate: date("to_date", { mode: "string" }).notNull(),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    check("recess_rango_valido", sql`${t.toDate} >= ${t.fromDate}`),
+    index("recess_org_dates_idx").on(t.organizationId, t.fromDate, t.toDate),
+    index("recess_org_cohort_idx").on(t.organizationId, t.cohortId),
   ]
 );
 
