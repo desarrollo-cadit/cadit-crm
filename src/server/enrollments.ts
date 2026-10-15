@@ -7,6 +7,7 @@ import { normalizePhoneOrRaw } from "@/lib/phone";
 import { fullName } from "@/lib/utils";
 import { PORTAL_NO_EMAIL_REASON } from "@/lib/portal-access";
 import type { Capability } from "@/lib/capabilities";
+import type { CourseKind } from "@/lib/course-kind";
 import {
   exigeVendedor,
   reglaDeVendedorAlEditar,
@@ -83,8 +84,14 @@ export async function createEnrollment(
     // 028 (FR-010) — `parent_cohort_id` viaja en la consulta que YA se hacía
     // para verificar que la cohorte existe: saber si es un módulo no le
     // agrega una lectura al alta de las cohortes simples.
-    .select({ id: schema.cohort.id, parentCohortId: schema.cohort.parentCohortId })
+    .select({
+      id: schema.cohort.id,
+      parentCohortId: schema.cohort.parentCohortId,
+      // 033 (FR-004) — una cohorte de taller no exige vendedor.
+      courseKind: schema.course.kind,
+    })
     .from(schema.cohort)
+    .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
     .where(
       scoped(
         schema.cohort.organizationId,
@@ -122,7 +129,11 @@ export async function createEnrollment(
    * de crear nada: un 422 después de insertar el contacto dejaría un contacto
    * suelto, porque devolver un error no revierte la transacción.
    */
-  const nueva = { cohortId: input.cohortId, parentEnrollmentId: input.parentEnrollmentId ?? null };
+  const nueva = {
+    cohortId: input.cohortId,
+    parentEnrollmentId: input.parentEnrollmentId ?? null,
+    courseKind: cohortRows[0].courseKind,
+  };
   if (exigeVendedor(nueva) && !input.sellerId) {
     return { ok: false, status: 422, code: "seller_required", message: VENDEDOR_OBLIGATORIO };
   }
@@ -373,7 +384,9 @@ export function buildRosterEntry(
   /** 012 — vínculo de portal del alumno; `null` = todavía no tiene acceso. */
   accountLink: typeof schema.accountLink.$inferSelect | null = null,
   /** 2026-10-06 — el vendedor de la inscripción; `null` = sin vendedor. */
-  seller: Pick<typeof schema.seller.$inferSelect, "id" | "name" | "archivedAt"> | null = null
+  seller: Pick<typeof schema.seller.$inferSelect, "id" | "name" | "archivedAt"> | null = null,
+  /** 033 (FR-004) — el tipo del curso de la cohorte: un taller no lleva vendedor. */
+  courseKind: CourseKind | null = null
 ): RosterEntryDto {
   const base: RosterEntryDto = {
     id: enrollment.id,
@@ -415,7 +428,7 @@ export function buildRosterEntry(
     seller: seller
       ? { id: seller.id, name: seller.name, archived: seller.archivedAt !== null }
       : null,
-    sellerRequired: exigeVendedor(enrollment),
+    sellerRequired: exigeVendedor({ ...enrollment, courseKind }),
     companyId: enrollment.companyId,
   };
 }
@@ -438,6 +451,7 @@ export async function getCohortRoster(
       endDate: schema.cohort.endDate,
       whatsappGroupLink: schema.cohort.whatsappGroupLink,
       isSpecialization: schema.cohort.isSpecialization,
+      courseKind: schema.course.kind,
     })
     .from(schema.cohort)
     .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
@@ -497,7 +511,15 @@ export async function getCohortRoster(
     .orderBy(asc(schema.contact.firstName));
 
   const enrollments = rows.map((r) =>
-    buildRosterEntry(capabilities, r.enrollment, r.contact, r.license, r.accountLink, r.seller)
+    buildRosterEntry(
+      capabilities,
+      r.enrollment,
+      r.contact,
+      r.license,
+      r.accountLink,
+      r.seller,
+      cohort.courseKind
+    )
   );
 
   if (cohort.isSpecialization) {

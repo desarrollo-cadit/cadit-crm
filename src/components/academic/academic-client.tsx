@@ -22,7 +22,18 @@ import type {
   TeacherDto,
 } from "@/lib/types";
 import { WEEKDAY_LABELS } from "@/lib/utils";
-import { agruparEspecializaciones } from "@/lib/program-order";
+import {
+  TODOS_LOS_ANIOS,
+  alternarTipo,
+  contadoresDeCohortes,
+  contarCursosPorTipo,
+  filtrarCohortes,
+  filtrarCursos,
+  leerFiltroDeAnio,
+  sinFechas,
+  type FiltroDeAnio,
+} from "@/lib/academic-filters";
+import { COURSE_KINDS, COURSE_KIND_LABEL, type CourseKind } from "@/lib/course-kind";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -144,25 +155,25 @@ export function nextStatusFilter(
  * que activarlo para descubrirlo.
  */
 function CohortStatusFilter({
-  cohorts,
+  total,
+  countByStatus,
   value,
   onChange,
 }: {
-  cohorts: CohortDto[];
+  /** 032 (FR-014) — los conteos llegan ya calculados con los DEMÁS filtros aplicados. */
+  total: number;
+  countByStatus: Record<CohortDto["status"], number>;
   value: Set<CohortDto["status"]>;
   onChange: (next: Set<CohortDto["status"]>) => void;
 }) {
-  const counts = STATUS_ORDER.map((s) => ({
-    status: s,
-    count: cohorts.filter((c) => c.status === s).length,
-  }));
+  const counts = STATUS_ORDER.map((s) => ({ status: s, count: countByStatus[s] }));
   const allOn = value.size === STATUS_ORDER.length;
 
   const toggle = (status: CohortDto["status"]) =>
     onChange(nextStatusFilter(value, status));
 
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <span className="text-xs text-muted-foreground">Mostrar:</span>
       <button
         type="button"
@@ -172,7 +183,7 @@ function CohortStatusFilter({
         }`}
         onClick={() => onChange(new Set(STATUS_ORDER))}
       >
-        Todas ({cohorts.length})
+        Todas ({total})
       </button>
       {counts.map(({ status, count }) => (
         // El chip se pinta según su estado REAL. Antes se apagaba cuando
@@ -197,6 +208,55 @@ function CohortStatusFilter({
 }
 
 /**
+ * 032 (FR-009/FR-013) — Filtro por tipo de curso, de selección múltiple. El
+ * mismo en las dos pestañas; cada chip lleva cuántos quedan con los demás
+ * filtros aplicados (FR-014). "Todos" enciende los tres.
+ */
+function KindFilter({
+  value,
+  counts,
+  onChange,
+}: {
+  value: Set<CourseKind>;
+  counts: Record<CourseKind, number>;
+  onChange: (next: Set<CourseKind>) => void;
+}) {
+  const allOn = value.size === COURSE_KINDS.length;
+  const total = COURSE_KINDS.reduce((n, k) => n + counts[k], 0);
+  const chip = (on: boolean) =>
+    `rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+      on ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent"
+    }`;
+  return (
+    <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Tipo de curso">
+      <span className="text-xs text-muted-foreground">Tipo:</span>
+      <button
+        type="button"
+        aria-pressed={allOn}
+        className={chip(allOn)}
+        onClick={() => onChange(new Set(COURSE_KINDS))}
+      >
+        Todos ({total})
+      </button>
+      {COURSE_KINDS.map((k) => (
+        <button
+          key={k}
+          type="button"
+          aria-pressed={value.has(k)}
+          className={chip(value.has(k))}
+          onClick={() => onChange(alternarTipo(value, k))}
+        >
+          {COURSE_KIND_LABEL[k]} ({counts[k]})
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** 032 (FR-011) — Dónde se recuerda el último año elegido, por persona y navegador. */
+const CLAVE_FILTRO_ANIO = "academico.cohortes.anio";
+
+/**
  * 005 (T014, US1) — pantalla de gestión académica. Iteración 2 (feedback en
  * vivo del dueño) suma pestañas Cursos/Software/Profesores: antes solo se
  * podían crear desde selectores dentro del formulario de cohorte, sin forma
@@ -214,6 +274,42 @@ export function AcademicClient() {
   const [statusFilter, setStatusFilter] = useState<Set<CohortDto["status"]>>(
     new Set(["planificada", "en_curso", "finalizada"])
   );
+  /**
+   * 032 (FR-009) — Tipo en la pestaña Cursos: arranca en "solo Curso", que es
+   * lo que más se consulta; los módulos se gestionan desde su especialización.
+   */
+  const [courseKindFilter, setCourseKindFilter] = useState<Set<CourseKind>>(
+    new Set(["curso"])
+  );
+  /**
+   * 032 (FR-013) — Tipo en la pestaña Cohortes. Arranca con los tres: el
+   * listado de cohortes no tiene que perder ninguna el día del despliegue.
+   */
+  const [cohortKindFilter, setCohortKindFilter] = useState<Set<CourseKind>>(
+    new Set(COURSE_KINDS)
+  );
+  /**
+   * 032 (FR-011) — Año. "Todos los años" la primera vez, para que nadie
+   * piense que se perdieron cohortes; después, la última elección de esta
+   * persona. Se lee DESPUÉS de montar: el servidor no conoce el
+   * `localStorage`, y leerlo en el primer render desincroniza la hidratación.
+   */
+  const [yearFilter, setYearFilter] = useState<FiltroDeAnio>(TODOS_LOS_ANIOS);
+  useEffect(() => {
+    try {
+      setYearFilter(leerFiltroDeAnio(window.localStorage.getItem(CLAVE_FILTRO_ANIO)));
+    } catch {
+      // Almacenamiento bloqueado (ventana privada, datos borrados): queda el default.
+    }
+  }, []);
+  function elegirAnio(next: FiltroDeAnio) {
+    setYearFilter(next);
+    try {
+      window.localStorage.setItem(CLAVE_FILTRO_ANIO, String(next));
+    } catch {
+      // Sin almacenamiento el filtro funciona igual; solo no se recuerda.
+    }
+  }
   const [loading, setLoading] = useState(false);
   const [courses, setCourses] = useState<CourseDto[]>([]);
   const [cohorts, setCohorts] = useState<CohortDto[]>([]);
@@ -345,7 +441,17 @@ export function AcademicClient() {
    * adentro de su especialización (`agruparEspecializaciones`, pura y con
    * tests). Una madre se muestra si ella o alguno de sus módulos coincide.
    */
-  const grupos = agruparEspecializaciones(cohorts, statusFilter);
+  const filtrosDeCohortes = {
+    estados: statusFilter,
+    anio: yearFilter,
+    tipos: cohortKindFilter,
+  };
+  // 032 (FR-011/FR-013) — estado, año y tipo a la vez (`filtrarCohortes`, pura).
+  const grupos = filtrarCohortes(cohorts, filtrosDeCohortes);
+  const anioActual = new Date().getFullYear();
+  const contadores = contadoresDeCohortes(cohorts, filtrosDeCohortes, anioActual);
+  const cursosVisibles = filtrarCursos(courses, courseKindFilter);
+  const cursosPorTipo = contarCursosPorTipo(courses);
   /** Qué especializaciones están desplegadas. Arrancan plegadas. */
   const [desplegadas, setDesplegadas] = useState<Set<string>>(new Set());
   function alternar(id: string) {
@@ -424,6 +530,8 @@ export function AcademicClient() {
             <Badge variant={STATUS_BADGE[cohort.status].variant}>
               {STATUS_BADGE[cohort.status].label}
             </Badge>
+            {/* 032 (FR-012) — aparece con cualquier año, y se dice por qué. */}
+            {sinFechas(cohort) && <Badge variant="warning">sin fechas</Badge>}
             {insignia}
           </div>
           {subtitulo && (
@@ -584,11 +692,49 @@ export function AcademicClient() {
           </div>
         )}
         {!loading && tab === "cohorts" && cohorts.length > 0 && (
-          <CohortStatusFilter
-            cohorts={cohorts}
-            value={statusFilter}
-            onChange={setStatusFilter}
-          />
+          <div className="mb-4 space-y-2.5">
+            <CohortStatusFilter
+              total={contadores.todas}
+              countByStatus={contadores.estados}
+              value={statusFilter}
+              onChange={setStatusFilter}
+            />
+            {/* 032 (FR-011/FR-013) — año y tipo, combinables con el estado. */}
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2.5">
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                Año:
+                <select
+                  aria-label="Año de la cohorte"
+                  className="h-8 rounded-md border border-input bg-card px-2 text-xs text-foreground"
+                  value={String(yearFilter)}
+                  onChange={(e) => elegirAnio(leerFiltroDeAnio(e.target.value))}
+                >
+                  <option value={TODOS_LOS_ANIOS}>
+                    Todos los años ({contadores.todosLosAnios})
+                  </option>
+                  {contadores.anios.map(({ anio, count }) => (
+                    <option key={anio} value={anio}>
+                      {anio === anioActual ? `Este año (${anio})` : anio} ({count})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {yearFilter !== anioActual && (
+                <button
+                  type="button"
+                  className="rounded-full border px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent"
+                  onClick={() => elegirAnio(anioActual)}
+                >
+                  Solo este año
+                </button>
+              )}
+              <KindFilter
+                value={cohortKindFilter}
+                counts={contadores.tipos}
+                onChange={setCohortKindFilter}
+              />
+            </div>
+          </div>
         )}
         {!loading && tab === "cohorts" &&
           (cohorts.length === 0 ? (
@@ -677,12 +823,25 @@ export function AcademicClient() {
             </div>
           ))}
 
+        {!loading && tab === "courses" && courses.length > 0 && (
+          <div className="mb-4">
+            <KindFilter
+              value={courseKindFilter}
+              counts={cursosPorTipo}
+              onChange={setCourseKindFilter}
+            />
+          </div>
+        )}
         {!loading && tab === "courses" &&
           (courses.length === 0 ? (
             <p className="text-sm text-muted-foreground">Sin cursos todavía.</p>
+          ) : cursosVisibles.length === 0 ? (
+            <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+              Ningún curso de este tipo.
+            </p>
           ) : (
             <ul className="space-y-2">
-              {courses.map((c) => (
+              {cursosVisibles.map((c) => (
                 <li
                   key={c.id}
                   className="flex items-start justify-between gap-4 rounded-lg border bg-card px-4 py-3"
@@ -690,6 +849,10 @@ export function AcademicClient() {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-sm font-medium">{c.name}</p>
+                      {/* 032 (FR-010) — cada curso dice qué es. */}
+                      <Badge variant={c.kind === "curso" ? "outline" : "secondary"}>
+                        {COURSE_KIND_LABEL[c.kind]}
+                      </Badge>
                       {c.categoryId && (
                         <Badge variant="secondary">
                           {categories.find((cat) => cat.id === c.categoryId)?.name ??
@@ -858,6 +1021,10 @@ export function AcademicClient() {
           onCategoryDeleted={(id) => {
             setCategories((prev) => prev.filter((c) => c.id !== id));
             void refetch();
+          }}
+          onDeleted={(id) => {
+            setShowCourseForm(null);
+            setCourses((prev) => prev.filter((c) => c.id !== id));
           }}
         />
       )}

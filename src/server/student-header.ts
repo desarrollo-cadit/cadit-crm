@@ -1,4 +1,5 @@
 import { and, eq, isNotNull } from "drizzle-orm";
+import { cohorteNoEsDeTaller } from "@/server/workshop-scope";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { fullName } from "@/lib/utils";
@@ -87,7 +88,9 @@ export async function studentHeader(
           schema.enrollment.organizationId,
           organizationId,
           eq(schema.enrollment.contactId, contactId),
-          isNotNull(schema.enrollment.cohortId)
+          isNotNull(schema.enrollment.cohortId),
+          // 033 (FR-021) — Un taller no cuenta como cursada.
+          cohorteNoEsDeTaller(schema.enrollment.cohortId)
         )
       ),
   ]);

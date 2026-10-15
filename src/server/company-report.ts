@@ -1,4 +1,5 @@
 import { asc, eq, inArray } from "drizzle-orm";
+import { cursoNoEsTaller } from "@/server/workshop-scope";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { fullName } from "@/lib/utils";
@@ -63,7 +64,9 @@ export async function companyReport(
       scoped(
         schema.enrollment.organizationId,
         organizationId,
-        eq(schema.enrollment.companyId, companyId)
+        eq(schema.enrollment.companyId, companyId),
+        // 033 (FR-021) — El reporte habla del avance en cursos, no de talleres.
+        cursoNoEsTaller(schema.course.kind)
       )
     )
     .orderBy(asc(schema.contact.firstName));

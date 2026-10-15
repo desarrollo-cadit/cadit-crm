@@ -19,6 +19,7 @@ import {
   verificarPadreDeCohorte,
 } from "@/server/program-modules";
 import { planDeReorden, siguientePosicion } from "@/lib/program-order";
+import { COURSE_KINDS, type CourseKind } from "@/lib/course-kind";
 
 
 /**
@@ -81,6 +82,8 @@ export type CourseContentInput = {
   grantsCertificate?: boolean;
   /** 009/010 — asistencia mínima por defecto de las cohortes de este curso. */
   minAttendancePct?: number | null;
+  /** 032 (FR-001/FR-003) — curso, módulo o taller. Default `curso` en el alta. */
+  kind?: CourseKind;
 };
 
 /**
@@ -129,6 +132,7 @@ export const courseContentSchema = {
   published: z.boolean().optional(),
   grantsCertificate: z.boolean().optional(),
   minAttendancePct: z.number().int().min(0).max(100).nullable().optional(),
+  kind: z.enum(COURSE_KINDS).optional(),
 };
 
 export type CreateCourseResult =
@@ -188,6 +192,8 @@ export async function createCourse(
       // no entrega certificado es la excepción, no la regla.
       grantsCertificate: input.grantsCertificate ?? true,
       minAttendancePct: input.minAttendancePct ?? null,
+      // 032 (FR-001) — sin tipo declarado, es un curso del catálogo.
+      kind: input.kind ?? "curso",
     })
     .returning();
   // `insert().returning()` de una fila: o devuelve la fila o lanza.
@@ -271,6 +277,9 @@ export async function updateCourse(
         ? { grantsCertificate: input.grantsCertificate }
         : {}),
       ...(input.minAttendancePct !== undefined ? { minAttendancePct: input.minAttendancePct } : {}),
+      // 032 — cambiar el tipo de un curso con cohortes está permitido: el
+      // tipo clasifica, no cambia cómo funcionan las cohortes que ya existen.
+      ...(input.kind !== undefined ? { kind: input.kind } : {}),
       updatedAt: new Date(),
     })
     .where(scoped(schema.course.organizationId, organizationId, eq(schema.course.id, courseId)))
@@ -701,6 +710,74 @@ export async function createCohort(
   return { ok: true, id, licenseWarnings, scheduleWarnings };
 }
 
+/**
+ * 032 (FR-005/FR-006/FR-007) — "Módulo nuevo": el módulo de una
+ * especialización con NOMBRE PROPIO, sin atarlo a un curso del catálogo.
+ *
+ * Toda cohorte cuelga de un curso, así que por detrás se crea un curso de
+ * tipo `modulo` con ese nombre y la cohorte del módulo apuntando a él. Los
+ * dos o ninguno:
+ *
+ * 1. **Todo lo que puede fallar por el pedido se valida ANTES de escribir**:
+ *    la madre (que exista y sea especialización) y las FK del módulo. Devolver
+ *    un 422 no revierte la transacción del pedido, así que un error después
+ *    del alta del curso dejaría un curso huérfano.
+ * 2. Lo que falle DESPUÉS de la primera escritura **lanza**: `withAuth`
+ *    revierte la transacción entera y el curso no queda.
+ *
+ * El curso nace sin certificado propio (FR-007: la coordinación lo puede
+ * cambiar; su aprobación cuenta igual para el general) y sin publicar — de
+ * todos modos el catálogo público excluye a los módulos por tipo (FR-004).
+ * Su `slug` lo resuelve `resolveUniqueCourseSlug`: dos especializaciones con
+ * "Módulo 1" terminan en `modulo-1` y `modulo-1-2`.
+ */
+export async function createModuloConCursoPropio(
+  organizationId: string,
+  input: Omit<CohortInput, "courseId"> & { parentCohortId: string },
+  nombre: string
+): Promise<CreateCohortResult & { courseId?: string }> {
+  const db = getDb();
+
+  const fkError = await validateCohortForeignKeys(db, organizationId, {
+    teacherId: input.teacherId,
+    softwareIds: input.softwareIds,
+    virtualRoomId: input.virtualRoomId,
+  });
+  if (fkError) return { ok: false, status: 422, code: "invalid_body", message: fkError };
+
+  const treeError = await verificarPadreDeCohorte(
+    db,
+    organizationId,
+    newId("cohort"),
+    input.parentCohortId,
+    true,
+    false
+  );
+  if (treeError) {
+    return { ok: false, status: 422, code: "invalid_body", message: treeError.message };
+  }
+
+  const course = await createCourse(organizationId, {
+    name: nombre,
+    kind: "modulo",
+    grantsCertificate: false,
+    published: false,
+  });
+  if (!course.ok) throw new Error(`032 — no se pudo crear el curso del módulo: ${course.message}`);
+
+  const cohort = await createCohort(organizationId, {
+    ...input,
+    courseId: course.id,
+    isSpecialization: false,
+  });
+  if (!cohort.ok) {
+    // Ya validado arriba: llegar acá es una carrera (la madre cambió en el
+    // medio). Lanzar revierte también el curso recién creado.
+    throw new Error(`032 — no se pudo crear la cohorte del módulo: ${cohort.message}`);
+  }
+  return { ...cohort, courseId: course.id };
+}
+
 export type UpdateCohortResult =
   | {
       ok: true;
@@ -969,6 +1046,8 @@ function serializeCohort(
     id: cohort.id,
     courseId: cohort.courseId,
     courseName: course.name,
+    /** 032 (FR-013) — el tipo del curso, para el filtro de la pestaña Cohortes. */
+    courseKind: course.kind,
     name: cohort.name,
     /**
      * 028 fase 4 (FR-033) — De qué camada es módulo esta cohorte, y en qué
@@ -1289,5 +1368,141 @@ export async function deleteCohort(
     .delete(schema.cohort)
     .where(scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, cohortId)));
 
+  return { ok: true, motivo: decision.motivo };
+}
+
+/* ============================================================
+ * 032 — Borrar un curso
+ * ============================================================ */
+
+export type UsoDelCurso = {
+  cohortes: number;
+  /** Personas registradas como interesadas en el curso (`enrollment.interest_course_id`). */
+  interesados: number;
+  /** Nombres de los formularios de captación que apuntan al curso. */
+  formularios: string[];
+};
+
+export type DecisionDeBorradoCurso = {
+  accion: "borrar" | "bloquear";
+  motivo: string;
+};
+
+/**
+ * 032 (FR-015/FR-016) — Si un curso se puede borrar, y si no, por qué.
+ *
+ * **Pura**, como `decidirBajaCamada`: es la regla que decide si se borra
+ * algo, y probarla no debería necesitar una base.
+ *
+ * Bloquean las tres cosas que son historia o que dejarían algo roto:
+ *
+ * - una **cohorte** (la FK es `restrict`: la base tampoco lo dejaría, pero con
+ *   un 500 en vez de un motivo);
+ * - una **persona interesada**: la FK es `set null`, así que la base lo
+ *   permitiría en silencio y el lead perdería a qué curso venía;
+ * - un **formulario de captación**: también `set null`, y el formulario
+ *   seguiría publicado juntando leads sin curso.
+ *
+ * El mensaje dice QUÉ y CUÁNTOS, y ofrece la salida que casi siempre se
+ * busca: sacarlo de la vista cambiándole el tipo o despublicándolo.
+ */
+export function decidirBorradoCurso(u: UsoDelCurso): DecisionDeBorradoCurso {
+  const partes: string[] = [];
+  if (u.cohortes > 0) {
+    partes.push(`${u.cohortes} ${u.cohortes === 1 ? "cohorte" : "cohortes"}`);
+  }
+  if (u.interesados > 0) {
+    partes.push(
+      `${u.interesados} ${u.interesados === 1 ? "persona interesada" : "personas interesadas"}`
+    );
+  }
+  if (u.formularios.length > 0) {
+    const nombres = u.formularios.map((f) => `"${f}"`).join(", ");
+    partes.push(
+      u.formularios.length === 1
+        ? `el formulario de captación ${nombres}`
+        : `${u.formularios.length} formularios de captación (${nombres})`
+    );
+  }
+
+  if (partes.length === 0) {
+    return { accion: "borrar", motivo: "No tiene nada asociado: se puede borrar." };
+  }
+  return {
+    accion: "bloquear",
+    motivo:
+      `No se puede borrar: lo usan ${partes.join(", ")}. ` +
+      "Si lo que querés es sacarlo de la vista, cambiale el tipo o despublicalo.",
+  };
+}
+
+export type BorradoCursoResult =
+  | { ok: true; motivo: string }
+  | { ok: false; status: 404 | 409; code: string; message: string };
+
+/**
+ * 032 (FR-015/FR-017) — Borra un curso, solo si no tiene nada asociado.
+ *
+ * Lo que se va con él es lo que solo existe para ese curso y no es historia
+ * de nadie: su temario (`course_module`), su material (`resource`) y la
+ * habilitación de profesores (`teacher_course`). Ahí el `cascade` del
+ * esquema hace el trabajo.
+ */
+export async function deleteCourse(
+  organizationId: string,
+  courseId: string
+): Promise<BorradoCursoResult> {
+  const db = getDb();
+
+  const existe = await db
+    .select({ id: schema.course.id })
+    .from(schema.course)
+    .where(scoped(schema.course.organizationId, organizationId, eq(schema.course.id, courseId)))
+    .limit(1);
+  if (!existe[0]) {
+    return { ok: false, status: 404, code: "not_found", message: "Curso no encontrado" };
+  }
+
+  const [cohortes, interesados, formularios] = await Promise.all([
+    db
+      .select({ id: schema.cohort.id })
+      .from(schema.cohort)
+      .where(
+        scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.courseId, courseId))
+      ),
+    db
+      .select({ id: schema.enrollment.id })
+      .from(schema.enrollment)
+      .where(
+        scoped(
+          schema.enrollment.organizationId,
+          organizationId,
+          eq(schema.enrollment.interestCourseId, courseId)
+        )
+      ),
+    db
+      .select({ name: schema.intakeForm.name })
+      .from(schema.intakeForm)
+      .where(
+        scoped(
+          schema.intakeForm.organizationId,
+          organizationId,
+          eq(schema.intakeForm.courseId, courseId)
+        )
+      ),
+  ]);
+
+  const decision = decidirBorradoCurso({
+    cohortes: cohortes.length,
+    interesados: interesados.length,
+    formularios: formularios.map((f) => f.name),
+  });
+  if (decision.accion === "bloquear") {
+    return { ok: false, status: 409, code: "curso_en_uso", message: decision.motivo };
+  }
+
+  await db
+    .delete(schema.course)
+    .where(scoped(schema.course.organizationId, organizationId, eq(schema.course.id, courseId)));
   return { ok: true, motivo: decision.motivo };
 }

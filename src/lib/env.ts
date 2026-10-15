@@ -82,6 +82,17 @@ const envSchema = z.object({
    * la cuenta real con el botón (030, T103). Un deploy no la prende solo.
    */
   ZOOM_SYNC_INTERVAL_MIN: z.coerce.number().int().min(0).default(0),
+  /**
+   * 033 (FR-020) — Minutos entre pasadas del recordatorio de talleres por
+   * WhatsApp (el día anterior, a los confirmados); 0 lo apaga. Default 0: se
+   * enciende a propósito (p. ej. 15) cuando las plantillas están aprobadas.
+   */
+  WORKSHOP_REMINDER_INTERVAL_MIN: z.coerce.number().int().min(0).default(0),
+  /**
+   * 033 (FR-019) — Confirmación por WhatsApp al anotarse a un taller. Apagada
+   * salvo `true` (decisión del dueño, 2026-10-15: por ahora sin WhatsApp).
+   */
+  WORKSHOP_CONFIRMATION_ENABLED: z.string().optional(),
   /** Días hacia atrás de la primera corrida de una conexión. */
   ZOOM_SYNC_BACKFILL_DAYS: z.coerce.number().int().min(1).default(90),
   /** Días que cada corrida vuelve a mirar hacia atrás (grabaciones tardías). */

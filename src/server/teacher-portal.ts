@@ -1,4 +1,5 @@
 import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
+import { cohorteNoEsDeTaller } from "@/server/workshop-scope";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { markAttendance, type AttendanceStatus } from "@/server/attendance";
@@ -60,7 +61,9 @@ export async function resolveTeacherScope(
         scoped(
           schema.cohort.organizationId,
           organizationId,
-          eq(schema.cohort.teacherId, teacherId)
+          eq(schema.cohort.teacherId, teacherId),
+          // 033 (FR-021) — Un taller no entra al portal del profesor.
+          cohorteNoEsDeTaller(schema.cohort.id)
         )
       ),
     db
@@ -70,7 +73,8 @@ export async function resolveTeacherScope(
         scoped(
           schema.classSession.organizationId,
           organizationId,
-          eq(schema.classSession.teacherId, teacherId)
+          eq(schema.classSession.teacherId, teacherId),
+          cohorteNoEsDeTaller(schema.classSession.cohortId)
         )
       ),
   ]);
@@ -122,7 +126,9 @@ export async function teacherReachesCohort(
         or(
           eq(schema.cohort.teacherId, teacherId),
           eq(schema.classSession.teacherId, teacherId)
-        )
+        ),
+        // 033 (FR-021) — Fuera del alcance, igual que en `resolveTeacherScope`.
+        cohorteNoEsDeTaller(schema.cohort.id)
       )
     )
     .limit(1);

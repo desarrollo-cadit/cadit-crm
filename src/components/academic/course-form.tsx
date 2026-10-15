@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import type { CourseCategoryDto, CourseDto } from "@/lib/types";
+import { COURSE_KINDS, COURSE_KIND_LABEL, type CourseKind } from "@/lib/course-kind";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -73,6 +74,7 @@ export function CourseForm({
   onSaved,
   onCategoryCreated,
   onCategoryDeleted,
+  onDeleted,
 }: {
   initial?: CourseDto | null;
   categories: CourseCategoryDto[];
@@ -80,8 +82,21 @@ export function CourseForm({
   onSaved: () => void;
   onCategoryCreated: (category: CourseCategoryDto) => void;
   onCategoryDeleted: (categoryId: string) => void;
+  /** 032 (US4) — el curso se borró; quien abrió el editor lo saca de la lista. */
+  onDeleted?: (courseId: string) => void;
 }) {
   const [name, setName] = useState(initial?.name ?? "");
+  /** 032 (FR-003) — curso, módulo o taller. Un curso nuevo es "curso". */
+  const [kind, setKind] = useState<CourseKind>(initial?.kind ?? "curso");
+  /**
+   * 032 (FR-018) — El borrado pide confirmación EXPLÍCITA, en el mismo
+   * formulario y con el nombre del curso a la vista. Si el servidor lo
+   * bloquea, el motivo queda acá (qué lo usa y cuántos) en vez de en un toast
+   * que se va antes de terminar de leerlo.
+   */
+  const [confirmandoBorrado, setConfirmandoBorrado] = useState(false);
+  const [borrando, setBorrando] = useState(false);
+  const [bloqueoBorrado, setBloqueoBorrado] = useState<string | null>(null);
   const [slug, setSlug] = useState(initial?.slug ?? "");
   const [tagline, setTagline] = useState(initial?.tagline ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
@@ -200,12 +215,32 @@ export function CourseForm({
     return data?.error?.message ?? "error de red";
   }
 
+  async function borrar() {
+    if (!initial) return;
+    setBorrando(true);
+    setBloqueoBorrado(null);
+    const res = await fetch(`/api/courses/${initial.id}`, { method: "DELETE" }).catch(
+      () => null
+    );
+    setBorrando(false);
+    if (!res?.ok) {
+      const body = (await res?.json().catch(() => null)) as
+        | { error?: { message?: string } }
+        | null;
+      setBloqueoBorrado(body?.error?.message ?? "No se pudo borrar el curso.");
+      return;
+    }
+    notify.success(`"${initial.name}" fue borrado.`);
+    onDeleted?.(initial.id);
+  }
+
   async function submit() {
     if (!name.trim()) return;
     setSaving(true);
 
     const payload = {
       name: name.trim(),
+      kind,
       description: description.trim() || null,
       tagline: tagline.trim() || null,
       categoryId: categoryId || null,
@@ -293,6 +328,34 @@ export function CourseForm({
                 Tu sitio la usa como /cursos/{slug.trim() || "nombre-del-curso"}
               </p>
             </div>
+          </div>
+
+          {/*
+            032 (FR-003) — El tipo clasifica el curso y decide dónde aparece;
+            no cambia cómo funcionan sus cohortes, por eso se puede cambiar
+            aunque ya tenga.
+          */}
+          <div className="space-y-1.5">
+            <Label htmlFor="course-kind">Tipo</Label>
+            <select
+              id="course-kind"
+              className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+              value={kind}
+              onChange={(e) => setKind(e.target.value as CourseKind)}
+            >
+              {COURSE_KINDS.map((k) => (
+                <option key={k} value={k}>
+                  {COURSE_KIND_LABEL[k]}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground">
+              {kind === "modulo"
+                ? "Una etapa de una especialización. No aparece en el catálogo web aunque esté publicado, ni se ofrece al crear una cohorte común."
+                : kind === "taller"
+                  ? "Un taller. Por ahora se gestiona como cualquier curso; se lista aparte con el filtro de tipo."
+                  : "Un curso del catálogo, el caso de siempre."}
+            </p>
           </div>
 
           <label className="flex items-start gap-2.5 rounded-md border p-3">
@@ -606,13 +669,58 @@ export function CourseForm({
           </div>
         </div>
 
-        <div className="mt-4 flex justify-end gap-2">
-          <Button variant="ghost" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button disabled={!name.trim() || saving} onClick={() => void submit()}>
-            {saving ? "Guardando…" : "Guardar"}
-          </Button>
+        {/* 032 (US4, FR-018) — Confirmación explícita, con el nombre a la vista. */}
+        {initial && confirmandoBorrado && (
+          <div className="mt-4 space-y-2 rounded-md border border-danger-border bg-danger-soft p-3 text-sm">
+            <p className="text-danger">
+              ¿Borrar el curso <span className="font-semibold">&ldquo;{initial.name}&rdquo;</span>?
+              Se borran con él su temario, su material y los profesores habilitados
+              para dictarlo. No se puede deshacer.
+            </p>
+            {bloqueoBorrado && <p className="text-xs text-danger">{bloqueoBorrado}</p>}
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setConfirmandoBorrado(false);
+                  setBloqueoBorrado(null);
+                }}
+              >
+                No borrar
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={borrando || bloqueoBorrado !== null}
+                onClick={() => void borrar()}
+              >
+                {borrando ? "Borrando…" : `Sí, borrar "${initial.name}"`}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        <div className="mt-4 flex items-center justify-between gap-2">
+          <div>
+            {initial && !confirmandoBorrado && (
+              <Button
+                variant="ghost"
+                className="text-destructive"
+                onClick={() => setConfirmandoBorrado(true)}
+              >
+                <Trash2 className="h-4 w-4" /> Borrar
+              </Button>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Button variant="ghost" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button disabled={!name.trim() || saving} onClick={() => void submit()}>
+              {saving ? "Guardando…" : "Guardar"}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

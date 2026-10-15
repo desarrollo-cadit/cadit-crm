@@ -45,3 +45,21 @@ export async function startZoomSyncOnBoot(): Promise<void> {
     console.error("[boot] sincronización de Zoom no arrancó:", err instanceof Error ? err.name : "error");
   }
 }
+
+/**
+ * 033 (FR-020) — El recordatorio de talleres por WhatsApp al arrancar, si
+ * `WORKSHOP_REMINDER_INTERVAL_MIN > 0`. Usa la MISMA guarda que la periódica
+ * de Zoom (`shouldStartScheduler`): el `process.env` del servidor standalone
+ * no trae `NEXT_RUNTIME`, y exigirlo acá lo dejaría apagado en producción sin
+ * ningún log (el bug que se corrigió en Zoom). Nada puede tumbar el arranque.
+ */
+export async function startWorkshopRemindersOnBoot(): Promise<void> {
+  try {
+    const { shouldStartScheduler } = await import("@/server/zoom/scheduler");
+    if (!shouldStartScheduler(process.env)) return;
+    const { startWorkshopReminderScheduler } = await import("@/server/workshop-reminders");
+    startWorkshopReminderScheduler();
+  } catch (err) {
+    console.error("[boot] recordatorio de talleres no arrancó:", err instanceof Error ? err.name : "error");
+  }
+}

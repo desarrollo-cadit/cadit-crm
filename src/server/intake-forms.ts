@@ -5,7 +5,7 @@ import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { normalizePhoneOrRaw } from "@/lib/phone";
 import { onLeadActivity } from "@/server/inbox/lead-activity";
-import { resolveSoleOrganizationId } from "@/server/public-catalog";
+import { condicionDeCatalogo, resolveSoleOrganizationId } from "@/server/public-catalog";
 
 /**
  * 005 iteración 3 (formularios de captación) — CRUD autenticado de
@@ -128,6 +128,37 @@ async function registerPublicLead(
   interestCourseId: string | null,
   input: PublicLeadInput
 ): Promise<IntakeFormSubmitResult> {
+  const contactId = await findOrCreatePublicContact(organizationId, source, input);
+  if (!contactId) {
+    // Carrera extremadamente improbable: ni insert ni select encontraron fila.
+    return {
+      ok: false,
+      status: 404,
+      code: "not_found",
+      message: "No se pudo registrar el contacto",
+    };
+  }
+
+  await onLeadActivity(organizationId, contactId, new Date(), interestCourseId);
+
+  return { ok: true, contactId };
+}
+
+/**
+ * El contacto de una captación pública: el existente con el mismo teléfono
+ * normalizado, o uno nuevo. `null` solo en la carrera improbable en que ni el
+ * insert ni el select encuentran la fila.
+ *
+ * 033 (FR-007) — extraída de `registerPublicLead` para que la inscripción a
+ * un taller (`src/server/workshops.ts`) deduplique con el MISMO criterio que
+ * los formularios de cursos: dos criterios de identidad son dos contactos
+ * para la misma persona.
+ */
+export async function findOrCreatePublicContact(
+  organizationId: string,
+  source: string,
+  input: PublicLeadInput
+): Promise<string | null> {
   const db = getDb();
   // 007 — misma normalización que la importación de planillas: si no, el
   // lead que entra por la web queda con "098574165" y el alumno ya cargado
@@ -166,19 +197,7 @@ async function registerPublicLead(
       .limit(1);
     contactId = existing[0]?.id;
   }
-  if (!contactId) {
-    // Carrera extremadamente improbable: ni insert ni select encontraron fila.
-    return {
-      ok: false,
-      status: 404,
-      code: "not_found",
-      message: "No se pudo registrar el contacto",
-    };
-  }
-
-  await onLeadActivity(organizationId, contactId, new Date(), interestCourseId);
-
-  return { ok: true, contactId };
+  return contactId ?? null;
 }
 
 /**
@@ -271,7 +290,7 @@ export async function submitCourseInterest(
         // 007 — mismo criterio que el catálogo público: si el curso no se
         // publica, su landing no existe y esta puerta tampoco. Los talleres
         // internos no reciben leads del sitio.
-        eq(schema.course.published, true),
+        condicionDeCatalogo(),
         or(eq(schema.course.slug, idOrSlug), eq(schema.course.id, idOrSlug))
       )
     )

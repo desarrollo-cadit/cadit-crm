@@ -1,4 +1,5 @@
 import { and, eq } from "drizzle-orm";
+import { cohorteNoEsDeTaller } from "@/server/workshop-scope";
 import { customAlphabet } from "nanoid";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
@@ -110,7 +111,9 @@ async function contactHasEnrollment(
       scoped(
         schema.enrollment.organizationId,
         organizationId,
-        eq(schema.enrollment.contactId, contactId)
+        eq(schema.enrollment.contactId, contactId),
+        // 033 — Anotarse a un taller no da acceso al portal del alumno.
+        cohorteNoEsDeTaller(schema.enrollment.cohortId)
       )
     )
     .limit(1);

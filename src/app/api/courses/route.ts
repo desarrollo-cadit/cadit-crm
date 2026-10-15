@@ -51,6 +51,8 @@ export const GET = requireCapability(
       published: c.published,
       grantsCertificate: c.grantsCertificate,
       minAttendancePct: c.minAttendancePct,
+      // 032 (FR-010) — el tipo, para el filtro y la insignia de la pestaña Cursos.
+      kind: c.kind,
     })),
   });
 });

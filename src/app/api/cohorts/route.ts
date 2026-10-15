@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { apiError, parseBody, parseQuery, requireCapability } from "@/lib/api";
-import { cohortInputSchema, createCohort, listCohorts } from "@/server/courses";
+import {
+  cohortInputSchema,
+  createCohort,
+  createModuloConCursoPropio,
+  listCohorts,
+} from "@/server/courses";
+import { resolverCursoDelAlta } from "@/lib/course-kind";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +32,13 @@ export const GET = requireCapability(
 });
 
 const createSchema = z.object({
-  courseId: z.string().min(1),
+  /**
+   * 032 (FR-005) — `courseId` (curso existente) o `newModuleName` (módulo
+   * nuevo, sólo con `parentCohortId`). Que venga exactamente uno lo decide
+   * `resolverCursoDelAlta`, pura y con tests; acá sólo se valida la forma.
+   */
+  courseId: z.string().min(1).optional(),
+  newModuleName: z.string().max(500).optional(),
   startDate: z.coerce.date(),
   ...cohortInputSchema,
 });
@@ -38,11 +50,28 @@ export const POST = requireCapability(
   const body = await parseBody(req, createSchema);
   if (!body.ok) return body.response;
 
+  const { courseId, newModuleName, ...cohortFields } = body.data;
+  const curso = resolverCursoDelAlta({
+    courseId,
+    newModuleName,
+    parentCohortId: cohortFields.parentCohortId,
+  });
+  if (!curso.ok) return apiError(422, "invalid_body", curso.message);
+
   // 005 (T029/T034, US4/US5) — licenseWarnings/scheduleWarnings viajan junto
   // a la respuesta: FR-006/FR-008 son advertencias, no bloqueos. La
   // validación de courseId/teacherId/softwareIds contra la organización
   // vive DENTRO de createCohort (no acá) para no repetirla por ruta.
-  const result = await createCohort(session.organizationId, body.data);
+  const result =
+    curso.via === "existente"
+      ? await createCohort(session.organizationId, { ...cohortFields, courseId: curso.courseId })
+      : // 032 (FR-006) — curso de tipo módulo + cohorte, atómico: valida todo
+        // antes de escribir y lanza si algo falla después (revierte el pedido).
+        await createModuloConCursoPropio(
+          session.organizationId,
+          { ...cohortFields, parentCohortId: cohortFields.parentCohortId! },
+          curso.nombre
+        );
   if (!result.ok) return apiError(result.status, result.code, result.message);
   return Response.json(
     {

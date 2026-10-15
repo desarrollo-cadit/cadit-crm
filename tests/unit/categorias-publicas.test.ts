@@ -13,7 +13,9 @@ describe("categorías del catálogo", () => {
     const src = read("src/server/public-catalog.ts");
     const fn = src.slice(src.indexOf("export async function listPublicCategories"));
     const body = fn.slice(0, fn.indexOf("\n}\n"));
-    expect(body).toContain("eq(schema.course.published, true)");
+    // 032 (FR-004) — "publicado" ahora es `condicionDeCatalogo()`: publicado
+    // y no de tipo módulo. Una categoría con solo módulos tampoco sale.
+    expect(body).toContain("condicionDeCatalogo()");
     expect(body).toContain("inArray(schema.courseCategory.id");
   });
 

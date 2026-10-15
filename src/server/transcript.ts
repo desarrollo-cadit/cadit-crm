@@ -1,4 +1,5 @@
 import { asc, eq, inArray } from "drizzle-orm";
+import { cursoNoEsTaller } from "@/server/workshop-scope";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { armarEscolaridad, type CursadaInput, type Escolaridad } from "@/lib/escolaridad";
@@ -84,7 +85,9 @@ export async function escolaridadDeContacto(
         scoped(
           schema.enrollment.organizationId,
           organizationId,
-          eq(schema.enrollment.contactId, contactId)
+          eq(schema.enrollment.contactId, contactId),
+          // 033 (FR-021) — Un taller no es una materia de la escolaridad.
+          cursoNoEsTaller(schema.course.kind)
         )
       )
       .orderBy(asc(schema.cohort.startDate)),

@@ -83,6 +83,8 @@ const prefixes = {
   zoomSyncRun: "zsr",
   // 031 — cada versión de la corrección de un alumno en una evaluación.
   correction: "cor",
+  // 033 — lo propio de una persona anotada a un taller (1:1 con su inscripción).
+  workshopRegistration: "wreg",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

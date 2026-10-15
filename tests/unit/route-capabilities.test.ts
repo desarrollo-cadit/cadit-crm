@@ -43,6 +43,8 @@ const SIN_CAPACIDAD: Record<string, string> = {
   "public/courses/[id]/image/route.ts": "portada pública del curso (la usa el sitio)",
   "public/courses/[id]/submit/route.ts": "captación pública por curso",
   "public/forms/[formId]/submit/route.ts": "captación pública por formulario",
+  "public/talleres/route.ts": "033 — talleres abiertos para la web",
+  "public/talleres/[id]/submit/route.ts": "033 — inscripción pública a un taller",
   "public/certificates/[code]/route.ts": "verificación pública de certificado",
   // 023 — El GET es público a propósito: el login tiene que pintar la marca
   // ANTES de que exista sesión. El PUT sí pide `configuracion.editar`, y por

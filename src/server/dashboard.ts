@@ -1,4 +1,5 @@
 import { and, count, gte, isNotNull, lte } from "drizzle-orm";
+import { cohorteNoEsDeTaller } from "@/server/workshop-scope";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { listCalendarClasses, type CalendarClassDto } from "@/server/classes";
@@ -57,7 +58,9 @@ export async function dashboardSummary(
           organizationId,
           // `cohort_id` nulo es el LEAD GENERAL del pipeline: interés
           // comercial, no cursada. Contarlo infla el número.
-          isNotNull(schema.enrollment.cohortId)
+          isNotNull(schema.enrollment.cohortId),
+          // 033 (FR-021) — Quien vino a un taller tampoco es alumno de la academia.
+          cohorteNoEsDeTaller(schema.enrollment.cohortId)
         )
       ),
     db

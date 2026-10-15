@@ -1,4 +1,5 @@
 /** DTOs que viajan por la API interna (lado cliente). */
+import type { CourseKind } from "@/lib/course-kind";
 
 export type ConversationDto = {
   id: string;
@@ -105,6 +106,8 @@ export type CourseDto = {
    * especialización.
    */
   grantsCertificate: boolean;
+  /** 032 (FR-001) — curso, módulo o taller. */
+  kind: CourseKind;
   /** 009/010 — asistencia mínima por defecto de sus cohortes. */
   minAttendancePct: number | null;
 };
@@ -150,6 +153,8 @@ export type CohortDto = {
   id: string;
   courseId: string;
   courseName: string;
+  /** 032 (FR-013) — el tipo del curso de la cohorte. */
+  courseKind: CourseKind;
   /** 005 iteración 2 — nombre propio de la cohorte; null = usar courseName. */
   name: string | null;
   startDate: string;

@@ -56,6 +56,8 @@ externas: el trabajo en segundo plano (agente, Laboratorio) es in-process.
 | Cómo se identifica a un contacto | `src/server/inbox/identity.ts` (teléfono normalizado o `bsuid:<id>`) |
 | Conectar TU propio bot en vez del agente | `src/app/api/bot/*` + `src/server/bot/auth.ts` (X-API-Key) |
 | **Grabaciones de Zoom** | `src/lib/zoom/` (adaptador ÚNICO, solo lectura) + `src/server/zoom/` (sync, lease, matching, assignment, scheduler) + `/grabaciones` + `/settings/zoom` + `/api/recordings*` + `/api/settings/zoom/*` |
+| **Tipos de curso** (curso / módulo / taller) | `src/lib/course-kind.ts` (puro) + `condicionDeCatalogo()` en `src/server/public-catalog.ts` + filtros de Académico en `src/lib/academic-filters.ts` |
+| **Talleres** (ediciones, inscriptos, cobro, avisos) | `src/lib/workshops.ts` (reglas puras: cupo, elegibilidad, cuota, DTO público, recordatorio) + `src/server/workshops.ts` + `src/server/workshop-scope.ts` (los talleres NO son cursadas) + `src/server/workshop-notices.ts` / `workshop-reminders.ts` (WhatsApp, `WORKSHOP_REMINDER_INTERVAL_MIN`) + `/talleres` + `/api/talleres/*` + `/api/public/talleres` |
 | UI | `src/components/` + `src/app/(app)/` |
 
 Los mocks del entorno de pruebas viven en `src/app/api/dev/` (wa-mock +

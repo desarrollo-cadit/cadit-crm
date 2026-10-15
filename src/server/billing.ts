@@ -190,6 +190,47 @@ export async function generateInstallmentPlan(
   return { ok: true, data: listed };
 }
 
+/**
+ * 033 (FR-015) — Agrega UNA cuota vigente a una inscripción, numerada a
+ * continuación de las que ya tiene (las anuladas incluidas: el número no se
+ * reusa, igual que al rearmar un plan).
+ *
+ * Existe para el pago único de un taller. No pasa por
+ * `generateInstallmentPlan` porque aquel rechaza cualquier plan previo —con
+ * razón: rearmar un plan de curso es una refinanciación—, y un inscripto a
+ * taller que canceló sin pagar y vuelve a anotarse necesita su cuota de
+ * nuevo sin que nadie tenga que "refinanciar" nada.
+ */
+export async function addSingleInstallment(
+  organizationId: string,
+  enrollmentId: string,
+  input: { amount: number; currency: Currency; dueDate: Date; notes?: string | null }
+): Promise<void> {
+  if (input.amount <= 0) throw new Error("El monto de la cuota debe ser mayor a cero");
+  const db = getDb();
+  const existing = await db
+    .select({ number: schema.installment.number })
+    .from(schema.installment)
+    .where(
+      scoped(
+        schema.installment.organizationId,
+        organizationId,
+        eq(schema.installment.enrollmentId, enrollmentId)
+      )
+    );
+  const next = existing.reduce((max, i) => Math.max(max, i.number), 0) + 1;
+  await db.insert(schema.installment).values({
+    id: newId("installment"),
+    organizationId,
+    enrollmentId,
+    number: next,
+    dueDate: input.dueDate,
+    amount: input.amount,
+    currency: input.currency,
+    notes: input.notes ?? null,
+  });
+}
+
 /** Cuotas de una inscripción con su saldo y estado ya derivados. */
 export async function listInstallments(
   organizationId: string,

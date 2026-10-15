@@ -9,6 +9,7 @@ import {
   Inbox,
   Kanban,
   LayoutDashboard,
+  Presentation,
   Library,
   Settings,
   Users,
@@ -83,6 +84,12 @@ export const NAV_GROUPS = [
     items: [
       { href: "/academico", label: "Académico", icon: GraduationCap, capability: "academico.ver" },
       { href: "/calendar", label: "Calendario", icon: CalendarDays, capability: "academico.ver" },
+      /**
+       * 033 (FR-001) — Los talleres, con su propia sección. `academico.ver` y
+       * no una capacidad nueva: un taller es un curso de tipo taller, y verlo
+       * es ver la gestión académica (FR-022).
+       */
+      { href: "/talleres", label: "Talleres", icon: Presentation, capability: "academico.ver" },
       /**
        * 031 (US4, DV-012) — Las correcciones que esperan aprobación. Solo con
        * `correcciones.aprobar`: quien no puede aprobar no tiene nada que hacer

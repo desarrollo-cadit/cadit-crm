@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { notify } from "@/lib/notify";
+import { COURSE_KIND_LABEL, MODULE_NAME_MAX, cursosParaSelector } from "@/lib/course-kind";
 
 /** 023 — Lo mínimo del aula para poder elegirla: nombre e id. */
 type RoomOption = { id: string; name: string };
@@ -63,7 +64,33 @@ export function CohortForm({
   onSaved: () => void;
   onTeacherCreated: (teacher: TeacherDto) => void;
 }) {
-  const [courseId, setCourseId] = useState(initial?.courseId ?? courses[0]?.id ?? "");
+  /**
+   * 032 (FR-005) — Al agregar un módulo a una especialización: atarlo a un
+   * curso que ya existe (lo de siempre) o crear un "Módulo nuevo" con nombre
+   * propio, sin elegir AutoCAD ni ningún otro curso del catálogo. Arranca en
+   * "nuevo" porque es el caso que esta fase vino a destrabar.
+   */
+  const [origenDelModulo, setOrigenDelModulo] = useState<"nuevo" | "existente">("nuevo");
+  const [nombreDelModulo, setNombreDelModulo] = useState("");
+  const moduloNuevo = Boolean(moduloDe) && origenDelModulo === "nuevo";
+  /**
+   * 032 — Los cursos de tipo módulo no se ofrecen al crear una cohorte común
+   * (se pueden mostrar a pedido). En el alta de un módulo sí: "Curso
+   * existente" acepta cualquier tipo.
+   */
+  const [incluirModulos, setIncluirModulos] = useState(false);
+  const cursosOfrecidos = useMemo(
+    () =>
+      cursosParaSelector(courses, {
+        incluirModulos: incluirModulos || Boolean(moduloDe),
+        seleccionado: initial?.courseId,
+      }),
+    [courses, incluirModulos, moduloDe, initial?.courseId]
+  );
+  const [courseId, setCourseId] = useState(
+    initial?.courseId ?? cursosOfrecidos[0]?.id ?? ""
+  );
+  const hayModulos = courses.some((c) => c.kind === "modulo");
   const [name, setName] = useState(initial?.name ?? "");
   const [startDate, setStartDate] = useState(
     toDateInput(initial?.startDate ?? moduloDe?.startDate ?? null)
@@ -167,11 +194,13 @@ export function CohortForm({
   // (teacher_course, feedback en vivo del dueño). Si ninguno dicta ESE curso
   // todavía, mostramos la lista completa igual (mejor de más que bloquear).
   const teachersForCourse = useMemo(() => {
-    if (!courseId) return teachers;
+    // 032 — Un módulo nuevo todavía no tiene curso: nadie lo tiene asignado.
+    if (!courseId || moduloNuevo) return teachers;
     const specific = teachers.filter((t) => t.courseIds.includes(courseId));
     return specific.length > 0 ? specific : teachers;
-  }, [teachers, courseId]);
+  }, [teachers, courseId, moduloNuevo]);
   const noSpecificTeachers =
+    !moduloNuevo &&
     Boolean(courseId) &&
     teachers.length > 0 &&
     !teachers.some((t) => t.courseIds.includes(courseId));
@@ -204,7 +233,18 @@ export function CohortForm({
   }
 
   async function submit() {
-    if (!courseId || !startDate) {
+    if (moduloNuevo) {
+      // 032 (FR-006) — sin nombre no se crea nada. El servidor lo vuelve a
+      // validar; esto solo evita el viaje.
+      if (!nombreDelModulo.trim()) {
+        setError("El nombre del módulo es obligatorio.");
+        return;
+      }
+      if (!startDate) {
+        setError("Falta la fecha de inicio.");
+        return;
+      }
+    } else if (!courseId || !startDate) {
       setError("Falta elegir el curso y la fecha de inicio.");
       return;
     }
@@ -244,8 +284,12 @@ export function CohortForm({
     const payload = {
       ...operativo,
       ...arbol,
-      courseId,
-      name: name.trim() || null,
+      // 032 (FR-005) — el curso existente, o el nombre del módulo nuevo: el
+      // servidor crea el curso de tipo módulo y la cohorte juntos.
+      ...(moduloNuevo ? { newModuleName: nombreDelModulo.trim() } : { courseId }),
+      // En un módulo nuevo la cohorte toma el nombre de su curso, que es el
+      // del módulo: un segundo nombre sería otra cosa que mantener.
+      name: moduloNuevo ? null : name.trim() || null,
       startDate,
       endDate: endDate || null,
       cost: cost.trim() ? Number(cost) : null,
@@ -374,34 +418,105 @@ export function CohortForm({
             </div>
           )}
 
-          <div className="space-y-1.5">
-            <Label htmlFor="cohort-course">Curso</Label>
-            <select
-              id="cohort-course"
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-              value={courseId}
-              onChange={(e) => setCourseId(e.target.value)}
-            >
-              <option value="" disabled>
-                Elegí un curso…
-              </option>
-              {courses.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          {/*
+            032 (FR-005) — En el alta de un módulo, primero de dónde sale:
+            un módulo con nombre propio o un curso que ya existe.
+          */}
+          {moduloDe && (
+            <div className="space-y-1.5">
+              <div
+                role="radiogroup"
+                aria-label="Origen del módulo"
+                className="inline-flex gap-1 rounded-lg bg-secondary p-1"
+              >
+                {(
+                  [
+                    { key: "nuevo", label: "Módulo nuevo" },
+                    { key: "existente", label: "Curso existente" },
+                  ] as const
+                ).map((o) => (
+                  <button
+                    key={o.key}
+                    type="button"
+                    role="radio"
+                    aria-checked={origenDelModulo === o.key}
+                    className={cn(
+                      "rounded-md px-3.5 py-1.5 text-xs font-medium transition-colors",
+                      origenDelModulo === o.key
+                        ? "bg-card text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                    onClick={() => {
+                      setOrigenDelModulo(o.key);
+                      setError(null);
+                    }}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {moduloNuevo
+                  ? "Una etapa propia del programa. Se crea con este nombre, sin atarla a ningún curso del catálogo."
+                  : "El módulo se dicta como una edición de un curso que ya tenés cargado."}
+              </p>
+            </div>
+          )}
 
-          <div className="space-y-1.5">
-            <Label htmlFor="cohort-name">Nombre de la cohorte</Label>
-            <Input
-              id="cohort-name"
-              placeholder="Revit Arquitectura 4 — dejalo vacío para usar el nombre del curso"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </div>
+          {moduloNuevo ? (
+            <div className="space-y-1.5">
+              <Label htmlFor="module-name">Nombre del módulo</Label>
+              <Input
+                id="module-name"
+                placeholder="Módulo 1 — Fundamentos"
+                maxLength={MODULE_NAME_MAX}
+                value={nombreDelModulo}
+                onChange={(e) => setNombreDelModulo(e.target.value)}
+              />
+            </div>
+          ) : (
+            <>
+              <div className="space-y-1.5">
+                <Label htmlFor="cohort-course">Curso</Label>
+                <select
+                  id="cohort-course"
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                  value={courseId}
+                  onChange={(e) => setCourseId(e.target.value)}
+                >
+                  <option value="" disabled>
+                    Elegí un curso…
+                  </option>
+                  {cursosOfrecidos.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.kind === "curso" ? c.name : `${c.name} (${COURSE_KIND_LABEL[c.kind]})`}
+                    </option>
+                  ))}
+                </select>
+                {!moduloDe && hayModulos && (
+                  <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      className="accent-primary"
+                      checked={incluirModulos}
+                      onChange={(e) => setIncluirModulos(e.target.checked)}
+                    />
+                    Mostrar también los cursos de tipo módulo
+                  </label>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="cohort-name">Nombre de la cohorte</Label>
+                <Input
+                  id="cohort-name"
+                  placeholder="Revit Arquitectura 4 — dejalo vacío para usar el nombre del curso"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                />
+              </div>
+            </>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">

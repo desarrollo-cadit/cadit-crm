@@ -1,0 +1,11 @@
+-- 2026-10-15 — 032 Tipos de curso.
+--
+--   `course.kind` ('curso' | 'modulo' | 'taller')
+--     Qué ES el curso. Clasifica y controla la visibilidad (catálogo público,
+--     selectores, filtros de Académico); no cambia cómo funcionan sus
+--     cohortes. Todo curso existente queda 'curso' (FR-002): se ve igual que
+--     antes.
+--
+--   Sin política RLS nueva: `course` ya tiene `tenant_isolation`, y una
+--   columna nueva queda cubierta por la política de su tabla.
+ALTER TABLE "course" ADD COLUMN IF NOT EXISTS "kind" text DEFAULT 'curso' NOT NULL;

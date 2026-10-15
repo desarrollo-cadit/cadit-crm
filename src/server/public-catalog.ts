@@ -1,6 +1,21 @@
-import { and, asc, eq, gt, inArray, or } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, ne, or, type SQL } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
+
+/**
+ * 032 (FR-004) — Qué cursos salen en las puertas públicas: los publicados
+ * (007) que NO son de tipo módulo. Un módulo es una etapa de una
+ * especialización, no un producto que la academia vende suelto, así que no
+ * aparece aunque alguien le deje tildado "publicar".
+ *
+ * Es la versión SQL de `apareceEnCatalogo()` (`lib/course-kind.ts`) y la usan
+ * todas las puertas: listado, detalle, categorías y la captación por curso.
+ * Escribir `published = true` suelto en una de ellas la dejaría mostrando
+ * módulos; hay un test que lo prohíbe.
+ */
+export function condicionDeCatalogo(): SQL {
+  return and(eq(schema.course.published, true), ne(schema.course.kind, "modulo"))!;
+}
 
 /**
  * 005 (T041, DV-010, US7) — "una instancia = un negocio": resuelve la única
@@ -225,7 +240,7 @@ export async function listPublicCategories(): Promise<PublicCategoryDto[]> {
     .select({ id: schema.course.categoryId })
     .from(schema.course)
     .where(
-      scoped(schema.course.organizationId, organizationId, eq(schema.course.published, true))
+      scoped(schema.course.organizationId, organizationId, condicionDeCatalogo())
     );
   return db
     .select({
@@ -269,7 +284,7 @@ export async function listPublicCourses(filter?: {
         // 007 — el catálogo público muestra SOLO los cursos publicados: los
         // talleres a medida y capacitaciones in-company existen en el CRM
         // (con sus cohortes e inscripciones) pero no salen en la web.
-        eq(schema.course.published, true),
+        condicionDeCatalogo(),
         filter?.categorySlug ? eq(schema.courseCategory.slug, filter.categorySlug) : undefined
       )
     )
@@ -307,7 +322,7 @@ export async function getPublicCourse(
         organizationId,
         // 007 — un curso no publicado responde 404 también en el detalle: si
         // no está en el listado, su landing tampoco existe.
-        eq(schema.course.published, true),
+        condicionDeCatalogo(),
         or(eq(schema.course.slug, idOrSlug), eq(schema.course.id, idOrSlug))
       )
     )

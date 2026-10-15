@@ -17,6 +17,15 @@ import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import type { Capability } from "@/lib/capabilities";
 import type { Criterion, Scale, TextField } from "@/lib/grading-template";
+// Relativo y no `@/`: drizzle-kit carga este archivo fuera de Next y una
+// importación de VALOR (no de tipo) tiene que resolverse sin alias.
+import { COURSE_KINDS } from "../course-kind";
+import {
+  WORKSHOP_ATTENDEE_STATUSES,
+  WORKSHOP_MODALITIES,
+  WORKSHOP_REGISTRATION_STATUSES,
+  WORKSHOP_SOURCES,
+} from "../workshop-states";
 
 /**
  * 007 — Monedas admitidas en los importes. Hasta 006 los montos eran un
@@ -344,6 +353,14 @@ export const course = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
+    /**
+     * 032 (FR-001) — Qué ES este curso: un curso del catálogo, un módulo de
+     * una especialización o un taller. Clasifica y controla la visibilidad
+     * (catálogo público, selectores, filtros de Académico); NO cambia cómo
+     * funcionan sus cohortes. Default `curso` para que los cursos ya cargados
+     * sigan viéndose igual que antes (FR-002).
+     */
+    kind: text("kind", { enum: COURSE_KINDS }).notNull().default("curso"),
     description: text("description"),
     /* --- 006: contenido de la página pública del curso ---
      * El sitio comercial arma la landing del curso consumiendo
@@ -642,6 +659,21 @@ export const cohort = pgTable(
     })
       .notNull()
       .default("planificada"),
+    /**
+     * 033 (FR-002) — Modalidad de una EDICIÓN DE TALLER: online (con
+     * `meeting_url`) o presencial (con el lugar en `classroom`). NULL en toda
+     * cohorte que no es de taller: la modalidad de un curso vive en
+     * `course.modality` y esto no la reemplaza.
+     */
+    modality: text("modality", { enum: WORKSHOP_MODALITIES }),
+    /**
+     * 033 (FR-002/FR-009) — Si la edición de taller acepta inscripciones.
+     * NULL fuera de los talleres: una cohorte de curso no se inscribe desde
+     * la web, así que la pregunta no le aplica.
+     */
+    registrationStatus: text("registration_status", {
+      enum: WORKSHOP_REGISTRATION_STATUSES,
+    }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -909,6 +941,55 @@ export const enrollment = pgTable(
       "enrollment_madre_distinta_de_si",
       sql`${t.parentEnrollmentId} is null or ${t.parentEnrollmentId} <> ${t.id}`
     ),
+  ]
+);
+
+/**
+ * 033 — Lo propio de una persona anotada a un taller, 1:1 con su inscripción.
+ *
+ * La inscripción (`enrollment`) es la columna vertebral: de ella cuelgan la
+ * cuota y los pagos, y por eso el cobro aparece en Cobranza y Finanzas sin
+ * construir nada paralelo (FR-016). Lo que un curso no tiene —el estado
+ * anotado/confirmado/asistió, el origen y la marca de los avisos— vive acá,
+ * y no en `enrollment`, para no sumarle a 400 filas de cursos columnas que
+ * nunca van a usar.
+ *
+ * `amount`/`currency` son lo PACTADO al anotarse (edge case "cambio de
+ * costo"): si la academia cambia el precio, la persona ya anotada conserva
+ * el suyo. NULL = taller gratuito.
+ */
+export const workshopRegistration = pgTable(
+  "workshop_registration",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    enrollmentId: text("enrollment_id")
+      .notNull()
+      .references(() => enrollment.id, { onDelete: "cascade" }),
+    status: text("status", { enum: WORKSHOP_ATTENDEE_STATUSES })
+      .notNull()
+      .default("anotado"),
+    source: text("source", { enum: WORKSHOP_SOURCES }).notNull(),
+    amount: integer("amount"),
+    currency: text("currency", { enum: CURRENCIES }),
+    /** 033 (FR-019) — cuándo salió la confirmación por WhatsApp. */
+    confirmationSentAt: timestamp("confirmation_sent_at"),
+    /**
+     * 033 (FR-020) — el recordatorio sale UNA vez por persona y edición: la
+     * marca se reclama ANTES de mandar y no se libera si el envío falla (es
+     * el intento, no la entrega; el motivo queda en `last_notify_error`).
+     */
+    reminderSentAt: timestamp("reminder_sent_at"),
+    /** 033 (FR-019) — el último aviso que no salió, y por qué. Visible en la lista. */
+    lastNotifyError: text("last_notify_error"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("workshop_registration_enrollment_uq").on(t.enrollmentId),
+    index("workshop_registration_org_status_idx").on(t.organizationId, t.status),
   ]
 );
 

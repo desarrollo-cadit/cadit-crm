@@ -1,4 +1,5 @@
 import { and, asc, eq, isNull } from "drizzle-orm";
+import { cohorteNoEsDeTaller } from "@/server/workshop-scope";
 import { z } from "zod";
 import { parseQuery, requireCapability } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
@@ -63,7 +64,14 @@ export const GET = requireCapability(
       )
     )
     .where(
-      scoped(schema.enrollment.organizationId, session.organizationId, cohortFilter)
+      scoped(
+        schema.enrollment.organizationId,
+        session.organizationId,
+        cohortFilter,
+        // 033 (FR-021) — Un inscripto a taller no es una venta de curso: se
+        // gestiona en Talleres y no ensucia el tablero, ni en "todas".
+        cohorteNoEsDeTaller(schema.enrollment.cohortId)
+      )
     )
     .orderBy(asc(schema.enrollment.position));
 

@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { notify } from "@/lib/notify";
+import { cursosParaSelector } from "@/lib/course-kind";
 
 export function FormsClient() {
   const [forms, setForms] = useState<IntakeFormDto[]>([]);
@@ -172,7 +173,8 @@ function CreateForm({
               className="flex h-9 w-full rounded-md border border-input bg-card px-3 text-sm"
             >
               <option value="">Genérico (sin curso)</option>
-              {courses.map((c) => (
+              {/* 032 — un módulo no recibe leads: no se ofrece. */}
+              {cursosParaSelector(courses).map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
                 </option>

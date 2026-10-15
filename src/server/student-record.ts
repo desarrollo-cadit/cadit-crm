@@ -1,4 +1,5 @@
 import { asc, eq, inArray } from "drizzle-orm";
+import { cursoNoEsTaller } from "@/server/workshop-scope";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { fullName } from "@/lib/utils";
@@ -178,7 +179,9 @@ export async function getStudentRecord(
       scoped(
         schema.enrollment.organizationId,
         organizationId,
-        eq(schema.enrollment.contactId, contactId)
+        eq(schema.enrollment.contactId, contactId),
+        // 033 (FR-021) — Sus talleres no son cursadas: no entran al legajo.
+        cursoNoEsTaller(schema.course.kind)
       )
     )
     .orderBy(asc(schema.enrollment.createdAt));

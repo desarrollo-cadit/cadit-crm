@@ -2,6 +2,7 @@ import { asc, eq, isNull, ne, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
+import type { CourseKind } from "@/lib/course-kind";
 
 /**
  * 2026-10-06 (decisiones del dueño) — Vendedores, para pagar comisiones.
@@ -39,7 +40,13 @@ export const VENDEDOR_OBLIGATORIO =
 export function exigeVendedor(e: {
   cohortId: string | null;
   parentEnrollmentId: string | null;
+  /**
+   * 033 (FR-004) — El tipo del curso de la cohorte, si quien llama lo sabe.
+   * Anotarse a un taller no es una venta con comisión: no lleva vendedor.
+   */
+  courseKind?: CourseKind | null;
 }): boolean {
+  if (e.courseKind === "taller") return false;
   return e.cohortId !== null && e.parentEnrollmentId === null;
 }
 
