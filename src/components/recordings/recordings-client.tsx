@@ -12,6 +12,7 @@ import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatDuration } from "@/lib/duration";
+import { esGrabacionCorta, MINUTOS_MINIMOS_GRABACION } from "@/lib/recording-duration";
 import { notify } from "@/lib/notify";
 import { paginationItems } from "@/lib/pagination";
 import { cn } from "@/lib/utils";
@@ -498,6 +499,17 @@ export function RecordingsClient({
                             <TableCell>
                               <div className="flex flex-wrap gap-1">
                                 <Badge variant={estado.variant}>{estado.label}</Badge>
+                                {/* 2026-10-16 — Una corta no se adjudica sola: se dice por qué. */}
+                                {r.assignment.state === "sin_clase" &&
+                                  r.assignment.mode === "auto" &&
+                                  esGrabacionCorta(r.durationMin) && (
+                                    <Badge
+                                      variant="outline"
+                                      title={`Dura menos de ${MINUTOS_MINIMOS_GRABACION} minutos: no se asigna sola. Si sirve, asignala a mano.`}
+                                    >
+                                      Corta
+                                    </Badge>
+                                  )}
                                 {r.assignment.mode === "manual" ? (
                                   <Badge variant="outline">Manual</Badge>
                                 ) : r.assignment.state === "asignada" ? (

@@ -39,7 +39,7 @@ const tx: AssignmentTx = {
   },
   async recordingOnClass(classId) {
     const r = [...recs.values()].find((x) => x.classSessionId === classId);
-    return r ? { id: r.id } : null;
+    return r ? { id: r.id, assignmentMode: r.assignmentMode, durationMin: r.durationMin } : null;
   },
   async updateRecording(id, patch) {
     const r = recs.get(id)!;
@@ -73,6 +73,7 @@ function rec(id: string, extra: Partial<RecRow> = {}): RecRow {
     zoomMeetingId: "9990000001",
     hostZoomUserId: "u1",
     startTime: new Date("2026-09-15T21:34:00Z"),
+    durationMin: 120,
     playUrl: `https://zoom.us/rec/share/${id}`,
     classSessionId: null,
     assignmentMode: "auto",
@@ -197,6 +198,80 @@ describe("applyMatch — la adjudicación automática", () => {
     clase("A1");
     expect(await applyMatch(ORG, "r1", ctx, deps())).toBe("asignada");
     expect(recs.get("r1")).toMatchObject({ conflictClassSessionId: null, candidateClassIds: [] });
+  });
+});
+
+/**
+ * 2026-10-16 — Caso real (EBIM 14 · Módulo 1, 15/10): Zoom partió la clase en
+ * una grabación de 0 min (un arranque en falso) y otra de 88 min. Llegaron en
+ * la misma página, la corta se procesó primero y se quedó con la clase; la
+ * buena quedó en conflicto.
+ */
+describe("grabaciones cortas y la más larga gana", () => {
+  it("esGrabacionCorta: menos de 5 minutos; sin duración conocida no es corta", async () => {
+    const { esGrabacionCorta } = await mod();
+    expect(esGrabacionCorta(0)).toBe(true);
+    expect(esGrabacionCorta(4)).toBe(true);
+    expect(esGrabacionCorta(5)).toBe(false);
+    expect(esGrabacionCorta(null)).toBe(false);
+  });
+
+  it("una grabación corta no se asigna sola: queda sin_clase y la clase no se toca", async () => {
+    const { applyMatch } = await mod();
+    rec("r1", { durationMin: 0 });
+    clase("A1");
+    expect(await applyMatch(ORG, "r1", ctx, deps())).toBe("sin_clase");
+    expect(classes.get("A1")!.recordingUrl).toBeNull();
+  });
+
+  it("el caso real: la larga desplaza a la corta que ya tenía la clase", async () => {
+    const { applyMatch } = await mod();
+    clase("A1", { recordingUrl: "https://zoom.us/rec/share/corta", recordingSource: "zoom" });
+    rec("corta", { durationMin: 0, classSessionId: "A1", assignmentState: "asignada" });
+    rec("larga", { durationMin: 88, assignmentState: "conflicto", conflictClassSessionId: "A1" });
+    expect(await applyMatch(ORG, "larga", ctx, deps())).toBe("asignada");
+    expect(classes.get("A1")).toMatchObject({ recordingUrl: "https://zoom.us/rec/share/larga", recordingSource: "zoom" });
+    expect(recs.get("corta")).toMatchObject({ assignmentState: "sin_clase", classSessionId: null });
+  });
+
+  it("entre dos automáticas no cortas gana la más larga; la desplazada queda en conflicto con esa clase", async () => {
+    const { applyMatch } = await mod();
+    clase("A1", { recordingUrl: "https://zoom.us/rec/share/r0", recordingSource: "zoom" });
+    rec("r0", { durationMin: 30, classSessionId: "A1", assignmentState: "asignada" });
+    rec("r1", { durationMin: 90 });
+    expect(await applyMatch(ORG, "r1", ctx, deps())).toBe("asignada");
+    expect(recs.get("r0")).toMatchObject({
+      assignmentState: "conflicto",
+      classSessionId: null,
+      conflictClassSessionId: "A1",
+    });
+  });
+
+  it("la más corta que llega después no desplaza a la más larga", async () => {
+    const { applyMatch } = await mod();
+    clase("A1", { recordingUrl: "https://zoom.us/rec/share/r0", recordingSource: "zoom" });
+    rec("r0", { durationMin: 90, classSessionId: "A1", assignmentState: "asignada" });
+    rec("r1", { durationMin: 30 });
+    expect(await applyMatch(ORG, "r1", ctx, deps())).toBe("conflicto");
+    expect(classes.get("A1")!.recordingUrl).toBe("https://zoom.us/rec/share/r0");
+  });
+
+  it("una grabación asignada A MANO nunca se desplaza, aunque la nueva sea más larga", async () => {
+    const { applyMatch } = await mod();
+    clase("A1", { recordingUrl: "https://zoom.us/rec/share/r0", recordingSource: "zoom" });
+    rec("r0", { durationMin: 10, classSessionId: "A1", assignmentState: "asignada", assignmentMode: "manual" });
+    rec("r1", { durationMin: 90 });
+    expect(await applyMatch(ORG, "r1", ctx, deps())).toBe("conflicto");
+    expect(recs.get("r0")).toMatchObject({ classSessionId: "A1", assignmentState: "asignada" });
+  });
+
+  it("si la más larga todavía no tiene play_url, queda pendiente y la otra conserva la clase", async () => {
+    const { applyMatch } = await mod();
+    clase("A1", { recordingUrl: "https://zoom.us/rec/share/r0", recordingSource: "zoom" });
+    rec("r0", { durationMin: 0, classSessionId: "A1", assignmentState: "asignada" });
+    rec("r1", { durationMin: 90, playUrl: null });
+    expect(await applyMatch(ORG, "r1", ctx, deps())).toBe("pendiente");
+    expect(recs.get("r0")).toMatchObject({ classSessionId: "A1", assignmentState: "asignada" });
   });
 });
 

@@ -1,6 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
+import { esGrabacionCorta, MINUTOS_MINIMOS_GRABACION } from "@/lib/recording-duration";
 import { loadMatchContext, matchRecording, type MatchContext } from "./matching";
 import { inOrgScope } from "./scope";
 
@@ -33,6 +34,8 @@ export type RecRow = {
   zoomMeetingId: string;
   hostZoomUserId: string;
   startTime: Date;
+  /** Minutos que dice Zoom; `null` = desconocido (no se trata como corta). */
+  durationMin: number | null;
   playUrl: string | null;
   classSessionId: string | null;
   assignmentMode: "auto" | "manual";
@@ -69,7 +72,9 @@ export interface AssignmentTx {
   getRecording(id: string): Promise<RecRow | null>;
   /** `FOR UPDATE`. */
   getClass(id: string): Promise<ClassRow | null>;
-  recordingOnClass(classId: string): Promise<{ id: string } | null>;
+  recordingOnClass(
+    classId: string
+  ): Promise<{ id: string; assignmentMode: RecRow["assignmentMode"]; durationMin: number | null } | null>;
   updateRecording(id: string, patch: RecPatch): Promise<void>;
   updateClass(id: string, patch: { recordingUrl: string | null; recordingSource: "manual" | "zoom" | null }): Promise<void>;
 }
@@ -112,11 +117,30 @@ export async function clearClassIfOwned(
 
 const ordenados = (ids: (string | null)[]) => [...new Set(ids.filter((x): x is string => !!x))].sort();
 
+export { esGrabacionCorta, MINUTOS_MINIMOS_GRABACION };
+
+/**
+ * Dos grabaciones AUTOMÁTICAS para la misma clase: gana la más larga. Una
+ * decisión manual no se desplaza nunca, y ante un empate se queda la que ya
+ * estaba (estable).
+ */
+function desplazaALaActual(
+  nueva: Pick<RecRow, "durationMin">,
+  actual: { assignmentMode: RecRow["assignmentMode"]; durationMin: number | null }
+): boolean {
+  if (actual.assignmentMode !== "auto") return false;
+  return (nueva.durationMin ?? 0) > (actual.durationMin ?? 0);
+}
+
 /* ============================================================
  * Automática
  * ============================================================ */
 
 async function evaluar(tx: AssignmentTx, rec: RecRow, ctx: MatchContext, now: Date): Promise<RecRow["assignmentState"]> {
+  if (esGrabacionCorta(rec.durationMin)) {
+    await tx.updateRecording(rec.id, { ...sinClase, assignmentState: "sin_clase" });
+    return "sin_clase";
+  }
   const match = matchRecording({
     recording: {
       zoomConnectionId: rec.zoomConnectionId,
@@ -142,13 +166,25 @@ async function evaluar(tx: AssignmentTx, rec: RecRow, ctx: MatchContext, now: Da
   await tx.lockClasses([c]);
   const cls = await tx.getClass(c);
   const otra = await tx.recordingOnClass(c);
-  if (!cls || esManual(cls) || (otra && otra.id !== rec.id)) {
+  const hayOtra = otra !== null && otra.id !== rec.id;
+  if (!cls || esManual(cls) || (hayOtra && !desplazaALaActual(rec, otra))) {
     await tx.updateRecording(rec.id, { ...sinClase, assignmentState: "conflicto", conflictClassSessionId: c });
     return "conflicto";
   }
   if (!rec.playUrl) {
     await tx.updateRecording(rec.id, { ...sinClase, assignmentState: "pendiente" });
     return "pendiente";
+  }
+  if (hayOtra) {
+    // La desplazada suelta la clase ANTES (índice único: una clase, una
+    // grabación). Si es corta queda sin clase; si no, en conflicto con esta
+    // clase, para que una persona la vea.
+    await tx.updateRecording(
+      otra.id,
+      esGrabacionCorta(otra.durationMin)
+        ? { ...sinClase, assignmentState: "sin_clase", assignedAt: null }
+        : { ...sinClase, assignmentState: "conflicto", conflictClassSessionId: c, assignedAt: null }
+    );
   }
   await tx.updateRecording(rec.id, {
     ...sinClase,
@@ -338,6 +374,7 @@ function dbTx(orgId: string): AssignmentTx {
           zoomMeetingId: r.zoomMeetingId,
           hostZoomUserId: r.hostZoomUserId,
           startTime: r.startTime,
+          durationMin: r.durationMin,
           playUrl: r.playUrl,
           classSessionId: r.classSessionId,
           assignmentMode: r.assignmentMode,
@@ -364,7 +401,7 @@ function dbTx(orgId: string): AssignmentTx {
     },
     async recordingOnClass(classId) {
       const [row] = await getDb()
-        .select({ id: r.id })
+        .select({ id: r.id, assignmentMode: r.assignmentMode, durationMin: r.durationMin })
         .from(r)
         .where(scoped(r.organizationId, orgId, eq(r.classSessionId, classId)))
         .limit(1);
