@@ -56,7 +56,11 @@ vi.mock("@/server/branding", () => ({
 const renderTemplate = vi.fn((..._a: unknown[]) => "<p>hola</p>");
 vi.mock("@/server/email/templates", () => ({
   renderTemplate: (...a: unknown[]) => renderTemplate(...a),
+  markSafeHtml: (h: string) => h,
 }));
+// 036 — El soporte y la coordinación elegidos en Configuración.
+const equipo = vi.fn();
+vi.mock("@/server/welcome-team", () => ({ equipoParaBienvenida: () => equipo() }));
 
 function contexto(over: { termsEmailSentAt?: Date | null } = {}) {
   return {
@@ -139,5 +143,63 @@ describe("términos de una especialización", () => {
 
     const vars = renderTemplate.mock.calls[0]?.[1] as { licencias: string };
     expect(vars.licencias).toBe("a confirmar");
+  });
+});
+
+/**
+ * 036 — La bienvenida va con copia al docente y al soporte técnico, nunca al
+ * alumno, y con el asunto de siempre.
+ */
+describe("bienvenida: copia y asunto", () => {
+  function contextoBienvenida() {
+    const c = contexto();
+    return {
+      ...c,
+      cohort: {
+        ...c.cohort,
+        id: "cv_1",
+        name: null,
+        isSpecialization: false,
+        modality: null,
+        daysOfWeek: null,
+        whatsappGroupLink: "https://chat.whatsapp.com/abc",
+      },
+      course: { name: "REVIT Arquitectura", modality: "en_vivo" },
+      teacherName: "Sandra Moros",
+      teacherEmail: "sandra@example.com",
+    };
+  }
+
+  it("copia al docente y al soporte, sin coordinación ni el alumno", async () => {
+    selectQueue.push([contextoBienvenida()]);
+    selectQueue.push([{ name: "Revit" }]); // cohort_software
+    selectQueue.push([]); // licencias propias
+    selectQueue.push([{ canceledAt: null }, { canceledAt: new Date() }]); // clases
+    equipo.mockResolvedValue({
+      soporte: [
+        { name: "Julio", email: "julio@example.com" },
+        { name: "Ana", email: "ana@x.com" },
+      ],
+      coordinacion: [{ name: "Natalie", email: "natalie@example.com" }],
+    });
+    sendMail.mockResolvedValue({ ok: true });
+
+    const { sendEnrollmentEmail } = await import("@/server/email/enrollment-emails");
+    const r = await sendEnrollmentEmail("org_1", "enr_1", "welcome");
+
+    expect(r.ok).toBe(true);
+    const enviado = sendMail.mock.calls[0]?.[0] as { cc?: string[]; subject: string; to: string };
+    expect(enviado.to).toBe("ana@x.com");
+    expect(enviado.cc).toEqual(["sandra@example.com", "julio@example.com"]);
+    expect(enviado.subject).toBe("Te damos la bienvenida a REVIT Arquitectura");
+  });
+
+  it("sin enlace del grupo sigue respondiendo 422 sin mandar nada", async () => {
+    const c = contextoBienvenida();
+    selectQueue.push([{ ...c, cohort: { ...c.cohort, whatsappGroupLink: null } }]);
+    const { sendEnrollmentEmail } = await import("@/server/email/enrollment-emails");
+    const r = await sendEnrollmentEmail("org_1", "enr_1", "welcome");
+    expect(r).toMatchObject({ ok: false, status: 422, code: "missing_group_link" });
+    expect(sendMail).not.toHaveBeenCalled();
   });
 });

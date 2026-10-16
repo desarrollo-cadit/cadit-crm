@@ -3,9 +3,22 @@ import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { getEnv } from "@/lib/env";
 import { sendMail } from "@/lib/m365/client";
+import { recesosDeCohorte } from "@/lib/recess";
 import { fullName } from "@/lib/utils";
+import { buildClassSchedule } from "@/server/attendance";
 import { getBranding } from "@/server/branding";
 import { renderTemplate } from "@/server/email/templates";
+import {
+  armarBienvenida,
+  copiaDeBienvenida,
+  cantidadDeClases,
+  nombreEnFrase,
+  renderBienvenida,
+  type HechosDeBienvenida,
+  type ModuloDeBienvenida,
+} from "@/server/email/welcome-email";
+import { leerRecesos } from "@/server/recesses";
+import { equipoParaBienvenida } from "@/server/welcome-team";
 
 /**
  * 007 — Correos transaccionales de una inscripción: términos de licencia ATC
@@ -44,6 +57,8 @@ async function loadContext(organizationId: string, enrollmentId: string) {
       cohort: schema.cohort,
       course: schema.course,
       teacherName: schema.teacher.name,
+      // 036 — El docente va en el equipo del correo y en copia.
+      teacherEmail: schema.teacher.email,
     })
     .from(schema.enrollment)
     .innerJoin(schema.contact, eq(schema.enrollment.contactId, schema.contact.id))
@@ -133,7 +148,136 @@ const MODALITY_LABEL: Record<string, string> = {
   en_vivo: "Online en vivo",
   asincronico: "Asincrónico",
   presencial: "Presencial",
+  // 036 — La modalidad propia de una edición de taller (`cohort.modality`).
+  online: "Online",
 };
+
+type Contexto = NonNullable<Awaited<ReturnType<typeof loadContext>>>;
+
+/** 036 — Lo que la cohorte declara usar (`cohort_software`), por nombre. */
+async function cohortSoftwareNames(organizationId: string, cohortId: string): Promise<string[]> {
+  const rows = await getDb()
+    .select({ name: schema.software.name })
+    .from(schema.cohortSoftware)
+    .innerJoin(schema.software, eq(schema.cohortSoftware.softwareId, schema.software.id))
+    .where(
+      scoped(
+        schema.cohortSoftware.organizationId,
+        organizationId,
+        eq(schema.cohortSoftware.cohortId, cohortId)
+      )
+    )
+    .orderBy(asc(schema.software.name));
+  return rows.map((r) => r.name);
+}
+
+/**
+ * 036 — Cuántas clases tiene la cursada: las reales del cronograma (sin las
+ * canceladas) o, si todavía no se generó, las que daría el plan con los
+ * recesos que la alcanzan. Sin fecha de fin o sin días, no hay plan: `null`
+ * y la fila "Clases" no aparece.
+ */
+async function classCount(organizationId: string, cohort: Contexto["cohort"]): Promise<number | null> {
+  const db = getDb();
+  const reales = await db
+    .select({ canceledAt: schema.classSession.canceledAt })
+    .from(schema.classSession)
+    .where(
+      scoped(
+        schema.classSession.organizationId,
+        organizationId,
+        eq(schema.classSession.cohortId, cohort.id)
+      )
+    );
+  let planificadas: number | null = null;
+  if (reales.length === 0 && cohort.endDate && cohort.daysOfWeek) {
+    const recesos = recesosDeCohorte(await leerRecesos(db, organizationId, [cohort.id]), cohort.id);
+    planificadas = buildClassSchedule(cohort.startDate, cohort.endDate, cohort.daysOfWeek, null, recesos).length;
+  }
+  return cantidadDeClases(
+    reales.map((r) => ({ canceled: r.canceledAt !== null })),
+    planificadas
+  );
+}
+
+/** 036 — Los módulos de una especialización, con lo que el correo nombra. */
+async function programModules(organizationId: string, parentCohortId: string) {
+  return getDb()
+    .select({
+      id: schema.cohort.id,
+      position: schema.cohort.position,
+      startDate: schema.cohort.startDate,
+      endDate: schema.cohort.endDate,
+      name: schema.cohort.name,
+      courseName: schema.course.name,
+    })
+    .from(schema.cohort)
+    .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
+    .where(
+      scoped(
+        schema.cohort.organizationId,
+        organizationId,
+        eq(schema.cohort.parentCohortId, parentCohortId)
+      )
+    );
+}
+
+/**
+ * 036 — Los HECHOS del correo de bienvenida. Todo lo que decide (qué fila
+ * aparece, cómo se nombra cada cosa, a quién se copia) vive en
+ * `welcome-email.ts`, puro y con tests.
+ */
+async function welcomeFacts(
+  organizationId: string,
+  enrollmentId: string,
+  ctx: Contexto
+): Promise<HechosDeBienvenida> {
+  const { contact, cohort, course } = ctx;
+  const esEspecializacion = cohort.isSpecialization;
+  const [software, licencias, equipo] = [
+    await cohortSoftwareNames(organizationId, cohort.id),
+    await ownLicenseNames(organizationId, enrollmentId),
+    await equipoParaBienvenida(organizationId),
+  ];
+
+  let modulos: ModuloDeBienvenida[] = [];
+  let fin = cohort.endDate;
+  if (esEspecializacion) {
+    const filas = await programModules(organizationId, cohort.id);
+    modulos = filas.map((m) => ({
+      id: m.id,
+      position: m.position,
+      startDate: m.startDate,
+      nombre: m.name ?? m.courseName,
+    }));
+    // Sin fin cargado en la madre, el programa termina con su último módulo.
+    if (!fin) {
+      const fines = filas.flatMap((m) => (m.endDate ? [m.endDate.getTime()] : []));
+      fin = fines.length > 0 ? new Date(Math.max(...fines)) : null;
+    }
+  }
+
+  return {
+    nombre: contact.firstName,
+    correoDelAlumno: contact.email,
+    // La especialización se titula con el programa; la camada va en el saludo.
+    curso: esEspecializacion ? course.name : (cohort.name ?? course.name),
+    camada: cohort.name,
+    esEspecializacion,
+    inicio: cohort.startDate,
+    fin,
+    horario: cohort.frequency,
+    clases: esEspecializacion ? null : await classCount(organizationId, cohort),
+    modalidad: MODALITY_LABEL[cohort.modality ?? course.modality ?? ""] ?? null,
+    docente: ctx.teacherName ? { name: ctx.teacherName, email: ctx.teacherEmail } : null,
+    soporte: equipo.soporte,
+    coordinacion: equipo.coordinacion,
+    softwareDeLaCohorte: software,
+    licenciasAsignadas: licencias,
+    modulos,
+    grupoWhatsapp: cohort.whatsappGroupLink ?? "",
+  };
+}
 
 export async function sendEnrollmentEmail(
   organizationId: string,
@@ -146,7 +290,7 @@ export async function sendEnrollmentEmail(
     return { ok: false, status: 404, code: "not_found", message: "Inscripción no encontrada" };
   }
 
-  const { enrollment, contact, cohort, course, teacherName } = ctx;
+  const { enrollment, contact, cohort, course } = ctx;
 
   if (!contact.email) {
     return {
@@ -232,25 +376,24 @@ export async function sendEnrollmentEmail(
           logoUrl,
           contactoSoporte: soporte,
         })
-      : renderTemplate("bienvenida-cohorte", {
-          nombre: contact.firstName,
-          curso: courseName,
-          fechaInicio: formatDate(cohort.startDate),
-          horario: cohort.frequency ?? "a confirmar",
-          modalidad: MODALITY_LABEL[course.modality ?? ""] ?? "a confirmar",
-          profesor: teacherName ?? "a confirmar",
-          aula: cohort.classroom ? `Aula ${cohort.classroom}` : "sin aula asignada",
-          grupoWhatsapp: cohort.whatsappGroupLink ?? "",
-          academia,
-          acento,
-          logoUrl,
-          contactoSoporte: soporte,
-        });
+      : null;
+
+  /**
+   * 036 — La bienvenida sale del diseño aprobado: un dato que falta omite su
+   * fila (nada de "a confirmar" ni de aula), y va con copia al docente (solo
+   * en un curso común) y al soporte técnico elegido en Configuración.
+   */
+  const welcome =
+    kind === "welcome" ? await welcomeFacts(organizationId, enrollmentId, ctx) : null;
+  const vista = welcome ? armarBienvenida(welcome) : null;
+  const welcomeHtml = vista ? renderBienvenida(vista, { academia, acento, logoUrl }) : null;
+  const cc = welcome ? copiaDeBienvenida(welcome) : [];
 
   const sent = await sendMail({
     to: contact.email,
-    subject: SUBJECTS[kind](courseName),
-    html,
+    subject: SUBJECTS[kind](vista ? nombreEnFrase(vista) : courseName),
+    html: html ?? welcomeHtml ?? "",
+    ...(cc.length > 0 ? { cc } : {}),
     bcc: env.M365_BCC,
   });
 

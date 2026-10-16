@@ -27,8 +27,8 @@ declare const safeHtmlBrand: unique symbol;
  *
  * Es un tipo MARCADO: un `string` cualquiera no lo es, así que pasar texto
  * crudo a un bloque no compila. Lo produce `markSafeHtml`, y a esa función
- * solo la llama `htmlRows()` de `src/server/areas/email.ts`, que escapa cada
- * celda antes.
+ * solo la llaman `htmlRows()` de `src/server/areas/email.ts` y (036) los
+ * bloques de `src/server/email/welcome-email.ts`, que escapan cada valor antes.
  */
 export type SafeHtml = string & { readonly [safeHtmlBrand]: true };
 
@@ -43,7 +43,14 @@ const cache = new Map<TemplateName, string>();
 function loadTemplate(name: TemplateName): string {
   const cached = cache.get(name);
   if (cached && process.env.NODE_ENV === "production") return cached;
-  const html = readFileSync(path.join(TEMPLATE_DIR, `${name}.html`), "utf8");
+  // 036 — Los comentarios son notas para quien edita la plantilla, no para
+  // quien recibe el correo: no viajan. Además el reemplazo de marcadores
+  // también corría adentro de ellos y metía datos del alumno en el HTML
+  // escondido. Se conservan los condicionales de Outlook (`<!--[if mso]>`).
+  const html = readFileSync(path.join(TEMPLATE_DIR, `${name}.html`), "utf8").replace(
+    /<!--(?!\[if)(?!<!\[endif)[\s\S]*?-->\s*/g,
+    ""
+  );
   cache.set(name, html);
   return html;
 }

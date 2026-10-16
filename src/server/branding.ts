@@ -8,7 +8,7 @@ import {
 
 /** Marca guardada en organization.metadata (JSON de Better Auth). */
 
-function parseMetadata(metadata: string | null): Record<string, unknown> {
+export function parseMetadata(metadata: string | null): Record<string, unknown> {
   if (!metadata) return {};
   try {
     const parsed = JSON.parse(metadata) as unknown;

@@ -286,6 +286,12 @@ export const SETTINGS_TABS = [
    * es lo que hace Coordinación. Al final: no cambia a dónde entra nadie.
    */
   { href: "/settings/recesos", label: "Recesos", capability: "academico.editar" },
+  /**
+   * 036 — Quién es Soporte técnico y Coordinación en el correo de bienvenida.
+   * `configuracion.editar`, como la marca: se decide una vez para la academia.
+   * Al final: no cambia a dónde entra nadie.
+   */
+  { href: "/settings/bienvenida", label: "Bienvenida", capability: "configuracion.editar" },
 ] as const;
 
 /**
