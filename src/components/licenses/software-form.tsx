@@ -8,9 +8,9 @@ import { Label } from "@/components/ui/label";
 import { notify } from "@/lib/notify";
 
 /**
- * 005 iteración 2 — alta/edición del catálogo de software desde la pestaña
- * "Software" de /academico (feedback en vivo: no había forma de ver/editar
- * el catálogo fuera del selector de cohorte). `initial` presente = edición
+ * 005 iteración 2 — alta/edición del catálogo de software. Desde 2026-10-16
+ * (pedido del dueño) vive en /licencias, junto al stock y a quién tiene cada
+ * programa; antes era la pestaña "Software" de /academico. `initial` presente = edición
  * (PATCH `/api/software/:id`, que ya valida no bajar de lo asignado);
  * ausente = alta (POST `/api/software`).
  *
@@ -58,13 +58,13 @@ export function SoftwareForm({
       const body = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      notify.error(body?.error?.message ?? "No se pudo guardar el software");
+      notify.error(body?.error?.message ?? "No se pudo guardar el programa");
       return;
     }
     const id = initial?.id ?? ((await res.json()) as { software: { id: string } }).software.id;
     await uploadPhoto(id);
     setSaving(false);
-    notify.success(initial ? "Software guardado." : "Software creado.");
+    notify.success(initial ? "Programa guardado." : "Programa creado.");
     onSaved();
   }
 
@@ -78,7 +78,7 @@ export function SoftwareForm({
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="mb-4 font-semibold">
-          {initial ? "Editar software" : "Nuevo software"}
+          {initial ? "Editar programa" : "Nuevo programa"}
         </h3>
         <div className="space-y-3">
           <div className="space-y-1.5">

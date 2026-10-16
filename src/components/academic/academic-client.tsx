@@ -39,7 +39,6 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CohortForm } from "@/components/academic/cohort-form";
 import { CourseForm } from "@/components/academic/course-form";
-import { SoftwareForm } from "@/components/academic/software-form";
 import { TeacherForm } from "@/components/academic/teacher-form";
 import { RoomsPanel } from "@/components/academic/rooms-panel";
 import { notify } from "@/lib/notify";
@@ -47,7 +46,6 @@ import { notify } from "@/lib/notify";
 const TABS = [
   { key: "courses", label: "Cursos" },
   { key: "cohorts", label: "Cohortes" },
-  { key: "software", label: "Software" },
   { key: "teachers", label: "Profesores" },
   // 023 — Las salas de reunión. Van acá y no en Configuración porque se tocan
   // armando el cronograma, no una vez al instalar.
@@ -261,6 +259,10 @@ const CLAVE_FILTRO_ANIO = "academico.cohortes.anio";
  * vivo del dueño) suma pestañas Cursos/Software/Profesores: antes solo se
  * podían crear desde selectores dentro del formulario de cohorte, sin forma
  * de verlos listados ni editarlos fuera de ahí.
+ *
+ * 2026-10-16 (pedido del dueño) — El catálogo de software (alta, nombre,
+ * foto, total) se mudó a /licencias. Acá la lista se sigue pidiendo a
+ * `/api/software` porque la usan el formulario de cohorte y las tarjetas.
  */
 export function AcademicClient() {
   const [tab, setTab] = useState<Tab>("courses");
@@ -322,9 +324,6 @@ export function AcademicClient() {
   >(null);
   const [cohortForm, setCohortForm] = useState<
     { mode: "create" } | { mode: "edit"; cohort: CohortDto } | null
-  >(null);
-  const [softwareForm, setSoftwareForm] = useState<
-    { mode: "create" } | { mode: "edit"; software: SoftwareDto } | null
   >(null);
   /** 014 — Invitación al portal y baja del profesor. */
   const [invitando, setInvitando] = useState<string | null>(null);
@@ -635,20 +634,6 @@ export function AcademicClient() {
               <Plus className="h-4 w-4" /> Nuevo curso
             </Button>
           )}
-          {/* 035 (US3) — quién tiene cada licencia, por programa. */}
-          {tab === "software" && (
-            <Link
-              href="/licencias"
-              className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
-            >
-              Ver quién tiene cada licencia
-            </Link>
-          )}
-          {tab === "software" && (
-            <Button size="sm" onClick={() => setSoftwareForm({ mode: "create" })}>
-              <Plus className="h-4 w-4" /> Nuevo software
-            </Button>
-          )}
           {tab === "teachers" && (
             <Button size="sm" onClick={() => setTeacherForm({ mode: "create" })}>
               <Plus className="h-4 w-4" /> Nuevo profesor
@@ -888,44 +873,6 @@ export function AcademicClient() {
             </ul>
           ))}
 
-        {!loading && tab === "software" &&
-          (software.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Sin software cargado todavía.</p>
-          ) : (
-            <ul className="space-y-2">
-              {software.map((s) => (
-                <li
-                  key={s.id}
-                  className="flex items-center justify-between gap-4 rounded-lg border bg-card px-4 py-3"
-                >
-                  <div className="flex min-w-0 flex-1 items-center gap-3">
-                    {s.hasPhoto && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={`/api/software/${s.id}/photo`}
-                        alt=""
-                        className="h-9 w-9 shrink-0 rounded object-cover"
-                      />
-                    )}
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium">{s.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {s.totalLicenses} licencia{s.totalLicenses === 1 ? "" : "s"} en total
-                      </p>
-                    </div>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setSoftwareForm({ mode: "edit", software: s })}
-                  >
-                    Editar
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          ))}
-
         {tab === "teachers" && accesoProfesor && (
           <p className="mb-3 rounded-md border border-warning-border bg-warning-soft px-3 py-2 text-sm">
             {accesoProfesor}
@@ -1056,17 +1003,6 @@ export function AcademicClient() {
             void refetch();
           }}
           onTeacherCreated={(t) => setTeachers((prev) => [...prev, t])}
-        />
-      )}
-
-      {softwareForm && (
-        <SoftwareForm
-          initial={softwareForm.mode === "edit" ? softwareForm.software : null}
-          onClose={() => setSoftwareForm(null)}
-          onSaved={() => {
-            setSoftwareForm(null);
-            void refetch();
-          }}
         />
       )}
 

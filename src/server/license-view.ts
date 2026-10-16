@@ -36,6 +36,7 @@ export async function vistaDeLicencias(organizationId: string): Promise<VistaDeL
       id: schema.software.id,
       name: schema.software.name,
       total: schema.software.totalLicenses,
+      photoMimeType: schema.software.photoMimeType,
     })
     .from(schema.software)
     .where(scoped(schema.software.organizationId, organizationId))
@@ -142,7 +143,16 @@ export async function vistaDeLicencias(organizationId: string): Promise<VistaDeL
   for (const f of faltantes) cohortes.set(f.cohortId, f.cohortName);
 
   return {
-    programas: armarVistaDeLicencias(software, filas, faltantes),
+    programas: armarVistaDeLicencias(
+      software.map((s) => ({
+        id: s.id,
+        name: s.name,
+        total: s.total,
+        hasPhoto: s.photoMimeType !== null,
+      })),
+      filas,
+      faltantes
+    ),
     cohortes: [...cohortes]
       .map(([id, name]) => ({ id, name }))
       .sort((a, b) => a.name.localeCompare(b.name, "es")),

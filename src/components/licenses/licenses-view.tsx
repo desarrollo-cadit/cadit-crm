@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, KeyRound } from "lucide-react";
+import { AlertTriangle, KeyRound, Pencil, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,9 +17,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ConfirmSendDialog } from "@/components/cohorts/confirm-send-dialog";
+import { SoftwareForm } from "@/components/licenses/software-form";
 import { filtrarFilas, type EstadoDeLicencia, type FilaDeLicenciaVista } from "@/lib/license-view";
 import type { LicenseSource } from "@/lib/license-source";
 import type { VistaDeLicenciasDto } from "@/server/license-view";
+import type { SoftwareDto } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { notify } from "@/lib/notify";
 
@@ -46,6 +48,12 @@ const fecha = (iso: string | null) =>
  * desasigna acá; una del grupo no —se quita desde la cohorte— y la fila lo
  * dice con el acceso directo (FR-015). Los alumnos del grupo que quedaron sin
  * licencia por falta de stock se ven destacados (FR-016).
+ *
+ * 2026-10-16 (pedido del dueño) — El catálogo también vive acá: "Nuevo
+ * programa" y "Editar" (nombre, foto, total) con `SoftwareForm` y las
+ * mismas rutas `/api/software`. Antes era la pestaña Software de Académico.
+ * `canEdit` lo decide el servidor con `academico.editar`, la capacidad que
+ * exigen POST/PATCH de esas rutas y el desasignar de acá.
  */
 export function LicensesView({ canEdit }: { canEdit: boolean }) {
   const [data, setData] = useState<VistaDeLicenciasDto | null>(null);
@@ -56,6 +64,14 @@ export function LicensesView({ canEdit }: { canEdit: boolean }) {
   const [q, setQ] = useState("");
   const [desasignar, setDesasignar] = useState<FilaDeLicenciaVista | null>(null);
   const [busy, setBusy] = useState(false);
+  const [form, setForm] = useState<{ mode: "create" } | { mode: "edit"; software: SoftwareDto } | null>(
+    null
+  );
+  /**
+   * La foto se sirve con caché de un día: después de guardar se cambia la
+   * URL para que la nueva se vea sin recargar.
+   */
+  const [fotoVersion, setFotoVersion] = useState(0);
 
   const refetch = useCallback(async () => {
     const res = await fetch("/api/licenses").catch(() => null);
@@ -110,9 +126,15 @@ export function LicensesView({ canEdit }: { canEdit: boolean }) {
         <div>
           <h1 className="font-semibold">Licencias</h1>
           <p className="text-xs text-muted-foreground">
-            Quién tiene cada programa. Las del grupo se quitan desde la cohorte.
+            Los programas, su stock y quién tiene cada uno. Las del grupo se quitan desde la
+            cohorte.
           </p>
         </div>
+        {canEdit && data && data.programas.length > 0 && (
+          <Button size="sm" onClick={() => setForm({ mode: "create" })}>
+            <Plus className="h-4 w-4" aria-hidden /> Nuevo programa
+          </Button>
+        )}
       </header>
 
       <div className="flex-1 space-y-4 overflow-y-auto p-6">
@@ -128,9 +150,28 @@ export function LicensesView({ canEdit }: { canEdit: boolean }) {
             ))}
           </div>
         ) : data.programas.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Todavía no hay programas cargados. Se agregan en Académico → Software.
-          </p>
+          <div className="mx-auto mt-6 flex max-w-md flex-col items-center gap-3 rounded-lg border border-dashed bg-card px-6 py-10 text-center">
+            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-brand-tint">
+              <KeyRound className="h-5 w-5 text-brand-text" aria-hidden />
+            </span>
+            <div className="space-y-1.5">
+              <p className="font-medium">Todavía no hay programas</p>
+              <p className="text-sm text-muted-foreground">
+                Un programa es el software que se les da a los alumnos —por ejemplo Revit o
+                AutoCAD—, con la cantidad de licencias que tiene la academia. Cargalo acá y
+                después asignalo a una cohorte o a un alumno.
+              </p>
+            </div>
+            {canEdit ? (
+              <Button size="sm" onClick={() => setForm({ mode: "create" })}>
+                <Plus className="h-4 w-4" aria-hidden /> Nuevo programa
+              </Button>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Pedile a alguien con permiso de edición académica que los cargue.
+              </p>
+            )}
+          </div>
         ) : (
           <>
             <div className="rounded-lg border">
@@ -142,6 +183,7 @@ export function LicensesView({ canEdit }: { canEdit: boolean }) {
                     <TableHead className="text-right">Asignadas</TableHead>
                     <TableHead className="text-right">Libres</TableHead>
                     <TableHead>Sin licencia</TableHead>
+                    {canEdit && <TableHead />}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -157,7 +199,18 @@ export function LicensesView({ canEdit }: { canEdit: boolean }) {
                           aria-pressed={p.softwareId === programa?.softwareId}
                           onClick={() => setElegido(p.softwareId)}
                         >
-                          <KeyRound className="h-4 w-4 text-muted-foreground" aria-hidden />
+                          {p.hasPhoto ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={`/api/software/${p.softwareId}/photo?v=${fotoVersion}`}
+                              alt=""
+                              className="h-7 w-7 shrink-0 rounded object-cover"
+                            />
+                          ) : (
+                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-subtle">
+                              <KeyRound className="h-4 w-4 text-muted-foreground" aria-hidden />
+                            </span>
+                          )}
                           {p.name}
                         </button>
                       </TableCell>
@@ -177,6 +230,29 @@ export function LicensesView({ canEdit }: { canEdit: boolean }) {
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
                       </TableCell>
+                      {canEdit && (
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7"
+                            aria-label={`Editar ${p.name}`}
+                            onClick={() =>
+                              setForm({
+                                mode: "edit",
+                                software: {
+                                  id: p.softwareId,
+                                  name: p.name,
+                                  totalLicenses: p.total,
+                                  hasPhoto: p.hasPhoto,
+                                },
+                              })
+                            }
+                          >
+                            <Pencil className="h-3.5 w-3.5" aria-hidden /> Editar
+                          </Button>
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))}
                 </TableBody>
@@ -243,8 +319,8 @@ export function LicensesView({ canEdit }: { canEdit: boolean }) {
                       ))}
                     </ul>
                     <p className="mt-1.5 text-muted-foreground">
-                      Reciben la licencia cuando haya stock: liberá alguna o subí el total en
-                      Académico → Software, y reasigná el programa al grupo desde la cohorte.
+                      Reciben la licencia cuando haya stock: liberá alguna o subí el total con
+                      «Editar» en este programa, y reasigná el programa al grupo desde la cohorte.
                     </p>
                   </div>
                 )}
@@ -330,6 +406,18 @@ export function LicensesView({ canEdit }: { canEdit: boolean }) {
           </>
         )}
       </div>
+
+      {form && (
+        <SoftwareForm
+          initial={form.mode === "edit" ? form.software : null}
+          onClose={() => setForm(null)}
+          onSaved={() => {
+            setForm(null);
+            setFotoVersion((v) => v + 1);
+            void refetch();
+          }}
+        />
+      )}
 
       {desasignar && (
         <ConfirmSendDialog

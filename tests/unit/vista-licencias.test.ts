@@ -79,6 +79,18 @@ describe("armarVistaDeLicencias (FR-013)", () => {
     expect(vista[0]!.filas.map((f) => f.licenseId)).toEqual(["a", "b", "c", "d"]);
   });
 
+  it("la foto del programa viaja con él; sin dato, no tiene foto", () => {
+    const vista = armarVistaDeLicencias(
+      [
+        { id: "sw_revit", name: "Revit", total: 2, hasPhoto: true },
+        { id: "sw_navis", name: "Navisworks", total: 1 },
+      ],
+      [],
+      []
+    );
+    expect(vista.map((p) => p.hasPhoto)).toEqual([true, false]);
+  });
+
   it("libres puede ser negativo si se bajó el total: se muestra tal cual", () => {
     const [p] = armarVistaDeLicencias(
       [{ id: "sw_revit", name: "Revit", total: 1 }],

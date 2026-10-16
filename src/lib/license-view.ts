@@ -44,6 +44,8 @@ export type ProgramaDeLaVista = {
   softwareId: string;
   name: string;
   total: number;
+  /** Si tiene foto en `/api/software/:id/photo`. */
+  hasPhoto: boolean;
   /** Las que OCUPAN hoy (= el stock). */
   asignadas: number;
   libres: number;
@@ -64,7 +66,7 @@ export function estadoDeLicencia(
 }
 
 export function armarVistaDeLicencias(
-  software: readonly { id: string; name: string; total: number }[],
+  software: readonly { id: string; name: string; total: number; hasPhoto?: boolean }[],
   filas: readonly FilaDeLicenciaVista[],
   faltantes: readonly FaltanteDelGrupo[]
 ): ProgramaDeLaVista[] {
@@ -75,6 +77,7 @@ export function armarVistaDeLicencias(
       softwareId: s.id,
       name: s.name,
       total: s.total,
+      hasPhoto: s.hasPhoto ?? false,
       asignadas,
       libres: s.total - asignadas,
       filas: suyas,
