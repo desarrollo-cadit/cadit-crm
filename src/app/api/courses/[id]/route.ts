@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { apiError, parseBody, requireCapability } from "@/lib/api";
+import { errorDeDescripcionDeCertificado } from "@/lib/certificado-pdf";
 import {
   courseContentSchema,
   deleteCourse,
@@ -32,6 +33,10 @@ export const PATCH = requireCapability(
   if (!body.ok) return body.response;
 
   const { modules, ...courseFields } = body.data;
+
+  // 038 (US3, escenario 3) — si el párrafo no entra en el diseño, se avisa al cargarlo.
+  const descripcionError = await errorDeDescripcionDeCertificado(courseFields.certificateDescription);
+  if (descripcionError) return apiError(422, "invalid_body", descripcionError);
 
   const result = await updateCourseWithModules(
     session.organizationId,

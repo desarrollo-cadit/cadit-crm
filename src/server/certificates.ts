@@ -1,15 +1,17 @@
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
+import { cursadaTermino, fechaCorta, finDeEspecializacion } from "@/lib/certificado";
 import { fullName } from "@/lib/utils";
+import { snapshotActual } from "@/server/certificate-pdf";
 import {
   cohortGrading,
   generateCertificateCode,
   programGrading,
   type GradingResult,
 } from "@/server/grading";
-import { dispensaVigente, tieneHijas } from "@/server/program-modules";
+import { dispensaVigente, listarHijasDeVarias, tieneHijas } from "@/server/program-modules";
 
 /**
  * 010 — Emisión y verificación de certificados.
@@ -83,9 +85,24 @@ function serialize(
 export async function issueCertificate(
   organizationId: string,
   enrollmentId: string,
-  opts: { historical?: boolean; issuedBy?: string | null } = {}
+  opts: { historical?: boolean; issuedBy?: string | null; now?: Date } = {}
 ): Promise<GradingResult<CertificateDto>> {
+  const r = await emitirCertificado(organizationId, enrollmentId, opts);
+  return r.ok ? { ok: true, data: r.data.certificate } : r;
+}
+
+/**
+ * La emisión, diciendo además si el certificado se CREÓ ahora o ya existía:
+ * "Emitir a todos" (038, FR-009) tiene que poder contar los dos casos por
+ * separado, y `issueCertificate` responde igual a los dos (FR-007).
+ */
+async function emitirCertificado(
+  organizationId: string,
+  enrollmentId: string,
+  opts: { historical?: boolean; issuedBy?: string | null; now?: Date }
+): Promise<GradingResult<{ certificate: CertificateDto; created: boolean }>> {
   const db = getDb();
+  const now = opts.now ?? new Date();
 
   /**
    * La inscripción se lee PRIMERO, con su curso y su dispensa colgados de la
@@ -101,6 +118,8 @@ export async function issueCertificate(
       id: schema.enrollment.id,
       cohortId: schema.enrollment.cohortId,
       grantsCertificate: schema.course.grantsCertificate,
+      // 038 (FR-008) — la fecha de fin viaja en la MISMA consulta.
+      cohortEndDate: schema.cohort.endDate,
       attendanceWaiverAt: schema.enrollment.attendanceWaiverAt,
       attendanceWaiverReason: schema.enrollment.attendanceWaiverReason,
       attendanceWaiverRevokedAt: schema.enrollment.attendanceWaiverRevokedAt,
@@ -163,7 +182,10 @@ export async function issueCertificate(
         message: `El certificado de esta inscripción se anuló el ${existing[0].revokedAt.toLocaleDateString("es-UY")}: no se vuelve a emitir sobre la anulación`,
       };
     }
-    return { ok: true, data: serialize(existing[0], dispensada) };
+    return {
+      ok: true,
+      data: { certificate: serialize(existing[0], dispensada), created: false },
+    };
   }
 
   /**
@@ -185,14 +207,31 @@ export async function issueCertificate(
 
   let attendancePct: number | null = null;
 
+  /**
+   * 038 (FR-008, SC-003) — No se emite antes de que la cursada termine.
+   *
+   * Vale también para la histórica cuando la fecha está cargada y es futura:
+   * esa excepción saltea notas y asistencia de cohortes VIEJAS, y una cohorte
+   * que todavía no terminó no es vieja. Una histórica sin fecha de fin sí
+   * pasa: es justo el dato que las cohortes anteriores al sistema no tienen.
+   *
+   * La especialización se mira más abajo: su fin puede ser el del último
+   * módulo, y eso se sabe recién al caminar el recorrido.
+   */
+  const esMadre = !opts.historical && (await tieneHijas(organizationId, enrollmentId));
+  if (!esMadre) {
+    const termino = cursadaTermino(enrollment.cohortEndDate, now);
+    if (termino === false || (termino === null && !opts.historical)) {
+      return noTermino(enrollment.cohortEndDate ?? null);
+    }
+  }
+
   if (!opts.historical) {
     /**
      * 028 (FR-020, FR-033) — ¿Es la inscripción MADRE de una especialización?
      * Se responde por la PRESENCIA de hijas, nunca por una bandera. Una madre
      * sin hijas cargadas no es una madre: cae al camino de siempre.
      */
-    const esMadre = await tieneHijas(organizationId, enrollmentId);
-
     if (esMadre) {
       const programa = await programGrading(organizationId, enrollmentId);
       if (!programa) {
@@ -209,6 +248,15 @@ export async function issueCertificate(
               : "No se puede emitir: faltan módulos por aprobar",
         };
       }
+      /**
+       * 038 (FR-008) — El general, cuando termina la especialización: la
+       * fecha de fin de la camada o, si no se cargó, la del último módulo.
+       */
+      const fin = finDeEspecializacion(
+        enrollment.cohortEndDate,
+        programa.modules.map((m) => (m.endDate ? new Date(m.endDate) : null))
+      );
+      if (cursadaTermino(fin, now) !== true) return noTermino(fin);
       /**
        * No existe "la asistencia de la especialización" y no se inventa un
        * promedio: cada módulo tiene su cronograma y su propio mínimo (regla
@@ -244,6 +292,14 @@ export async function issueCertificate(
     }
   }
 
+  /**
+   * 038 (FR-004) — Lo que el PDF va a decir, CONGELADO ahora: si mañana se
+   * corrige el nombre del alumno o se renombra el curso, el certificado que
+   * ya tiene en la mano no cambia. `null` solo si la inscripción perdió su
+   * cohorte en el medio; la descarga cae a los datos del momento.
+   */
+  const snapshot = await snapshotActual(organizationId, enrollmentId);
+
   const inserted = await db
     .insert(schema.certificate)
     .values({
@@ -254,10 +310,130 @@ export async function issueCertificate(
       attendancePct,
       historical: opts.historical ?? false,
       issuedBy: opts.issuedBy ?? null,
+      snapshot,
     })
     .returning();
 
-  return { ok: true, data: serialize(inserted[0]!, dispensada) };
+  return {
+    ok: true,
+    data: { certificate: serialize(inserted[0]!, dispensada), created: true },
+  };
+}
+
+/** 038 (FR-008) — El 422 que dice CUÁNDO se va a poder emitir. */
+function noTermino(fin: Date | null): { ok: false; status: 422; code: string; message: string } {
+  return {
+    ok: false,
+    status: 422,
+    code: "cursada_no_terminada",
+    message: fin
+      ? `Todavía no se puede emitir: la cursada termina el ${fechaCorta(fin)}`
+      : "Todavía no se puede emitir: la cohorte no tiene fecha de fin cargada",
+  };
+}
+
+/* ============================================================
+ * 038 (FR-009/FR-010) — Emitir a todos los aprobados
+ * ============================================================ */
+
+export type ResultadoDeEmision = {
+  enrollmentId: string;
+  alumno: string;
+  /** Qué certificado: el curso, el módulo o "Certificado general". */
+  certificado: string;
+  estado: "emitido" | "ya_emitido" | "no_aprobado" | "no_terminado" | "no_emitido";
+  /** Por qué no, en palabras de la emisión de a uno. `null` si salió. */
+  motivo: string | null;
+};
+
+function estadoDe(
+  r: GradingResult<{ created: boolean }>
+): Pick<ResultadoDeEmision, "estado" | "motivo"> {
+  if (r.ok) return { estado: r.data.created ? "emitido" : "ya_emitido", motivo: null };
+  if (r.code === "not_approved") return { estado: "no_aprobado", motivo: r.message };
+  if (r.code === "cursada_no_terminada") return { estado: "no_terminado", motivo: r.message };
+  return { estado: "no_emitido", motivo: r.message };
+}
+
+/**
+ * 038 (FR-009/FR-010) — "Emitir a todos los aprobados" de una cohorte.
+ *
+ * No hay una regla nueva acá: es `emitirCertificado` alumno por alumno, con
+ * TODAS sus condiciones —aprobado, terminado, curso que otorga, anulado que
+ * no se re-emite—, así que el resultado es exactamente el que daría apretar
+ * "Emitir" en cada fila. Idempotente por construcción (FR-007): correrlo dos
+ * veces devuelve "ya emitido" donde la primera dijo "emitido".
+ *
+ * En una ESPECIALIZACIÓN (FR-010) recorre cada inscripción madre: primero los
+ * módulos que cursó —cada uno se emite si ESE módulo está aprobado— y después
+ * el general, que solo sale si aprobó todos. Quien no aprobó todo se queda
+ * con los de sus módulos aprobados.
+ *
+ * `null` = la cohorte no existe en esta organización.
+ */
+export async function emitirATodos(
+  organizationId: string,
+  cohortId: string,
+  opts: { issuedBy?: string | null; now?: Date } = {}
+): Promise<ResultadoDeEmision[] | null> {
+  const db = getDb();
+  const cohorts = await db
+    .select({ id: schema.cohort.id, isSpecialization: schema.cohort.isSpecialization })
+    .from(schema.cohort)
+    .where(scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, cohortId)))
+    .limit(1);
+  const cohort = cohorts[0];
+  if (!cohort) return null;
+
+  const inscripciones = await db
+    .select({
+      id: schema.enrollment.id,
+      firstName: schema.contact.firstName,
+      lastName: schema.contact.lastName,
+      courseName: schema.course.name,
+      cohortName: schema.cohort.name,
+    })
+    .from(schema.enrollment)
+    .innerJoin(schema.contact, eq(schema.enrollment.contactId, schema.contact.id))
+    .innerJoin(schema.cohort, eq(schema.enrollment.cohortId, schema.cohort.id))
+    .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
+    .where(
+      scoped(
+        schema.enrollment.organizationId,
+        organizationId,
+        eq(schema.enrollment.cohortId, cohortId)
+      )
+    )
+    .orderBy(asc(schema.contact.firstName), asc(schema.contact.lastName));
+
+  const hijas = cohort.isSpecialization
+    ? await listarHijasDeVarias(
+        organizationId,
+        inscripciones.map((i) => i.id)
+      )
+    : [];
+
+  const salida: ResultadoDeEmision[] = [];
+  for (const i of inscripciones) {
+    const alumno = fullName(i);
+    for (const h of hijas.filter((x) => x.parentEnrollmentId === i.id)) {
+      const r = await emitirCertificado(organizationId, h.id, opts);
+      salida.push({
+        enrollmentId: h.id,
+        alumno,
+        certificado: h.cohortName ?? h.courseName ?? "Módulo",
+        ...estadoDe(r),
+      });
+    }
+    const r = await emitirCertificado(organizationId, i.id, opts);
+    salida.push({
+      enrollmentId: i.id,
+      alumno,
+      certificado: cohort.isSpecialization ? "Certificado general" : i.cohortName ?? i.courseName,
+      ...estadoDe(r),
+    });
+  }
+  return salida;
 }
 
 /**

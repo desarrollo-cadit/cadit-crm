@@ -21,6 +21,7 @@ import {
 } from "@/server/program-modules";
 import { planDeReorden, siguientePosicion } from "@/lib/program-order";
 import { COURSE_KINDS, type CourseKind } from "@/lib/course-kind";
+import { MAX_DESCRIPCION_CERTIFICADO } from "@/lib/certificado";
 
 
 /**
@@ -81,6 +82,12 @@ export type CourseContentInput = {
    * un curso que no certifica se aprueba igual.
    */
   grantsCertificate?: boolean;
+  /**
+   * 038 (FR-012) — el párrafo del certificado. El tope de largo es el primer
+   * filtro; la medida real contra la caja del diseño la hace la ruta
+   * (`errorDeDescripcionDeCertificado`).
+   */
+  certificateDescription?: string | null;
   /** 009/010 — asistencia mínima por defecto de las cohortes de este curso. */
   minAttendancePct?: number | null;
   /** 032 (FR-001/FR-003) — curso, módulo o taller. Default `curso` en el alta. */
@@ -132,6 +139,13 @@ export const courseContentSchema = {
   syllabusUrl: httpUrl.nullable().optional(),
   published: z.boolean().optional(),
   grantsCertificate: z.boolean().optional(),
+  certificateDescription: z
+    .string()
+    .trim()
+    .max(MAX_DESCRIPCION_CERTIFICADO, `La descripción del certificado admite hasta ${MAX_DESCRIPCION_CERTIFICADO} caracteres`)
+    .transform((t) => (t === "" ? null : t))
+    .nullable()
+    .optional(),
   minAttendancePct: z.number().int().min(0).max(100).nullable().optional(),
   kind: z.enum(COURSE_KINDS).optional(),
 };
@@ -192,6 +206,7 @@ export async function createCourse(
       // 028 fase 5 — y certifica salvo que se diga lo contrario: el curso que
       // no entrega certificado es la excepción, no la regla.
       grantsCertificate: input.grantsCertificate ?? true,
+      certificateDescription: input.certificateDescription ?? null,
       minAttendancePct: input.minAttendancePct ?? null,
       // 032 (FR-001) — sin tipo declarado, es un curso del catálogo.
       kind: input.kind ?? "curso",
@@ -276,6 +291,9 @@ export async function updateCourse(
       ...(input.published !== undefined ? { published: input.published } : {}),
       ...(input.grantsCertificate !== undefined
         ? { grantsCertificate: input.grantsCertificate }
+        : {}),
+      ...(input.certificateDescription !== undefined
+        ? { certificateDescription: input.certificateDescription }
         : {}),
       ...(input.minAttendancePct !== undefined ? { minAttendancePct: input.minAttendancePct } : {}),
       // 032 — cambiar el tipo de un curso con cohortes está permitido: el
@@ -743,8 +761,9 @@ export async function createCohort(
  * 2. Lo que falle DESPUÉS de la primera escritura **lanza**: `withAuth`
  *    revierte la transacción entera y el curso no queda.
  *
- * El curso nace sin certificado propio (FR-007: la coordinación lo puede
- * cambiar; su aprobación cuenta igual para el general) y sin publicar — de
+ * El curso nace OTORGANDO certificado (038, FR-014: el default `false` de
+ * 032 era un error — un módulo aprobado tiene su certificado; la
+ * coordinación lo puede apagar) y sin publicar — de
  * todos modos el catálogo público excluye a los módulos por tipo (FR-004).
  * Su `slug` lo resuelve `resolveUniqueCourseSlug`: dos especializaciones con
  * "Módulo 1" terminan en `modulo-1` y `modulo-1-2`.
@@ -778,7 +797,7 @@ export async function createModuloConCursoPropio(
   const course = await createCourse(organizationId, {
     name: nombre,
     kind: "modulo",
-    grantsCertificate: false,
+    grantsCertificate: true,
     published: false,
   });
   if (!course.ok) throw new Error(`032 — no se pudo crear el curso del módulo: ${course.message}`);

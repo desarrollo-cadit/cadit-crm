@@ -48,6 +48,9 @@ COPY --from=builder --chown=vocero:vocero /app/drizzle ./drizzle
 # standalone no las detecta: sin esta línea, todo correo falla con ENOENT.
 # Ver tests/unit/imagen-docker.test.ts.
 COPY --from=builder --chown=vocero:vocero /app/docs/email-templates ./docs/email-templates
+# 038 — Lo mismo con las plantillas y fuentes de los certificados en PDF
+# (src/lib/certificado-pdf.ts): sin esta línea, toda descarga falla con ENOENT.
+COPY --from=builder --chown=vocero:vocero /app/assets/certificados ./assets/certificados
 
 USER vocero
 EXPOSE 3000

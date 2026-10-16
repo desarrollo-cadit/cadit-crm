@@ -38,6 +38,23 @@ describe("imagen Docker de producción", () => {
   });
 
   /**
+   * 038 — Las plantillas y fuentes del certificado se leen igual, con ruta
+   * armada en runtime: el mismo agujero que tuvieron los correos.
+   */
+  it("copia las plantillas y fuentes de certificados que lee src/lib/certificado-pdf.ts", () => {
+    const pdf = readFileSync(path.join(ROOT, "src/lib/certificado-pdf.ts"), "utf8");
+    expect(pdf).toContain('path.join(process.cwd(), "assets", "certificados")');
+    expect(etapaRunner(dockerfile)).toMatch(
+      /^COPY --from=builder\b.*\/app\/assets\/certificados \.\/assets\/certificados$/m
+    );
+    const reglas = readFileSync(path.join(ROOT, ".dockerignore"), "utf8")
+      .split(/\r?\n/)
+      .map((l) => l.trim());
+    expect(reglas).not.toContain("assets");
+    expect(reglas).not.toContain("assets/*");
+  });
+
+  /**
    * Pasó en producción: sin `MEDIA_DIR`, la app guardaba fotos de software y
    * adjuntos de WhatsApp en `./.dev-media`, ADENTRO del contenedor. Cada deploy
    * crea uno nuevo y vacío, así que los archivos desaparecían mientras la base

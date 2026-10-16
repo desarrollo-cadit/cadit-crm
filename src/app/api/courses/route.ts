@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { apiError, parseBody, requireCapability } from "@/lib/api";
+import { errorDeDescripcionDeCertificado } from "@/lib/certificado-pdf";
 import {
   courseContentSchema,
   createCourseWithModules,
@@ -50,6 +51,8 @@ export const GET = requireCapability(
       */
       published: c.published,
       grantsCertificate: c.grantsCertificate,
+      // 038 (FR-012) — el editor se precarga de acá: sin el campo, guardar lo borraría.
+      certificateDescription: c.certificateDescription,
       minAttendancePct: c.minAttendancePct,
       // 032 (FR-010) — el tipo, para el filtro y la insignia de la pestaña Cursos.
       kind: c.kind,
@@ -72,6 +75,10 @@ export const POST = requireCapability(
   if (!body.ok) return body.response;
 
   const { modules, ...courseFields } = body.data;
+
+  // 038 (US3, escenario 3) — si el párrafo no entra en el diseño, se avisa al cargarlo.
+  const descripcionError = await errorDeDescripcionDeCertificado(courseFields.certificateDescription);
+  if (descripcionError) return apiError(422, "invalid_body", descripcionError);
 
   const result = await createCourseWithModules(
     session.organizationId,

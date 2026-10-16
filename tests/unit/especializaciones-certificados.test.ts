@@ -118,6 +118,8 @@ function inscripcion(over: Record<string, unknown> = {}) {
     id: "enr_1",
     cohortId: "coh_1",
     grantsCertificate: true,
+    // 038 (FR-008) — se emite con la cursada terminada.
+    cohortEndDate: new Date("2026-01-31T00:00:00.000Z"),
     attendanceWaiverAt: null,
     attendanceWaiverReason: null,
     attendanceWaiverRevokedAt: null,

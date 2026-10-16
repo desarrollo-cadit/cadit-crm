@@ -17,6 +17,7 @@ import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import type { Capability } from "@/lib/capabilities";
 import type { Criterion, Scale, TextField } from "@/lib/grading-template";
+import type { CertificadoSnapshot } from "@/lib/certificado";
 // Relativo y no `@/`: drizzle-kit carga este archivo fuera de Next y una
 // importación de VALOR (no de tipo) tiene que resolverse sin alias.
 import { COURSE_KINDS } from "../course-kind";
@@ -419,6 +420,14 @@ export const course = pgTable(
      * ellos— sigan comportándose exactamente como en el ciclo 010 (FR-032).
      */
     grantsCertificate: boolean("grants_certificate").notNull().default(true),
+    /**
+     * 038 (FR-012) — El párrafo que el certificado muestra debajo del nombre
+     * del curso o del módulo ("Se analizaron metodologías…"). Opcional: sin
+     * él el certificado sale sin párrafo y sin hueco. El largo máximo lo
+     * decide la caja del diseño (`MAX_DESCRIPCION_CERTIFICADO` y la medida
+     * real en `descripcionEntraEnCertificado`), no la base.
+     */
+    certificateDescription: text("certificate_description"),
     /**
      * 009 (DV-001) — mínimo de asistencia por defecto para las cohortes de este
      * curso, 0-100. La cohorte puede pisarlo con `cohort.min_attendance_pct`.
@@ -2219,6 +2228,14 @@ export const certificate = pgTable(
     revokedAt: timestamp("revoked_at"),
     revokedBy: text("revoked_by").references(() => user.id, { onDelete: "set null" }),
     revokeReason: text("revoke_reason"),
+    /**
+     * 038 (FR-004) — Lo que el PDF dice, CONGELADO al emitir: nombre del
+     * alumno, del curso, año, formato, módulo y lista de módulos. Si después
+     * se corrige el nombre de alguien o se renombra el curso, el certificado
+     * que ya tiene en la mano no cambia. NULL en los emitidos antes de 038:
+     * esos se arman con los datos de hoy (`src/server/certificate-pdf.ts`).
+     */
+    snapshot: jsonb("snapshot").$type<CertificadoSnapshot>(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [index("certificate_org_idx").on(t.organizationId)]

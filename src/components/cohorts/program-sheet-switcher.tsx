@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AttendanceClient } from "@/components/cohorts/attendance-client";
 import { GradingClient } from "@/components/cohorts/grading-client";
+import { IssueAllCertificates } from "@/components/cohorts/issue-all-certificates";
 import {
   RecorridoGrid,
   type AlumnoDelRecorrido,
@@ -120,7 +121,19 @@ export function ProgramSheetSwitcher({
               Todavía no hay nadie inscripto en esta especialización.
             </p>
           ) : (
-            <div className="p-6">
+            <div className="space-y-4 p-6">
+              {/*
+                038 (FR-010) — Desde la especialización: los módulos aprobados
+                de cada alumno y el general de quien aprobó todos. Solo en la
+                pestaña Evaluación, que es donde se emite.
+              */}
+              {kind === "grading" && canIssueCertificates && (
+                <IssueAllCertificates
+                  cohortId={cohortId}
+                  especializacion
+                  onDone={() => void refetch()}
+                />
+              )}
               <RecorridoGrid columnas={data.modules} alumnos={data.students} ahora={new Date()} />
             </div>
           )

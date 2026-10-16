@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Award, Ban, ClipboardList, Copy, Plus } from "lucide-react";
+import { IssueAllCertificates } from "@/components/cohorts/issue-all-certificates";
 import { CorrectionPanel } from "@/components/grading/correction-panel";
 import { TemplateEditor } from "@/components/grading/template-editor";
 import { Badge } from "@/components/ui/badge";
@@ -323,6 +324,10 @@ export function GradingClient({
 
   return (
     <div className="space-y-3 p-6">
+      {/* 038 (FR-009) — la cohorte entera en una sola acción, con su resultado. */}
+      {canIssueCertificates && sheet.students.length > 0 && (
+        <IssueAllCertificates cohortId={cohortId} onDone={() => void refetch()} />
+      )}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <p className="text-xs text-muted-foreground">
           {sheet.assessments.length} evaluaciones ·{" "}
@@ -527,15 +532,19 @@ export function GradingClient({
                   <TableCell className="text-xs">
                     {st.certificate ? (
                       <div className="space-y-1">
-                        <a
-                          href={`/api/enrollments/${st.enrollmentId}/certificate/print`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="underline"
-                          title={st.certificate.code}
-                        >
-                          {st.certificate.revokedAt ? "anulado" : "imprimir"}
-                        </a>
+                        {/* 038 (FR-007/FR-015) — el PDF del diseño; el anulado no se descarga. */}
+                        {st.certificate.revokedAt ? (
+                          <span title={st.certificate.code}>anulado</span>
+                        ) : (
+                          <a
+                            href={`/api/enrollments/${st.enrollmentId}/certificate/print`}
+                            download
+                            className="underline"
+                            title={st.certificate.code}
+                          >
+                            Descargar PDF
+                          </a>
+                        )}
                         {/*
                           024 — El anulado NO se esconde, y además dice quién lo
                           decidió, cuándo y por qué. "Anulado" a secas obliga a

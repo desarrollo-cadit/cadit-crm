@@ -120,12 +120,22 @@ export function StudentCertificatesClient() {
                     <span className="font-mono">{c.code}</span>
                   </p>
                 </div>
-                <Link
-                  href={`/verificar/${c.code}`}
-                  className="inline-flex min-h-10 shrink-0 items-center rounded-md bg-primary px-5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-brand-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                >
-                  Ver y compartir
-                </Link>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  {/* 038 (FR-015) — el PDF con el diseño de la academia; solo del vigente. */}
+                  <a
+                    href={`/api/portal/me/certificados/${encodeURIComponent(c.code)}/pdf`}
+                    download
+                    className="inline-flex min-h-10 items-center rounded-md bg-primary px-5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-brand-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  >
+                    Descargar PDF
+                  </a>
+                  <Link
+                    href={`/verificar/${c.code}`}
+                    className="inline-flex min-h-10 items-center rounded-md border border-border-strong px-5 text-sm font-semibold transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  >
+                    Ver y compartir
+                  </Link>
+                </div>
               </div>
             </Tarjeta>
           )

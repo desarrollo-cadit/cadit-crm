@@ -166,10 +166,20 @@ export function StudentRecordClient({
                 {APROBACION[c.approval].label}
               </Badge>
               {c.certificate && !c.certificate.revokedAt && (
-                <Badge variant="secondary">
-                  <Award className="mr-1 h-3 w-3" />
-                  Certificado {c.certificate.code}
-                </Badge>
+                <>
+                  <Badge variant="secondary">
+                    <Award className="mr-1 h-3 w-3" />
+                    Certificado {c.certificate.code}
+                  </Badge>
+                  {/* 038 (FR-015) — el PDF con el diseño; un anulado no se descarga. */}
+                  <a
+                    href={`/api/certificates/${encodeURIComponent(c.certificate.code)}/pdf`}
+                    download
+                    className="text-xs font-medium text-brand-text hover:underline"
+                  >
+                    Descargar PDF
+                  </a>
+                </>
               )}
               {c.certificate?.revokedAt && (
                 <Badge variant="outline">Certificado anulado</Badge>

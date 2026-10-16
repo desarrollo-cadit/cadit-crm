@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import type { CourseCategoryDto, CourseDto } from "@/lib/types";
 import { COURSE_KINDS, COURSE_KIND_LABEL, type CourseKind } from "@/lib/course-kind";
+import { MAX_DESCRIPCION_CERTIFICADO } from "@/lib/certificado";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -136,6 +137,10 @@ export function CourseForm({
     initial?.grantsCertificate ?? true
   );
   /** 009/010 — default de asistencia mínima para las cohortes de este curso. */
+  // 038 (FR-012) — el párrafo del certificado del curso o del módulo.
+  const [certificateDescription, setCertificateDescription] = useState(
+    initial?.certificateDescription ?? ""
+  );
   const [minAttendancePct, setMinAttendancePct] = useState(
     initial?.minAttendancePct?.toString() ?? ""
   );
@@ -254,6 +259,7 @@ export function CourseForm({
       targetAudience: targetAudience.trim() || null,
       published,
       grantsCertificate,
+      certificateDescription: certificateDescription.trim() || null,
       minAttendancePct: minAttendancePct.trim() ? Number(minAttendancePct) : null,
       // Omitir `modules` deja el temario como está; mandarlo lo reemplaza.
       ...(modulesLoaded
@@ -393,6 +399,42 @@ export function CourseForm({
               </span>
             </span>
           </label>
+
+          {grantsCertificate && kind !== "taller" ? (
+            <div className="space-y-1.5">
+              <Label htmlFor="course-certificate-description">
+                Descripción para el certificado
+              </Label>
+              <Textarea
+                id="course-certificate-description"
+                rows={3}
+                maxLength={MAX_DESCRIPCION_CERTIFICADO}
+                value={certificateDescription}
+                onChange={(e) => setCertificateDescription(e.target.value)}
+                placeholder="Ej.: Se analizaron metodologías, técnicas y documentos requeridos para…"
+              />
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs text-muted-foreground">
+                  Opcional. Va debajo del nombre del {kind === "modulo" ? "módulo" : "curso"}, en
+                  hasta 4 líneas · {certificateDescription.trim().length}/
+                  {MAX_DESCRIPCION_CERTIFICADO}
+                </span>
+                {/* 038 (FR-013) — el PDF real, con un nombre de ejemplo y el texto de este formulario. */}
+                <a
+                  href={`/api/certificates/preview?${new URLSearchParams({
+                    formato: kind === "modulo" ? "modulo" : "curso",
+                    curso: name.trim() || "Nombre del curso",
+                    descripcion: certificateDescription.trim(),
+                  }).toString()}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs font-medium text-brand-text hover:underline"
+                >
+                  Vista previa del certificado
+                </a>
+              </div>
+            </div>
+          ) : null}
 
           <div className="space-y-1.5">
             <Label htmlFor="course-tagline">Frase corta</Label>

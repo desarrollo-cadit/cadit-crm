@@ -106,6 +106,8 @@ export type CourseDto = {
    * especialización.
    */
   grantsCertificate: boolean;
+  /** 038 (FR-012) — el párrafo del certificado; `null` = sin párrafo. */
+  certificateDescription: string | null;
   /** 032 (FR-001) — curso, módulo o taller. */
   kind: CourseKind;
   /** 009/010 — asistencia mínima por defecto de sus cohortes. */

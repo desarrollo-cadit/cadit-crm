@@ -93,6 +93,8 @@ describe("030 US6 — los portales no leen las tablas de Zoom", () => {
         "entregas/[id]/reabrir/route.ts",
         "entregas/[id]/route.ts",
         "hours/route.ts",
+        // 038 — el PDF del certificado del alumno; no lee tablas de Zoom.
+        "me/certificados/[code]/pdf/route.ts",
         "me/certificados/route.ts",
         // 031 — las correcciones publicadas del alumno; no lee tablas de Zoom.
         "me/correcciones/route.ts",
