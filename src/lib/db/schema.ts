@@ -26,6 +26,7 @@ import {
   WORKSHOP_REGISTRATION_STATUSES,
   WORKSHOP_SOURCES,
 } from "../workshop-states";
+import { LICENSE_SOURCES } from "../license-source";
 
 /**
  * 007 — Monedas admitidas en los importes. Hasta 006 los montos eran un
@@ -1019,6 +1020,13 @@ export const license = pgTable(
     assigned: boolean("assigned").notNull().default(false),
     assignedAt: timestamp("assigned_at"),
     expiresAt: timestamp("expires_at"),
+    /**
+     * 035 (FR-003) — `grupo`: la tiene porque el programa está asignado a
+     * todo el grupo de su cohorte (`cohort_group_software`); se quita desde la
+     * cohorte. `individual`: se la asignó alguien a esta persona. Las filas
+     * anteriores a la 0058 quedan `individual` por el default.
+     */
+    source: text("source", { enum: LICENSE_SOURCES }).notNull().default("individual"),
   },
   (t) => [
     index("license_org_idx").on(t.organizationId),
@@ -1026,6 +1034,48 @@ export const license = pgTable(
     // 034 (FR-020) — Una por programa y por inscripción: asignar dos veces el
     // mismo programa a la misma inscripción no tiene sentido (escenario 3).
     uniqueIndex("license_enrollment_software_uq").on(t.enrollmentId, t.softwareId),
+    check("license_source_valido", sql`${t.source} in ('grupo', 'individual')`),
+  ]
+);
+
+/**
+ * 035 (US1, FR-001..FR-007) — Un programa asignado a TODO el grupo de una
+ * cohorte.
+ *
+ * Es la DECISIÓN ("esta cohorte usa Revit, todos"); las licencias en sí son
+ * filas de `license` con `source = 'grupo'`, una por inscripción activa,
+ * que descuentan del stock como cualquier otra. Distinto de
+ * `cohort_software`, que sólo DECLARA qué software usa la cohorte (opciones y
+ * advertencias de cupo) y no asigna nada.
+ *
+ * En una especialización, la fila sobre la cohorte madre vale para las
+ * inscripciones del paquete; sobre un módulo, para las de ese módulo
+ * (FR-007): en los dos casos son las inscripciones cuyo `cohort_id` es esa
+ * cohorte.
+ *
+ * `expires_at` (opcional) es el vencimiento de TODAS las licencias del
+ * grupo: se define al asignar y vale para todos.
+ */
+export const cohortGroupSoftware = pgTable(
+  "cohort_group_software",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    cohortId: text("cohort_id")
+      .notNull()
+      .references(() => cohort.id, { onDelete: "cascade" }),
+    softwareId: text("software_id")
+      .notNull()
+      .references(() => software.id, { onDelete: "restrict" }),
+    expiresAt: timestamp("expires_at"),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("cohort_group_software_cohort_software_uq").on(t.cohortId, t.softwareId),
+    index("cohort_group_software_org_idx").on(t.organizationId),
   ]
 );
 

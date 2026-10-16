@@ -1,9 +1,9 @@
-import { asc, eq, inArray } from "drizzle-orm";
+import { asc, eq, inArray, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
-import { computeCohortStatus } from "@/lib/cohort-status";
-import { licenciasRepetidasEnRecorrido } from "@/lib/license-rules";
+import { licenciaOcupada, licenciasRepetidasEnRecorrido } from "@/lib/license-rules";
+import { licenciaDelGrupoBloquea, MENSAJE_LICENCIA_DEL_GRUPO } from "@/lib/group-licenses";
 
 /**
  * 005 (T028, DV-004, US4) — pool de licencias por software: disponibles =
@@ -52,7 +52,69 @@ export type LicenseDto = {
   softwareId: string;
   assigned: boolean;
   assignedAt: string | null;
+  /** 035 (FR-003) — `grupo` o `individual`. */
+  source: "grupo" | "individual";
 };
+
+/**
+ * 035 — Dos asignaciones simultáneas del mismo programa leían el mismo
+ * "quedan 1" y entraban las dos. Un advisory lock de TRANSACCIÓN por
+ * (organización, programa) las pone en fila: la segunda lee el stock después
+ * de que la primera escribió. Se suelta solo al terminar la transacción del
+ * pedido (`withAuth`). Los ids se ordenan para que dos pedidos que toman
+ * varios programas no se esperen en cruz.
+ */
+export async function bloquearStock(
+  organizationId: string,
+  softwareIds: readonly string[]
+): Promise<void> {
+  const db = getDb();
+  for (const id of [...new Set(softwareIds)].sort()) {
+    await db.execute(sql`select pg_advisory_xact_lock(hashtext(${"lic:" + organizationId + ":" + id}))`);
+  }
+}
+
+/**
+ * 035 (FR-008) — Los programas asignados al grupo de una cohorte, con su
+ * nombre y vencimiento. Vive acá (y no en `group-licenses.ts`) porque la
+ * asignación individual lo consulta para bloquearse, y `group-licenses.ts`
+ * ya importa este módulo.
+ */
+export async function softwareDelGrupo(
+  organizationId: string,
+  cohortIds: readonly string[]
+): Promise<{ cohortId: string; softwareId: string; name: string; expiresAt: Date | null }[]> {
+  if (cohortIds.length === 0) return [];
+  return getDb()
+    .select({
+      cohortId: schema.cohortGroupSoftware.cohortId,
+      softwareId: schema.cohortGroupSoftware.softwareId,
+      name: schema.software.name,
+      expiresAt: schema.cohortGroupSoftware.expiresAt,
+    })
+    .from(schema.cohortGroupSoftware)
+    .innerJoin(schema.software, eq(schema.software.id, schema.cohortGroupSoftware.softwareId))
+    .where(
+      scoped(
+        schema.cohortGroupSoftware.organizationId,
+        organizationId,
+        inArray(schema.cohortGroupSoftware.cohortId, [...cohortIds])
+      )
+    )
+    .orderBy(asc(schema.software.name));
+}
+
+/** 035 (FR-008) — El motivo, si el programa es del grupo de la cohorte de la inscripción. */
+async function bloqueoPorGrupo(
+  organizationId: string,
+  cohortId: string | null | undefined,
+  softwareId: string
+): Promise<string | null> {
+  if (!cohortId) return null;
+  const grupo = await softwareDelGrupo(organizationId, [cohortId]);
+  if (!licenciaDelGrupoBloquea(grupo.map((g) => g.softwareId), softwareId)) return null;
+  return MENSAJE_LICENCIA_DEL_GRUPO(grupo.find((g) => g.softwareId === softwareId)?.name ?? "Ese programa");
+}
 
 function serializeLicense(l: typeof schema.license.$inferSelect): LicenseDto {
   return {
@@ -61,6 +123,7 @@ function serializeLicense(l: typeof schema.license.$inferSelect): LicenseDto {
     softwareId: l.softwareId,
     assigned: l.assigned,
     assignedAt: l.assignedAt?.toISOString() ?? null,
+    source: l.source ?? "individual",
   };
 }
 
@@ -78,7 +141,7 @@ export type AssignLicenseResult =
     }
   | { ok: false; status: 404; code: "not_found"; message: string }
   | { ok: false; status: 422; code: "invalid_body"; message: string }
-  | { ok: false; status: 409; code: "no_stock"; message: string };
+  | { ok: false; status: 409; code: "no_stock" | "asignado_al_grupo"; message: string };
 
 /**
  * 005 (T028, FR-003) — asigna una licencia de `softwareId` a la inscripción;
@@ -99,7 +162,11 @@ export async function assignLicense(
   const db = getDb();
 
   const enrollmentRows = await db
-    .select({ id: schema.enrollment.id, parentEnrollmentId: schema.enrollment.parentEnrollmentId })
+    .select({
+      id: schema.enrollment.id,
+      parentEnrollmentId: schema.enrollment.parentEnrollmentId,
+      cohortId: schema.enrollment.cohortId,
+    })
     .from(schema.enrollment)
     .where(
       scoped(
@@ -113,6 +180,14 @@ export async function assignLicense(
     return { ok: false, status: 404, code: "not_found", message: "Inscripción no encontrada" };
   }
 
+  // 035 (FR-008) — Lo del grupo no se asigna por alumno, por ninguna vía.
+  const bloqueo = await bloqueoPorGrupo(organizationId, enrollmentRows[0].cohortId, softwareId);
+  if (bloqueo) {
+    return { ok: false, status: 409, code: "asignado_al_grupo", message: bloqueo };
+  }
+
+  // 035 — En fila con cualquier otra asignación del mismo programa.
+  await bloquearStock(organizationId, [softwareId]);
   const availability = await availableLicenses(organizationId, softwareId);
   if (!availability) {
     return { ok: false, status: 422, code: "invalid_body", message: "Software inexistente" };
@@ -150,7 +225,7 @@ export async function assignLicense(
     ? (
         await db
           .update(schema.license)
-          .set({ assigned: true, assignedAt: now })
+          .set({ assigned: true, assignedAt: now, source: "individual" })
           .where(
             scoped(schema.license.organizationId, organizationId, eq(schema.license.id, existing.id))
           )
@@ -166,6 +241,7 @@ export async function assignLicense(
             softwareId,
             assigned: true,
             assignedAt: now,
+            source: "individual",
           })
           .returning()
       )[0]!;
@@ -236,13 +312,32 @@ async function licenciasRepetidasDeLaPersona(
  * 034 — Con `softwareId`, sólo la de ese programa; sin él, todas las de la
  * inscripción (el comportamiento de antes, cuando había una sola). Devuelve
  * la primera liberada, o `null` si no había ninguna asignada.
+ *
+ * 035 (FR-008) — Sólo libera INDIVIDUALES. Un programa del grupo de la
+ * cohorte se rechaza con 409 (se quita desde la cohorte); "liberar todas" sin
+ * `softwareId` deja las del grupo donde están.
  */
+export type UnassignLicenseResult =
+  | { ok: true; license: LicenseDto | null }
+  | { ok: false; status: 409; code: "asignado_al_grupo"; message: string };
+
 export async function unassignLicense(
   organizationId: string,
   enrollmentId: string,
   softwareId?: string
-): Promise<LicenseDto | null> {
+): Promise<UnassignLicenseResult> {
   const db = getDb();
+  if (softwareId) {
+    const inscripcion = await db
+      .select({ cohortId: schema.enrollment.cohortId })
+      .from(schema.enrollment)
+      .where(
+        scoped(schema.enrollment.organizationId, organizationId, eq(schema.enrollment.id, enrollmentId))
+      )
+      .limit(1);
+    const bloqueo = await bloqueoPorGrupo(organizationId, inscripcion[0]?.cohortId, softwareId);
+    if (bloqueo) return { ok: false, status: 409, code: "asignado_al_grupo", message: bloqueo };
+  }
   const updated = await db
     .update(schema.license)
     .set({ assigned: false, assignedAt: null })
@@ -252,12 +347,13 @@ export async function unassignLicense(
         organizationId,
         eq(schema.license.enrollmentId, enrollmentId),
         eq(schema.license.assigned, true),
+        eq(schema.license.source, "individual"),
         softwareId ? eq(schema.license.softwareId, softwareId) : undefined
       )
     )
     .returning();
   const row = updated[0];
-  return row ? serializeLicense(row) : null;
+  return { ok: true, license: row ? serializeLicense(row) : null };
 }
 
 export type EnrollmentLicenseDto = LicenseDto & { softwareName: string };
@@ -285,49 +381,11 @@ export async function listEnrollmentLicenses(
 
 
 /**
- * 023 — ¿Esta licencia está ocupando un lugar del inventario?
- *
- * **Se DERIVA, no se marca.** El booleano `assigned` decía "alguien se la
- * asignó alguna vez"; nunca decía "sigue en uso". Como nadie lo apagaba, una
- * licencia de un curso terminado hace un año seguía descontando del pool para
- * siempre.
- *
- * Ahora ocupa hasta que su cohorte se SABE terminada, y se libera sola cuando
- * termina. Eso vale por sí mismo, pero además tiene una consecuencia que
- * importa: **no hace falta un scheduler**. El estado de la cohorte ya se
- * calcula de sus fechas en cada consulta, así que el día que el curso termina
- * la licencia aparece libre sin que corra ningún proceso.
- *
- * **Fechas desconocidas = no terminó** (2026-10-05). Una inscripción sin
- * cohorte, o una cohorte sin fechas, no prueba que el curso haya terminado:
- * tratarla como libre inflaba el stock disponible en silencio, y el error caía
- * del lado de prometer una licencia que no existe.
- *
- * `expiresAt` gana sobre todo lo demás: una licencia vencida no vuelve a
- * estar disponible por quererlo — Autodesk ya la dio de baja.
- *
- * Pura a propósito: es la regla que decide cuántas licencias se pueden vender.
+ * 023 — `licenciaOcupada` vive en `@/lib/license-rules` desde la 035: la
+ * vista de Licencias y el plan del grupo la necesitan sin arrastrar la base.
+ * Se re-exporta para los llamadores de siempre.
  */
-export function licenciaOcupada(
-  licencia: { assigned: boolean; expiresAt: Date | null },
-  cohorte: { startDate: Date | null; endDate: Date | null } | null,
-  now: Date = new Date()
-): boolean {
-  if (!licencia.assigned) return false;
-  if (licencia.expiresAt && licencia.expiresAt <= now) return false;
-  return !cohorteTerminada(cohorte, now);
-}
-
-function cohorteTerminada(
-  cohorte: { startDate: Date | null; endDate: Date | null } | null,
-  now: Date
-): boolean {
-  if (!cohorte) return false;
-  if (cohorte.startDate) {
-    return computeCohortStatus(cohorte.startDate, cohorte.endDate, now) === "finalizada";
-  }
-  return cohorte.endDate !== null && now > cohorte.endDate;
-}
+export { licenciaOcupada };
 
 /**
  * 023 — Cuántas licencias están OCUPADAS, por software.

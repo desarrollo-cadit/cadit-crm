@@ -88,6 +88,8 @@ const prefixes = {
   // 034 — los recesos (días sin clase) y "esta persona no cursa este módulo".
   recess: "rcs",
   moduleExclusion: "mex",
+  /** 035 — programa asignado a todo el grupo de una cohorte. */
+  cohortGroupSoftware: "cgs",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

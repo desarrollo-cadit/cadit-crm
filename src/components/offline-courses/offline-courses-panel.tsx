@@ -4,19 +4,24 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { OfflineAttemptRow } from "@/server/offline-courses/attempts";
-import type {
-  AccessState,
-  CompletionSource,
-  CourseState,
-  OverrideAction,
+import {
+  controlIndividualDeCurso,
+  type AccessState,
+  type CompletionSource,
+  type CourseState,
+  type OverrideAction,
 } from "@/server/offline-courses/logic";
 import type { StaffCourseProgress } from "@/server/offline-courses/progress";
 import { OfflineAttemptsTable } from "@/components/offline-courses/attempts-table";
 import { RecognitionActions, recognitionLabel } from "@/components/offline-courses/recognition-panel";
 import { notify } from "@/lib/notify";
 
+/**
+ * 035 (FR-012) — "Asignado al grupo" y no "Heredado": es el mismo rótulo que
+ * las licencias del grupo. Un curso del grupo no lleva control por alumno.
+ */
 const STATE_LABEL: Record<AccessState, string> = {
-  inherited: "Heredado de la cohorte",
+  inherited: "Asignado al grupo",
   granted: "Agregado individualmente",
   revoked: "Quitado individualmente",
   none: "Sin acceso",
@@ -29,17 +34,12 @@ const STATE_CLASS: Record<AccessState, string> = {
   none: "text-muted-foreground",
 };
 
-/**
- * The one button that flips access, and the smallest write that does it.
- * Removing an inherited course needs a revoke; removing an individual grant
- * on a course the cohort lacks is just dropping the grant — and the mirror
- * for adding. That keeps at most the row that has something to say.
+/*
+ * 035 (FR-009/FR-011) — Qué control lleva cada curso lo decide
+ * `controlIndividualDeCurso` (pura, con test): con el curso en el grupo no
+ * hay control individual, y una quita de antes de la 035 figura como
+ * "Excepción anterior", que sólo se puede quitar.
  */
-function toggleAction(c: CourseState): { label: string; action: OverrideAction } {
-  const hasAccess = c.state === "inherited" || c.state === "granted";
-  if (hasAccess) return { label: "Quitar", action: c.cohortHas ? "revoke" : "clear" };
-  return { label: "Agregar", action: c.cohortHas ? "clear" : "grant" };
-}
 
 const SOURCE_LABEL: Record<CompletionSource, string> = {
   video: "vio el video",
@@ -263,37 +263,45 @@ export function OfflineCoursesPanel({
       ) : (
         <ul className="divide-y rounded-md border">
           {courses.map((c) => {
-            const toggle = toggleAction(c);
-            const canReset = c.override !== null && toggle.action !== "clear";
+            const control = controlIndividualDeCurso(c);
             const courseProgress = progress.find((p) => p.courseId === c.courseId);
             return (
               <li key={c.courseId} className="flex flex-wrap items-center gap-2 px-3 py-1.5 text-xs">
                 <span className="flex-1 font-medium">{c.title}</span>
-                <span className={STATE_CLASS[c.state]}>{STATE_LABEL[c.state]}</span>
-                {canEdit && (
-                  <span className="flex gap-1">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7"
-                      disabled={busy !== null}
-                      onClick={() => void apply(c.courseId, toggle.action)}
-                    >
-                      {toggle.label}
-                    </Button>
-                    {canReset && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7"
-                        disabled={busy !== null}
-                        title="Volver a lo que dice la cohorte"
-                        onClick={() => void apply(c.courseId, "clear")}
-                      >
-                        Restablecer
-                      </Button>
-                    )}
+                {control.kind === "excepcion_anterior" ? (
+                  <span
+                    className="text-warning"
+                    title="Se lo quitaron individualmente antes de que el curso se asignara al grupo"
+                  >
+                    Excepción anterior: sin acceso
                   </span>
+                ) : (
+                  <span className={STATE_CLASS[c.state]}>
+                    {control.kind === "grupo" ? STATE_LABEL.inherited : STATE_LABEL[c.state]}
+                  </span>
+                )}
+                {canEdit && control.kind === "individual" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7"
+                    disabled={busy !== null}
+                    onClick={() => void apply(c.courseId, control.action)}
+                  >
+                    {control.label}
+                  </Button>
+                )}
+                {canEdit && control.kind === "excepcion_anterior" && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7"
+                    disabled={busy !== null}
+                    title="Devolverle el acceso que da el grupo"
+                    onClick={() => void apply(c.courseId, "clear")}
+                  >
+                    Quitar la excepción
+                  </Button>
                 )}
                 {courseProgress && (
                   <CourseProgressRow

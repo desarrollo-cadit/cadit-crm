@@ -20,6 +20,11 @@ type Programa = { id: string; name: string };
  * Una sola pieza para el roster de una cohorte común, el paquete de la
  * especialización, las líneas por módulo y la pestaña Alumnos del módulo:
  * cuatro copias de "agregar/liberar" serían cuatro maneras de divergir.
+ *
+ * 035 (FR-008/FR-012) — Lo asignado al GRUPO de la cohorte figura "Asignado
+ * al grupo", sin control: no se libera por alumno ni se ofrece para agregar
+ * (el servidor lo rechazaría con 409). Si la persona es del grupo y no tiene
+ * la licencia —se inscribió sin stock—, se ve el faltante (FR-004).
  */
 export function LicenseList({
   enrollmentId,
@@ -28,6 +33,7 @@ export function LicenseList({
   canEdit,
   onChanged,
   label = "Licencias",
+  group = [],
 }: {
   enrollmentId: string;
   /** Los `softwareId` ya asignados a esta inscripción. */
@@ -38,9 +44,14 @@ export function LicenseList({
   canEdit: boolean;
   onChanged: () => void;
   label?: string;
+  /** 035 — Los programas asignados al grupo de la cohorte de esta inscripción. */
+  group?: readonly Programa[];
 }) {
-  const nombre = (id: string) => options.find((o) => o.id === id)?.name ?? "Programa";
-  const libres = options.filter((o) => !assignedIds.includes(o.id));
+  const nombre = (id: string) =>
+    [...options, ...group].find((o) => o.id === id)?.name ?? "Programa";
+  const delGrupo = new Set(group.map((g) => g.id));
+  const individuales = assignedIds.filter((id) => !delGrupo.has(id));
+  const libres = options.filter((o) => !assignedIds.includes(o.id) && !delGrupo.has(o.id));
 
   async function leerError(res: Response | null, porDefecto: string) {
     const body = (await res?.json().catch(() => null)) as
@@ -86,12 +97,32 @@ export function LicenseList({
   return (
     <span className="flex flex-wrap items-center gap-1.5">
       <span>{label}:</span>
-      {assignedIds.length === 0 && (!canEdit || libres.length === 0) ? (
+      {group.map((g) =>
+        assignedIds.includes(g.id) ? (
+          <span
+            key={g.id}
+            className="flex items-center gap-1 rounded-full border bg-subtle px-2 py-0.5 text-foreground"
+            title="Se asigna y se quita desde la cohorte, no por alumno"
+          >
+            {g.name}
+            <span className="text-muted-foreground">· Asignado al grupo</span>
+          </span>
+        ) : (
+          <span
+            key={g.id}
+            className="rounded-full border border-warning-border bg-warning-soft px-2 py-0.5 text-warning"
+            title="Es del grupo, pero no había stock cuando se inscribió"
+          >
+            {g.name} · del grupo, sin licencia por falta de stock
+          </span>
+        )
+      )}
+      {assignedIds.length === 0 && group.length === 0 && (!canEdit || libres.length === 0) ? (
         <span className="text-muted-foreground">
           {options.length === 0 ? "sin software declarado" : "ninguna"}
         </span>
       ) : null}
-      {assignedIds.map((id) => (
+      {individuales.map((id) => (
         <span
           key={id}
           className="flex items-center gap-1 rounded-full border bg-card px-2 py-0.5 text-foreground"

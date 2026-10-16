@@ -635,6 +635,15 @@ export function AcademicClient() {
               <Plus className="h-4 w-4" /> Nuevo curso
             </Button>
           )}
+          {/* 035 (US3) — quién tiene cada licencia, por programa. */}
+          {tab === "software" && (
+            <Link
+              href="/licencias"
+              className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+            >
+              Ver quién tiene cada licencia
+            </Link>
+          )}
           {tab === "software" && (
             <Button size="sm" onClick={() => setSoftwareForm({ mode: "create" })}>
               <Plus className="h-4 w-4" /> Nuevo software

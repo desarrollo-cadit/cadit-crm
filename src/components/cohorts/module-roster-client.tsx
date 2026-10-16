@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LicenseList } from "@/components/enrollments/license-list";
+import { GroupLicensesPanel } from "@/components/cohorts/group-licenses-panel";
 import { notify } from "@/lib/notify";
 
 type Estado = "aprobado" | "reprobado" | "pendiente" | "sin_datos";
@@ -24,6 +25,8 @@ type Roster = {
   cohortId: string;
   minAttendancePct: number | null;
   software: { id: string; name: string }[];
+  /** 035 (FR-007/FR-012) — Lo asignado al grupo de este módulo. */
+  groupSoftware: { id: string; name: string }[];
   students: Alumno[];
 };
 
@@ -121,6 +124,13 @@ export function ModuleRosterClient({
         comerciales, andá a la especialización.
       </p>
 
+      {/* 035 (FR-007) — Un programa para todos los alumnos de ESTE módulo. */}
+      <GroupLicensesPanel
+        cohortId={cohortId}
+        canEdit={canEditLicenses}
+        onChanged={() => void refetch()}
+      />
+
       {data.students.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nadie cursa este módulo todavía.</p>
       ) : (
@@ -150,6 +160,7 @@ export function ModuleRosterClient({
                   enrollmentId={a.enrollmentId}
                   assignedIds={a.licenseSoftwareIds}
                   options={data.software}
+                  group={data.groupSoftware}
                   canEdit={canEditLicenses}
                   onChanged={() => void refetch()}
                 />

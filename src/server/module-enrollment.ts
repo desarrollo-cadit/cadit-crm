@@ -12,6 +12,7 @@ import {
   type InscripcionExcluida,
   type PlanDeInscripcionAModulos,
 } from "@/lib/module-auto-enroll";
+import { sincronizarLicenciasDelGrupo } from "@/server/group-licenses";
 
 /**
  * 034 (US1, FR-001..FR-005a) — Las inscripciones a módulos que se crean solas.
@@ -216,12 +217,13 @@ export async function inscribirEnModulos(
   if (plan.aCrear.length === 0) return plan;
 
   const ahora = new Date();
+  const nuevas = plan.aCrear.map(() => newId("enrollment"));
   await db.insert(schema.enrollment).values(
-    plan.aCrear.map((c) => {
+    plan.aCrear.map((c, i) => {
       const madre = madrePorId.get(c.parentEnrollmentId);
       if (!madre) throw new Error("034 — la madre del plan no está entre las leídas");
       return {
-        id: newId("enrollment"),
+        id: nuevas[i]!,
         organizationId,
         contactId: c.contactId,
         cohortId: c.cohortId,
@@ -236,6 +238,8 @@ export async function inscribirEnModulos(
       };
     })
   );
+  // 035 (FR-004/FR-007) — La hija recibe las licencias del grupo de SU módulo.
+  await sincronizarLicenciasDelGrupo(organizationId, nuevas);
   return plan;
 }
 

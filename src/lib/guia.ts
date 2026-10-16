@@ -67,7 +67,7 @@ export type EntradaGuia = {
 export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
   // ── Académico ──────────────────────────────────────────────────────────
   "academico.ver": {
-    que: "ver los cursos, las cohortes en marcha y el cronograma de clases",
+    que: "ver los cursos, las cohortes en marcha, el cronograma de clases y quién tiene cada licencia",
     donde: "/academico",
   },
   "academico.editar": {

@@ -54,6 +54,8 @@ externas: el trabajo en segundo plano (agente, Laboratorio) es in-process.
 | **Escolaridad** (PDF descargable) | `src/lib/escolaridad.ts` (armado puro) + `src/lib/escolaridad-pdf.ts` (PDF con `pdf-lib`) + `src/server/transcript.ts` + `/api/contacts/[id]/escolaridad/print` + `/api/portal/me/escolaridad/print` |
 | La regla de aprobación (cursada, módulo, programa) | `src/lib/approval.ts` (re-exportada por `src/server/grading.ts`) |
 | Baja de alumnos y profesores | `src/server/contacts-admin.ts` (`decidirBaja`) |
+| **Licencias del grupo** (un programa para toda la cohorte; lo grupal bloquea lo individual) | `src/lib/group-licenses.ts` (planes puros: todo o nada, conversión, sincronización) + `src/server/group-licenses.ts` (`asignarAlGrupo`, `quitarDelGrupo`, `sincronizarLicenciasDelGrupo`, que llaman el alta, los módulos automáticos, "Mudar" y la baja) + `/api/cohorts/[id]/group-licenses` + `src/components/cohorts/group-licenses-panel.tsx`; el bloqueo individual vive en `assignLicense`/`unassignLicense` (`src/server/licenses.ts`) y en `setEnrollmentOverride` (cursos offline) |
+| **Vista de Licencias** (quién tiene cada programa) | `src/lib/license-view.ts` (cuentas puras, misma regla que el stock) + `src/server/license-view.ts` + `/api/licenses` + `/licencias` (`src/components/licenses/licenses-view.tsx`) |
 | **Aislamiento entre organizaciones (RLS)** | `src/lib/db/with-tenant.ts` + `docs/rls-rol-de-conexion.md` |
 | Campos/tablas | `src/lib/db/schema.ts` → `pnpm db:generate` → migración nueva en `drizzle/` |
 | La ingesta/envío de mensajes | `src/server/inbox/` (ingest idempotente, send con guard de sandbox, ventana 24h) |

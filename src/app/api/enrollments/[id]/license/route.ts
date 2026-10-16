@@ -31,6 +31,9 @@ const putSchema = z.object({
  * (antes reemplazaba la única que había). El mismo programa dos veces es
  * idempotente; sin stock, 409 `no_stock`. `warnings` avisa —sin bloquear— si
  * el mismo programa queda en el paquete y en un módulo.
+ *
+ * 035 (FR-008) — Un programa asignado al grupo de la cohorte responde 409
+ * `asignado_al_grupo`: se asigna desde la cohorte (`assignLicense` lo chequea).
  */
 export const PUT = requireCapability(
   "academico.editar",
@@ -52,6 +55,9 @@ const deleteQuerySchema = z.object({ softwareId: z.string().min(1).optional() })
  *
  * 034 — `?softwareId=` libera sólo la de ese programa; sin él, todas las de
  * la inscripción, que es lo que hacía cuando había una sola.
+ *
+ * 035 (FR-008) — Sólo individuales: un programa del grupo responde 409
+ * `asignado_al_grupo`, y "todas" deja las del grupo (`unassignLicense`).
  */
 export const DELETE = requireCapability(
   "academico.editar",
@@ -59,6 +65,7 @@ export const DELETE = requireCapability(
   const { id } = await ctx.params;
   const query = parseQuery(new URL(req.url), deleteQuerySchema);
   if (!query.ok) return query.response;
-  const license = await unassignLicense(session.organizationId, id, query.data.softwareId);
-  return Response.json({ license });
+  const result = await unassignLicense(session.organizationId, id, query.data.softwareId);
+  if (!result.ok) return apiError(result.status, result.code, result.message);
+  return Response.json({ license: result.license });
 });

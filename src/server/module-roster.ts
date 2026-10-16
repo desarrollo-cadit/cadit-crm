@@ -4,6 +4,7 @@ import { scoped } from "@/lib/db/tenant";
 import { fullName } from "@/lib/utils";
 import { estadoDeModulo, type ModuleState } from "@/lib/approval";
 import { resumirLicencias } from "@/lib/license-rules";
+import { softwareDelGrupo } from "@/server/licenses";
 import { attendanceByModule, resolveMinAttendance } from "@/server/attendance";
 import { dispensaDeInscripcion } from "@/server/grading";
 
@@ -40,6 +41,8 @@ export type RosterDeModuloDto = {
   minAttendancePct: number | null;
   /** El software declarado por el módulo: lo que se le puede asignar. */
   software: { id: string; name: string }[];
+  /** 035 (FR-012) — Lo asignado al grupo del módulo: sin control por alumno. */
+  groupSoftware: { id: string; name: string }[];
   students: AlumnoDelModuloDto[];
 };
 
@@ -101,7 +104,12 @@ export async function rosterDeModulo(
       .orderBy(asc(schema.contact.firstName)),
   ]);
 
-  const base = { cohortId, minAttendancePct: minPct, software };
+  // 035 (FR-007) — lo del grupo de ESTE módulo.
+  const groupSoftware = (await softwareDelGrupo(organizationId, [cohortId])).map((g) => ({
+    id: g.softwareId,
+    name: g.name,
+  }));
+  const base = { cohortId, minAttendancePct: minPct, software, groupSoftware };
   if (hijas.length === 0) return { ...base, students: [] };
   const ids = hijas.map((h) => h.id);
   const madreIds = [...new Set(hijas.map((h) => h.parentEnrollmentId).filter((m): m is string => !!m))];

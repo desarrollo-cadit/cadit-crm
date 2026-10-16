@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useState } from "react";
-import { ChevronRight, Download, KeyRound, Mail, UserPlus } from "lucide-react";
+import { ChevronRight, Download, FileText, KeyRound, Mail, UserPlus } from "lucide-react";
 import type { CohortRosterDto, ModuleLicenseLine, RosterEntryDto } from "@/server/enrollments";
 import type { CompanyDto } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
@@ -25,29 +25,17 @@ import { EnrollmentCommercialForm } from "@/components/enrollments/enrollment-co
 import { Skeleton } from "@/components/ui/skeleton";
 import { BulkSendsPanel } from "@/components/cohorts/bulk-sends-panel";
 import { ConfirmSendDialog } from "@/components/cohorts/confirm-send-dialog";
+import { GroupLicensesPanel } from "@/components/cohorts/group-licenses-panel";
+import { CHECKLIST_ITEMS, checklistProgress } from "@/lib/onboarding-checklist";
 import { formatSentAt } from "@/lib/schedule-time";
 import type { SellerOption } from "@/lib/vendedores";
 import { notify } from "@/lib/notify";
 
-/**
- * 2026-10-05 (decisión del dueño) — "Software instalado" y "Licencia" son
- * independientes: tildar la instalación NO consume licencia; solo asignarla
- * descuenta del stock. Como en pantalla están uno al lado del otro, el `hint`
- * lo dice donde surge la duda.
+/*
+ * 035 (US4) — Las casillas del checklist y su progreso viven en
+ * `@/lib/onboarding-checklist` (puras y con test). Queda "Software
+ * instalado"; los términos se mandan con el botón "Enviar T&C".
  */
-const CHECKLIST_ITEMS: {
-  key: "termsEmailSentAt" | "softwareInstalledAt" | "academiaOnlineAccessAt";
-  label: string;
-  hint?: string;
-}[] = [
-  { key: "termsEmailSentAt", label: "Correo de T&C enviado" },
-  {
-    key: "softwareInstalledAt",
-    label: "Software instalado",
-    hint: "Registra la instalación; no descuenta licencias del stock.",
-  },
-  { key: "academiaOnlineAccessAt", label: "Acceso a Academia Online" },
-];
 
 function formatDate(iso: string | null) {
   if (!iso) return null;
@@ -60,21 +48,9 @@ function formatDate(iso: string | null) {
 // 007 — `formatAmount` (símbolo por moneda) vive en `@/lib/utils`: el panel de
 // facturación imprime los mismos importes y no deben divergir.
 
-/**
- * 007 — cuántos de los 4 pasos de onboarding están hechos, para poder verlo
- * de un vistazo en la tabla sin desplegar la fila.
- */
-function checklistProgress(e: RosterEntryDto): { done: number; total: number } {
-  const steps = [
-    e.checklist.licenseAssigned ||
-      e.checklist.hadOwnLicense ||
-      // 2026-10-05 — En una especialización la licencia es de los módulos.
-      Boolean(e.moduleLicenses?.some((l) => l.licenseAssigned)),
-    Boolean(e.checklist.termsEmailSentAt),
-    Boolean(e.checklist.softwareInstalledAt),
-    Boolean(e.checklist.academiaOnlineAccessAt),
-  ];
-  return { done: steps.filter(Boolean).length, total: steps.length };
+/** "12/10" — la fecha corta del último envío de los términos. */
+function diaMes(iso: string) {
+  return new Date(iso).toLocaleDateString("es-UY", { day: "2-digit", month: "2-digit" });
 }
 
 /**
@@ -162,6 +138,11 @@ export function RosterClient({
     sentAt: string | null;
   } | null>(null);
   const [notFound, setNotFound] = useState(false);
+  /** 035 (FR-018) — Confirmación del PRIMER envío de los términos ATC. */
+  const [confirmTerms, setConfirmTerms] = useState<{
+    enrollmentId: string;
+    contactName: string;
+  } | null>(null);
 
   const refetch = useCallback(async () => {
     const res = await fetch(`/api/cohorts/${cohortId}/roster`).catch(() => null);
@@ -246,10 +227,12 @@ export function RosterClient({
   }
 
   /**
-   * 007 — Envío real del correo. Tildar "Correo de T&C enviado" ya no es solo
-   * un registro: dispara el correo al alumno y la marca la escribe el servidor
-   * DESPUÉS de que M365 acepta el envío. Si falla, el tilde no queda puesto y
-   * el error se muestra: lo peor sería que el equipo crea que se mandó.
+   * 007 — Envío real del correo: la marca la escribe el servidor DESPUÉS de
+   * que M365 acepta el envío. Si falla, no queda la fecha y el error se
+   * muestra: lo peor sería que el equipo crea que se mandó.
+   *
+   * 035 (FR-018) — Los términos ya no se mandan tildando una casilla (una
+   * acción con forma de marca) sino con el botón "Enviar T&C".
    */
   async function sendEmail(
     enrollmentId: string,
@@ -348,6 +331,8 @@ export function RosterClient({
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const pageStart = Math.min(page, totalPages - 1) * PAGE_SIZE;
   const pageEntries = roster?.enrollments.slice(pageStart, pageStart + PAGE_SIZE) ?? [];
+  /** 035 (FR-012) — Lo asignado al grupo de ESTA cohorte, con nombre. */
+  const grupo = (roster?.cohort.groupLicenses ?? []).map((g) => ({ id: g.softwareId, name: g.name }));
 
   return (
     <div className="flex h-full flex-col">
@@ -403,6 +388,13 @@ export function RosterClient({
               canManageAccess={canManageAccess}
               onProgress={refetch}
             />
+            {/* 035 (US1) — Un programa para todo el grupo, de una vez. */}
+            <GroupLicensesPanel
+              cohortId={cohortId}
+              canEdit={canEditLicenses}
+              esEspecializacion={roster.cohort.isSpecialization}
+              onChanged={() => void refetch()}
+            />
             <div className="rounded-lg border">
               <Table>
                 <TableHeader className="bg-subtle">
@@ -418,7 +410,11 @@ export function RosterClient({
                 </TableHeader>
                 <TableBody>
                   {pageEntries.map((e) => {
-                    const progress = checklistProgress(e);
+                    const progress = checklistProgress(
+                      e.checklist,
+                      // 2026-10-05 — En una especialización la licencia es de los módulos.
+                      Boolean(e.moduleLicenses?.some((l) => l.licenseAssigned))
+                    );
                     const open = expanded === e.id;
                     return (
                       <Fragment key={e.id}>
@@ -480,12 +476,16 @@ export function RosterClient({
                                 {[
                                   ...e.checklist.licenseSoftwareIds.map(
                                     (id) =>
-                                      [...roster.cohort.software, ...catalogo].find((s) => s.id === id)
-                                        ?.name ?? "Asignada"
+                                      [...roster.cohort.software, ...catalogo, ...grupo].find(
+                                        (s) => s.id === id
+                                      )?.name ?? "Asignada"
                                   ),
                                   ...(e.moduleLicenses ?? []).flatMap((l) =>
                                     l.licenseSoftwareIds.map(
-                                      (id) => l.software.find((s) => s.id === id)?.name ?? "Asignada"
+                                      (id) =>
+                                        [...l.software, ...(l.groupSoftware ?? [])].find(
+                                          (s) => s.id === id
+                                        )?.name ?? "Asignada"
                                     )
                                   ),
                                 ].join(", ")}
@@ -525,6 +525,7 @@ export function RosterClient({
                         enrollmentId={e.id}
                         assignedIds={e.checklist.licenseSoftwareIds}
                         options={catalogo}
+                        group={grupo}
                         canEdit={canEditLicenses}
                         onChanged={() => void refetch()}
                       />
@@ -540,6 +541,7 @@ export function RosterClient({
                       enrollmentId={e.id}
                       assignedIds={e.checklist.licenseSoftwareIds}
                       options={roster.cohort.software}
+                      group={grupo}
                       canEdit={canEditLicenses}
                       onChanged={() => void refetch()}
                     />
@@ -566,24 +568,6 @@ export function RosterClient({
                         </span>
                       )}
                     </label>
-                    {/* 2026-10-05 — Reenviar los términos: con confirmación y
-                        diciendo cuándo salieron. */}
-                    {item.key === "termsEmailSentAt" && e.checklist.termsEmailSentAt && (
-                      <button
-                        type="button"
-                        className="-ml-1.5 text-muted-foreground underline"
-                        onClick={() =>
-                          setResend({
-                            enrollmentId: e.id,
-                            kind: "terms",
-                            contactName: e.contact.name,
-                            sentAt: e.checklist.termsEmailSentAt,
-                          })
-                        }
-                      >
-                        reenviar
-                      </button>
-                    )}
                     </Fragment>
                   ))}
                   <label className="flex items-center gap-1.5">
@@ -609,6 +593,40 @@ export function RosterClient({
                                   checklist porque no es un paso de onboarding a tildar:
                                   es una acción que manda un correo. */}
                               <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                                {/* 035 (FR-018) — Los términos ATC: un botón,
+                                    con confirmación. Ya enviados, muestra la
+                                    fecha y reenviar pide confirmación
+                                    explícita diciendo cuándo salieron. */}
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={sendingEmail === e.id + "terms"}
+                                  title={
+                                    e.checklist.termsEmailSentAt
+                                      ? "Reenviar los términos de la licencia"
+                                      : undefined
+                                  }
+                                  onClick={() =>
+                                    e.checklist.termsEmailSentAt
+                                      ? setResend({
+                                          enrollmentId: e.id,
+                                          kind: "terms",
+                                          contactName: e.contact.name,
+                                          sentAt: e.checklist.termsEmailSentAt,
+                                        })
+                                      : setConfirmTerms({
+                                          enrollmentId: e.id,
+                                          contactName: e.contact.name,
+                                        })
+                                  }
+                                >
+                                  <FileText className="h-4 w-4" />
+                                  {sendingEmail === e.id + "terms"
+                                    ? "Enviando…"
+                                    : e.checklist.termsEmailSentAt
+                                      ? `T&C enviado el ${diaMes(e.checklist.termsEmailSentAt)} · reenviar`
+                                      : "Enviar T&C"}
+                                </Button>
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -861,33 +879,17 @@ export function RosterClient({
               {confirmChecklist.next ? "Marcar" : "Desmarcar"} &quot;{confirmChecklist.label}&quot; para{" "}
               {confirmChecklist.contactName}?
             </p>
-            {confirmChecklist.key === "termsEmailSentAt" && confirmChecklist.next && (
-              <p className="mt-2 rounded-md border border-brand-soft bg-brand-tint p-2 text-xs text-foreground">
-                Se le va a ENVIAR el correo con los términos de la licencia ATC.
-                Un correo no se puede deshacer.
-              </p>
-            )}
             <div className="mt-4 flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setConfirmChecklist(null)}>
                 Cancelar
               </Button>
               <Button
                 onClick={() => {
-                  // Marcar "T&C enviado" MANDA el correo; desmarcar es una
-                  // corrección manual y no dispara nada.
-                  if (confirmChecklist.key === "termsEmailSentAt" && confirmChecklist.next) {
-                    void sendEmail(
-                      confirmChecklist.enrollmentId,
-                      "terms",
-                      confirmChecklist.contactName
-                    );
-                  } else {
-                    void patchChecklist(
-                      confirmChecklist.enrollmentId,
-                      confirmChecklist.key,
-                      confirmChecklist.next ? "now" : null
-                    );
-                  }
+                  void patchChecklist(
+                    confirmChecklist.enrollmentId,
+                    confirmChecklist.key,
+                    confirmChecklist.next ? "now" : null
+                  );
                   setConfirmChecklist(null);
                 }}
               >
@@ -896,6 +898,26 @@ export function RosterClient({
             </div>
           </div>
         </div>
+      )}
+
+      {confirmTerms && (
+        <ConfirmSendDialog
+          title="Enviar los términos de la licencia"
+          confirmLabel="Enviar T&C"
+          busy={sendingEmail === confirmTerms.enrollmentId + "terms"}
+          onClose={() => setConfirmTerms(null)}
+          onConfirm={() => {
+            const t = confirmTerms;
+            setConfirmTerms(null);
+            void sendEmail(t.enrollmentId, "terms", t.contactName);
+          }}
+        >
+          <p className="text-foreground">
+            Se le va a enviar a {confirmTerms.contactName} el correo con los términos de la
+            licencia ATC.
+          </p>
+          <p>Un correo enviado no se puede deshacer.</p>
+        </ConfirmSendDialog>
       )}
 
       {resend && (
@@ -993,6 +1015,7 @@ function ModuleLicenses({
               enrollmentId={l.enrollmentId}
               assignedIds={l.licenseSoftwareIds}
               options={l.software}
+              group={l.groupSoftware ?? []}
               canEdit={canEdit}
               onChanged={onChanged}
             />

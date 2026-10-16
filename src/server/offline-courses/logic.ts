@@ -138,6 +138,43 @@ export function courseStatesFor(
   }));
 }
 
+/**
+ * 035 (FR-009) — Con el curso asignado al grupo de la cohorte, el control
+ * individual se apaga: ni otorgar (sería redundante) ni quitar (un acceso que
+ * nadie puede explicar). Lo único que queda es BORRAR una excepción anterior
+ * a la 035 (`clear`), que devuelve a la persona a lo que dice el grupo.
+ */
+export function overrideIndividualPermitido(cohortHas: boolean, action: OverrideAction): boolean {
+  return !cohortHas || action === "clear";
+}
+
+export const MENSAJE_CURSO_DEL_GRUPO =
+  "Ese curso está asignado al grupo de la cohorte: se asigna y se quita desde la cohorte, no por alumno.";
+
+/**
+ * 035 (FR-011/FR-012) — Qué se le ofrece al staff por curso en la ficha.
+ *
+ * - `grupo`: "Asignado al grupo", sin control.
+ * - `excepcion_anterior`: una quita individual de antes de la 035 sobre un
+ *   curso del grupo. Se conserva —borrarla le daría acceso a alguien a quien
+ *   una persona se lo quitó a propósito— y sólo se puede borrar.
+ * - `individual`: el curso no es del grupo; agregar/quitar como siempre.
+ */
+export type ControlIndividual =
+  | { kind: "grupo" }
+  | { kind: "excepcion_anterior" }
+  | { kind: "individual"; label: string; action: OverrideAction };
+
+export function controlIndividualDeCurso(c: CourseState): ControlIndividual {
+  if (c.cohortHas) {
+    return c.state === "revoked" ? { kind: "excepcion_anterior" } : { kind: "grupo" };
+  }
+  // Sin el curso en el grupo sólo hay dos estados: lo tiene por él o no lo tiene.
+  return c.state === "granted"
+    ? { kind: "individual", label: "Quitar", action: "clear" }
+    : { kind: "individual", label: "Agregar", action: "grant" };
+}
+
 /* ============================================================
  * Grading
  * ============================================================ */

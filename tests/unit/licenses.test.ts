@@ -31,6 +31,8 @@ vi.mock("@/lib/db", () => ({
       fn({ execute: async () => [] }),
   }),
   getDb: () => ({
+    // 035 — el advisory lock del stock (`bloquearStock`).
+    execute: async () => [],
     select: () => thenableChain(selectQueue.shift() ?? []),
     insert: (table: unknown) => ({
       values: (values: unknown) => {
@@ -236,6 +238,56 @@ describe("034 (FR-020) — varias licencias por inscripción", () => {
     );
     const result = await assignLicense("org_1", "enr_hija", "sw_1");
     expect(result.ok && result.warnings).toEqual(["Revit"]);
+  });
+});
+
+/**
+ * 035 (FR-008) — Con el programa asignado al grupo de la cohorte, asignarlo o
+ * liberarlo por alumno se rechaza con 409, sin escribir nada.
+ */
+describe("035 — lo del grupo no se toca por alumno", () => {
+  it("asignar un programa del grupo → 409 asignado_al_grupo", async () => {
+    const { assignLicense } = await import("@/server/licenses");
+    selectQueue.push(
+      [{ id: "enr_1", parentEnrollmentId: null, cohortId: "coh_1" }],
+      [{ cohortId: "coh_1", softwareId: "sw_1", name: "Revit", expiresAt: null }]
+    );
+    const result = await assignLicense("org_1", "enr_1", "sw_1");
+    expect(result).toEqual({
+      ok: false,
+      status: 409,
+      code: "asignado_al_grupo",
+      message:
+        "Revit está asignado al grupo de la cohorte: se asigna y se quita desde la cohorte, no por alumno.",
+    });
+    expect(inserts).toHaveLength(0);
+    expect(updates).toHaveLength(0);
+  });
+
+  it("otro programa en la misma cohorte se asigna como siempre", async () => {
+    const { assignLicense } = await import("@/server/licenses");
+    selectQueue.push(
+      [{ id: "enr_1", parentEnrollmentId: null, cohortId: "coh_1" }],
+      [{ cohortId: "coh_1", softwareId: "sw_revit", name: "Revit", expiresAt: null }],
+      [{ name: "Navisworks", totalLicenses: 5 }],
+      [],
+      []
+    );
+    const result = await assignLicense("org_1", "enr_1", "sw_navis");
+    expect(result.ok).toBe(true);
+    expect((inserts[0]!.values as { source: string }).source).toBe("individual");
+  });
+
+  it("liberar un programa del grupo → 409, sin escribir", async () => {
+    const { unassignLicense } = await import("@/server/licenses");
+    selectQueue.push(
+      [{ cohortId: "coh_1" }],
+      [{ cohortId: "coh_1", softwareId: "sw_1", name: "Revit", expiresAt: null }]
+    );
+    const result = await unassignLicense("org_1", "enr_1", "sw_1");
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.code).toBe("asignado_al_grupo");
+    expect(updates).toHaveLength(0);
   });
 });
 

@@ -407,6 +407,13 @@
       "when": 1792079332206,
       "tag": "0057_especializaciones_operativa",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1792155738246,
+      "tag": "0058_accesos_grupales",
+      "breakpoints": true
     }
   ]
 }

@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
+import { sincronizarLicenciasDelGrupo } from "@/server/group-licenses";
 import { fullName } from "@/lib/utils";
 import type { Capability } from "@/lib/capabilities";
 import { attendanceByModule, resolveMinAttendance } from "@/server/attendance";
@@ -727,6 +728,10 @@ export async function moverModuloDeRecorrido(
   if (!actualizadas[0]) {
     return { ok: false, status: 404, code: "not_found", message: "Inscripción no encontrada" };
   }
+
+  // 035 (FR-006) — Pierde las licencias del grupo de la cohorte vieja y
+  // recibe las de la nueva (lo que comparten, se queda).
+  await sincronizarLicenciasDelGrupo(organizationId, [enrollmentId]);
 
   return { ok: true, enrollmentId, cohortId: nuevaCohorteId };
 }

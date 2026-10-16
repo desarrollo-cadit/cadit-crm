@@ -5,6 +5,8 @@ import { scoped } from "@/lib/db/tenant";
 import type { OfflineAccessMode } from "@/lib/db/schema";
 import {
   courseStatesFor,
+  MENSAJE_CURSO_DEL_GRUPO,
+  overrideIndividualPermitido,
   planCohortCourses,
   planOverride,
   resolveEffectiveAccess,
@@ -28,7 +30,7 @@ import {
 
 export type AccessResult<T> =
   | { ok: true; data: T }
-  | { ok: false; status: 404 | 422; code: string; message: string };
+  | { ok: false; status: 404 | 409 | 422; code: string; message: string };
 
 const { offlineCourse, offlineCourseAccess, cohort, enrollment } = schema;
 
@@ -135,6 +137,33 @@ export async function setCohortCourses(
       // (cohort, course) unique index turns the second into a no-op instead
       // of a 500. With no target it also covers the partial index.
       .onConflictDoNothing();
+
+    /**
+     * 035 (FR-009, SC-002) — Un curso que pasa a ser del grupo vuelve
+     * redundante el otorgamiento individual del mismo curso: se borra (el
+     * alumno lo sigue leyendo por el grupo). Las quitas individuales NO se
+     * tocan: quedan como "Excepción anterior" para que una persona decida.
+     */
+    const delGrupo = await getDb()
+      .select({ id: enrollment.id })
+      .from(enrollment)
+      .where(scoped(enrollment.organizationId, orgId, eq(enrollment.cohortId, cohortId)));
+    if (delGrupo.length > 0) {
+      await db
+        .delete(offlineCourseAccess)
+        .where(
+          scoped(
+            offlineCourseAccess.organizationId,
+            orgId,
+            eq(offlineCourseAccess.mode, "grant"),
+            inArray(
+              offlineCourseAccess.enrollmentId,
+              delGrupo.map((e) => e.id)
+            ),
+            inArray(offlineCourseAccess.offlineCourseId, plan.toInsert)
+          )
+        );
+    }
   }
 
   return { ok: true, data: { courseIds: desired } };
@@ -208,7 +237,8 @@ export async function setEnrollmentOverride(
   action: OverrideAction,
   userId: string
 ): Promise<AccessResult<{ override: OfflineAccessMode | null }>> {
-  if (!(await findEnrollment(orgId, enrollmentId))) {
+  const found = await findEnrollment(orgId, enrollmentId);
+  if (!found) {
     return { ok: false, status: 404, code: "not_found", message: "Inscripción no encontrada" };
   }
   const [course] = await getDb()
@@ -223,6 +253,15 @@ export async function setEnrollmentOverride(
       code: "unknown_course",
       message: "El curso no existe en la biblioteca",
     };
+  }
+
+  // 035 (FR-009) — Con el curso en el grupo de la cohorte, ni otorgar ni
+  // quitar por alumno; sólo borrar una excepción anterior (`clear`).
+  const cohortHas = (await cohortCourseRows(orgId, found.cohortId ? [found.cohortId] : [])).some(
+    (r) => r.courseId === courseId
+  );
+  if (!overrideIndividualPermitido(cohortHas, action)) {
+    return { ok: false, status: 409, code: "asignado_al_grupo", message: MENSAJE_CURSO_DEL_GRUPO };
   }
 
   const [existing] = (await overrideRows(orgId, [enrollmentId])).filter(

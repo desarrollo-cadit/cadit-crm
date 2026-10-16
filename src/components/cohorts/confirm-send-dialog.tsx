@@ -15,6 +15,7 @@ export function ConfirmSendDialog({
   children,
   confirmLabel,
   busy = false,
+  busyLabel = "Enviando…",
   onConfirm,
   onClose,
 }: {
@@ -22,6 +23,8 @@ export function ConfirmSendDialog({
   children: ReactNode;
   confirmLabel: string;
   busy?: boolean;
+  /** 035 — El rótulo mientras el pedido está en vuelo (no siempre es un correo). */
+  busyLabel?: string;
   onConfirm: () => void;
   onClose: () => void;
 }) {
@@ -56,7 +59,7 @@ export function ConfirmSendDialog({
             Cancelar
           </Button>
           <Button onClick={onConfirm} loading={busy}>
-            {busy ? "Enviando…" : confirmLabel}
+            {busy ? busyLabel : confirmLabel}
           </Button>
         </div>
       </div>

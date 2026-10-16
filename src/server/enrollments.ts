@@ -21,6 +21,12 @@ import {
 } from "@/server/program-modules";
 import { inscribirEnModulos, olvidarExclusion } from "@/server/module-enrollment";
 import { resumirLicencias } from "@/lib/license-rules";
+import {
+  listarProgramasDelGrupo,
+  sincronizarLicenciasDelGrupo,
+  type GroupLicenseDto,
+} from "@/server/group-licenses";
+import { softwareDelGrupo } from "@/server/licenses";
 
 /** 005 (US2, contracts/enrollments.md) — alta comercial de una inscripción. */
 export type CreateEnrollmentInput = {
@@ -256,6 +262,11 @@ export async function createEnrollment(
     await inscribirEnModulos(organizationId, input.cohortId, { madreIds: [creada.id] });
   }
 
+  // 035 (FR-004) — Las licencias del grupo de la cohorte. Sin stock la
+  // inscripción se guarda igual: el faltante se ve en la cohorte y en
+  // Licencias. Las hijas automáticas las reciben en `inscribirEnModulos`.
+  await sincronizarLicenciasDelGrupo(organizationId, [creada.id]);
+
   return { ok: true, enrollment: serializeEnrollmentCommercial(creada) };
 }
 
@@ -300,6 +311,11 @@ export type CohortRosterDto = {
      * se asignan por módulo (`RosterEntryDto.moduleLicenses`).
      */
     isSpecialization: boolean;
+    /**
+     * 035 (US1/US2) — Los programas asignados a TODO el grupo. En la ficha de
+     * cada alumno figuran "Asignado al grupo", sin control individual.
+     */
+    groupLicenses: GroupLicenseDto[];
   };
   enrollments: RosterEntryDto[];
 };
@@ -324,6 +340,12 @@ export type ModuleLicenseLine = {
   licenseAssigned: boolean;
   licenseSoftwareId: string | null;
   licenseSoftwareIds: string[];
+  /**
+   * 035 (FR-007/FR-012) — Los programas del grupo de la cohorte del MÓDULO:
+   * en esa línea van "Asignado al grupo", sin control. Ausente si quien arma
+   * las líneas no los consultó.
+   */
+  groupSoftware?: { id: string; name: string }[];
 };
 
 export type RosterEntryDto = {
@@ -559,6 +581,8 @@ export async function getCohortRoster(
     porInscripcion.set(r.enrollment.id, grupo);
   }
 
+  const groupLicenses = (await listarProgramasDelGrupo(organizationId, cohortId)) ?? [];
+
   const enrollments = [...porInscripcion.values()].map(({ fila: r, licencias }) =>
     buildRosterEntry(
       capabilities,
@@ -591,6 +615,7 @@ export async function getCohortRoster(
       software: softwareRows,
       whatsappGroupLink: cohort.whatsappGroupLink,
       isSpecialization: cohort.isSpecialization,
+      groupLicenses,
     },
     enrollments,
   };
@@ -628,7 +653,9 @@ export function buildModuleLicenseLines(
   licenseByEnrollment: ReadonlyMap<
     string,
     { assigned: boolean; softwareId: string } | readonly { assigned: boolean; softwareId: string }[]
-  >
+  >,
+  /** 035 — los programas del grupo por cohorte de módulo; sin él, no se informan. */
+  groupByCohort?: ReadonlyMap<string, { id: string; name: string }[]>
 ): ModuleLicenseLine[] {
   const usadas = new Set<string>();
   return modules.map((m) => {
@@ -643,6 +670,7 @@ export function buildModuleLicenseLines(
         licenseAssigned: false,
         licenseSoftwareId: null,
         licenseSoftwareIds: [],
+        ...(groupByCohort ? { groupSoftware: [] } : {}),
       };
     }
     usadas.add(hija.id);
@@ -654,6 +682,9 @@ export function buildModuleLicenseLines(
       ...resumirLicencias(
         licencia === undefined ? [] : "softwareId" in licencia ? [licencia] : licencia
       ),
+      ...(groupByCohort
+        ? { groupSoftware: (hija.cohortId && groupByCohort.get(hija.cohortId)) || [] }
+        : {}),
     };
   });
 }
@@ -703,6 +734,14 @@ async function moduleLicensesFor(
     lista.push({ id: s.id, name: s.name });
     softwareByCohort.set(s.cohortId, lista);
   }
+  // 035 (FR-007) — lo del grupo de cada módulo.
+  const groupByCohort = new Map<string, { id: string; name: string }[]>();
+  for (const g of await softwareDelGrupo(organizationId, cohortIds)) {
+    groupByCohort.set(g.cohortId, [
+      ...(groupByCohort.get(g.cohortId) ?? []),
+      { id: g.softwareId, name: g.name },
+    ]);
+  }
 
   const hijaIds = hijas.map((h) => h.id);
   const licencias = hijaIds.length
@@ -750,7 +789,7 @@ async function moduleLicensesFor(
       }));
     salida.set(
       madreId,
-      buildModuleLicenseLines(modules, suyas, softwareByCohort, licenseByEnrollment)
+      buildModuleLicenseLines(modules, suyas, softwareByCohort, licenseByEnrollment, groupByCohort)
     );
   }
   return salida;

@@ -1,6 +1,7 @@
 import { eq, inArray, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
+import { sincronizarLicenciasDelGrupo } from "@/server/group-licenses";
 
 /**
  * 014 (T004, DV-008) — Dar de baja a un alumno sin destruir su historial.
@@ -178,6 +179,19 @@ export async function archiveOrDeleteContact(
       .where(
         scoped(schema.contact.organizationId, organizationId, eq(schema.contact.id, contactId))
       );
+    // 035 (FR-006) — Quien está de baja no es del grupo: sus licencias del
+    // grupo vuelven al stock. Las individuales quedan (las decide una persona).
+    // Borrar el contacto (la otra rama) se las lleva por cascada.
+    const inscripciones = await db
+      .select({ id: schema.enrollment.id })
+      .from(schema.enrollment)
+      .where(
+        scoped(schema.enrollment.organizationId, organizationId, eq(schema.enrollment.contactId, contactId))
+      );
+    await sincronizarLicenciasDelGrupo(
+      organizationId,
+      inscripciones.map((i) => i.id)
+    );
   }
 
   return { ok: true, accion: decision.accion, motivo: decision.motivo };

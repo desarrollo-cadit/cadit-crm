@@ -8,6 +8,7 @@ import {
   GraduationCap,
   Inbox,
   Kanban,
+  KeyRound,
   LayoutDashboard,
   Presentation,
   Library,
@@ -84,6 +85,12 @@ export const NAV_GROUPS = [
     items: [
       { href: "/academico", label: "Académico", icon: GraduationCap, capability: "academico.ver" },
       { href: "/calendar", label: "Calendario", icon: CalendarDays, capability: "academico.ver" },
+      /**
+       * 035 (US3, FR-013) — Quién tiene cada licencia, por programa.
+       * `academico.ver` y no una capacidad nueva (FR-021): el software y sus
+       * licencias ya son parte de la gestión académica.
+       */
+      { href: "/licencias", label: "Licencias", icon: KeyRound, capability: "academico.ver" },
       /**
        * 033 (FR-001) — Los talleres, con su propia sección. `academico.ver` y
        * no una capacidad nueva: un taller es un curso de tipo taller, y verlo

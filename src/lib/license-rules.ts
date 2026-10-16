@@ -1,3 +1,5 @@
+import { computeCohortStatus } from "./cohort-status";
+
 /**
  * 034 (US5, FR-020..FR-024) — Varias licencias por inscripción.
  *
@@ -36,4 +38,49 @@ export function licenciasRepetidasEnRecorrido(
 ): string[] {
   const enLaMadre = new Set(madre.map((l) => l.softwareId));
   return [...new Set(hija.filter((l) => enLaMadre.has(l.softwareId)).map((l) => l.softwareName))];
+}
+
+/**
+ * 023 — ¿Esta licencia está ocupando un lugar del inventario?
+ *
+ * **Se DERIVA, no se marca.** El booleano `assigned` decía "alguien se la
+ * asignó alguna vez"; nunca decía "sigue en uso". Como nadie lo apagaba, una
+ * licencia de un curso terminado hace un año seguía descontando del pool para
+ * siempre.
+ *
+ * Ahora ocupa hasta que su cohorte se SABE terminada, y se libera sola cuando
+ * termina. Eso vale por sí mismo, pero además tiene una consecuencia que
+ * importa: **no hace falta un scheduler**. El estado de la cohorte ya se
+ * calcula de sus fechas en cada consulta, así que el día que el curso termina
+ * la licencia aparece libre sin que corra ningún proceso.
+ *
+ * **Fechas desconocidas = no terminó** (2026-10-05). Una inscripción sin
+ * cohorte, o una cohorte sin fechas, no prueba que el curso haya terminado:
+ * tratarla como libre inflaba el stock disponible en silencio, y el error caía
+ * del lado de prometer una licencia que no existe.
+ *
+ * `expiresAt` gana sobre todo lo demás: una licencia vencida no vuelve a
+ * estar disponible por quererlo — Autodesk ya la dio de baja.
+ *
+ * Pura a propósito: es la regla que decide cuántas licencias se pueden vender.
+ */
+export function licenciaOcupada(
+  licencia: { assigned: boolean; expiresAt: Date | null },
+  cohorte: { startDate: Date | null; endDate: Date | null } | null,
+  now: Date = new Date()
+): boolean {
+  if (!licencia.assigned) return false;
+  if (licencia.expiresAt && licencia.expiresAt <= now) return false;
+  return !cohorteTerminada(cohorte, now);
+}
+
+function cohorteTerminada(
+  cohorte: { startDate: Date | null; endDate: Date | null } | null,
+  now: Date
+): boolean {
+  if (!cohorte) return false;
+  if (cohorte.startDate) {
+    return computeCohortStatus(cohorte.startDate, cohorte.endDate, now) === "finalizada";
+  }
+  return cohorte.endDate !== null && now > cohorte.endDate;
 }
