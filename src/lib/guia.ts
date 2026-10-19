@@ -156,6 +156,14 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
     que: "dar de alta una empresa y completar sus datos de facturación: razón social, RUT, dirección fiscal, a quién se le manda la factura y si paga contado o a crédito",
     donde: "/empresas",
   },
+  /**
+   * 042 — Lo que Administración no podía hacer con `cobranza.ver`: anotar el
+   * número de la factura que emitió, sin poder tocar ningún monto.
+   */
+  "facturacion.editar": {
+    que: "anotar el número de factura de una venta y el número de recibo de un pago, y corregirlos; no permite cambiar montos, cuotas ni pagos",
+    donde: "Facturación → la venta → Registrar factura",
+  },
 
   // ── Conversaciones ─────────────────────────────────────────────────────
   "inbox.ver": {
@@ -222,7 +230,7 @@ export const GRUPOS_CAPACIDADES: readonly {
   {
     titulo: "Comercial y financiero",
     // 040 — `empresas.editar` va con lo comercial.
-    incluye: (c) => /^(contactos|inscripciones|cobranza|empresas)\./.test(c),
+    incluye: (c) => /^(contactos|inscripciones|cobranza|empresas|facturacion)\./.test(c),
   },
   { titulo: "Conversaciones", incluye: (c) => c.startsWith("inbox.") },
   { titulo: "Plataforma", incluye: (c) => /^(configuracion|accesos|alumnos|areas)\./.test(c) },

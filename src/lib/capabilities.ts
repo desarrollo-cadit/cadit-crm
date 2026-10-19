@@ -61,6 +61,20 @@ export const CAPABILITIES = [
    * factura) y ventas; soporte no (ver `sinEmpresas`).
    */
   "empresas.editar",
+  /**
+   * 042 — Registrar los DOCUMENTOS de una venta y nada más: el número de
+   * factura de la inscripción y el número de recibo de un pago (el recibo es
+   * del PAGO, DV-006 de 008). No cambia montos, moneda, cuotas, pagos,
+   * descuentos ni ningún otro dato: tiene sus propias rutas
+   * (`/api/enrollments/[id]/invoice`, `/api/payments/[id]/receipt`), con
+   * bodies estrictos. Es lo que le faltaba a Administración, que transcribe y
+   * no cobra (026). La reciben dirección, coordinación y administración;
+   * soporte y ventas no (ver `sinFacturacion`).
+   *
+   * NO está en FINANCIAL_CAPABILITIES: esa lista cambia el texto del 403 de
+   * las rutas de plata, y esta capacidad no abre ninguna.
+   */
+  "facturacion.editar",
   // Conversaciones
   "inbox.ver",
   "inbox.responder",
@@ -155,6 +169,12 @@ const sinConfirmarCohortes = (c: Capability) => c !== "cohortes.confirmar";
 const sinEmpresas = (c: Capability) => c !== "empresas.editar";
 
 /**
+ * 042 — Soporte no registra facturas ni recibos: no ve la cobranza, y un
+ * número de factura sin la venta que documenta no se puede verificar.
+ */
+const sinFacturacion = (c: Capability) => c !== "facturacion.editar";
+
+/**
  * Mapeo rol → capacidades, FIEL al comportamiento actual.
  *
  * Cuidado con `member`: el data-model de la fase lo proyectaba como
@@ -178,7 +198,8 @@ export const ROLE_CAPABILITIES: Record<string, readonly Capability[]> = {
       sinGestionarGrabaciones(c) &&
       sinAprobarCorrecciones(c) &&
       sinConfirmarCohortes(c) &&
-      sinEmpresas(c)
+      sinEmpresas(c) &&
+      sinFacturacion(c)
   ),
 };
 
@@ -230,7 +251,8 @@ export const SYSTEM_ROLES: readonly {
         sinGestionarGrabaciones(c) &&
         sinAprobarCorrecciones(c) &&
         sinConfirmarCohortes(c) &&
-        sinEmpresas(c)
+        sinEmpresas(c) &&
+        sinFacturacion(c)
     ),
   },
   /**
@@ -273,6 +295,8 @@ export const SYSTEM_ROLES: readonly {
       "empresas.editar",
       // 040 (DV-001) — Lo que ya hacía con `inscripciones.ver`: nadie pierde nada.
       "inscripciones.seguimiento",
+      // 042 — Registra el número de factura y de recibo; no toca montos ni pagos.
+      "facturacion.editar",
     ],
   },
   /**

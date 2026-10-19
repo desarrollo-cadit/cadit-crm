@@ -101,6 +101,8 @@ export default async function CohortPage({
           canManageAccess={caps.includes("accesos.gestionar")}
           // 040 (DV-001) — checklist y correos; el rol Ventas no la tiene.
           canFollowUp={caps.includes("inscripciones.seguimiento")}
+          // 042 — anotar el número de recibo de un pago, sin tocar la plata.
+          canInvoice={caps.includes("facturacion.editar")}
           esEspecializacion={isSpecialization}
           // 034 (FR-016) — un módulo es el que tiene especialización arriba.
           esModulo={header?.partOf != null}

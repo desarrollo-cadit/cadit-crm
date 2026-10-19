@@ -46,6 +46,7 @@ const CAPABILITY_LABELS: Record<string, string> = {
   "cobranza.ver": "Ver cuotas, pagos y finanzas",
   "cobranza.editar": "Registrar y anular pagos",
   "empresas.editar": "Crear y editar empresas y sus datos de facturación",
+  "facturacion.editar": "Registrar números de factura y de recibo (sin tocar montos)",
   "inbox.ver": "Ver conversaciones",
   "inbox.responder": "Responder conversaciones",
   "configuracion.editar": "Configurar la instancia",
@@ -72,7 +73,7 @@ const GROUPS: { title: string; match: (c: string) => boolean }[] = [
   // 040 — `empresas.editar` va con lo comercial, igual que en la guía.
   {
     title: "Comercial y financiero",
-    match: (c) => /^(contactos|inscripciones|cobranza|empresas)\./.test(c),
+    match: (c) => /^(contactos|inscripciones|cobranza|empresas|facturacion)\./.test(c),
   },
   { title: "Conversaciones", match: (c) => c.startsWith("inbox.") },
   { title: "Plataforma", match: (c) => /^(configuracion|accesos|alumnos|areas)\./.test(c) },

@@ -12,6 +12,7 @@ import {
   LayoutDashboard,
   Presentation,
   Library,
+  Receipt,
   Settings,
   Users,
   Video,
@@ -126,6 +127,13 @@ export const NAV_GROUPS = [
        * ítem — y quien sí puede, lo encuentra sin que nadie se lo cuente.
        */
       { href: "/finanzas", label: "Finanzas", icon: Wallet, capability: "cobranza.ver" },
+      /**
+       * 042 — Las ventas que faltan facturar (y las ya facturadas, para
+       * corregir). `cobranza.ver` y no `facturacion.editar`: la pantalla
+       * muestra montos, que es el dato que gobierna `cobranza.ver`. Registrar
+       * el número desde la fila pide además `facturacion.editar`.
+       */
+      { href: "/facturacion", label: "Facturación", icon: Receipt, capability: "cobranza.ver" },
       /**
        * 030 (US1) — Las grabaciones de Zoom de todas las aulas en una tabla.
        * Capacidad propia (DV-009): sin `grabaciones.ver` el ítem no aparece.

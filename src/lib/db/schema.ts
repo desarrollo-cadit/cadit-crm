@@ -878,6 +878,21 @@ export const enrollment = pgTable(
     /** 005 — cédula del contacto al momento de inscribir. */
     nationalId: text("national_id"),
     invoiceNumber: text("invoice_number"),
+    /**
+     * 042 — Cuándo y quién anotó (o corrigió, o borró) el número de factura.
+     * Una corrección sin autor no se puede revisar. Se estampa SOLO cuando el
+     * número cambia, por la ruta de `facturacion.editar` o por la comercial.
+     * NULL en las filas viejas: inventarles un autor sería peor.
+     */
+    invoiceRecordedAt: timestamp("invoice_recorded_at"),
+    invoiceRecordedBy: text("invoice_recorded_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    /**
+     * Legado de 005. Desde 008 (DV-006) el recibo es del PAGO
+     * (`payment.receipt_number`); esta columna solo la edita la ruta
+     * comercial y 042 no la toca.
+     */
     receiptNumber: text("receipt_number"),
     /**
      * 2026-10-06 — Quién hizo la venta, para pagar la comisión. Apunta a
@@ -1654,6 +1669,11 @@ export const payment = pgTable(
     }).notNull(),
     /** 008 (DV-006) — el recibo es del PAGO; la factura sigue en `enrollment`. */
     receiptNumber: text("receipt_number"),
+    /** 042 — Cuándo y quién anotó (o corrigió) el número de recibo después del alta. */
+    receiptRecordedAt: timestamp("receipt_recorded_at"),
+    receiptRecordedBy: text("receipt_recorded_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
     notes: text("notes"),
     recordedBy: text("recorded_by").references(() => user.id, {
       onDelete: "set null",

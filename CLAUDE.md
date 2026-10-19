@@ -31,6 +31,7 @@ externas: el trabajo en segundo plano (agente, Laboratorio) es in-process.
 | Las personas o el juez del Laboratorio | `src/server/lab/personas.ts` · `src/server/lab/judge.ts` |
 | El canal WhatsApp (Graph API) | `src/lib/meta/` (cliente único) + `src/server/whatsapp/` |
 | Cobranza (cuotas, pagos, morosidad) | `src/server/billing.ts` + `/api/enrollments/[id]/{installments,payments}` |
+| **Facturación** (número de factura y de recibo, pendientes de facturar) | `src/lib/facturacion-regla.ts` (`pendienteDeFacturar`, la MISMA regla del aviso T-7/T-2 de 039) + `src/lib/facturacion.ts` (vista, filtros, totales por moneda, CSV) + `src/server/facturacion.ts` + `/facturacion` + `/api/facturacion` (`cobranza.ver`) + `PATCH /api/enrollments/[id]/invoice` y `PATCH /api/payments/[id]/receipt` (`facturacion.editar`: solo documentos, nunca montos) |
 | Clases y asistencia | `src/server/attendance.ts` + `/api/cohorts/[id]/attendance` |
 | **Quién puede qué** | `src/lib/capabilities.ts` (lista CERRADA) + `src/server/roles.ts` + `/settings/roles` |
 | Clases, cronograma y calendario | `src/server/classes.ts` + `/api/cohorts/[id]/{classes,schedule}` + `/api/calendar` |

@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import type { Currency } from "@/lib/db/schema";
 import { newId } from "@/lib/db/ids";
@@ -29,6 +29,7 @@ import {
 import { softwareDelGrupo } from "@/server/licenses";
 import { esVentaParaAviso } from "@/lib/billing-notices";
 import { avisarAAdministracion } from "@/server/billing-notices-queue";
+import { csvField } from "@/lib/csv";
 
 /** 005 (US2, contracts/enrollments.md) — alta comercial de una inscripción. */
 export type CreateEnrollmentInput = {
@@ -808,17 +809,9 @@ async function moduleLicensesFor(
   return salida;
 }
 
-export function csvField(value: string | null): string {
-  let v = value ?? "";
-  // Anti inyección de fórmulas: Excel/Sheets ejecutan una celda que arranca con
-  // = + - @ (o tab/CR, que algunos parsers descartan antes de mirar el resto).
-  // El nombre puede venir de un formulario público SIN autenticar, así que un
-  // `=HYPERLINK(...)` o un `=cmd|...` llegaría hasta la máquina de quien abre
-  // el export. El apóstrofo inicial hace que la planilla lo trate como texto.
-  if (/^[=+\-@\t\r]/.test(v)) v = `'${v}`;
-  // RFC 4180: entrecomillar si tiene coma, comilla o salto de línea; comillas escapadas duplicándolas.
-  return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
-}
+// 042 — La protección anti-fórmulas vive en `@/lib/csv` (la usa también el
+// export de Facturación, que se arma en el navegador).
+export { csvField };
 
 /**
  * Iteración 6 (feedback en vivo: "exportar en formato csv los alumnos de esa
@@ -956,7 +949,9 @@ export type UpdateEnrollmentCommercialResult =
 export async function updateEnrollmentCommercial(
   organizationId: string,
   enrollmentId: string,
-  input: UpdateEnrollmentCommercialInput
+  input: UpdateEnrollmentCommercialInput,
+  /** 042 — Quién edita: se estampa como autor del número de factura si cambia. */
+  actorId?: string
 ): Promise<UpdateEnrollmentCommercialResult> {
   const db = getDb();
 
@@ -1016,7 +1011,18 @@ export async function updateEnrollmentCommercial(
   if (input.installments !== undefined) set.installments = input.installments;
   if (input.paymentNotes !== undefined) set.paymentNotes = input.paymentNotes;
   if (input.nationalId !== undefined) set.nationalId = input.nationalId;
-  if (input.invoiceNumber !== undefined) set.invoiceNumber = input.invoiceNumber;
+  if (input.invoiceNumber !== undefined) {
+    set.invoiceNumber = input.invoiceNumber;
+    /**
+     * 042 — El autor del número se estampa SOLO si el número cambia: el
+     * formulario comercial manda todos los campos en cada guardado, y
+     * reestamparlo diría que alguien corrigió una factura que no tocó. El
+     * `case` lee la fila VIEJA (así evalúa Postgres el SET).
+     */
+    const cambia = sql`${schema.enrollment.invoiceNumber} is distinct from ${input.invoiceNumber}`;
+    set.invoiceRecordedAt = sql`case when ${cambia} then ${new Date().toISOString()}::timestamp else ${schema.enrollment.invoiceRecordedAt} end`;
+    set.invoiceRecordedBy = sql`case when ${cambia} then ${actorId ?? null} else ${schema.enrollment.invoiceRecordedBy} end`;
+  }
   if (input.receiptNumber !== undefined) set.receiptNumber = input.receiptNumber;
   if (input.sellerId !== undefined) set.sellerId = input.sellerId;
   if (input.companyId !== undefined) set.companyId = input.companyId;

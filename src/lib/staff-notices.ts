@@ -1,4 +1,5 @@
 import { escapeHtml } from "@/lib/utils";
+import { pendienteDeFacturar } from "@/lib/facturacion-regla";
 import { classInstant, formatInZone, wallClockInZone } from "@/lib/schedule-time";
 
 /**
@@ -339,7 +340,9 @@ export type InscripcionParaFacturar = {
  * espacios cuenta como sin factura). Lista vacía → no se manda nada.
  */
 export function sinFacturar(filas: readonly InscripcionParaFacturar[]): InscripcionParaFacturar[] {
-  return filas.filter((f) => !f.deBaja && !f.esHija && !(f.invoiceNumber ?? "").trim());
+  // 042 — La misma regla que la pantalla de Facturación (`enLaVista`): una
+  // sola función, para que el correo y la pantalla no puedan discrepar.
+  return filas.filter(pendienteDeFacturar);
 }
 
 /* ============================================================

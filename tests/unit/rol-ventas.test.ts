@@ -70,6 +70,8 @@ describe("040 — el rol `ventas`", () => {
   it("no confirma cohortes ni sigue inscripciones (checklist, correos, mover leads)", () => {
     expect(ventas!.capabilities).not.toContain("cohortes.confirmar");
     expect(ventas!.capabilities).not.toContain("inscripciones.seguimiento");
+    // 042 — tampoco registra facturas ni recibos.
+    expect(ventas!.capabilities).not.toContain("facturacion.editar");
   });
 
   it("no entra en el respaldo de código (existe por su fila, como dirección)", () => {
@@ -212,6 +214,8 @@ const MODULOS_DE_PLATA = [
   "@/server/finance",
   "@/server/finanzas-periodo",
   "@/server/ventas-por-vendedor",
+  // 042 — la pantalla de facturación y sus dos escrituras.
+  "@/server/facturacion",
 ];
 
 describe("040 — lo que el rol Ventas puede llamar", () => {

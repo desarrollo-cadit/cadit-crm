@@ -53,7 +53,17 @@ const STATUS_CLASS: Record<Status, string> = {
  * El estado de cada cuota lo calcula el servidor y no se guarda (DV-003): una
  * cuota marcada "al día" que en realidad venció es peor que no tener el dato.
  */
-export function BillingPanel({ enrollmentId }: { enrollmentId: string }) {
+export function BillingPanel({
+  enrollmentId,
+  puedeAnotarRecibo = false,
+}: {
+  enrollmentId: string;
+  /**
+   * 042 — `facturacion.editar`: anotar o corregir el número de recibo de un
+   * pago (el recibo es del PAGO, DV-006 de 008). Sin ella no se ofrece.
+   */
+  puedeAnotarRecibo?: boolean;
+}) {
   const [installments, setInstallments] = useState<Installment[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -110,6 +120,22 @@ export function BillingPanel({ enrollmentId }: { enrollmentId: string }) {
     }).catch(() => null);
     if (!res?.ok) notify.error(await readError(res, "No se pudo anular el pago"));
     else notify.success("Pago anulado.");
+    void refetch();
+  }
+
+  async function anotarRecibo(p: Payment) {
+    const valor = window.prompt(
+      "Número de recibo (dejalo vacío para borrarlo):",
+      p.receiptNumber ?? ""
+    );
+    if (valor === null) return;
+    const res = await fetch(`/api/payments/${p.id}/receipt`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ receiptNumber: valor.trim() || null }),
+    }).catch(() => null);
+    if (!res?.ok) notify.error(await readError(res, "No se pudo guardar el número de recibo"));
+    else notify.success(valor.trim() ? "Recibo anotado." : "Recibo borrado.");
     void refetch();
   }
 
@@ -229,6 +255,15 @@ export function BillingPanel({ enrollmentId }: { enrollmentId: string }) {
                 {day(p.paidAt)} · {money(p.amount, p.currency)} · {p.method}
                 {p.receiptNumber ? ` · recibo ${p.receiptNumber}` : ""}
               </span>
+              {!p.voidedAt && puedeAnotarRecibo && (
+                <button
+                  type="button"
+                  className="underline hover:text-foreground"
+                  onClick={() => void anotarRecibo(p)}
+                >
+                  {p.receiptNumber ? "corregir recibo" : "anotar recibo"}
+                </button>
+              )}
               {p.voidedAt ? (
                 <span className="text-destructive">anulado: {p.voidReason}</span>
               ) : (

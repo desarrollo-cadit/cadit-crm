@@ -56,16 +56,26 @@ const GRANTS = [
   migracion("0060_confirmacion_y_avisos.sql"),
   // 040 — `empresas.editar` e `inscripciones.seguimiento` (DV-001, DV-003).
   migracion("0061_rol_ventas_y_empresas.sql"),
+  // 042 — `facturacion.editar` (dirección, coordinación, administración).
+  migracion("0063_facturacion.sql"),
 ].join("\n");
 
+/**
+ * 042 — Se mira SENTENCIA por sentencia. Con el texto entero, el `update` de
+ * la 0061 que va por `"system" = false` (sin llave) se estiraba hasta el
+ * primer `where "key" =` de la migración siguiente y le adjudicaba a
+ * `direccion` una capacidad que esa sentencia nunca le dio.
+ */
 function grantsPosteriores(key: string): string[] {
-  return [
-    ...GRANTS.matchAll(
-      /update "role"[\s\S]*?\|\| jsonb_build_array\('([^']+)'\)[\s\S]*?where "key" = '([^']+)'/g
-    ),
-  ]
-    .filter((m) => m[2] === key)
-    .map((m) => m[1]!);
+  return GRANTS.split(/--> statement-breakpoint|;\s*$/m).flatMap((sentencia) =>
+    [
+      ...sentencia.matchAll(
+        /update "role"[\s\S]*?\|\| jsonb_build_array\('([^']+)'\)[\s\S]*?where "key" = '([^']+)'/g
+      ),
+    ]
+      .filter((m) => m[2] === key)
+      .map((m) => m[1]!)
+  );
 }
 
 /** Extrae las listas `jsonb` de las migraciones, en el orden en que aparecen. */

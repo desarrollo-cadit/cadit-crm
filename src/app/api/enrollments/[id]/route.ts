@@ -35,7 +35,12 @@ export const PATCH = requireCapability(
   const body = await parseBody(req, patchSchema);
   if (!body.ok) return body.response;
 
-  const result = await updateEnrollmentCommercial(session.organizationId, id, body.data);
+  const result = await updateEnrollmentCommercial(
+    session.organizationId,
+    id,
+    body.data,
+    session.userId
+  );
   if (!result.ok) return apiError(result.status, result.code, result.message);
 
   return Response.json({ enrollment: result.enrollment });

@@ -442,6 +442,13 @@
       "when": 1792424660487,
       "tag": "0062_avisos_internos_cobranza",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1792433079796,
+      "tag": "0063_facturacion",
+      "breakpoints": true
     }
   ]
 }

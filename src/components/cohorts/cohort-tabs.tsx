@@ -29,11 +29,14 @@ export function CohortTabs({
   canIssueCertificates,
   canManageAccess,
   canFollowUp = false,
+  canInvoice = false,
   esEspecializacion,
   esModulo = false,
 }: {
   /** 040 (DV-001) — `inscripciones.seguimiento`: checklist y correos del roster. */
   canFollowUp?: boolean;
+  /** 042 — `facturacion.editar`: anotar el número de recibo de un pago. */
+  canInvoice?: boolean;
   cohortId: string;
   /**
    * 034 (US4, FR-016/FR-017) — ¿Es un MÓDULO de una especialización? Entonces
@@ -144,6 +147,7 @@ export function CohortTabs({
             canManageAccess={canManageAccess}
             canEditLicenses={canEditAcademic}
             canFollowUp={canFollowUp}
+            canInvoice={canInvoice}
           />
         ) : tab === "program" ? (
           <ProgramClient

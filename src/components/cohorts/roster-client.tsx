@@ -82,8 +82,11 @@ export function RosterClient({
   canManageAccess = false,
   canEditLicenses = true,
   canFollowUp = false,
+  canInvoice = false,
 }: {
   cohortId: string;
+  /** 042 — `facturacion.editar`: anotar o corregir el número de recibo de un pago. */
+  canInvoice?: boolean;
   /**
    * 040 (DV-001) — `inscripciones.seguimiento`: tildar el checklist y mandar
    * los correos de la inscripción (de a uno o a toda la cohorte). Sin ella
@@ -814,7 +817,7 @@ export function RosterClient({
                                       financiero: es la misma sección y el mismo
                                       gate de rol (FR-016). */}
                                   <div className="mt-3 border-t pt-3">
-                                    <BillingPanel enrollmentId={e.id} />
+                                    <BillingPanel enrollmentId={e.id} puedeAnotarRecibo={canInvoice} />
                                   </div>
                                 </div>
                               )}
