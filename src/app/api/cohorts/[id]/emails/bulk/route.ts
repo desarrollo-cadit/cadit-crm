@@ -10,9 +10,10 @@ type Params = { params: Promise<{ id: string }> };
  * 2026-10-05 — Envío masivo de los correos de inscripción (términos ATC y
  * bienvenida al grupo) a los alumnos de la cohorte.
  *
- * `inscripciones.ver`, la MISMA capacidad que el envío individual
- * (`/api/enrollments/:id/emails`): mandárselo a todos no es otra tarea que
- * mandárselo a uno. El acceso al portal tiene su propia ruta y su propia
+ * El POST pide `inscripciones.seguimiento` (040, DV-001), la MISMA capacidad
+ * que el envío individual (`/api/enrollments/:id/emails`): mandárselo a todos
+ * no es otra tarea que mandárselo a uno. Ver el estado (GET) sigue con
+ * `inscripciones.ver`. El acceso al portal tiene su propia ruta y su propia
  * capacidad (`/api/cohorts/:id/access/bulk`).
  */
 export const GET = requireCapability(
@@ -37,7 +38,7 @@ const bodySchema = z.object({
  * `/api/cohorts/:id/emails/bulk/:runId`.
  */
 export const POST = requireCapability(
-  "inscripciones.ver",
+  "inscripciones.seguimiento",
   async (session, req: Request, ctx: Params) => {
     const { id } = await ctx.params;
     const body = await parseBody(req, bodySchema);

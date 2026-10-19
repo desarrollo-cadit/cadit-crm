@@ -25,6 +25,27 @@ export function isArea(value: string): value is Area {
   return (AREAS as readonly string[]).includes(value);
 }
 
+/**
+ * 039 — Las áreas que se CONFIGURAN (casilla + copias): las de derivación más
+ * `administracion`, que existe solo para los avisos internos (facturación
+ * pendiente antes del inicio de una cohorte).
+ *
+ * Es otra lista y no una entrada más en `AREAS` a propósito: `AREAS` es lo que
+ * el agente puede elegir en `derive_area` (`src/server/ai/actions.ts`) y lo que
+ * ve el prompt. Administración no atiende clientes por WhatsApp.
+ */
+export const CONFIG_AREAS = [...AREAS, "administracion"] as const;
+export type ConfigArea = (typeof CONFIG_AREAS)[number];
+
+export const CONFIG_AREA_LABELS: Record<ConfigArea, string> = {
+  ...AREA_LABELS,
+  administracion: "Administración",
+};
+
+export function isConfigArea(value: string): value is ConfigArea {
+  return (CONFIG_AREAS as readonly string[]).includes(value);
+}
+
 /** Lo que el agente junta del cliente antes de derivar (`contracts/agente.md`). */
 export const COLLECTED_FIELDS = [
   "name",
@@ -65,8 +86,12 @@ export type HandoffEmailStatus = (typeof HANDOFF_EMAIL_STATUSES)[number];
 
 export type HandoffEmailKind = "apertura" | "seguimiento";
 
-export type AreaConfigDto = {
-  area: Area;
+/**
+ * 039 — Genérico en el área: lo que lee el agente es `AreaConfigDto` (solo
+ * Ventas y Soporte); la pantalla de configuración ve `AreaConfigDto<ConfigArea>`.
+ */
+export type AreaConfigDto<A extends ConfigArea = Area> = {
+  area: A;
   enabled: boolean;
   mailbox: string | null;
   ccEmails: string[];

@@ -421,6 +421,27 @@
       "when": 1792165661858,
       "tag": "0059_certificados_pdf",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1792418021814,
+      "tag": "0060_confirmacion_y_avisos",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1792421759039,
+      "tag": "0061_rol_ventas_y_empresas",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1792424660487,
+      "tag": "0062_avisos_internos_cobranza",
+      "breakpoints": true
     }
   ]
 }

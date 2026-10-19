@@ -229,7 +229,7 @@ async function crear() {
     amount: 24000,
     currency: "UYU",
     installments: 4,
-  });
+  }, { avisoInterno: false });
   paso("inscripción", insc.ok);
   if (!insc.ok) return false;
   const enrollmentId = insc.enrollment.id;

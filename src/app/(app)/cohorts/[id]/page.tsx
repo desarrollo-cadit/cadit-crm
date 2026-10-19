@@ -5,6 +5,7 @@ import { cohorteEsEspecializacion } from "@/server/program-modules";
 import { CohortTabs } from "@/components/cohorts/cohort-tabs";
 import { CohortHeader } from "@/components/cohorts/cohort-header";
 import { encabezadoDeCohorte } from "@/server/cohort-header";
+import { estadoDeConfirmacion } from "@/server/cohort-confirmation";
 
 export const dynamic = "force-dynamic";
 
@@ -67,13 +68,15 @@ export default async function CohortPage({
    * MISMA transacción, con la misma capacidad que la pestaña de la
    * especialización: dice lo mismo, de qué está hecha la cohorte.
    */
-  const { isSpecialization, header } =
+  const { isSpecialization, header, confirmation } =
     session && puedeVerPrograma
       ? await withTenantTransaction(session, async () => ({
           isSpecialization: await cohorteEsEspecializacion(session.organizationId, id),
           header: await encabezadoDeCohorte(session.organizationId, id),
+          // 039 — Confirmación y avisos internos, en la MISMA transacción (RLS).
+          confirmation: await estadoDeConfirmacion(session.organizationId, id),
         }))
-      : { isSpecialization: false, header: null };
+      : { isSpecialization: false, header: null, confirmation: null };
   return (
     <div className="flex h-full flex-col">
       {header ? (
@@ -81,6 +84,8 @@ export default async function CohortPage({
           header={header}
           cohortId={id}
           canEdit={caps.includes("academico.editar")}
+          confirmation={confirmation}
+          canConfirm={caps.includes("cohortes.confirmar")}
         />
       ) : null}
       <div className="min-h-0 flex-1">
@@ -94,6 +99,8 @@ export default async function CohortPage({
           canEditEnrollments={caps.includes("inscripciones.editar")}
           canIssueCertificates={caps.includes("certificados.emitir")}
           canManageAccess={caps.includes("accesos.gestionar")}
+          // 040 (DV-001) — checklist y correos; el rol Ventas no la tiene.
+          canFollowUp={caps.includes("inscripciones.seguimiento")}
           esEspecializacion={isSpecialization}
           // 034 (FR-016) — un módulo es el que tiene especialización arriba.
           esModulo={header?.partOf != null}

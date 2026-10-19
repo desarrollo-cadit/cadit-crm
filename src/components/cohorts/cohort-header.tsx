@@ -4,6 +4,8 @@ import type { EncabezadoDeCohorte } from "@/lib/cohort-header";
 import { Badge } from "@/components/ui/badge";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { EditCohortButton } from "@/components/cohorts/edit-cohort-button";
+import { CohortConfirmation } from "@/components/cohorts/cohort-confirmation";
+import type { ConfirmacionDto } from "@/lib/staff-notices";
 
 function fecha(iso: string | null): string {
   return iso ? new Date(iso).toLocaleDateString("es-UY", { timeZone: "UTC" }) : "sin fecha de fin";
@@ -19,11 +21,17 @@ export function CohortHeader({
   header,
   cohortId,
   canEdit,
+  confirmation,
+  canConfirm,
 }: {
   header: EncabezadoDeCohorte;
   cohortId: string;
   /** `academico.editar`, resuelto en el servidor. La ruta PATCH exige lo mismo. */
   canEdit: boolean;
+  /** 039 — Confirmación y avisos internos; `null` si no se pudo leer. */
+  confirmation: ConfirmacionDto | null;
+  /** 039 — `cohortes.confirmar`, resuelto en el servidor. La ruta exige lo mismo. */
+  canConfirm: boolean;
 }) {
   return (
     <header className="space-y-2 border-b px-6 pb-3 pt-4">
@@ -41,6 +49,9 @@ export function CohortHeader({
           </div>
         ) : null}
       </div>
+      {confirmation ? (
+        <CohortConfirmation cohortId={cohortId} initial={confirmation} canConfirm={canConfirm} />
+      ) : null}
       {/* 034 (FR-018) — De qué especialización es parte este módulo, con acceso directo. */}
       {header.partOf ? (
         <p className="text-xs text-muted-foreground">

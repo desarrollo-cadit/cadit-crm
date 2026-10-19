@@ -245,7 +245,7 @@ export async function addTeamMember(
   viewerCapabilities: readonly Capability[],
   input: AddTeamMemberInput,
   deps: AddTeamMemberDeps
-): Promise<RolesResult<{ attached: boolean }>> {
+): Promise<RolesResult<{ attached: boolean; userId: string }>> {
   const target = await resolveRoleForNewMember(organizationId, viewerCapabilities, input.roleKey);
   if (!target.ok) return target;
 
@@ -292,7 +292,7 @@ export async function addTeamMember(
           .insert(schema.member)
           .values({ id: newId("member"), organizationId, userId: existente.id, role: target.data.key })
           .onConflictDoNothing();
-        return { ok: true, data: { attached: true } };
+        return { ok: true, data: { attached: true, userId: existente.id } };
     }
   }
 
@@ -320,7 +320,7 @@ export async function addTeamMember(
     .insert(schema.member)
     .values({ id: newId("member"), organizationId, userId, role: target.data.key })
     .onConflictDoNothing();
-  return { ok: true, data: { attached: false } };
+  return { ok: true, data: { attached: false, userId } };
 }
 
 /**

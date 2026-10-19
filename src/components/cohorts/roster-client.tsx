@@ -81,8 +81,15 @@ export function RosterClient({
   canEditOfflineCourses = false,
   canManageAccess = false,
   canEditLicenses = true,
+  canFollowUp = false,
 }: {
   cohortId: string;
+  /**
+   * 040 (DV-001) — `inscripciones.seguimiento`: tildar el checklist y mandar
+   * los correos de la inscripción (de a uno o a toda la cohorte). Sin ella
+   * (rol Ventas) el roster se ve entero y no ofrece nada que escriba.
+   */
+  canFollowUp?: boolean;
   /**
    * 034 — `academico.editar`, la capacidad de `PUT/DELETE
    * /api/enrollments/[id]/license`. Sin ella, las licencias se ven y no se
@@ -383,11 +390,14 @@ export function RosterClient({
             )}
             {/* 2026-10-05 — Términos, bienvenida y acceso al portal a toda
                 la cohorte, con confirmación y de a uno. */}
-            <BulkSendsPanel
-              cohortId={cohortId}
-              canManageAccess={canManageAccess}
-              onProgress={refetch}
-            />
+            {(canFollowUp || canManageAccess) && (
+              <BulkSendsPanel
+                cohortId={cohortId}
+                canSendEmails={canFollowUp}
+                canManageAccess={canManageAccess}
+                onProgress={refetch}
+              />
+            )}
             {/* 035 (US1) — Un programa para todo el grupo, de una vez. */}
             <GroupLicensesPanel
               cohortId={cohortId}
@@ -551,6 +561,7 @@ export function RosterClient({
                     <label className="flex items-center gap-1.5" title={item.hint}>
                       <Checkbox
                         checked={Boolean(e.checklist[item.key])}
+                        disabled={!canFollowUp}
                         onChange={(ev) =>
                           setConfirmChecklist({
                             enrollmentId: e.id,
@@ -573,6 +584,7 @@ export function RosterClient({
                   <label className="flex items-center gap-1.5">
                     <Checkbox
                       checked={e.checklist.hadOwnLicense}
+                      disabled={!canFollowUp}
                       onChange={(ev) =>
                         void patchChecklist(e.id, "hadOwnLicense", ev.target.checked)
                       }
@@ -597,58 +609,67 @@ export function RosterClient({
                                     con confirmación. Ya enviados, muestra la
                                     fecha y reenviar pide confirmación
                                     explícita diciendo cuándo salieron. */}
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  disabled={sendingEmail === e.id + "terms"}
-                                  title={
-                                    e.checklist.termsEmailSentAt
-                                      ? "Reenviar los términos de la licencia"
-                                      : undefined
-                                  }
-                                  onClick={() =>
-                                    e.checklist.termsEmailSentAt
-                                      ? setResend({
-                                          enrollmentId: e.id,
-                                          kind: "terms",
-                                          contactName: e.contact.name,
-                                          sentAt: e.checklist.termsEmailSentAt,
-                                        })
-                                      : setConfirmTerms({
-                                          enrollmentId: e.id,
-                                          contactName: e.contact.name,
-                                        })
-                                  }
-                                >
-                                  <FileText className="h-4 w-4" />
-                                  {sendingEmail === e.id + "terms"
-                                    ? "Enviando…"
-                                    : e.checklist.termsEmailSentAt
-                                      ? `T&C enviado el ${diaMes(e.checklist.termsEmailSentAt)} · reenviar`
-                                      : "Enviar T&C"}
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  disabled={sendingEmail === e.id + "welcome"}
-                                  onClick={() =>
-                                    e.welcomeEmailSentAt
-                                      ? setResend({
-                                          enrollmentId: e.id,
-                                          kind: "welcome",
-                                          contactName: e.contact.name,
-                                          sentAt: e.welcomeEmailSentAt,
-                                        })
-                                      : void sendEmail(e.id, "welcome", e.contact.name)
-                                  }
-                                >
-                                  <Mail className="h-4 w-4" />
-                                  {sendingEmail === e.id + "welcome"
-                                    ? "Enviando…"
-                                    : e.welcomeEmailSentAt
-                                      ? "Reenviar bienvenida + grupo"
-                                      : "Enviar bienvenida + grupo"}
-                                </Button>
+                                {canFollowUp && (
+                                  <>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      disabled={sendingEmail === e.id + "terms"}
+                                      title={
+                                        e.checklist.termsEmailSentAt
+                                          ? "Reenviar los términos de la licencia"
+                                          : undefined
+                                      }
+                                      onClick={() =>
+                                        e.checklist.termsEmailSentAt
+                                          ? setResend({
+                                              enrollmentId: e.id,
+                                              kind: "terms",
+                                              contactName: e.contact.name,
+                                              sentAt: e.checklist.termsEmailSentAt,
+                                            })
+                                          : setConfirmTerms({
+                                              enrollmentId: e.id,
+                                              contactName: e.contact.name,
+                                            })
+                                      }
+                                    >
+                                      <FileText className="h-4 w-4" />
+                                      {sendingEmail === e.id + "terms"
+                                        ? "Enviando…"
+                                        : e.checklist.termsEmailSentAt
+                                          ? `T&C enviado el ${diaMes(e.checklist.termsEmailSentAt)} · reenviar`
+                                          : "Enviar T&C"}
+                                    </Button>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      disabled={sendingEmail === e.id + "welcome"}
+                                      onClick={() =>
+                                        e.welcomeEmailSentAt
+                                          ? setResend({
+                                              enrollmentId: e.id,
+                                              kind: "welcome",
+                                              contactName: e.contact.name,
+                                              sentAt: e.welcomeEmailSentAt,
+                                            })
+                                          : void sendEmail(e.id, "welcome", e.contact.name)
+                                      }
+                                    >
+                                      <Mail className="h-4 w-4" />
+                                      {sendingEmail === e.id + "welcome"
+                                        ? "Enviando…"
+                                        : e.welcomeEmailSentAt
+                                          ? "Reenviar bienvenida + grupo"
+                                          : "Enviar bienvenida + grupo"}
+                                    </Button>
+                                  </>
+                                )}
+                                {!canFollowUp && e.checklist.termsEmailSentAt && (
+                                  <span className="text-muted-foreground">
+                                    T&C enviado el {diaMes(e.checklist.termsEmailSentAt)}.
+                                  </span>
+                                )}
                                 {e.welcomeEmailSentAt ? (
                                   <span className="text-muted-foreground">
                                     Enviada el {formatSentAt(e.welcomeEmailSentAt)}
@@ -677,29 +698,35 @@ export function RosterClient({
                                         ? `El correo de acceso se envió el ${formatSentAt(e.portalAccess.emailSentAt)}.`
                                         : "No hay registro del envío del correo de acceso."}
                                     </span>
-                                    <button
-                                      type="button"
-                                      className="text-muted-foreground underline"
-                                      disabled={invitingPortal === e.id}
-                                      onClick={() =>
-                                        setResend({
-                                          enrollmentId: e.id,
-                                          kind: "portal",
-                                          contactName: e.contact.name,
-                                          sentAt: e.portalAccess.emailSentAt,
-                                        })
-                                      }
-                                    >
-                                      {invitingPortal === e.id
-                                        ? "Reenviando…"
-                                        : "Reenviar acceso con una contraseña nueva"}
-                                    </button>
+                                    {canManageAccess && (
+                                      <button
+                                        type="button"
+                                        className="text-muted-foreground underline"
+                                        disabled={invitingPortal === e.id}
+                                        onClick={() =>
+                                          setResend({
+                                            enrollmentId: e.id,
+                                            kind: "portal",
+                                            contactName: e.contact.name,
+                                            sentAt: e.portalAccess.emailSentAt,
+                                          })
+                                        }
+                                      >
+                                        {invitingPortal === e.id
+                                          ? "Reenviando…"
+                                          : "Reenviar acceso con una contraseña nueva"}
+                                      </button>
+                                    )}
                                   </>
                                 ) : e.portalAccess.blockedReason ? (
                                   /* T017d — el motivo, en vez de un botón que
                                      va a fallar: son 6 de los 340 alumnos. */
                                   <span className="text-muted-foreground">
                                     {e.portalAccess.blockedReason}
+                                  </span>
+                                ) : !canManageAccess ? (
+                                  <span className="text-muted-foreground">
+                                    Todavía no tiene acceso al portal.
                                   </span>
                                 ) : (
                                   <Button

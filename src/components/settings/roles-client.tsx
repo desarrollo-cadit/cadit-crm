@@ -37,12 +37,15 @@ const CAPABILITY_LABELS: Record<string, string> = {
   "evaluacion.editar": "Cargar y corregir evaluaciones",
   "correcciones.aprobar": "Aprobar las correcciones de los profesores",
   "certificados.emitir": "Emitir certificados",
+  "cohortes.confirmar": "Confirmar cohortes (avisa a Soporte y a Administración)",
   "contactos.ver": "Ver contactos",
   "contactos.editar": "Crear y editar contactos",
   "inscripciones.ver": "Ver inscripciones",
+  "inscripciones.seguimiento": "Seguir inscripciones: mover leads, checklist y correos",
   "inscripciones.editar": "Inscribir y editar datos comerciales",
   "cobranza.ver": "Ver cuotas, pagos y finanzas",
   "cobranza.editar": "Registrar y anular pagos",
+  "empresas.editar": "Crear y editar empresas y sus datos de facturación",
   "inbox.ver": "Ver conversaciones",
   "inbox.responder": "Responder conversaciones",
   "configuracion.editar": "Configurar la instancia",
@@ -64,9 +67,13 @@ const GROUPS: { title: string; match: (c: string) => boolean }[] = [
     // 030 — `grabaciones.*` va con lo académico, igual que en la guía.
     // 031 — `correcciones.*` también.
     match: (c) =>
-      /^(academico|asistencia|evaluacion|correcciones|certificados|grabaciones)\./.test(c),
+      /^(academico|asistencia|evaluacion|correcciones|certificados|grabaciones|cohortes)\./.test(c),
   },
-  { title: "Comercial y financiero", match: (c) => /^(contactos|inscripciones|cobranza)\./.test(c) },
+  // 040 — `empresas.editar` va con lo comercial, igual que en la guía.
+  {
+    title: "Comercial y financiero",
+    match: (c) => /^(contactos|inscripciones|cobranza|empresas)\./.test(c),
+  },
   { title: "Conversaciones", match: (c) => c.startsWith("inbox.") },
   { title: "Plataforma", match: (c) => /^(configuracion|accesos|alumnos|areas)\./.test(c) },
 ];

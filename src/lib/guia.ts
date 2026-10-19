@@ -94,6 +94,10 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
     que: "revisar las correcciones que mandan los profesores y publicarlas o devolverlas con un comentario",
     donde: "/correcciones",
   },
+  "cohortes.confirmar": {
+    que: "confirmar que una cohorte sale (o quitarle la confirmación): al confirmarla le llega a Soporte la lista de alumnos con sus licencias, y a Administración los que todavía no tienen factura, 7 y 2 días antes del inicio",
+    donde: "Académico → la cohorte",
+  },
   "certificados.emitir": {
     que: "emitir el certificado de un alumno que aprobó, imprimirlo y anularlo si se emitió por error",
     donde: "Académico → la cohorte → Evaluación",
@@ -109,8 +113,16 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
     donde: "/contacts",
   },
   "inscripciones.ver": {
-    que: "seguir a los interesados por el embudo, desde la primera consulta hasta que se anotan",
+    que: "mirar el embudo de interesados y quiénes están anotados en cada cohorte, sin cambiar nada",
     donde: "/pipeline",
+  },
+  /**
+   * 040 (DV-001) — Lo que hasta 040 se hacía con `inscripciones.ver`: el texto
+   * de esa capacidad pasó a decir "sin cambiar nada" porque ahora es cierto.
+   */
+  "inscripciones.seguimiento": {
+    que: "mover a un interesado de etapa en el embudo, tildar el checklist de cada alumno y mandarle los términos o la bienvenida, de a uno o a toda la cohorte",
+    donde: "Académico → la cohorte → Alumnos",
   },
   "inscripciones.editar": {
     que: "anotar a alguien en una cohorte, moverlo de etapa, acordar el precio de su cursada e indicar quién la vendió; también cargar y archivar vendedores en Ajustes → Vendedores",
@@ -136,8 +148,13 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
     donde: "/finanzas",
   },
   "cobranza.editar": {
-    que: "armar el plan de cuotas de una cursada, registrar un pago y anular uno mal cargado",
+    que: "armar el plan de cuotas de una cursada, registrar un pago (le llega un aviso por correo a Administración) y anular uno mal cargado",
     donde: "Alumnos → el alumno → Estado de cuenta",
+  },
+  /** 040 (DV-003) — Ventas y Administración cargan los datos de facturación. */
+  "empresas.editar": {
+    que: "dar de alta una empresa y completar sus datos de facturación: razón social, RUT, dirección fiscal, a quién se le manda la factura y si paga contado o a crédito",
+    donde: "/empresas",
   },
 
   // ── Conversaciones ─────────────────────────────────────────────────────
@@ -165,11 +182,8 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
   },
   // ── Agente de IA ───────────────────────────────────────────────────────
   "areas.configurar": {
-    que: "decidir a qué casilla y con qué copias manda el asistente de WhatsApp las consultas de Ventas y Soporte, y qué le contesta al cliente",
-    // 029 (MVP) — Hoy se configura por la API (`/api/settings/areas`); la
-    // pestaña Configuración › Áreas llega con la US4 y este `donde` pasa a ser
-    // `/settings/areas`.
-    donde: "/settings",
+    que: "decidir a qué casilla y con qué copias manda el asistente de WhatsApp las consultas de Ventas y Soporte, qué le contesta al cliente y en qué horario, encender o apagar esa derivación, y a qué casilla llegan los avisos internos de Administración (cada inscripción nueva para facturar, cada pago registrado, la morosidad de la semana los lunes y la facturación pendiente antes del inicio de cada cohorte)",
+    donde: "/settings/areas",
   },
   // ── Grabaciones de Zoom (030) ──────────────────────────────────────────
   "grabaciones.ver": {
@@ -203,11 +217,12 @@ export const GRUPOS_CAPACIDADES: readonly {
     // 030 — Las grabaciones son de la cursada: van con lo académico.
     // 031 — Las correcciones también.
     incluye: (c) =>
-      /^(academico|asistencia|evaluacion|correcciones|certificados|grabaciones)\./.test(c),
+      /^(academico|asistencia|evaluacion|correcciones|certificados|grabaciones|cohortes)\./.test(c),
   },
   {
     titulo: "Comercial y financiero",
-    incluye: (c) => /^(contactos|inscripciones|cobranza)\./.test(c),
+    // 040 — `empresas.editar` va con lo comercial.
+    incluye: (c) => /^(contactos|inscripciones|cobranza|empresas)\./.test(c),
   },
   { titulo: "Conversaciones", incluye: (c) => c.startsWith("inbox.") },
   { titulo: "Plataforma", incluye: (c) => /^(configuracion|accesos|alumnos|areas)\./.test(c) },

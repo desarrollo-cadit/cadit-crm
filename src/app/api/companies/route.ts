@@ -1,5 +1,5 @@
-import { z } from "zod";
-import { parseBody, requireCapability } from "@/lib/api";
+import { apiError, parseBody, requireCapability } from "@/lib/api";
+import { companyCreateSchema } from "@/lib/company";
 import { createCompany, listCompanies, serializeCompany } from "@/server/companies";
 
 export const dynamic = "force-dynamic";
@@ -11,23 +11,22 @@ export const GET = requireCapability(
   return Response.json({ companies: rows.map(serializeCompany) });
 });
 
-const createSchema = z.object({
-  legalName: z.string().trim().min(1).max(200),
-  taxId: z.string().trim().max(60).optional(),
-});
-
+/**
+ * 040 (FR-005, DV-003) — `empresas.editar`, ya no `contactos.editar`.
+ *
+ * Lo crean Ventas, Coordinación, Dirección y Administración. Soporte deja de
+ * poder crear empresas por la API (no tenía forma de hacerlo desde la
+ * pantalla: el alta inline vive en el formulario de inscripción, que exige
+ * `inscripciones.editar`). RUT repetido en la organización → 409.
+ */
 export const POST = requireCapability(
-  "contactos.editar",
+  "empresas.editar",
   async (session, req: Request) => {
-  const body = await parseBody(req, createSchema);
-  if (!body.ok) return body.response;
+    const body = await parseBody(req, companyCreateSchema);
+    if (!body.ok) return body.response;
 
-  const id = await createCompany(session.organizationId, {
-    legalName: body.data.legalName,
-    taxId: body.data.taxId ?? null,
-  });
-  return Response.json(
-    { company: { id, legalName: body.data.legalName, taxId: body.data.taxId ?? null } },
-    { status: 201 }
-  );
-});
+    const result = await createCompany(session.organizationId, body.data);
+    if (!result.ok) return apiError(result.status, result.code, result.message);
+    return Response.json({ company: result.company }, { status: 201 });
+  }
+);

@@ -232,7 +232,7 @@ describe("updateTeacher / listTeachers / getTeacher (iteración 2)", () => {
     );
 
     const { listTeachers } = await import("@/server/teachers");
-    const rows = await listTeachers("org_1");
+    const rows = await listTeachers("org_1", ["academico.ver", "academico.editar"]);
 
     expect(rows).toEqual([
       {
@@ -248,7 +248,7 @@ describe("updateTeacher / listTeachers / getTeacher (iteración 2)", () => {
   it("getTeacher devuelve null si no existe", async () => {
     selectQueue.push([]);
     const { getTeacher } = await import("@/server/teachers");
-    const result = await getTeacher("org_1", "tch_x");
+    const result = await getTeacher("org_1", "tch_x", ["academico.ver"]);
     expect(result).toBeNull();
   });
 });

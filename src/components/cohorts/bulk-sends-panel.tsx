@@ -69,10 +69,16 @@ function duracionEstimada(n: number) {
 
 export function BulkSendsPanel({
   cohortId,
+  canSendEmails = true,
   canManageAccess,
   onProgress,
 }: {
   cohortId: string;
+  /**
+   * 040 (DV-001) — `inscripciones.seguimiento`: sin ella, los correos de
+   * términos y bienvenida ni se ofrecen (el POST respondería 403).
+   */
+  canSendEmails?: boolean;
   /** `accesos.gestionar`: sin ella, el acceso al portal ni se ofrece (la ruta respondería 403). */
   canManageAccess: boolean;
   /** Avisa al roster que algo cambió, para que las marcas por alumno se vean al día. */
@@ -85,7 +91,10 @@ export function BulkSendsPanel({
   const [detalleAbierto, setDetalleAbierto] = useState(false);
 
   const cargar = useCallback(async () => {
-    const pedidos = [fetch(`/api/cohorts/${cohortId}/emails/bulk`).catch(() => null)];
+    const pedidos: Promise<Response | null>[] = [];
+    if (canSendEmails) {
+      pedidos.push(fetch(`/api/cohorts/${cohortId}/emails/bulk`).catch(() => null));
+    }
     if (canManageAccess) {
       pedidos.push(fetch(`/api/cohorts/${cohortId}/access/bulk`).catch(() => null));
     }
@@ -97,7 +106,7 @@ export function BulkSendsPanel({
     setKinds(todos);
     const enCurso = todos.find((k) => k.latestRun?.status === "en_curso")?.latestRun;
     if (enCurso) setCorrida((actual) => actual ?? enCurso);
-  }, [cohortId, canManageAccess]);
+  }, [cohortId, canSendEmails, canManageAccess]);
 
   useEffect(() => {
     void cargar();

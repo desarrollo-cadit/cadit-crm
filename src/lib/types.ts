@@ -1,5 +1,6 @@
 /** DTOs que viajan por la API interna (lado cliente). */
 import type { CourseKind } from "@/lib/course-kind";
+import type { CompanyFields } from "@/lib/company";
 
 export type ConversationDto = {
   id: string;
@@ -118,8 +119,12 @@ export type CourseDto = {
 export type TeacherDto = {
   id: string;
   name: string;
-  /** 005 iteración 2 — costo por hora opcional. */
-  hourlyRate: number | null;
+  /**
+   * 005 iteración 2 — costo por hora opcional.
+   * 040 (DV-009) — AUSENTE (no `null`) sin `academico.editar` ni
+   * `cobranza.ver`: es plata y no viaja al rol Ventas.
+   */
+  hourlyRate?: number | null;
   /** 005 iteración 5 — email de contacto (identidad mínima; sin cuenta/login todavía). */
   email: string | null;
   /**
@@ -143,12 +148,11 @@ export type SoftwareDto = {
   hasPhoto: boolean;
 };
 
-/** 005 (DV-009) — empresa para facturación B2B opcional. */
-export type CompanyDto = {
-  id: string;
-  legalName: string;
-  taxId: string | null;
-};
+/**
+ * 005 (DV-009) — empresa para facturación B2B opcional.
+ * 040 (FR-004) — con sus datos de facturación (`CompanyFields`).
+ */
+export type CompanyDto = { id: string } & CompanyFields;
 
 /** 005 (T008) — cohorte con teacher/software resueltos. */
 export type CohortDto = {
@@ -204,6 +208,8 @@ export type CohortDto = {
    */
   isSpecialization: boolean;
   status: "planificada" | "en_curso" | "finalizada";
+  /** 039 — Cuándo se confirmó ("la cohorte sale"); null = sin confirmar. */
+  confirmedAt: string | null;
   software: { id: string; name: string }[];
 };
 

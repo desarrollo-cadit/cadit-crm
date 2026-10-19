@@ -263,8 +263,21 @@ const CLAVE_FILTRO_ANIO = "academico.cohortes.anio";
  * 2026-10-16 (pedido del dueño) — El catálogo de software (alta, nombre,
  * foto, total) se mudó a /licencias. Acá la lista se sigue pidiendo a
  * `/api/software` porque la usan el formulario de cohorte y las tarjetas.
+ *
+ * 040 (DV-008) — Las capacidades bajan del servidor como booleanos: sin
+ * `academico.editar` (Ventas, Administración) no se dibujan crear, editar ni
+ * borrar —las rutas responderían 403—, y sin `accesos.gestionar` no se ofrece
+ * dar acceso a un profesor. La pantalla sigue entera en lectura.
  */
-export function AcademicClient() {
+export function AcademicClient({
+  canEdit = false,
+  canManageAccess = false,
+}: {
+  /** `academico.editar`: cursos, cohortes, profesores y aulas. */
+  canEdit?: boolean;
+  /** `accesos.gestionar`: el acceso al portal de un profesor. */
+  canManageAccess?: boolean;
+}) {
   const [tab, setTab] = useState<Tab>("courses");
   /**
    * 007 (feedback en vivo: "deberíamos poder filtrar por todos, cursos
@@ -531,6 +544,8 @@ export function AcademicClient() {
             </Badge>
             {/* 032 (FR-012) — aparece con cualquier año, y se dice por qué. */}
             {sinFechas(cohort) && <Badge variant="warning">sin fechas</Badge>}
+            {/* 039 — confirmada ("sale"): independiente del estado por fechas. */}
+            {cohort.confirmedAt && <Badge variant="success">Confirmada</Badge>}
             {insignia}
           </div>
           {subtitulo && (
@@ -592,19 +607,23 @@ export function AcademicClient() {
               Ver cohorte
             </Button>
           </Link>
-          <Button variant="ghost" size="sm" onClick={() => setCohortForm({ mode: "edit", cohort })}>
-            Editar
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={`Borrar ${cohort.name ?? cohort.courseName}`}
-            title="Borrar"
-            loading={borrando === cohort.id}
-            onClick={() => void borrarCohorte(cohort)}
-          >
-            <Trash2 className="h-4 w-4" strokeWidth={1.7} />
-          </Button>
+          {canEdit && (
+            <>
+              <Button variant="ghost" size="sm" onClick={() => setCohortForm({ mode: "edit", cohort })}>
+                Editar
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={`Borrar ${cohort.name ?? cohort.courseName}`}
+                title="Borrar"
+                loading={borrando === cohort.id}
+                onClick={() => void borrarCohorte(cohort)}
+              >
+                <Trash2 className="h-4 w-4" strokeWidth={1.7} />
+              </Button>
+            </>
+          )}
         </div>
       </div>
     );
@@ -615,7 +634,7 @@ export function AcademicClient() {
       <header className="flex flex-wrap items-center justify-between gap-4 border-b px-6 py-4">
         <h2 className="font-semibold">Gestión académica</h2>
         <div className="flex items-center gap-2">
-          {tab === "cohorts" && (
+          {canEdit && tab === "cohorts" && (
             <>
               <Button variant="outline" size="sm" onClick={() => setShowCourseForm({ mode: "create" })}>
                 <Plus className="h-4 w-4" /> Nuevo curso
@@ -629,12 +648,12 @@ export function AcademicClient() {
               </Button>
             </>
           )}
-          {tab === "courses" && (
+          {canEdit && tab === "courses" && (
             <Button size="sm" onClick={() => setShowCourseForm({ mode: "create" })}>
               <Plus className="h-4 w-4" /> Nuevo curso
             </Button>
           )}
-          {tab === "teachers" && (
+          {canEdit && tab === "teachers" && (
             <Button size="sm" onClick={() => setTeacherForm({ mode: "create" })}>
               <Plus className="h-4 w-4" /> Nuevo profesor
             </Button>
@@ -861,13 +880,15 @@ export function AcademicClient() {
                     )}
                     <p className="mt-0.5 text-xs text-muted-foreground">/cursos/{c.slug}</p>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setShowCourseForm({ mode: "edit", course: c })}
-                  >
-                    Editar
-                  </Button>
+                  {canEdit && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowCourseForm({ mode: "edit", course: c })}
+                    >
+                      Editar
+                    </Button>
+                  )}
                 </li>
               ))}
             </ul>
@@ -900,8 +921,13 @@ export function AcademicClient() {
                     <div className="min-w-0">
                       <p className="text-sm font-medium">{t.name}</p>
                       <p className="text-xs text-muted-foreground">
-                        {t.email ? `${t.email} · ` : ""}
-                        {t.hourlyRate !== null ? `${formatCost(t.hourlyRate)}/hora` : "sin costo por hora"}
+                        {t.email ?? ""}
+                        {/* 040 (DV-009) — El costo solo viaja a quien puede verlo. */}
+                        {t.hourlyRate === undefined
+                          ? ""
+                          : `${t.email ? " · " : ""}${
+                              t.hourlyRate !== null ? `${formatCost(t.hourlyRate)}/hora` : "sin costo por hora"
+                            }`}
                       </p>
                       {t.courseIds.length > 0 && (
                         <div className="mt-1.5 flex flex-wrap gap-1">
@@ -918,7 +944,7 @@ export function AcademicClient() {
                     {/* 014 (T011, DV-006) — Acceso al portal, de a uno.
                         Sin correo se dice el MOTIVO en vez de ofrecer un botón
                         que devuelve 422: hoy los 7 profesores están así. */}
-                    {t.email ? (
+                    {!canManageAccess ? null : t.email ? (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -933,23 +959,27 @@ export function AcademicClient() {
                         Cargá su correo para poder invitarlo
                       </span>
                     )}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setTeacherForm({ mode: "edit", teacher: t })}
-                    >
-                      Editar
-                    </Button>
-                    {/* 014 (T008, DV-008) — La baja exige reasignar primero;
-                        el servidor responde 409 con cuántas cohortes hay. */}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-label={`Dar de baja a ${t.name}`}
-                      onClick={() => void bajaProfesor(t.id, t.name)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    {canEdit && (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setTeacherForm({ mode: "edit", teacher: t })}
+                        >
+                          Editar
+                        </Button>
+                        {/* 014 (T008, DV-008) — La baja exige reasignar primero;
+                            el servidor responde 409 con cuántas cohortes hay. */}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          aria-label={`Dar de baja a ${t.name}`}
+                          onClick={() => void bajaProfesor(t.id, t.name)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </li>
               ))}
@@ -961,7 +991,7 @@ export function AcademicClient() {
           de `refetch()` ni del `loading` de arriba, así que no se les aplica el
           esqueleto general.
         */}
-        {tab === "rooms" && <RoomsPanel />}
+        {tab === "rooms" && <RoomsPanel canEdit={canEdit} />}
       </div>
 
       {showCourseForm && (

@@ -28,13 +28,39 @@ export const CAPABILITIES = [
    */
   "correcciones.aprobar",
   "certificados.emitir",
+  /**
+   * 039 — Confirmar (y quitar la confirmación de) una cohorte: "esta cohorte
+   * sale". Dispara el aviso por correo a Soporte y habilita los avisos de
+   * facturación a Administración 7 y 2 días antes del inicio. La reciben
+   * `direccion` y `coordinacion`; soporte y administración no (ver
+   * `sinConfirmarCohortes`): son quienes RECIBEN los avisos, no quienes
+   * deciden que la cohorte arranca.
+   */
+  "cohortes.confirmar",
   // Comercial y financiero
   "contactos.ver",
   "contactos.editar",
   "inscripciones.ver",
+  /**
+   * 040 (DV-001) — Las escrituras del SEGUIMIENTO de una inscripción: mover
+   * un lead de etapa, el checklist, el correo de T&C o de bienvenida y el
+   * envío a toda la cohorte. Hasta 040 colgaban de `inscripciones.ver` (la
+   * "arruga del vocabulario" que 012 dejó anotada): con el rol Ventas en
+   * `inscripciones.ver`, un vendedor podía mandarle correos a una cohorte
+   * entera. La migración 0061 se la suma a todo rol que tenía
+   * `inscripciones.ver`, así que nadie pierde nada; Ventas no la recibe.
+   */
+  "inscripciones.seguimiento",
   "inscripciones.editar",
   "cobranza.ver",
   "cobranza.editar",
+  /**
+   * 040 (DV-003) — Crear y editar empresas: razón social, RUT, dirección
+   * fiscal, contacto de facturación y condición de pago. La reciben
+   * dirección, coordinación, administración (completa los datos con los que
+   * factura) y ventas; soporte no (ver `sinEmpresas`).
+   */
+  "empresas.editar",
   // Conversaciones
   "inbox.ver",
   "inbox.responder",
@@ -117,6 +143,18 @@ const sinGestionarGrabaciones = (c: Capability) => c !== "grabaciones.gestionar"
 const sinAprobarCorrecciones = (c: Capability) => c !== "correcciones.aprobar";
 
 /**
+ * 039 — Soporte no confirma cohortes: confirmar es decidir que la cohorte
+ * sale, y el aviso de esa decisión le llega justamente a soporte.
+ */
+const sinConfirmarCohortes = (c: Capability) => c !== "cohortes.confirmar";
+
+/**
+ * 040 (DV-003) — Soporte no edita empresas: los datos de facturación los
+ * cargan quien vende, quien coordina y quien factura.
+ */
+const sinEmpresas = (c: Capability) => c !== "empresas.editar";
+
+/**
  * Mapeo rol → capacidades, FIEL al comportamiento actual.
  *
  * Cuidado con `member`: el data-model de la fase lo proyectaba como
@@ -138,7 +176,9 @@ export const ROLE_CAPABILITIES: Record<string, readonly Capability[]> = {
       sinAuditoria(c) &&
       sinAreas(c) &&
       sinGestionarGrabaciones(c) &&
-      sinAprobarCorrecciones(c)
+      sinAprobarCorrecciones(c) &&
+      sinConfirmarCohortes(c) &&
+      sinEmpresas(c)
   ),
 };
 
@@ -188,7 +228,9 @@ export const SYSTEM_ROLES: readonly {
         sinAuditoria(c) &&
         sinAreas(c) &&
         sinGestionarGrabaciones(c) &&
-        sinAprobarCorrecciones(c)
+        sinAprobarCorrecciones(c) &&
+        sinConfirmarCohortes(c) &&
+        sinEmpresas(c)
     ),
   },
   /**
@@ -222,7 +264,46 @@ export const SYSTEM_ROLES: readonly {
   {
     key: "administracion",
     name: "Administración",
-    capabilities: ["cobranza.ver", "inscripciones.ver", "academico.ver", "contactos.ver"],
+    capabilities: [
+      "cobranza.ver",
+      "inscripciones.ver",
+      "academico.ver",
+      "contactos.ver",
+      // 040 (DV-003) — Completa los datos con los que factura a una empresa.
+      "empresas.editar",
+      // 040 (DV-001) — Lo que ya hacía con `inscripciones.ver`: nadie pierde nada.
+      "inscripciones.seguimiento",
+    ],
+  },
+  /**
+   * 040 (FR-001) — Ventas: ve TODO lo académico, en lectura, y nada de plata.
+   *
+   * - `academico.ver`, `asistencia.ver`, `evaluacion.ver`: la oferta, el
+   *   cronograma, si una cohorte está confirmada y cómo va la cursada.
+   * - `contactos.ver` e `inscripciones.ver`: quién está anotado en cada
+   *   cohorte, el legajo y el Pipeline, en lectura. Ninguna de las dos arma
+   *   montos: el roster, el legajo y los talleres preguntan por
+   *   `cobranza.ver` antes de armar la plata (FR-016 de 005).
+   * - `empresas.editar`: la única escritura — quien vende a una empresa es
+   *   quien tiene sus datos.
+   *
+   * Lo que queda AFUERA es el requisito: toda capacidad financiera
+   * (`cobranza.*`, `inscripciones.editar`), `inscripciones.seguimiento`
+   * (correos y checklist), `cohortes.confirmar`, cualquier `.editar` de la
+   * cursada, la Bandeja, la configuración y la auditoría.
+   * `tests/unit/rol-ventas.test.ts` lo fija.
+   */
+  {
+    key: "ventas",
+    name: "Ventas",
+    capabilities: [
+      "academico.ver",
+      "asistencia.ver",
+      "evaluacion.ver",
+      "contactos.ver",
+      "inscripciones.ver",
+      "empresas.editar",
+    ],
   },
 ];
 

@@ -27,6 +27,8 @@ import {
   type GroupLicenseDto,
 } from "@/server/group-licenses";
 import { softwareDelGrupo } from "@/server/licenses";
+import { esVentaParaAviso } from "@/lib/billing-notices";
+import { avisarAAdministracion } from "@/server/billing-notices-queue";
 
 /** 005 (US2, contracts/enrollments.md) — alta comercial de una inscripción. */
 export type CreateEnrollmentInput = {
@@ -75,7 +77,12 @@ export type CreateEnrollmentResult =
  */
 export async function createEnrollment(
   organizationId: string,
-  input: CreateEnrollmentInput
+  input: CreateEnrollmentInput,
+  /**
+   * 041 — `avisoInterno: false` para los guiones (demo, cargas): una carga
+   * masiva no le manda un correo por alumno a Administración.
+   */
+  opts: { avisoInterno?: boolean } = {}
 ): Promise<CreateEnrollmentResult> {
   const db = getDb();
 
@@ -266,6 +273,12 @@ export async function createEnrollment(
   // inscripción se guarda igual: el faltante se ve en la cohorte y en
   // Licencias. Las hijas automáticas las reciben en `inscribirEnModulos`.
   await sincronizarLicenciasDelGrupo(organizationId, [creada.id]);
+
+  // 041 — Una VENTA (madre con cohorte, no taller) le avisa a Administración
+  // para facturarla, con copia al vendedor: encolada acá, mandada tras el commit.
+  if (opts.avisoInterno !== false && esVentaParaAviso(nueva)) {
+    await avisarAAdministracion(organizationId, { kind: "inscripcion_nueva", enrollmentId: creada.id });
+  }
 
   return { ok: true, enrollment: serializeEnrollmentCommercial(creada) };
 }

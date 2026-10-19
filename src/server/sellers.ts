@@ -3,6 +3,8 @@ import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import type { CourseKind } from "@/lib/course-kind";
+import type { Capability } from "@/lib/capabilities";
+import { addTeamMember } from "@/server/team";
 
 /**
  * 2026-10-06 (decisiones del dueño) — Vendedores, para pagar comisiones.
@@ -177,6 +179,38 @@ const NO_ES_MIEMBRO: SellerResult = {
   message: "Esa cuenta no pertenece al equipo de la organización.",
 };
 
+/**
+ * 040 — Una cuenta del panel es UN vendedor (`seller_org_user_uq`). Sin este
+ * control, vincular la misma cuenta a un segundo vendedor chocaba con el
+ * índice y la pantalla recibía un 500 en vez del motivo.
+ */
+async function cuentaDeOtroVendedor(
+  organizationId: string,
+  userId: string,
+  exceptoId: string | null
+): Promise<boolean> {
+  const rows = await getDb()
+    .select({ id: schema.seller.id })
+    .from(schema.seller)
+    .where(
+      scoped(
+        schema.seller.organizationId,
+        organizationId,
+        eq(schema.seller.userId, userId),
+        exceptoId ? ne(schema.seller.id, exceptoId) : undefined
+      )
+    )
+    .limit(1);
+  return rows.length > 0;
+}
+
+const CUENTA_DE_OTRO: SellerResult = {
+  ok: false,
+  status: 409,
+  code: "cuenta_de_otro_vendedor",
+  message: "Esa cuenta del panel ya está vinculada a otro vendedor.",
+};
+
 export async function createSeller(
   organizationId: string,
   input: SellerInput
@@ -194,6 +228,7 @@ export async function createSeller(
 
   const userId = limpiar(input.userId);
   if (userId && !(await esMiembro(organizationId, userId))) return NO_ES_MIEMBRO;
+  if (userId && (await cuentaDeOtroVendedor(organizationId, userId, null))) return CUENTA_DE_OTRO;
 
   const inserted = await getDb()
     .insert(schema.seller)
@@ -259,6 +294,9 @@ export async function updateSeller(
   if (input.userId !== undefined) {
     const userId = limpiar(input.userId);
     if (userId && !(await esMiembro(organizationId, userId))) return NO_ES_MIEMBRO;
+    if (userId && (await cuentaDeOtroVendedor(organizationId, userId, sellerId))) {
+      return CUENTA_DE_OTRO;
+    }
     set.userId = userId;
   }
 
@@ -272,4 +310,90 @@ export async function updateSeller(
     return { ok: false, status: 404, code: "not_found", message: "Vendedor no encontrado" };
   }
   return { ok: true, seller: toDto(fila) };
+}
+
+/* ============================================================
+ * 040 (US3) — La cuenta del panel de un vendedor
+ * ============================================================ */
+
+export type MotivoSinCuenta = { status: 404 | 409 | 422; code: string; message: string };
+
+/**
+ * ¿Este vendedor puede recibir una cuenta? `null` = sí; si no, el motivo.
+ *
+ * El correo es obligatorio porque es el usuario con el que va a entrar. Un
+ * vendedor archivado no vende más: no tiene para qué entrar.
+ */
+export function puedeRecibirCuenta(s: {
+  email: string | null;
+  userId: string | null;
+  archivedAt: Date | null;
+}): MotivoSinCuenta | null {
+  if (s.archivedAt) {
+    return { status: 422, code: "archivado", message: "El vendedor está archivado: reactivalo primero." };
+  }
+  if (s.userId) {
+    return { status: 409, code: "ya_tiene_cuenta", message: "Este vendedor ya tiene una cuenta del panel." };
+  }
+  if (!s.email?.trim()) {
+    return {
+      status: 422,
+      code: "sin_correo",
+      message: "Cargale un correo al vendedor: es el usuario con el que va a entrar.",
+    };
+  }
+  return null;
+}
+
+/**
+ * 040 (DV-006) — Le da al vendedor una cuenta del equipo con el rol Ventas y
+ * la vincula (`seller.user_id`).
+ *
+ * No hay un segundo camino de alta: todo pasa por `addTeamMember`, que aplica
+ * la regla de escalada (nadie da un rol con más de lo que tiene), adjunta el
+ * equipo a la cuenta de un PROFESOR (030) y rechaza el correo de un alumno.
+ *
+ * Si la cuenta resultante ya estaba vinculada a otro vendedor, LANZA: la
+ * transacción del pedido revierte la fila de `member` recién agregada (un
+ * error devuelto no la revertiría).
+ */
+export async function darCuentaAVendedor(
+  organizationId: string,
+  viewerCapabilities: readonly Capability[],
+  sellerId: string,
+  password: string | undefined,
+  deps: Parameters<typeof addTeamMember>[3]
+): Promise<
+  | { ok: true; seller: SellerDto; attached: boolean }
+  | { ok: false; status: number; code: string; message: string }
+> {
+  const db = getDb();
+  const [fila] = await db
+    .select()
+    .from(schema.seller)
+    .where(scoped(schema.seller.organizationId, organizationId, eq(schema.seller.id, sellerId)))
+    .limit(1);
+  if (!fila) return { ok: false, status: 404, code: "not_found", message: "Vendedor no encontrado" };
+
+  const motivo = puedeRecibirCuenta(fila);
+  if (motivo) return { ok: false, ...motivo };
+
+  const alta = await addTeamMember(
+    organizationId,
+    viewerCapabilities,
+    { name: fila.name, email: fila.email!.trim(), password, roleKey: "ventas" },
+    deps
+  );
+  if (!alta.ok) return alta;
+
+  if (await cuentaDeOtroVendedor(organizationId, alta.data.userId, sellerId)) {
+    throw new Error("cuenta_de_otro_vendedor");
+  }
+
+  const [actualizado] = await db
+    .update(schema.seller)
+    .set({ userId: alta.data.userId, updatedAt: new Date() })
+    .where(scoped(schema.seller.organizationId, organizationId, eq(schema.seller.id, sellerId)))
+    .returning();
+  return { ok: true, seller: toDto(actualizado!), attached: alta.data.attached };
 }

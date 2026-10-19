@@ -1134,6 +1134,11 @@ function serializeCohort(
      */
     virtualRoomId: cohort.virtualRoomId,
     status: computeCohortStatus(cohort.startDate, cohort.endDate),
+    /**
+     * 039 — Confirmada ("sale"): ortogonal a `status`, que sale de las fechas.
+     * Quién la confirmó lo trae `/api/cohorts/[id]/confirmation`.
+     */
+    confirmedAt: cohort.confirmedAt?.toISOString() ?? null,
     software,
   };
 }

@@ -33,11 +33,14 @@ export function ProgramSheetSwitcher({
   kind,
   canEditGrading,
   canIssueCertificates,
+  canEditAttendance = false,
 }: {
   cohortId: string;
   kind: "attendance" | "grading";
   canEditGrading: boolean;
   canIssueCertificates: boolean;
+  /** 040 (DV-008) — `asistencia.editar`: pasar lista en la planilla del módulo. */
+  canEditAttendance?: boolean;
 }) {
   const [data, setData] = useState<Programa | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -138,7 +141,7 @@ export function ProgramSheetSwitcher({
             </div>
           )
         ) : kind === "attendance" ? (
-          <AttendanceClient key={elegido} cohortId={elegido} />
+          <AttendanceClient key={elegido} cohortId={elegido} canEdit={canEditAttendance} />
         ) : (
           <GradingClient
             key={elegido}

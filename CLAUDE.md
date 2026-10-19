@@ -42,6 +42,10 @@ externas: el trabajo en segundo plano (agente, Laboratorio) es in-process.
 | Material y avisos | `src/server/resources.ts` + `/api/resources` + `/api/cohorts/[id]/announcements` |
 | Legajo del alumno | `src/server/student-record.ts` + `/contacts/[id]/legajo` |
 | Reporte por empresa | `src/server/company-report.ts` + `/empresas` |
+| **Empresas y sus datos de facturación** (RUT, dirección fiscal, contacto, contado/crédito) | `src/lib/company.ts` (puro: Zod, RUT por país, normalización) + `src/server/companies.ts` (alta/edición, 409 `rut_duplicado`) + `/api/companies` (GET `contactos.ver`, POST `empresas.editar`) + `/api/companies/[id]` (PATCH `empresas.editar`) + `src/components/companies/` |
+| **Rol Ventas** (todo lo académico en lectura, sin plata) | `SYSTEM_ROLES` en `src/lib/capabilities.ts` + migración 0061; lo que puede llamar y que no viaje plata lo fija `tests/unit/rol-ventas.test.ts`. Escribir en el seguimiento de una inscripción (mover leads, checklist, correos) es `inscripciones.seguimiento`, NO `inscripciones.ver` |
+| **Cuenta del panel de un vendedor** | `darCuentaAVendedor()` en `src/server/sellers.ts` (pasa por `addTeamMember`, rol `ventas`) + `/api/sellers/[id]/account` + `src/components/settings/sellers-client.tsx` |
+| Costo por hora de los profesores (plata) | `puedeVerCostoDocente()` en `src/server/teachers.ts`: viaja solo con `academico.editar` o `cobranza.ver` |
 | **Acceso al portal** (alumnos y profesores) | `src/server/access.ts` + `src/lib/auth/portal.ts` |
 | **El portal del profesor** | `src/lib/portal-api.ts` + `src/server/teacher-portal.ts` + `/api/portal/{cohorts,classes,hours}` |
 | **El portal del alumno** | `src/lib/portal-api.ts` + `src/server/student-portal.ts` + `/api/portal/me/*` |
@@ -61,10 +65,15 @@ externas: el trabajo en segundo plano (agente, Laboratorio) es in-process.
 | Campos/tablas | `src/lib/db/schema.ts` → `pnpm db:generate` → migración nueva en `drizzle/` |
 | La ingesta/envío de mensajes | `src/server/inbox/` (ingest idempotente, send con guard de sandbox, ventana 24h) |
 | Cómo se identifica a un contacto | `src/server/inbox/identity.ts` (teléfono normalizado o `bsuid:<id>`) |
+| **Áreas** (casilla y copias de Ventas, Soporte y Administración; derivación del agente) | `src/lib/areas.ts` (`AREAS` = derivación, `CONFIG_AREAS` suma Administración, solo avisos internos) + `src/server/areas/` + `src/lib/area-config-form.ts` (formulario puro) + `/settings/areas` (`areas.configurar`) + `/api/settings/areas*` |
 | Conectar TU propio bot en vez del agente | `src/app/api/bot/*` + `src/server/bot/auth.ts` (X-API-Key) |
 | **Grabaciones de Zoom** | `src/lib/zoom/` (adaptador ÚNICO, solo lectura) + `src/server/zoom/` (sync, lease, matching, assignment, scheduler) + `/grabaciones` + `/settings/zoom` + `/api/recordings*` + `/api/settings/zoom/*` |
 | **Tipos de curso** (curso / módulo / taller) | `src/lib/course-kind.ts` (puro) + `condicionDeCatalogo()` en `src/server/public-catalog.ts` + filtros de Académico en `src/lib/academic-filters.ts` |
 | **Talleres** (ediciones, inscriptos, cobro, avisos) | `src/lib/workshops.ts` (reglas puras: cupo, elegibilidad, cuota, DTO público, recordatorio) + `src/server/workshops.ts` + `src/server/workshop-scope.ts` (los talleres NO son cursadas) + `src/server/workshop-notices.ts` / `workshop-reminders.ts` (WhatsApp, `WORKSHOP_REMINDER_INTERVAL_MIN`) + `/talleres` + `/api/talleres/*` + `/api/public/talleres` |
+| **Confirmar una cohorte** ("sale"; ortogonal a `status`) | `src/server/cohort-confirmation.ts` + `/api/cohorts/[id]/confirmation` (`cohortes.confirmar`) + `src/components/cohorts/cohort-confirmation.tsx` |
+| **Avisos internos por correo** (Soporte al confirmar; Administración a T-7/T-2 con las inscripciones sin factura) | `src/lib/staff-notices.ts` (ventanas, idempotencia, contenido; puro) + `src/server/staff-notices.ts` (reclamo en `staff_notice`, envío fuera de transacción, periódica `STAFF_NOTICES_INTERVAL_MIN`) |
+| **Avisos de cobranza a Administración** (venta nueva con copia al vendedor, pago registrado, morosidad semanal los lunes) | `src/lib/billing-notices.ts` (qué es una venta, destinatarios, semana ISO, saldo y morosidad por moneda, correos; puro) + `src/server/billing-notices-queue.ts` (`avisarAAdministracion`: encola en la transacción del alta o del pago y manda con `onAfterCommit`) + `src/server/billing-notices.ts` (envío y periódica, misma `STAFF_NOTICES_INTERVAL_MIN`); llave `staff_notice.dedup_key` (`claveDeAviso`). Guiones y cargas pasan `avisoInterno: false` |
+| Áreas configurables (Ventas, Soporte, **Administración**) vs. áreas a las que deriva el agente (solo Ventas y Soporte) | `CONFIG_AREAS` / `AREAS` en `src/lib/areas.ts` + `src/server/areas/config.ts` (`getAllAreaConfigs` / `getAreaConfigs`) |
 | UI | `src/components/` + `src/app/(app)/` |
 
 Los mocks del entorno de pruebas viven en `src/app/api/dev/` (wa-mock +

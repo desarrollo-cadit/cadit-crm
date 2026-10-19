@@ -103,7 +103,8 @@ describe("addTeamMember", () => {
     selectQueue.push(ROLES, [{ id: "usr_ana" }], [{ kind: "profesor" }], []);
     const { addTeamMember } = await import("@/server/team");
     const r = await addTeamMember("org_1", DIR, { ...input, password: "" }, { signUp });
-    expect(r).toEqual({ ok: true, data: { attached: true } });
+    // 040 — devuelve el usuario para vincularlo a un vendedor.
+    expect(r).toEqual({ ok: true, data: { attached: true, userId: "usr_ana" } });
     expect(signUp).not.toHaveBeenCalled();
     expect(inserts).toHaveLength(1);
     expect(inserts[0]!.values).toMatchObject({ organizationId: "org_1", userId: "usr_ana", role: "ebim_manager" });
@@ -152,7 +153,7 @@ describe("addTeamMember", () => {
     });
     selectQueue.push(ROLES, []);
     const r = await addTeamMember("org_1", DIR, { ...input, password: "temporal123" }, { signUp });
-    expect(r).toEqual({ ok: true, data: { attached: false } });
+    expect(r).toEqual({ ok: true, data: { attached: false, userId: "usr_nuevo" } });
     expect(signUp).toHaveBeenCalledWith({ name: "Profe Ana", email: "Ana@Academia.uy", password: "temporal123" });
     expect(inserts[0]!.values).toMatchObject({ userId: "usr_nuevo", role: "ebim_manager" });
   });

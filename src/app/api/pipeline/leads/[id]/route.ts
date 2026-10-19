@@ -5,6 +5,9 @@ import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { publish } from "@/server/events/bus";
 import { exigeVendedor } from "@/server/sellers";
+import { esVentaParaAviso, pasaAVenta } from "@/lib/billing-notices";
+import { avisarAAdministracion } from "@/server/billing-notices-queue";
+import type { CourseKind } from "@/lib/course-kind";
 
 export const dynamic = "force-dynamic";
 
@@ -27,15 +30,22 @@ const patchSchema = z.object({
  * comportamiento. Que "ver" habilite mover es una arruga del vocabulario, no
  * un descuido; la fase 4 puede partir la capacidad cuando los roles se editen
  * desde la pantalla. Mismo criterio que el checklist de inscripción.
+ *
+ * 040 (DV-001) — Y se partió: con el rol Ventas en `inscripciones.ver`, "ver"
+ * tenía que volver a significar ver. Mover pide `inscripciones.seguimiento`,
+ * que la migración 0061 le suma a todo rol que tenía `inscripciones.ver`.
  */
 export const PATCH = requireCapability(
-  "inscripciones.ver",
+  "inscripciones.seguimiento",
   async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const body = await parseBody(req, patchSchema);
   if (!body.ok) return body.response;
 
   const db = getDb();
+  /** 041 — Para saber si este PATCH convierte un lead en una venta. */
+  let cohorteAntes: string | null = null;
+  let courseKind: CourseKind | null = null;
 
   if (body.data.stageId) {
     const stage = await db
@@ -54,8 +64,9 @@ export const PATCH = requireCapability(
 
   if (body.data.cohortId) {
     const cohort = await db
-      .select({ id: schema.cohort.id })
+      .select({ id: schema.cohort.id, courseKind: schema.course.kind })
       .from(schema.cohort)
+      .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
       .where(
         scoped(
           schema.cohort.organizationId,
@@ -65,6 +76,7 @@ export const PATCH = requireCapability(
       )
       .limit(1);
     if (!cohort[0]) return apiError(422, "invalid_cohort", "Cohorte inexistente");
+    courseKind = cohort[0].courseKind;
 
     /**
      * 2026-10-06 — Pasar un lead a una cohorte lo convierte en una VENTA, y
@@ -76,12 +88,14 @@ export const PATCH = requireCapability(
       .select({
         sellerId: schema.enrollment.sellerId,
         parentEnrollmentId: schema.enrollment.parentEnrollmentId,
+        cohortId: schema.enrollment.cohortId,
       })
       .from(schema.enrollment)
       .where(scoped(schema.enrollment.organizationId, session.organizationId, eq(schema.enrollment.id, id)))
       .limit(1);
     const lead = leads[0];
     if (!lead) return apiError(404, "not_found", "Inscripción no encontrada");
+    cohorteAntes = lead.cohortId;
     const venta = { cohortId: body.data.cohortId, parentEnrollmentId: lead.parentEnrollmentId };
     if (exigeVendedor(venta) && !lead.sellerId) {
       return apiError(
@@ -109,6 +123,22 @@ export const PATCH = requireCapability(
     )
     .returning();
   if (!updated[0]) return apiError(404, "not_found", "Inscripción no encontrada");
+
+  /**
+   * 041 — El lead que recibe cohorte es una venta nueva: aviso a
+   * Administración (encolado acá, mandado tras el commit). Mudar de una
+   * cohorte a otra no lo es, y la llave por inscripción impide un segundo
+   * aviso si el lead vuelve a "sin cohorte" y otra vez a una cohorte.
+   */
+  if (
+    pasaAVenta(cohorteAntes, body.data.cohortId) &&
+    esVentaParaAviso({ ...updated[0], courseKind })
+  ) {
+    await avisarAAdministracion(session.organizationId, {
+      kind: "inscripcion_nueva",
+      enrollmentId: updated[0].id,
+    });
+  }
 
   // Notifica a la bandeja para que la etapa se refleje en vivo (panel de
   // detalles y punto de etapa de la lista) sin recargar.

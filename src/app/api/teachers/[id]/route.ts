@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { apiError, parseBody, requireCapability } from "@/lib/api";
+import { sessionCapabilities } from "@/lib/capabilities";
 import { getTeacher, updateTeacher } from "@/server/teachers";
 import { deleteTeacher, reassignCohorts } from "@/server/contacts-admin";
 
@@ -11,7 +12,8 @@ export const GET = requireCapability(
   "academico.ver",
   async (session, _req: Request, ctx: Params) => {
   const { id } = await ctx.params;
-  const teacher = await getTeacher(session.organizationId, id);
+  // 040 (DV-009) — El costo por hora viaja solo a quien puede verlo.
+  const teacher = await getTeacher(session.organizationId, id, sessionCapabilities(session));
   if (!teacher) return apiError(404, "not_found", "Profesor no encontrado");
   return Response.json({ teacher });
 });

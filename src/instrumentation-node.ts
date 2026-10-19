@@ -63,3 +63,20 @@ export async function startWorkshopRemindersOnBoot(): Promise<void> {
     console.error("[boot] recordatorio de talleres no arrancó:", err instanceof Error ? err.name : "error");
   }
 }
+
+/**
+ * 039 — Los avisos internos por correo (facturación a Administración a T-7 y
+ * T-2, reintento del aviso a Soporte), si `STAFF_NOTICES_INTERVAL_MIN > 0`.
+ * La MISMA guarda que la de Zoom y la de talleres (`shouldStartScheduler`):
+ * nunca en tests ni en `next build`, y nada puede tumbar el arranque.
+ */
+export async function startStaffNoticesOnBoot(): Promise<void> {
+  try {
+    const { shouldStartScheduler } = await import("@/server/zoom/scheduler");
+    if (!shouldStartScheduler(process.env)) return;
+    const { startStaffNoticeScheduler } = await import("@/server/staff-notices");
+    startStaffNoticeScheduler();
+  } catch (err) {
+    console.error("[boot] avisos internos no arrancaron:", err instanceof Error ? err.name : "error");
+  }
+}

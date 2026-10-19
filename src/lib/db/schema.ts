@@ -28,6 +28,7 @@ import {
   WORKSHOP_SOURCES,
 } from "../workshop-states";
 import { LICENSE_SOURCES } from "../license-source";
+import { PAYMENT_TERMS } from "../company-terms";
 
 /**
  * 007 — Monedas admitidas en los importes. Hasta 006 los montos eran un
@@ -315,11 +316,40 @@ export const company = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     legalName: text("legal_name").notNull(),
+    /** El RUT en Uruguay (DV-004 de 040: validación según el país). */
     taxId: text("tax_id"),
+    /**
+     * 040 (FR-004) — Lo que Administración necesita para facturar. Todo
+     * opcional: las empresas cargadas antes de 040 solo tienen razón social y
+     * RUT, y siguen siendo válidas.
+     */
+    tradeName: text("trade_name"),
+    addressStreet: text("address_street"),
+    addressCity: text("address_city"),
+    /** El departamento, en Uruguay. */
+    addressState: text("address_state"),
+    addressCountry: text("address_country"),
+    billingContactName: text("billing_contact_name"),
+    billingEmail: text("billing_email"),
+    billingPhone: text("billing_phone"),
+    paymentTerms: text("payment_terms", { enum: PAYMENT_TERMS }),
+    /** Solo con `credito` (CHECK). Con contado o sin condición, NULL. */
+    paymentTermDays: integer("payment_term_days"),
+    notes: text("notes"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
-  (t) => [index("company_org_idx").on(t.organizationId)]
+  (t) => [
+    index("company_org_idx").on(t.organizationId),
+    check(
+      "company_payment_terms_valid",
+      sql`${t.paymentTerms} IS NULL OR ${t.paymentTerms} IN ('contado', 'credito')`
+    ),
+    check(
+      "company_payment_term_days_valid",
+      sql`${t.paymentTermDays} IS NULL OR (${t.paymentTerms} = 'credito' AND ${t.paymentTermDays} BETWEEN 1 AND 365)`
+    ),
+  ]
 );
 
 /**
@@ -684,6 +714,19 @@ export const cohort = pgTable(
     registrationStatus: text("registration_status", {
       enum: WORKSHOP_REGISTRATION_STATUSES,
     }),
+    /**
+     * 039 — La cohorte está CONFIRMADA: "sale". NULL = sin confirmar, que es
+     * el estado de todas las filas existentes.
+     *
+     * No es un valor más de `status` a propósito: `status` se calcula por
+     * fechas y lo leen los portales, el perfil del agente y los filtros de
+     * Académico. Confirmar es ortogonal: una cohorte `planificada` puede estar
+     * confirmada. Confirmarla dispara el aviso a Soporte y habilita los de
+     * facturación a Administración (`staff_notice`).
+     */
+    confirmedAt: timestamp("confirmed_at"),
+    /** Quién la confirmó. `set null`: que alguien deje la academia no borra el acto. */
+    confirmedBy: text("confirmed_by").references(() => user.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -3038,7 +3081,12 @@ export const areaConfig = pgTable(
     organizationId: text("organization_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    area: text("area", { enum: ["ventas", "soporte"] }).notNull(),
+    /**
+     * 039 — `administracion` se suma solo para los AVISOS INTERNOS
+     * (facturación pendiente antes del inicio de una cohorte). El agente no le
+     * deriva consultas: `area_handoff.area` sigue siendo Ventas o Soporte.
+     */
+    area: text("area", { enum: ["ventas", "soporte", "administracion"] }).notNull(),
     enabled: boolean("enabled").notNull().default(false),
     mailbox: text("mailbox"),
     ccEmails: text("cc_emails").array().notNull().default(sql`'{}'::text[]`),
@@ -3051,7 +3099,7 @@ export const areaConfig = pgTable(
   },
   (t) => [
     uniqueIndex("area_config_org_area_uq").on(t.organizationId, t.area),
-    check("area_config_area_valid", sql`${t.area} IN ('ventas','soporte')`),
+    check("area_config_area_valid", sql`${t.area} IN ('ventas','soporte','administracion')`),
     check(
       "area_config_sellers_only_ventas",
       sql`${t.area} = 'ventas' OR cardinality(${t.ccSellerIds}) = 0`
@@ -3168,6 +3216,100 @@ export const areaHandoffEmail = pgTable(
     check(
       "area_handoff_email_status_valid",
       sql`${t.status} IN ('pendiente','enviado','fallido','sin_configurar','simulado')`
+    ),
+  ]
+);
+
+/* ============================================================
+ * 039 — Avisos internos por correo (Soporte y Administración)
+ * ============================================================ */
+
+/**
+ * El registro de cada aviso interno de una cohorte, y la llave de su
+ * idempotencia: UNO por organización, cohorte y tipo. Un reinicio, dos
+ * procesos o un doble click no lo duplican.
+ *
+ * - `cohorte_confirmada` → a Soporte, al confirmar.
+ * - `facturacion_t7` / `facturacion_t2` → a Administración, 7 y 2 días antes
+ *   del inicio, con las inscripciones sin factura.
+ *
+ * `pending` es el RECLAMO (se toma antes de mandar); `sent` nunca se repite;
+ * `skipped` = no había a quién o qué mandar; `cancelled` = se quitó la
+ * confirmación antes de que saliera. Las reglas: `src/lib/staff-notices.ts`.
+ *
+ * 041 — Avisos de cobranza a Administración: `inscripcion_nueva` (por
+ * inscripción), `pago_registrado` (por pago) y `morosidad_semanal` (por
+ * semana ISO de la organización). La idempotencia pasa a `dedup_key`, UNA por
+ * organización (`claveDeAviso`); `cohort_id` queda NULL en los avisos que no
+ * son de una cohorte. Un `pending` con `attempts` 0 y sin `claimed_at` es un
+ * aviso ENCOLADO en la transacción del alta o del pago.
+ */
+export const staffNotice = pgTable(
+  "staff_notice",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** Solo en los avisos de una cohorte (039). */
+    cohortId: text("cohort_id").references(() => cohort.id, { onDelete: "cascade" }),
+    /** 041 — La venta (`inscripcion_nueva`) o la inscripción del pago. */
+    enrollmentId: text("enrollment_id").references(() => enrollment.id, { onDelete: "cascade" }),
+    /** 041 — El pago de `pago_registrado`. Los pagos no se borran, se anulan. */
+    paymentId: text("payment_id").references(() => payment.id, { onDelete: "cascade" }),
+    /** 041 — La semana ISO (`2026-W43`) de `morosidad_semanal`. */
+    periodKey: text("period_key"),
+    /** 041 — La llave de idempotencia (`claveDeAviso`), única por organización. */
+    dedupKey: text("dedup_key").notNull(),
+    kind: text("kind", {
+      enum: [
+        "cohorte_confirmada",
+        "facturacion_t7",
+        "facturacion_t2",
+        "inscripcion_nueva",
+        "pago_registrado",
+        "morosidad_semanal",
+      ],
+    }).notNull(),
+    status: text("status", {
+      enum: ["pending", "sent", "skipped", "failed", "cancelled"],
+    }).notNull(),
+    /** A quién se mandó (o se iba a mandar). Vacío si se omitió por falta de casilla. */
+    recipients: jsonb("recipients")
+      .$type<{ to: string[]; cc: string[] }>()
+      .notNull()
+      .default(sql`'{"to":[],"cc":[]}'::jsonb`),
+    subject: text("subject"),
+    /** Por qué se omitió (`area_sin_configurar`, `nada_que_enviar`, …). */
+    detail: text("detail"),
+    /** Motivo de Graph o "M365 no configurado"; jamás secretos. */
+    error: text("error"),
+    attempts: integer("attempts").notNull().default(0),
+    /** Cuándo se tomó el último reclamo: también es la ficha del envío en vuelo. */
+    claimedAt: timestamp("claimed_at"),
+    /** Solo cuando Graph aceptó el envío. */
+    sentAt: timestamp("sent_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("staff_notice_org_dedup_uq").on(t.organizationId, t.dedupKey),
+    index("staff_notice_org_cohort_idx").on(t.organizationId, t.cohortId),
+    index("staff_notice_org_status_idx").on(t.organizationId, t.status),
+    check(
+      "staff_notice_kind_valid",
+      sql`${t.kind} IN ('cohorte_confirmada','facturacion_t7','facturacion_t2','inscripcion_nueva','pago_registrado','morosidad_semanal')`
+    ),
+    check(
+      "staff_notice_subject_valid",
+      sql`(${t.kind} IN ('cohorte_confirmada','facturacion_t7','facturacion_t2') AND ${t.cohortId} IS NOT NULL)
+        OR (${t.kind} = 'inscripcion_nueva' AND ${t.enrollmentId} IS NOT NULL)
+        OR (${t.kind} = 'pago_registrado' AND ${t.enrollmentId} IS NOT NULL AND ${t.paymentId} IS NOT NULL)
+        OR (${t.kind} = 'morosidad_semanal' AND ${t.periodKey} IS NOT NULL)`
+    ),
+    check(
+      "staff_notice_status_valid",
+      sql`${t.status} IN ('pending','sent','skipped','failed','cancelled')`
     ),
   ]
 );

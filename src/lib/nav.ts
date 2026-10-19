@@ -292,6 +292,12 @@ export const SETTINGS_TABS = [
    * Al final: no cambia a dónde entra nadie.
    */
   { href: "/settings/bienvenida", label: "Bienvenida", capability: "configuracion.editar" },
+  /**
+   * 029 (US4) + 039 — Casilla y copias de Ventas, Soporte y Administración, y
+   * el interruptor de la derivación del agente. `areas.configurar`, que solo
+   * tiene Dirección. Al final: no cambia a dónde entra nadie.
+   */
+  { href: "/settings/areas", label: "Áreas", capability: "areas.configurar" },
 ] as const;
 
 /**

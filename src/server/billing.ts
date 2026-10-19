@@ -3,6 +3,7 @@ import { getDb, schema } from "@/lib/db";
 import { CURRENCIES, type Currency } from "@/lib/db/schema";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
+import { avisarAAdministracion } from "@/server/billing-notices-queue";
 
 /**
  * 008 — Cobranza: plan de cuotas y registro de pagos.
@@ -301,6 +302,11 @@ export type RecordPaymentInput = {
   notes?: string | null;
   idempotencyKey?: string | null;
   recordedBy?: string | null;
+  /**
+   * 041 — `false` en la carga en bloque ("ya cobrada"): es plata que ya entró
+   * antes, y un correo por alumno no le dice nada nuevo a Administración.
+   */
+  avisoInterno?: boolean;
 };
 
 /**
@@ -396,8 +402,19 @@ export async function recordPayment(
       recordedBy: input.recordedBy ?? null,
     })
     .returning();
+  const pago = inserted[0]!;
 
-  return { ok: true, data: serializePayment(inserted[0]!) };
+  // 041 — Aviso a Administración: encolado acá, mandado tras el commit. Un
+  // reintento idempotente (misma llave) volvió arriba y no avisa dos veces.
+  if (input.avisoInterno !== false) {
+    await avisarAAdministracion(organizationId, {
+      kind: "pago_registrado",
+      enrollmentId,
+      paymentId: pago.id,
+    });
+  }
+
+  return { ok: true, data: serializePayment(pago) };
 }
 
 /**

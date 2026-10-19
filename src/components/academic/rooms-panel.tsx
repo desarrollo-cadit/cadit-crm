@@ -56,7 +56,8 @@ function cuando(iso: string): string {
   }).format(new Date(iso));
 }
 
-export function RoomsPanel() {
+/** 040 (DV-008) — `canEdit` = `academico.editar`: sin ella, las aulas se ven y no se tocan. */
+export function RoomsPanel({ canEdit = false }: { canEdit?: boolean }) {
   const [rooms, setRooms] = useState<Room[] | null>(null);
   const [clashes, setClashes] = useState<Clash[]>([]);
   const [form, setForm] = useState<FormState>(null);
@@ -173,9 +174,11 @@ export function RoomsPanel() {
                 {verArchivadas ? "Ocultar" : "Ver"} las de baja ({archivadas})
               </Button>
             )}
-            <Button size="sm" onClick={() => setForm({ mode: "create" })}>
-              <Plus className="h-4 w-4" /> Nueva aula
-            </Button>
+            {canEdit && (
+              <Button size="sm" onClick={() => setForm({ mode: "create" })}>
+                <Plus className="h-4 w-4" /> Nueva aula
+              </Button>
+            )}
           </div>
         </div>
 
@@ -230,35 +233,39 @@ export function RoomsPanel() {
                   >
                     <ExternalLink className="h-4 w-4" strokeWidth={1.7} />
                   </a>
-                  <button
-                    type="button"
-                    aria-label={`Editar ${room.name}`}
-                    title="Editar"
-                    className="rounded-md p-2 text-text-3 transition-colors hover:bg-accent hover:text-foreground"
-                    onClick={() => setForm({ mode: "edit", room })}
-                  >
-                    <Pencil className="h-4 w-4" strokeWidth={1.7} />
-                  </button>
-                  {/*
-                    FR-009 — La baja es LÓGICA y por eso el icono no es un
-                    tacho: una clase pasada que se dictó acá conserva la
-                    evidencia de dónde fue.
-                  */}
-                  <button
-                    type="button"
-                    aria-label={
-                      room.archivedAt ? `Reactivar ${room.name}` : `Dar de baja ${room.name}`
-                    }
-                    title={room.archivedAt ? "Reactivar" : "Dar de baja"}
-                    className="rounded-md p-2 text-text-3 transition-colors hover:bg-accent hover:text-foreground"
-                    onClick={() => void archivar(room, !room.archivedAt)}
-                  >
-                    {room.archivedAt ? (
-                      <Undo2 className="h-4 w-4" strokeWidth={1.7} />
-                    ) : (
-                      <Archive className="h-4 w-4" strokeWidth={1.7} />
-                    )}
-                  </button>
+                  {canEdit && (
+                    <>
+                      <button
+                        type="button"
+                        aria-label={`Editar ${room.name}`}
+                        title="Editar"
+                        className="rounded-md p-2 text-text-3 transition-colors hover:bg-accent hover:text-foreground"
+                        onClick={() => setForm({ mode: "edit", room })}
+                      >
+                        <Pencil className="h-4 w-4" strokeWidth={1.7} />
+                      </button>
+                      {/*
+                        FR-009 — La baja es LÓGICA y por eso el icono no es un
+                        tacho: una clase pasada que se dictó acá conserva la
+                        evidencia de dónde fue.
+                      */}
+                      <button
+                        type="button"
+                        aria-label={
+                          room.archivedAt ? `Reactivar ${room.name}` : `Dar de baja ${room.name}`
+                        }
+                        title={room.archivedAt ? "Reactivar" : "Dar de baja"}
+                        className="rounded-md p-2 text-text-3 transition-colors hover:bg-accent hover:text-foreground"
+                        onClick={() => void archivar(room, !room.archivedAt)}
+                      >
+                        {room.archivedAt ? (
+                          <Undo2 className="h-4 w-4" strokeWidth={1.7} />
+                        ) : (
+                          <Archive className="h-4 w-4" strokeWidth={1.7} />
+                        )}
+                      </button>
+                    </>
+                  )}
                 </div>
               </li>
             ))}

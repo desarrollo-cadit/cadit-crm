@@ -60,9 +60,20 @@ describe("FR-001 — el rol `administracion` existe y lleva exactamente 4 capaci
     expect(rol!.name).toBe("Administración");
   });
 
-  it("lleva las cuatro, y ni una más", () => {
-    expect([...rol!.capabilities].sort()).toEqual([...ESPERADAS].sort());
-    expect(rol!.capabilities).toHaveLength(4);
+  /**
+   * 040 — Suma dos, y ninguna toca la plata: `empresas.editar` (completa los
+   * datos de facturación de una empresa) e `inscripciones.seguimiento` (las
+   * escrituras que hasta 040 hacía con `inscripciones.ver`: nadie pierde nada).
+   */
+  const ESPERADAS_040: Capability[] = [
+    ...ESPERADAS,
+    "empresas.editar",
+    "inscripciones.seguimiento",
+  ];
+
+  it("lleva las cuatro de 026 más las dos de 040, y ni una más", () => {
+    expect([...rol!.capabilities].sort()).toEqual([...ESPERADAS_040].sort());
+    expect(rol!.capabilities).toHaveLength(6);
   });
 
   /**
@@ -91,7 +102,7 @@ describe("FR-001 — el rol `administracion` existe y lleva exactamente 4 capaci
 
   it("las llaves de los roles de sistema no se repiten", () => {
     const keys = SYSTEM_ROLES.map((r) => r.key);
-    expect(keys).toEqual(["direccion", "coordinacion", "soporte", "administracion"]);
+    expect(keys).toEqual(["direccion", "coordinacion", "soporte", "administracion", "ventas"]);
     expect(new Set(keys).size).toBe(keys.length);
   });
 });
@@ -124,8 +135,13 @@ describe("FR-002/FR-003 — la migración siembra el rol donde falta y no pisa n
       (m) => JSON.parse(m[1]!) as string[]
     );
     expect(listas, "la migración no declara ninguna lista de capacidades").toHaveLength(1);
+    // 040 — La 0036 siembra las cuatro de 026; las dos de 040 llegan por la
+    // 0061 (`seed-roles.test.ts` verifica la suma contra `SYSTEM_ROLES`).
     const rol = SYSTEM_ROLES.find((r) => r.key === "administracion")!;
-    expect([...listas[0]!].sort()).toEqual([...rol.capabilities].sort());
+    const de040 = new Set<string>(["empresas.editar", "inscripciones.seguimiento"]);
+    expect([...listas[0]!].sort()).toEqual(
+      rol.capabilities.filter((c) => !de040.has(c)).sort()
+    );
   });
 
   it("no inventa capacidades: todas existen en la lista cerrada", () => {
@@ -648,6 +664,11 @@ describe("FR-007/FR-008 — la vista se gobierna con `cobranza.ver` y se declara
       "grabaciones.ver",
       "grabaciones.gestionar",
       "correcciones.aprobar",
+      // 039 — `cohortes.confirmar` (confirmar cohortes), tampoco.
+      "cohortes.confirmar",
+      // 040 — `empresas.editar` e `inscripciones.seguimiento`, tampoco.
+      "empresas.editar",
+      "inscripciones.seguimiento",
     ]);
     expect(CAPABILITIES.filter((c) => !posteriores.has(c))).toHaveLength(17);
     expect(CAPABILITIES).not.toContain("finanzas.ver" as Capability);

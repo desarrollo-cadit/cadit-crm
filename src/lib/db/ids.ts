@@ -90,6 +90,8 @@ const prefixes = {
   moduleExclusion: "mex",
   /** 035 — programa asignado a todo el grupo de una cohorte. */
   cohortGroupSoftware: "cgs",
+  /** 039 — cada aviso interno por correo de una cohorte (Soporte, Administración). */
+  staffNotice: "stn",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

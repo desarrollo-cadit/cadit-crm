@@ -73,7 +73,17 @@ function formatDate(iso: string) {
  * de qué clases se cancelaron y de cuándo entró cada alumno —y las dos cosas
  * cambian después de tomada la asistencia—.
  */
-export function AttendanceClient({ cohortId }: { cohortId: string }) {
+/**
+ * 040 (DV-008) — `canEdit` = `asistencia.editar` (pasar lista, cancelar una
+ * clase, generar el cronograma). Sin ella (rol Ventas) la planilla se lee.
+ */
+export function AttendanceClient({
+  cohortId,
+  canEdit = false,
+}: {
+  cohortId: string;
+  canEdit?: boolean;
+}) {
   const [sheet, setSheet] = useState<Sheet | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -150,10 +160,12 @@ export function AttendanceClient({ cohortId }: { cohortId: string }) {
           inicio y la de fin. Es una acción explícita: dar de alta cuarenta clases
           sin querer es difícil de deshacer.
         </p>
-        <Button loading={busy} onClick={() => void generateSchedule()}>
-          {!busy && <CalendarPlus className="h-4 w-4" />}
-          {busy ? "Generando…" : "Generar cronograma"}
-        </Button>
+        {canEdit && (
+          <Button loading={busy} onClick={() => void generateSchedule()}>
+            {!busy && <CalendarPlus className="h-4 w-4" />}
+            {busy ? "Generando…" : "Generar cronograma"}
+          </Button>
+        )}
       </div>
     );
   }
@@ -187,7 +199,8 @@ export function AttendanceClient({ cohortId }: { cohortId: string }) {
                         : "Cancelar esta clase"
                     }
                     aria-label={`Cancelar clase ${s.number}`}
-                    disabled={Boolean(s.canceledAt)}
+                    disabled={!canEdit || Boolean(s.canceledAt)}
+                    hidden={!canEdit && !s.canceledAt}
                     className="ml-1 align-middle text-muted-foreground hover:text-destructive disabled:opacity-40"
                     onClick={() => void cancelSession(s.id)}
                   >
@@ -210,7 +223,7 @@ export function AttendanceClient({ cohortId }: { cohortId: string }) {
                     <TableCell key={s.id} className="p-1 text-center">
                       <Select
                         aria-label={`${st.contactName}, clase ${s.number}`}
-                        disabled={Boolean(s.canceledAt)}
+                        disabled={!canEdit || Boolean(s.canceledAt)}
                         className={cn(
                           "h-7 w-14 px-1 text-center text-xs",
                           status && STATUS_CLASS[status]

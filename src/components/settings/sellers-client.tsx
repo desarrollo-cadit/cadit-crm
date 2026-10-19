@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Archive, ArchiveRestore, Pencil, UserPlus } from "lucide-react";
+import { Archive, ArchiveRestore, KeyRound, Pencil, UserPlus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,8 +33,13 @@ async function mensajeDeError(res: Response | null, fallback: string): Promise<s
  * pero sigue en las que hizo y en el reporte de Finanzas. La cuenta del panel
  * es opcional y sólo se ofrece a quien puede ver el equipo (`accesos.gestionar`);
  * sin esa capacidad, la pantalla funciona igual sin ese campo.
+ *
+ * 040 (US3) — "Dar acceso al panel": le crea al vendedor una cuenta del equipo
+ * con el rol Ventas y la vincula. Solo con `accesos.gestionar` (lo decide el
+ * servidor y baja como `canGrantAccount`). Al editar, la cuenta vinculada se
+ * puede cambiar o quitar.
  */
-export function SellersClient() {
+export function SellersClient({ canGrantAccount = false }: { canGrantAccount?: boolean }) {
   const [sellers, setSellers] = useState<Seller[]>([]);
   const [team, setTeam] = useState<TeamMember[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -45,7 +50,15 @@ export function SellersClient() {
   const [userId, setUserId] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const [editing, setEditing] = useState<{ id: string; name: string; email: string } | null>(null);
+  const [editing, setEditing] = useState<{
+    id: string;
+    name: string;
+    email: string;
+    userId: string;
+  } | null>(null);
+  /** 040 — El vendedor al que se le está dando cuenta, y la contraseña temporal. */
+  const [granting, setGranting] = useState<{ id: string; password: string } | null>(null);
+  const [grantSaving, setGrantSaving] = useState(false);
 
   const refetch = useCallback(async () => {
     const res = await fetch("/api/sellers").catch(() => null);
@@ -106,6 +119,38 @@ export function SellersClient() {
     return true;
   }
 
+  /**
+   * 040 — Cuenta del panel con el rol Ventas. La contraseña temporal solo hace
+   * falta para una cuenta nueva: si el correo es de un profesor, se le agrega
+   * el equipo a la suya.
+   */
+  async function grantAccount(s: Seller) {
+    if (!granting) return;
+    setGrantSaving(true);
+    const res = await fetch(`/api/sellers/${s.id}/account`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password: granting.password }),
+    }).catch(() => null);
+    setGrantSaving(false);
+    if (!res?.ok) {
+      notify.error(
+        await mensajeDeError(res, "No pudimos darle acceso. Podés intentarlo otra vez en un momento.")
+      );
+      return;
+    }
+    const data = (await res.json()) as { attached: boolean };
+    notify.success(
+      data.attached
+        ? `${s.name} ya era profesor: entra con su misma cuenta y ahora también ve el panel con el rol Ventas.`
+        : `${s.name} ya puede entrar con su correo y la contraseña temporal. Al entrar se le va a pedir que la cambie.`
+    );
+    setGranting(null);
+    void refetch();
+    const teamRes = await fetch("/api/settings/team").catch(() => null);
+    if (teamRes?.ok) setTeam(((await teamRes.json()) as { members: TeamMember[] }).members);
+  }
+
   const enEquipo = new Map((team ?? []).map((m) => [m.userId, m.name]));
   const yaVinculados = new Set(sellers.map((s) => s.userId).filter(Boolean));
   const activos = sellers.filter((s) => !s.archived);
@@ -134,6 +179,25 @@ export function SellersClient() {
                 onChange={(e) => setEditing({ ...editing, email: e.target.value })}
               />
             </div>
+            {team && team.length > 0 && (
+              <div className="space-y-1.5 md:col-span-2">
+                <Label htmlFor={`seller-user-${s.id}`}>Cuenta del panel</Label>
+                <Select
+                  id={`seller-user-${s.id}`}
+                  value={editing.userId}
+                  onChange={(e) => setEditing({ ...editing, userId: e.target.value })}
+                >
+                  <option value="">No usa el panel</option>
+                  {team
+                    .filter((m) => m.userId === s.userId || !yaVinculados.has(m.userId))
+                    .map((m) => (
+                      <option key={m.userId} value={m.userId}>
+                        {m.name} · {m.email}
+                      </option>
+                    ))}
+                </Select>
+              </div>
+            )}
             <div className="flex gap-2 md:col-span-2">
               <Button
                 size="sm"
@@ -142,6 +206,9 @@ export function SellersClient() {
                   const ok = await patch(s.id, {
                     name: editing.name.trim(),
                     email: editing.email.trim() || null,
+                    // 040 — Solo si se ve el equipo: sin esa lista el campo no
+                    // se mostró y no hay nada que cambiar.
+                    ...(team ? { userId: editing.userId || null } : {}),
                   });
                   if (ok) setEditing(null);
                 }}
@@ -169,9 +236,24 @@ export function SellersClient() {
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => setEditing({ id: s.id, name: s.name, email: s.email ?? "" })}
+                onClick={() =>
+                  setEditing({ id: s.id, name: s.name, email: s.email ?? "", userId: s.userId ?? "" })
+                }
               >
                 <Pencil className="h-4 w-4" /> Editar
+              </Button>
+            )}
+            {canGrantAccount && !s.archived && !s.userId && (
+              <Button
+                size="sm"
+                variant="outline"
+                title={
+                  s.email ? undefined : "Cargale un correo primero: es el usuario con el que va a entrar"
+                }
+                disabled={!s.email}
+                onClick={() => setGranting({ id: s.id, password: "" })}
+              >
+                <KeyRound className="h-4 w-4" /> Dar acceso al panel
               </Button>
             )}
             <Button
@@ -189,6 +271,40 @@ export function SellersClient() {
                 </>
               )}
             </Button>
+          </div>
+        )}
+        {granting?.id === s.id && (
+          <div className="space-y-2 rounded-md border bg-subtle px-3 py-3">
+            <p className="text-xs text-muted-foreground">
+              Se le crea una cuenta del panel con el rol <strong>Ventas</strong> y el usuario{" "}
+              <strong>{s.email}</strong>: ve los cursos, las cohortes y quién está anotado, sin
+              montos ni pagos, y puede cargar empresas. Si ese correo ya es de un profesor, se le
+              agrega el panel a su misma cuenta y no hace falta contraseña.
+            </p>
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="space-y-1.5">
+                <Label htmlFor={`seller-password-${s.id}`}>Contraseña temporal</Label>
+                <Input
+                  id={`seller-password-${s.id}`}
+                  type="text"
+                  autoComplete="off"
+                  value={granting.password}
+                  placeholder="Al menos 8 caracteres"
+                  onChange={(e) => setGranting({ id: s.id, password: e.target.value })}
+                />
+              </div>
+              <Button size="sm" disabled={grantSaving} onClick={() => void grantAccount(s)}>
+                {grantSaving ? "Dando acceso…" : "Dar acceso"}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={grantSaving}
+                onClick={() => setGranting(null)}
+              >
+                Cancelar
+              </Button>
+            </div>
           </div>
         )}
       </div>

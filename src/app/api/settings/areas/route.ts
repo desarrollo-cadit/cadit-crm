@@ -2,7 +2,7 @@ import { z } from "zod";
 import { apiError, parseBody, requireCapability } from "@/lib/api";
 import { getM365Config } from "@/lib/m365/client";
 import {
-  getAreaConfigs,
+  getAllAreaConfigs,
   getRoutingEnabled,
   listActiveSellersWithEmail,
   setRoutingEnabled,
@@ -22,7 +22,8 @@ export const GET = requireCapability("areas.configurar", async (session) => {
   const orgId = session.organizationId;
   const [routingEnabled, areas, sellers, timezone] = await Promise.all([
     getRoutingEnabled(orgId),
-    getAreaConfigs(orgId),
+    // 039 — Las tres: Ventas, Soporte y Administración (avisos internos).
+    getAllAreaConfigs(orgId),
     listActiveSellersWithEmail(orgId),
     organizationTimezone(orgId),
   ]);

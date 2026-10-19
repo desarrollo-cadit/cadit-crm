@@ -15,10 +15,11 @@ const patchSchema = z.object({
   academiaOnlineAccessAt: nowOrNull.optional(),
 });
 
-// 005 (T025, US3, contracts/cohort-roster.md) — accesible por CUALQUIER rol
-// (soporte y ventas/coordinación comparten esta acción, FR-014).
+// 005 (T025, US3, contracts/cohort-roster.md) — soporte y coordinación
+// comparten esta acción (FR-014). 040 (DV-001) — `inscripciones.seguimiento`:
+// el rol Ventas ve el checklist pero no lo tilda.
 export const PATCH = requireCapability(
-  "inscripciones.ver",
+  "inscripciones.seguimiento",
   async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const body = await parseBody(req, patchSchema);

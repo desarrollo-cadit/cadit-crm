@@ -141,7 +141,14 @@ export function EnrollForm({
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ legalName }),
     }).catch(() => null);
-    if (!res?.ok) return;
+    if (!res?.ok) {
+      // 040 — Un RUT repetido o una razón social inválida se dicen, no se tragan.
+      const body = (await res?.json().catch(() => null)) as
+        | { error?: { message?: string } }
+        | null;
+      setError(body?.error?.message ?? "No se pudo crear la empresa");
+      return;
+    }
     const data = (await res.json()) as { company: CompanyDto };
     onCompanyCreated(data.company);
     setCompanyId(data.company.id);

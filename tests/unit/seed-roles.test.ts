@@ -32,6 +32,8 @@ const migracion = (archivo: string) =>
 const SQL = [
   migracion("0024_seed_roles_sistema.sql"),
   migracion("0036_seed_rol_administracion.sql"),
+  // 040 — siembra `ventas` en las organizaciones que ya existen.
+  migracion("0061_rol_ventas_y_empresas.sql"),
 ].join("\n");
 
 /**
@@ -50,6 +52,10 @@ const GRANTS = [
   migracion("0052_grabaciones_zoom.sql"),
   // 031 — `correcciones.aprobar` (DV-006).
   migracion("0054_correcciones_escolaridad.sql"),
+  // 039 — `cohortes.confirmar` (dirección y coordinación).
+  migracion("0060_confirmacion_y_avisos.sql"),
+  // 040 — `empresas.editar` e `inscripciones.seguimiento` (DV-001, DV-003).
+  migracion("0061_rol_ventas_y_empresas.sql"),
 ].join("\n");
 
 function grantsPosteriores(key: string): string[] {

@@ -89,6 +89,13 @@ const envSchema = z.object({
    */
   WORKSHOP_REMINDER_INTERVAL_MIN: z.coerce.number().int().min(0).default(0),
   /**
+   * 039 — Minutos entre pasadas de los avisos internos por correo (facturación
+   * pendiente a Administración 7 y 2 días antes del inicio de una cohorte
+   * confirmada, y el reintento del aviso a Soporte); 0 la apaga. Default 0:
+   * se enciende a propósito (p. ej. 60) con M365 y las áreas configuradas.
+   */
+  STAFF_NOTICES_INTERVAL_MIN: z.coerce.number().int().min(0).default(0),
+  /**
    * 033 (FR-019) — Confirmación por WhatsApp al anotarse a un taller. Apagada
    * salvo `true` (decisión del dueño, 2026-10-15: por ahora sin WhatsApp).
    */

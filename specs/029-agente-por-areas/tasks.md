@@ -204,9 +204,9 @@ Monolito Next.js en la raíz del repo: `src/`, `tests/unit/`, `scripts/e2e/`, `d
 
 ### Implementation for User Story 4
 
-- [ ] T077 [P] [US4] Agregar la pestaña `{ href: "/settings/areas", label: "Áreas", capability: "areas.configurar" }` en `src/lib/nav.ts` y confirmar que el gate de `src/app/(app)/settings/layout.tsx` la deja pasar solo con esa capacidad
-- [ ] T078 [P] [US4] Crear `src/components/settings/areas-client.tsx`: interruptor del ruteo (`PATCH /api/settings/areas`), formulario por área (`PUT /api/settings/areas/[area]`) con casilla, copias manuales, selector de vendedores en copia solo en Ventas (los sin correo se marcan y no se eligen; aviso de omitidos), texto de contacto (contador 600), horario con días desde el lunes (`WEEKDAY_LABELS`) y aviso si `m365Configured` es `false`; errores 422 visibles; colores solo por tokens; copy en voseo
-- [ ] T079 [US4] Crear `src/app/(app)/settings/areas/page.tsx` (server component) que verifica `sessionCapabilities(session).includes("areas.configurar")` como las otras páginas de Configuración y monta `AreasClient` (depende de T078)
+- [x] T077 [P] [US4] Agregar la pestaña `{ href: "/settings/areas", label: "Áreas", capability: "areas.configurar" }` en `src/lib/nav.ts` y confirmar que el gate de `src/app/(app)/settings/layout.tsx` la deja pasar solo con esa capacidad
+- [x] T078 [P] [US4] Crear `src/components/settings/areas-client.tsx`: interruptor del ruteo (`PATCH /api/settings/areas`), formulario por área (`PUT /api/settings/areas/[area]`) con casilla, copias manuales, selector de vendedores en copia solo en Ventas (los sin correo se marcan y no se eligen; aviso de omitidos), texto de contacto (contador 600), horario con días desde el lunes (`WEEKDAY_LABELS`) y aviso si `m365Configured` es `false`; errores 422 visibles; colores solo por tokens; copy en voseo
+- [x] T079 [US4] Crear `src/app/(app)/settings/areas/page.tsx` (server component) que verifica `sessionCapabilities(session).includes("areas.configurar")` como las otras páginas de Configuración y monta `AreasClient` (depende de T078)
 - [ ] T080 [US4] Verificar US4: `pnpm vitest run tests/unit/route-capabilities.test.ts tests/unit/tema-oscuro.test.ts tests/unit/contraste.test.ts tests/unit/area-config.test.ts` en verde y `E2E_SECCIONES=agente-por-areas pnpm test:e2e` con los checks 16 y 17 en verde, en tema claro y oscuro
 
 **Checkpoint**: la organización configura las áreas sin tocar la base.

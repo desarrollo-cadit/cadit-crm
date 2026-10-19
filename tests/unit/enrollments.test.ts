@@ -26,6 +26,11 @@ function thenableChain(rows: unknown[]) {
   return chain;
 }
 
+// 041 — El aviso a Administración tiene sus propias pruebas
+// (avisos-cobranza*.test.ts); acá solo se mira que el alta lo pida.
+const avisarAAdministracion = vi.fn(async () => {});
+vi.mock("@/server/billing-notices-queue", () => ({ avisarAAdministracion }));
+
 vi.mock("@/lib/db", () => ({
   // 012 (T024) — `withAuth` abre la transacción del pedido con
   // `getRootDb().transaction()` para declarar `app.current_org`. Sin este

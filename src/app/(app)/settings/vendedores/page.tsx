@@ -15,7 +15,9 @@ export const dynamic = "force-dynamic";
 export default async function SellersSettingsPage() {
   const session = await getSessionOrNull();
   if (!session) redirect("/login");
-  if (!sessionCapabilities(session).includes("inscripciones.editar")) redirect("/settings");
+  const caps = sessionCapabilities(session);
+  if (!caps.includes("inscripciones.editar")) redirect("/settings");
 
-  return <SellersClient />;
+  // 040 (US3) — "Dar acceso al panel" crea una cuenta del equipo: `accesos.gestionar`.
+  return <SellersClient canGrantAccount={caps.includes("accesos.gestionar")} />;
 }

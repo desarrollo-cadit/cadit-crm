@@ -3,6 +3,7 @@ import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { MEDIA_LIMITS, readMediaFile, saveMediaFile } from "@/server/whatsapp/media";
+import type { Capability } from "@/lib/capabilities";
 
 /** 005 (DV-005, FR-007) — Alta de un profesor (entidad propia). */
 export async function createTeacher(
@@ -47,14 +48,31 @@ async function resolveCoursesByTeacher(
   return map;
 }
 
+/**
+ * 040 (DV-009) — ¿Esta sesión ve el costo por hora de los profesores?
+ *
+ * Es plata (lo que la academia le paga a cada uno) y hasta 040 viajaba a todo
+ * `academico.ver`. Ahora viaja a quien lo carga (`academico.editar`) o a quien
+ * ve la plata (`cobranza.ver`): dirección, coordinación, soporte y
+ * administración lo siguen viendo, y el rol Ventas no.
+ */
+export function puedeVerCostoDocente(capabilities: readonly Capability[]): boolean {
+  return capabilities.includes("academico.editar") || capabilities.includes("cobranza.ver");
+}
+
+/**
+ * Sin `verCosto`, `hourlyRate` NO VIAJA: la llave no existe en el objeto (no
+ * es `null`, que significaría "sin costo cargado").
+ */
 export function serializeTeacher(
   t: typeof schema.teacher.$inferSelect,
-  courseIds: string[] = []
+  courseIds: string[],
+  verCosto: boolean
 ) {
   return {
     id: t.id,
     name: t.name,
-    hourlyRate: t.hourlyRate,
+    ...(verCosto ? { hourlyRate: t.hourlyRate } : {}),
     email: t.email,
     /** 023 — Título profesional; va al catálogo público con la foto. */
     title: t.title,
@@ -110,7 +128,10 @@ export async function getTeacherPhoto(
 }
 
 /** 005 — Listado de profesores de la organización, por nombre, con cursos/costo resueltos. */
-export async function listTeachers(organizationId: string) {
+export async function listTeachers(
+  organizationId: string,
+  capabilities: readonly Capability[]
+) {
   const db = getDb();
   const rows = await db
     .select()
@@ -122,11 +143,16 @@ export async function listTeachers(organizationId: string) {
     organizationId,
     rows.map((r) => r.id)
   );
-  return rows.map((r) => serializeTeacher(r, courseMap.get(r.id) ?? []));
+  const verCosto = puedeVerCostoDocente(capabilities);
+  return rows.map((r) => serializeTeacher(r, courseMap.get(r.id) ?? [], verCosto));
 }
 
 /** 005 iteración 2 — un profesor puntual, con cursos/costo resueltos. */
-export async function getTeacher(organizationId: string, teacherId: string) {
+export async function getTeacher(
+  organizationId: string,
+  teacherId: string,
+  capabilities: readonly Capability[]
+) {
   const db = getDb();
   const rows = await db
     .select()
@@ -138,7 +164,7 @@ export async function getTeacher(organizationId: string, teacherId: string) {
   const teacher = rows[0];
   if (!teacher) return null;
   const courseMap = await resolveCoursesByTeacher(db, organizationId, [teacherId]);
-  return serializeTeacher(teacher, courseMap.get(teacherId) ?? []);
+  return serializeTeacher(teacher, courseMap.get(teacherId) ?? [], puedeVerCostoDocente(capabilities));
 }
 
 export type UpdateTeacherInput = {
@@ -217,7 +243,8 @@ export async function updateTeacher(
     input.courseIds !== undefined
       ? input.courseIds
       : (await resolveCoursesByTeacher(db, organizationId, [teacherId])).get(teacherId) ?? [];
-  return { ok: true, teacher: serializeTeacher(teacher, courseIds) };
+  // Editar exige `academico.editar` (la ruta), que es justamente quien ve el costo.
+  return { ok: true, teacher: serializeTeacher(teacher, courseIds, true) };
 }
 
 /** 005 (T033, DV-006) — cohorte en conflicto de horario con otra del mismo profesor. */

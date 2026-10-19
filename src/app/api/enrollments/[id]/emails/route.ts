@@ -16,12 +16,13 @@ const bodySchema = z.object({
  * 007 — Envío de los correos transaccionales de una inscripción
  * (constitución 1.3.0, principio II: M365 vía `src/lib/m365`).
  *
- * Accesible por cualquier rol, igual que el checklist (FR-014): mandar los
- * términos de licencia y la bienvenida es tarea de soporte tanto como de
- * ventas. No expone datos financieros.
+ * Igual que el checklist (FR-014): mandar los términos de licencia y la
+ * bienvenida es tarea de soporte tanto como de coordinación. No expone datos
+ * financieros. 040 (DV-001) — `inscripciones.seguimiento` y no
+ * `inscripciones.ver`: el rol Ventas ve la cohorte pero no le escribe a nadie.
  */
 export const POST = requireCapability(
-  "inscripciones.ver",
+  "inscripciones.seguimiento",
   async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const body = await parseBody(req, bodySchema);

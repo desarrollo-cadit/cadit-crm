@@ -57,6 +57,8 @@ describe("mapeo rol → capacidades (fiel al comportamiento previo)", () => {
       "contactos.ver",
       "contactos.editar",
       "inscripciones.ver",
+      // 040 (DV-001) — el checklist y los correos, que antes colgaban de `.ver`.
+      "inscripciones.seguimiento",
       "inbox.ver",
       "inbox.responder",
       "configuracion.editar",
@@ -174,9 +176,10 @@ describe("SYSTEM_ROLES — la semilla de la fase 4", () => {
    * siembra su migración, y reordenarla haría fallar esa comparación por un
    * motivo que no tiene nada que ver con los permisos.
    */
-  it("las llaves son las de DV-006 más `administracion`, y no se repiten", () => {
+  // 040 (FR-001) — `ventas`, quinto y al final por el mismo motivo.
+  it("las llaves son las de DV-006 más `administracion` y `ventas`, y no se repiten", () => {
     const keys = SYSTEM_ROLES.map((r) => r.key);
-    expect(keys).toEqual(["direccion", "coordinacion", "soporte", "administracion"]);
+    expect(keys).toEqual(["direccion", "coordinacion", "soporte", "administracion", "ventas"]);
     expect(new Set(keys).size).toBe(keys.length);
   });
 });
@@ -268,5 +271,33 @@ describe("031 — correcciones.aprobar", () => {
   it("en el respaldo por código, soporte tampoco", () => {
     expect(hasCapability("owner", "correcciones.aprobar")).toBe(true);
     expect(hasCapability("soporte", "correcciones.aprobar")).toBe(false);
+  });
+});
+
+/**
+ * 039 — `cohortes.confirmar`: confirmar una cohorte dispara el aviso a Soporte
+ * y, más cerca del inicio, los de facturación a Administración. Es decisión de
+ * quien dirige o coordina la cursada: soporte y administración no la reciben.
+ */
+describe("039 — cohortes.confirmar", () => {
+  const byKey = (k: string) => SYSTEM_ROLES.find((r) => r.key === k)!;
+
+  it("está en la lista cerrada", () => {
+    expect(CAPABILITIES).toContain("cohortes.confirmar");
+  });
+
+  it("dirección y coordinación la tienen; soporte y administración no", () => {
+    for (const key of ["direccion", "coordinacion"]) {
+      expect(byKey(key).capabilities).toContain("cohortes.confirmar");
+    }
+    for (const key of ["soporte", "administracion"]) {
+      expect(byKey(key).capabilities).not.toContain("cohortes.confirmar");
+    }
+  });
+
+  it("en el respaldo por código: owner y member sí, soporte no", () => {
+    expect(hasCapability("owner", "cohortes.confirmar")).toBe(true);
+    expect(hasCapability("member", "cohortes.confirmar")).toBe(true);
+    expect(hasCapability("soporte", "cohortes.confirmar")).toBe(false);
   });
 });

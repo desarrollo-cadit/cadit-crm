@@ -16,11 +16,13 @@ export const dynamic = "force-dynamic";
 export default async function EmpresasPage() {
   const session = await getSessionOrNull();
   if (!session) redirect("/login");
-  if (!sessionCapabilities(session).includes("contactos.ver")) redirect("/");
+  const caps = sessionCapabilities(session);
+  if (!caps.includes("contactos.ver")) redirect("/");
 
   return (
     <div className="h-full overflow-y-auto">
-      <CompaniesClient />
+      {/* 040 — Crear y editar, solo con `empresas.editar`. */}
+      <CompaniesClient canEdit={caps.includes("empresas.editar")} />
     </div>
   );
 }

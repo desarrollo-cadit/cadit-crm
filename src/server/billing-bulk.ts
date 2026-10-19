@@ -206,6 +206,8 @@ export async function applyBillingToBatch(
        */
       idempotencyKey: `bulk-cobrada-${insc.id}`,
       recordedBy: actorId ?? null,
+      // 041 — Cobranza ya ocurrida, cargada en bloque: sin un correo por alumno.
+      avisoInterno: false,
     });
     if (pago.ok) salida.aplicadas += 1;
     else

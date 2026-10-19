@@ -4,8 +4,10 @@ import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import {
   AREAS,
+  CONFIG_AREAS,
   type Area,
   type AreaConfigDto,
+  type ConfigArea,
   type HandoffRecipients,
   type OfficeHours,
 } from "@/lib/areas";
@@ -54,7 +56,7 @@ export type SellerRef = {
  * ¿Los vendedores en copia son válidos para esta área? Devuelve el motivo del
  * rechazo (para el 422) o `null`.
  */
-export function checkCcSellers(area: Area, ids: string[], sellers: SellerRef[]): string | null {
+export function checkCcSellers(area: ConfigArea, ids: string[], sellers: SellerRef[]): string | null {
   if (ids.length === 0) return null;
   if (area !== "ventas") return "Solo Ventas puede llevar vendedores en copia.";
   for (const id of ids) {
@@ -66,7 +68,7 @@ export function checkCcSellers(area: Area, ids: string[], sellers: SellerRef[]):
 }
 
 type AreaConfigRow = {
-  area: Area;
+  area: ConfigArea;
   enabled: boolean;
   mailbox: string | null;
   ccEmails: string[];
@@ -76,7 +78,7 @@ type AreaConfigRow = {
   updatedAt: Date | null;
 };
 
-function defaultsFor(area: Area): AreaConfigDto {
+function defaultsFor<A extends ConfigArea>(area: A): AreaConfigDto<A> {
   return {
     area,
     enabled: false,
@@ -89,9 +91,24 @@ function defaultsFor(area: Area): AreaConfigDto {
   };
 }
 
-/** Las dos áreas SIEMPRE, en orden; una fila ausente son los valores por defecto. */
-export function withAreaDefaults(rows: AreaConfigRow[]): AreaConfigDto[] {
-  return AREAS.map((area) => {
+/**
+ * Las áreas pedidas SIEMPRE, en orden; una fila ausente son los valores por
+ * defecto.
+ *
+ * 039 — Por defecto, las de DERIVACIÓN (`AREAS`): es lo que lee el agente, y
+ * una fila de `administracion` no tiene que aparecerle nunca. La pantalla de
+ * configuración pide `CONFIG_AREAS`.
+ */
+export function withAreaDefaults(rows: AreaConfigRow[]): AreaConfigDto<Area>[];
+export function withAreaDefaults<A extends ConfigArea>(
+  rows: AreaConfigRow[],
+  areas: readonly A[]
+): AreaConfigDto<A>[];
+export function withAreaDefaults(
+  rows: AreaConfigRow[],
+  areas: readonly ConfigArea[] = AREAS
+): AreaConfigDto<ConfigArea>[] {
+  return areas.map((area) => {
     const row = rows.find((r) => r.area === area);
     if (!row) return defaultsFor(area);
     return {
@@ -143,8 +160,8 @@ export function resolveRecipients(
 
 /* ------------------------------ base ------------------------------ */
 
-export async function getAreaConfigs(organizationId: string): Promise<AreaConfigDto[]> {
-  const rows = await getDb()
+async function readAreaRows(organizationId: string): Promise<AreaConfigRow[]> {
+  return getDb()
     .select({
       area: schema.areaConfig.area,
       enabled: schema.areaConfig.enabled,
@@ -157,12 +174,29 @@ export async function getAreaConfigs(organizationId: string): Promise<AreaConfig
     })
     .from(schema.areaConfig)
     .where(scoped(schema.areaConfig.organizationId, organizationId));
-  return withAreaDefaults(rows);
 }
 
-export async function getAreaConfig(organizationId: string, area: Area): Promise<AreaConfigDto> {
-  const all = await getAreaConfigs(organizationId);
-  return all.find((a) => a.area === area) ?? defaultsFor(area);
+/**
+ * Las áreas de DERIVACIÓN (Ventas, Soporte): lo que lee el agente
+ * (`pipeline.ts`). 039 — Administración no aparece acá aunque tenga fila.
+ */
+export async function getAreaConfigs(organizationId: string): Promise<AreaConfigDto[]> {
+  return withAreaDefaults(await readAreaRows(organizationId));
+}
+
+/** 039 — Las tres áreas configurables, para Configuración › Áreas. */
+export async function getAllAreaConfigs(
+  organizationId: string
+): Promise<AreaConfigDto<ConfigArea>[]> {
+  return withAreaDefaults(await readAreaRows(organizationId), CONFIG_AREAS);
+}
+
+export async function getAreaConfig<A extends ConfigArea>(
+  organizationId: string,
+  area: A
+): Promise<AreaConfigDto<A>> {
+  const all = withAreaDefaults(await readAreaRows(organizationId), [area]);
+  return all[0] ?? defaultsFor(area);
 }
 
 /** Todos los vendedores de la organización (activos y archivados), para validar y resolver copias. */
@@ -192,12 +226,12 @@ export async function listActiveSellersWithEmail(
 export class AreaConfigError extends Error {}
 
 /** Upsert por `(organization_id, area)`. Lanza `AreaConfigError` si un vendedor no sirve. */
-export async function saveAreaConfig(
+export async function saveAreaConfig<A extends ConfigArea>(
   organizationId: string,
-  area: Area,
+  area: A,
   input: AreaConfigBody,
   userId: string | null
-): Promise<AreaConfigDto> {
+): Promise<AreaConfigDto<A>> {
   const sellerError = checkCcSellers(area, input.ccSellerIds, await listSellers(organizationId));
   if (sellerError) throw new AreaConfigError(sellerError);
 

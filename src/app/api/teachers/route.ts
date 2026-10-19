@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { parseBody, requireCapability } from "@/lib/api";
+import { sessionCapabilities } from "@/lib/capabilities";
 import { createTeacher, listTeachers } from "@/server/teachers";
 
 export const dynamic = "force-dynamic";
@@ -7,7 +8,8 @@ export const dynamic = "force-dynamic";
 export const GET = requireCapability(
   "academico.ver",
   async (session) => {
-  const teachers = await listTeachers(session.organizationId);
+  // 040 (DV-009) — El costo por hora viaja solo a quien puede verlo.
+  const teachers = await listTeachers(session.organizationId, sessionCapabilities(session));
   return Response.json({ teachers });
 });
 

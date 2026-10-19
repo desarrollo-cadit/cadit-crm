@@ -30,6 +30,11 @@ function thenableChain(rows: unknown[]) {
   return chain;
 }
 
+// 041 — El aviso a Administración tiene sus propias pruebas
+// (avisos-cobranza*.test.ts); acá solo se mira que el alta lo pida.
+const avisarAAdministracion = vi.fn(async () => {});
+vi.mock("@/server/billing-notices-queue", () => ({ avisarAAdministracion }));
+
 vi.mock("@/lib/db", () => ({
   getRootDb: () => ({
     transaction: async (fn: (tx: unknown) => unknown) => fn({ execute: async () => [] }),
@@ -244,6 +249,8 @@ describe("createEnrollment — una inscripción en cohorte es una venta", () => 
     });
     expect(r.ok).toBe(true);
     expect((inserts[0]!.values as { sellerId: string }).sellerId).toBe("sel_1");
+    // 041 — Una venta le avisa a Administración.
+    expect(avisarAAdministracion).toHaveBeenCalledWith("org_1", expect.objectContaining({ kind: "inscripcion_nueva" }));
   });
 
   it("vendedor archivado → 422: no se elige para una venta nueva", async () => {

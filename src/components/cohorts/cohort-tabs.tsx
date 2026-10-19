@@ -28,9 +28,12 @@ export function CohortTabs({
   canEditEnrollments,
   canIssueCertificates,
   canManageAccess,
+  canFollowUp = false,
   esEspecializacion,
   esModulo = false,
 }: {
+  /** 040 (DV-001) — `inscripciones.seguimiento`: checklist y correos del roster. */
+  canFollowUp?: boolean;
   cohortId: string;
   /**
    * 034 (US4, FR-016/FR-017) — ¿Es un MÓDULO de una especialización? Entonces
@@ -140,6 +143,7 @@ export function CohortTabs({
             canEditOfflineCourses={canEditAcademic}
             canManageAccess={canManageAccess}
             canEditLicenses={canEditAcademic}
+            canFollowUp={canFollowUp}
           />
         ) : tab === "program" ? (
           <ProgramClient
@@ -157,6 +161,7 @@ export function CohortTabs({
             kind={tab}
             canEditGrading={canEditGrading}
             canIssueCertificates={canIssueCertificates}
+            canEditAttendance={canEditAttendance}
           />
         ) : tab === "classes" ? (
           <ClassesClient
@@ -165,7 +170,7 @@ export function CohortTabs({
             canEditLinks={canEditAttendance}
           />
         ) : tab === "attendance" ? (
-          <AttendanceClient cohortId={cohortId} />
+          <AttendanceClient cohortId={cohortId} canEdit={canEditAttendance} />
         ) : tab === "offline" ? (
           <CohortOfflineCoursesClient cohortId={cohortId} canEdit={canEditAcademic} />
         ) : tab === "grading" ? (

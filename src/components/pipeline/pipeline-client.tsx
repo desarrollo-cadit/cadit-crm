@@ -34,7 +34,18 @@ export type BoardEnrollment = {
   conversationId: string | null;
 };
 
-export function PipelineClient() {
+/**
+ * 040 (DV-001/DV-008) — `canMove` = `inscripciones.seguimiento` (mover un lead
+ * de etapa) y `canManageStages` = `configuracion.editar` (las rutas de
+ * etapas). Sin ellas (rol Ventas) el tablero se mira y no se arrastra.
+ */
+export function PipelineClient({
+  canMove = false,
+  canManageStages = false,
+}: {
+  canMove?: boolean;
+  canManageStages?: boolean;
+}) {
   const [stages, setStages] = useState<StageDto[]>([]);
   const [leads, setLeads] = useState<BoardEnrollment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,6 +60,8 @@ export function PipelineClient() {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
   );
+  // Sin sensores no hay arrastre: los hooks se llaman igual (reglas de React).
+  const sinSensores = useSensors();
 
   const refetch = useCallback(async () => {
     setLoading(true);
@@ -126,9 +139,11 @@ export function PipelineClient() {
               </option>
             ))}
           </select>
-          <Button variant="outline" size="sm" onClick={() => setManaging(true)}>
-            <Settings2 className="h-4 w-4" /> Gestionar etapas
-          </Button>
+          {canManageStages && (
+            <Button variant="outline" size="sm" onClick={() => setManaging(true)}>
+              <Settings2 className="h-4 w-4" /> Gestionar etapas
+            </Button>
+          )}
         </div>
       </header>
 
@@ -141,7 +156,7 @@ export function PipelineClient() {
           </div>
         ) : (
           <DndContext
-            sensors={sensors}
+            sensors={canMove ? sensors : sinSensores}
             onDragStart={onDragStart}
             onDragEnd={(e) => void onDragEnd(e)}
           >
