@@ -113,7 +113,13 @@ export function AppNav({
         </span>
       </Link>
 
-      <nav className="flex flex-col gap-3.5">
+      {/*
+        La lista es lo único que scrollea: con muchos módulos habilitados no
+        entraba en pantallas bajas y empujaba "Cerrar sesión" fuera de la
+        vista, sin forma de llegar salvo achicando el zoom. La cabecera y la
+        cuenta quedan fijas.
+      */}
+      <nav className="-mx-1 flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-1 pb-3">
         {NAV_GROUPS.map((group) => {
           // Un grupo sin ítems permitidos no se dibuja: un encabezado
           // ("Gestión") con nada debajo parece un error de carga.
@@ -167,8 +173,6 @@ export function AppNav({
           );
         })}
       </nav>
-
-      <div className="flex-1" />
 
       {/* 027 (FR-008/FR-012) — La guía, en la zona inferior: es una utilidad,
           no un módulo de trabajo. Y sin gate, a diferencia de Ajustes: quien

@@ -30,7 +30,10 @@ export default async function AuthLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   const branding = await getBranding().catch(() => DEFAULT_BRANDING);
 
+  // El toaster va FUERA de la grilla: su <section> contaba como una celda,
+  // abría una segunda fila y el panel de marca no llegaba al pie.
   return (
+    <>
     <div
       data-surface="portal"
       className="grid min-h-screen bg-background lg:grid-cols-[1fr_1fr] xl:grid-cols-[5fr_6fr]"
@@ -90,7 +93,8 @@ export default async function AuthLayout({
           </ul>
         </div>
       </aside>
-      <AppToaster />
     </div>
+    <AppToaster />
+    </>
   );
 }
