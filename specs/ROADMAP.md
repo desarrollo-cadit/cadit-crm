@@ -172,6 +172,63 @@ se puede tomar cuando convenga. **Parcial**: US3 (precio de lista) está
 implementada; US1 (lista de espera), US2 (scheduler) y US4 (encuesta) no se
 empezaron, y la propia spec lo documenta en su "Revisión de alcance".
 
+## Planificado, sin empezar (2026-10-19)
+
+Anotado para no perderlo; nada de esto tiene spec todavía.
+
+### Recorrido comercial del alumno (recompra y marketing)
+
+**El problema**: hoy sabemos qué cursó cada persona, pero no lo usamos para
+venderle el siguiente curso. Quien hizo *Revit Arquitectura* es el candidato
+natural para *Revit MEP* o *Revit Estructura*, y nadie lo está mirando.
+
+No confundir con el "recorrido" académico de la 028 (`recorrido-grid`), que es
+el avance DENTRO de un programa. Esto es el historial ENTRE cursos, con
+mirada comercial.
+
+**Idea de alcance**:
+
+- **Rutas sugeridas entre cursos**: tabla curada a mano (curso → cursos
+  siguientes recomendados). Curada y no "inteligente": la academia sabe qué
+  sigue a qué, y una regla explícita se audita.
+- **Segmentos**: "terminaron X y no hicieron Y", "inscriptos de la categoría
+  BIM en los últimos 12 meses", "abandonaron a mitad". Lista exportable y
+  enviable por el envío masivo que ya existe (respetando plantillas
+  aprobadas y la ventana de 24 h de WhatsApp).
+- **En el legajo y para Ventas**: "le podría interesar…" en el contacto, para
+  que el vendedor lo vea al hablar con la persona.
+- **Métricas**: tasa de recompra, tiempo entre cursos, cursos que más
+  "llevan" a otro.
+
+**Restricciones a respetar**:
+
+- **Telemetría solo propia** (constitución II): nada de Google Analytics ni
+  píxeles de terceros. Si hace falta medir uso del portal, se registra en la
+  base, como los ingresos que ya guarda `alumnos.auditoria`.
+- **Consentimiento de marketing**: hay que guardar si la persona aceptó
+  recibir ofertas y poder darla de baja. Un envío comercial a quien no
+  aceptó es un problema legal, no de producto.
+- **Capacidad propia** (p. ej. `marketing.ver`): los segmentos cruzan
+  historial académico de 340 personas.
+
+### Pendientes de la conversación del 2026-10-19
+
+- **Facturación**: `facturacion.editar` (número de factura y recibo, sin
+  tocar montos), vista "pendiente de facturar", y empresa completa (dirección
+  fiscal, contacto y correo de facturación, condiciones) con edición
+  (`/api/companies` hoy no tiene `PATCH`).
+- **Rol Ventas**: vendedores con cuenta (`seller.user_id` ya existe), lectura
+  de académico, calendario, confirmaciones, inscriptos y empresas, más
+  `empresas.editar`. Falta decidir si cada vendedor ve todo o solo lo suyo.
+- **Avisos internos, segunda entrega** (la primera es la 039): inscripción
+  nueva, pago registrado y morosidad, sobre el mismo módulo.
+- **Avisos a alumnos y profesores** (en la plataforma + correo): pospuesto
+  por decisión del dueño. Ideas: clase cancelada/reprogramada, material
+  nuevo, nota publicada, cuota por vencer; para el profesor, corrección
+  aprobada/devuelta, cambio de horario, alumno nuevo.
+- **Diálogo entre tipos de usuario** y **acceso móvil / app instalable**
+  (el panel del equipo no es responsive; no hay manifest): pospuestos.
+
 ## Decisiones marco
 
 Estas atraviesan varias fases y ya están tomadas.
