@@ -6,7 +6,7 @@ import { ACTIVITY_LABELS, type ActivityKind } from "@/lib/activity-kinds";
 import { describeUserAgent } from "@/lib/user-agent";
 import { mergeTimeline, type TimelineEvent } from "@/lib/activity-timeline";
 import { listContactActivity, type ActivityEntry } from "@/server/activity-log";
-import { effectiveCourseIdsForContact } from "@/server/offline-courses/access";
+import { everCourseIdsForContact } from "@/server/offline-courses/access";
 import { contactCourseProgress } from "@/server/offline-courses/outline";
 
 /**
@@ -99,7 +99,9 @@ export async function getStudentAdminActivity(
 
   const [activity, courseIds, mensajes, asistencias, intentos, temas] = await Promise.all([
     listContactActivity(organizationId, contactId, 50),
-    effectiveCourseIdsForContact(organizationId, contactId),
+    // 043 — Lo que la persona TUVO, vencido o no: esto es su actividad, no
+    // lo que hoy puede abrir.
+    everCourseIdsForContact(organizationId, contactId),
     conMensajes
       ? db
           .select({

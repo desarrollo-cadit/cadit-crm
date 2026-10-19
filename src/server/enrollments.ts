@@ -20,6 +20,7 @@ import {
   verificarVinculoDeInscripcion,
 } from "@/server/program-modules";
 import { inscribirEnModulos, olvidarExclusion } from "@/server/module-enrollment";
+import { completarEmpresaDelContacto } from "@/server/contact-company";
 import { resumirLicencias } from "@/lib/license-rules";
 import {
   listarProgramasDelGrupo,
@@ -258,6 +259,9 @@ export async function createEnrollment(
     })
     .returning();
   const creada = inserted[0]!;
+
+  // 043 — La empresa de la venta completa la de la persona si estaba vacía.
+  await completarEmpresaDelContacto(organizationId, contactId, input.companyId);
 
   if (input.parentEnrollmentId) {
     // 034 (FR-004) — Volver a un módulo por el alta manual de 028 pisa la
@@ -1042,5 +1046,7 @@ export async function updateEnrollmentCommercial(
   if (!row) {
     return { ok: false, status: 404, code: "not_found", message: "Inscripción no encontrada" };
   }
+  // 043 — Igual que al inscribir: completa, nunca pisa.
+  if (input.companyId) await completarEmpresaDelContacto(organizationId, row.contactId, input.companyId);
   return { ok: true, enrollment: serializeEnrollmentCommercial(row) };
 }

@@ -31,6 +31,11 @@ import {
   classHasEnded,
   type MeetingWindow,
 } from "@/lib/schedule-time";
+import { avisoDeAcceso, type AvisoDeAcceso } from "@/lib/access-expiry";
+import {
+  estadosDeAccesoDeContacto,
+  type EstadoDeAccesoDeInscripcion,
+} from "@/server/access-expiry";
 
 /**
  * 015 — El ALCANCE del alumno: qué puede ver de sí mismo.
@@ -172,6 +177,21 @@ export type StudentLicenseDto = {
   daysLeft: number | null;
 };
 
+/**
+ * 043 — Hasta cuándo ve los contenidos de esta cursada.
+ *
+ * Vencido, el alumno sigue viendo la cursada en su historial —notas,
+ * asistencia, certificado— pero sus grabaciones, material, avisos y enlaces
+ * de clase NO VIAJAN: el corte está en este módulo, no en la pantalla.
+ */
+export type StudentAccessDto = {
+  /** Último día con acceso (inclusive), `YYYY-MM-DD`. `null` = no vence. */
+  until: string | null;
+  expired: boolean;
+  /** Lo que se le dice: "Tenés acceso hasta el …" / "Acceso finalizado el …". */
+  notice: AvisoDeAcceso | null;
+};
+
 export type StudentCourseDto = {
   enrollmentId: string;
   cohortId: string | null;
@@ -211,6 +231,8 @@ export type StudentCourseDto = {
     revokedAt: string | null;
   } | null;
   license: StudentLicenseDto | null;
+  /** 043 — El acceso a los contenidos (no a las notas, que no vencen). */
+  access: StudentAccessDto;
   /**
    * 034 (FR-020/FR-024) — TODAS las licencias de esta cursada: el paquete de
    * una especialización lleva varias. `license` sigue siendo la primera, para
@@ -348,6 +370,9 @@ export async function studentOverview(
     .map((e) => e.cohort?.id)
     .filter((id): id is string => Boolean(id));
 
+  // 043 — Hasta cuándo ve cada cursada. Se calcula al leer: nada se revoca.
+  const accesos = await estadosDeAccesoDeContacto(organizationId, contactId, now);
+
   const [sesiones, asistencias, evaluaciones, resultados, certificados, licencias] =
     await Promise.all([
       cohortIds.length
@@ -440,6 +465,7 @@ export async function studentOverview(
     resultados,
     certificados,
     licencias,
+    accesos,
     timezone: clock.timezone,
   };
 
@@ -484,7 +510,13 @@ export async function studentOverview(
       email: contact.email,
     },
     timezone: clock.timezone,
-    nextClass: pickNextClass(enrollments, sesiones, clock, now),
+    // 043 — Una cursada vencida no tiene próxima clase: su enlace no viaja.
+    nextClass: pickNextClass(
+      enrollments.filter((e) => !accesoVencido(accesos, e.enrollment.id)),
+      sesiones,
+      clock,
+      now
+    ),
     courses,
     balances: await studentBalances(organizationId, enrollmentIds, now),
   };
@@ -505,9 +537,31 @@ type CrossData = {
     expiresAt: Date | null;
     softwareName: string;
   }[];
+  /** 043 — El estado de acceso de cada inscripción de la persona. */
+  accesos: Map<string, EstadoDeAccesoDeInscripcion>;
 };
 
 const DIA_MS = 86_400_000;
+
+/**
+ * 043 — ¿Venció el acceso a los contenidos de esta inscripción? Sin estado
+ * (no debería pasar) no se corta: no se le quita nada a nadie por un dato
+ * que falta.
+ */
+function accesoVencido(
+  accesos: Map<string, EstadoDeAccesoDeInscripcion>,
+  enrollmentId: string
+): boolean {
+  return accesos.get(enrollmentId)?.vencido ?? false;
+}
+
+function accesoParaAlumno(
+  estado: EstadoDeAccesoDeInscripcion | undefined,
+  now: Date
+): StudentAccessDto {
+  if (!estado) return { until: null, expired: false, notice: null };
+  return { until: estado.hasta, expired: estado.vencido, notice: avisoDeAcceso(estado, now) };
+}
 
 function buildCourse(
   { enrollment, cohort, course, teacherName, waiverAuthorName }: ScopedEnrollment,
@@ -669,6 +723,7 @@ function buildCourse(
      */
     license: licencias[0] ?? null,
     licenses: licencias,
+    access: accesoParaAlumno(data.accesos.get(enrollment.id), now),
   };
 }
 
@@ -986,6 +1041,15 @@ export async function studentCourseDetail(
   if (!mia) return null;
 
   /**
+   * 043 — Vencido el acceso, la cursada se sigue viendo (clases con su
+   * asistencia, evaluaciones, certificado), pero grabaciones, enlaces de
+   * reunión, material y avisos NO VIAJAN. Una hija de especialización hereda
+   * el estado de su madre: el recorrido vence junto.
+   */
+  const accesos = await estadosDeAccesoDeContacto(organizationId, contactId, now);
+  const vencida = accesoVencido(accesos, mia.enrollment.id);
+
+  /**
    * 028 (FR-028, FR-037) — Si esta inscripción es MADRE, el detalle tiene que
    * traer también lo de sus hijas: la nota y la asistencia de cada módulo
    * viven contra la inscripción **hija**, no contra la madre, y la cohorte de
@@ -1087,6 +1151,7 @@ export async function studentCourseDetail(
     resultados,
     certificados,
     licencias,
+    accesos,
     timezone: clock.timezone,
   };
 
@@ -1124,7 +1189,7 @@ export async function studentCourseDetail(
       : sesiones;
 
   const classes: StudentClassDto[] = ordenadas.map((s) => ({
-    ...buildClassRow({
+    ...sinEnlacesSiVencio(vencida, buildClassRow({
       id: s.id,
       number: s.number,
       projected: false,
@@ -1140,7 +1205,7 @@ export async function studentCourseDetail(
       timezone: clock.timezone,
       window: clock.window,
       now,
-    }),
+    })),
     attendance:
       (asistencias.find((a) => a.classSessionId === s.id)?.status as
         | AttendanceStatus
@@ -1153,14 +1218,17 @@ export async function studentCourseDetail(
    * notas, ni asistencia ajena (FR-002).
    */
   const propia = mia.cohort?.id ?? null;
-  const [announcements, resources] = await Promise.all([
-    propia ? listAnnouncements(organizationId, propia) : Promise.resolve([]),
-    propia
-      ? listCohortMaterial(organizationId, { courseId: mia.course?.id ?? null, cohortId: propia })
-      : mia.course?.id
-        ? listResources(organizationId, { courseId: mia.course.id })
-        : Promise.resolve([]),
-  ]);
+  // 043 — Vencido: ni se consultan.
+  const [announcements, resources] = vencida
+    ? [[], []]
+    : await Promise.all([
+        propia ? listAnnouncements(organizationId, propia) : Promise.resolve([]),
+        propia
+          ? listCohortMaterial(organizationId, { courseId: mia.course?.id ?? null, cohortId: propia })
+          : mia.course?.id
+            ? listResources(organizationId, { courseId: mia.course.id })
+            : Promise.resolve([]),
+      ]);
 
   const certificadoPropio = certificados.find(
     (c) => c.enrollmentId === mia.enrollment.id
@@ -1231,8 +1299,16 @@ export async function studentCourseDetail(
     announcements,
     resources,
     milestones,
-    nextClass: pickNextClass(recorrido, sesiones, clock, now),
+    nextClass: vencida ? null : pickNextClass(recorrido, sesiones, clock, now),
   };
+}
+
+/**
+ * 043 — Una clase de una cursada vencida: la fila queda (es el registro de
+ * la asistencia), sin grabación ni enlace de reunión.
+ */
+function sinEnlacesSiVencio(vencida: boolean, row: ClassRowDto): ClassRowDto {
+  return vencida ? { ...row, meetingUrl: null, recordingUrl: null } : row;
 }
 
 /* ============================================================

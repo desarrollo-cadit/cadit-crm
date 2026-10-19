@@ -13,6 +13,7 @@ import {
   Lock,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { formatearDia } from "@/lib/access-expiry";
 import { Markdown } from "@/components/offline-courses/markdown";
 import { VimeoPlayer, type VimeoProgressReport } from "@/components/offline-courses/vimeo-player";
 import { EmptyNote, PortalCard, SectionTitle } from "@/components/portal/student-bits";
@@ -198,6 +199,10 @@ export function StudentOfflineCoursesClient() {
               <p className="text-lg font-semibold leading-snug tracking-tight">
                 {c.title}
               </p>
+              {/* 043 — Hasta cuándo: la fecha más tarde entre sus fuentes. */}
+              {c.accessUntil && (
+                <p className="text-xs text-text-3">Disponible hasta el {formatearDia(c.accessUntil)}</p>
+              )}
               <CourseProgress card={c} />
             </div>
           </Link>

@@ -449,6 +449,13 @@
       "when": 1792433079796,
       "tag": "0063_facturacion",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1792436675185,
+      "tag": "0064_vencimiento_de_accesos",
+      "breakpoints": true
     }
   ]
 }

@@ -9,6 +9,7 @@ import {
   getContactStage,
   serializeContact,
 } from "@/server/contacts";
+import { empresaExiste } from "@/server/contact-company";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +53,12 @@ const patchSchema = z.object({
   utmCampaign: z.string().trim().max(200).nullable().optional(),
   notes: z.string().max(4000).nullable().optional(),
   archived: z.boolean().optional(),
+  /**
+   * 043 — La empresa de la persona. `contactos.editar` y no `empresas.editar`:
+   * es un dato del CONTACTO (como su correo); la empresa en sí —razón social,
+   * datos de facturación— sigue siendo de `empresas.editar`.
+   */
+  companyId: z.string().min(1).nullable().optional(),
 });
 
 export const PATCH = requireCapability(
@@ -71,6 +78,12 @@ export const PATCH = requireCapability(
   if (body.data.notes !== undefined) set.notes = body.data.notes;
   if (body.data.archived !== undefined) {
     set.archivedAt = body.data.archived ? new Date() : null;
+  }
+  if (body.data.companyId !== undefined) {
+    if (body.data.companyId && !(await empresaExiste(session.organizationId, body.data.companyId))) {
+      return apiError(422, "unknown_company", "La empresa no existe");
+    }
+    set.companyId = body.data.companyId;
   }
 
   const db = getDb();

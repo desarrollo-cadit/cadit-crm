@@ -9,6 +9,7 @@ import { Markdown } from "@/components/offline-courses/markdown";
 import { OfflineCourseStatusBadge } from "@/components/offline-courses/status-badge";
 import { TopicVideoLink } from "@/components/offline-courses/topic-video-link";
 import { CourseEditor } from "@/components/offline-courses/editor/course-editor";
+import { CourseAccessPanel } from "@/components/offline-courses/course-access-panel";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -55,6 +56,8 @@ export default async function OfflineCoursePage({
             />
             <h2 className="text-lg font-semibold">{course.title}</h2>
           </header>
+          {/* 043 — Quiénes tienen acceso, dar a una persona o a una empresa. */}
+          <CourseAccessPanel courseId={course.id} canEdit />
           <CourseEditor course={course} />
         </div>
       </div>
@@ -79,6 +82,9 @@ export default async function OfflineCoursePage({
           </div>
           <Markdown source={course.descriptionMd} className="text-muted-foreground" />
         </header>
+
+        {/* 043 — Quiénes tienen acceso (solo lectura sin `academico.editar`). */}
+        <CourseAccessPanel courseId={course.id} canEdit={false} />
 
         <section aria-labelledby="lecciones" className="space-y-3">
           <h3 id="lecciones" className="text-sm font-semibold">

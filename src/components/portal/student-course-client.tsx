@@ -28,6 +28,7 @@ import { StudentMilestones, type Milestone } from "@/components/portal/student-m
 import { ProximaClase, type NextClass } from "@/components/portal/student-dashboard";
 import { StudentSubmissions } from "@/components/portal/student-submissions";
 import { ZoomRecordingPlayer, isZoomRecording } from "@/components/portal/zoom-recording-player";
+import { AvisoDeAcceso, textoDeAcceso, type StudentAccess } from "@/components/portal/access-notice";
 import {
   ChipDeEstado,
   EncabezadoDePagina,
@@ -133,6 +134,8 @@ type Detail = {
     certificate: { code: string; issuedAt: string; revokedAt: string | null } | null;
     /** 028 (US3) — Ausente en la cursada simple (FR-032). */
     modules?: Module[];
+    /** 043 — Hasta cuándo ve los contenidos. Vencido, el material y los avisos no llegan. */
+    access?: StudentAccess;
   };
   timezone: string;
   classes: ClassRow[];
@@ -265,6 +268,8 @@ export function StudentCourseClient({ enrollmentId }: { enrollmentId: string }) 
         acciones={<ApprovalBadge value={course.approval} />}
       />
 
+      <AvisoDeAcceso access={course.access} />
+
       <Tarjeta className="space-y-5">
         <div className="grid grid-cols-2 gap-x-6 gap-y-4 lg:grid-cols-4">
           {modulos.length === 0 && course.totalClasses > 0 && (
@@ -380,8 +385,12 @@ export function StudentCourseClient({ enrollmentId }: { enrollmentId: string }) 
                   academyZone={data.timezone}
                 />
               )}
-              {activa === "material" && <MaterialTab resources={data.resources} />}
-              {activa === "avisos" && <AvisosTab announcements={data.announcements} />}
+              {activa === "material" && (
+                <MaterialTab resources={data.resources} vencido={vencidoTexto(course.access)} />
+              )}
+              {activa === "avisos" && (
+                <AvisosTab announcements={data.announcements} vencido={vencidoTexto(course.access)} />
+              )}
             </div>
           </div>
         </div>
@@ -780,11 +789,26 @@ function ClassRowItem({ row, academyZone }: { row: ClassRow; academyZone: string
  * (010) y no de la entrega, porque la academia puede corregir por fuera.
  */
 
+/** 043 — El texto de "Acceso finalizado el …" si venció; `null` si no. */
+function vencidoTexto(access: StudentAccess | undefined): string | null {
+  return access?.expired ? textoDeAcceso(access) : null;
+}
+
 function MaterialTab({
   resources,
+  vencido = null,
 }: {
   resources: { id: string; title: string; url: string; kind: string }[];
+  vencido?: string | null;
 }) {
+  if (vencido) {
+    return (
+      <EmptyNote title={vencido}>
+        El material de este curso ya no está disponible. Si lo necesitás,
+        escribinos.
+      </EmptyNote>
+    );
+  }
   if (resources.length === 0) {
     return (
       <EmptyNote title="Todavía no hay material publicado">
@@ -820,6 +844,7 @@ function MaterialTab({
 
 function AvisosTab({
   announcements,
+  vencido = null,
 }: {
   announcements: {
     id: string;
@@ -828,7 +853,15 @@ function AvisosTab({
     authorName: string | null;
     createdAt: string;
   }[];
+  vencido?: string | null;
 }) {
+  if (vencido) {
+    return (
+      <EmptyNote title={vencido}>
+        Los avisos de este curso ya no están disponibles.
+      </EmptyNote>
+    );
+  }
   if (announcements.length === 0) {
     return (
       <EmptyNote title="No hay avisos para tu cohorte">

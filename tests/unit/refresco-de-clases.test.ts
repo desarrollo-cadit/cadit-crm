@@ -43,7 +43,8 @@ describe("las tres pantallas con el botón se refrescan solas", () => {
 describe("la página del curso también tiene el botón para ingresar", () => {
   it("el detalle de la cursada trae la próxima clase con la misma regla que el inicio", () => {
     const src = readFileSync(join(process.cwd(), "src/server/student-portal.ts"), "utf8");
-    expect(src).toContain("nextClass: pickNextClass(recorrido, sesiones, clock, now)");
+    // 043 — Con el acceso vencido no hay próxima clase (su enlace no viaja).
+    expect(src).toContain("nextClass: vencida ? null : pickNextClass(recorrido, sesiones, clock, now)");
   });
   it("y la dibuja con la misma tarjeta del inicio", () => {
     const src = readFileSync(join(process.cwd(), "src/components/portal/student-course-client.tsx"), "utf8");

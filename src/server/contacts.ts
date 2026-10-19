@@ -13,6 +13,8 @@ export function serializeContact(c: typeof schema.contact.$inferSelect) {
     utmCampaign: c.utmCampaign,
     email: c.email,
     nationalId: c.nationalId,
+    /** 043 — La empresa de la persona (no la de una venta). */
+    companyId: c.companyId,
     archivedAt: c.archivedAt?.toISOString() ?? null,
     createdAt: c.createdAt.toISOString(),
   };

@@ -230,6 +230,8 @@ export type ContactDto = {
   email: string | null;
   /** 005 — cédula/identificación. */
   nationalId: string | null;
+  /** 043 — La empresa de la persona (`contact.company_id`), no la de una venta. */
+  companyId: string | null;
   archivedAt: string | null;
   /** Iteración 3 — para la columna "Creado" de la tabla de contactos. */
   createdAt: string;

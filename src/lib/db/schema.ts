@@ -196,12 +196,24 @@ export const contact = pgTable(
     email: text("email"),
     /** 005 — cédula/identificación, sin constraint de unicidad (spec.md). */
     nationalId: text("national_id"),
+    /**
+     * 043 — La empresa de la persona, como atributo del CONTACTO. Hasta acá
+     * una persona era "de una empresa" solo a través de `enrollment.company_id`
+     * (quién factura una venta), y alguien sin inscripción no tenía empresa.
+     * Se completa sola al inscribir con empresa si estaba vacía (nunca pisa
+     * una distinta) y se edita en el contacto. `set null`: borrar la empresa
+     * no borra a nadie.
+     */
+    companyId: text("company_id").references((): AnyPgColumn => company.id, {
+      onDelete: "set null",
+    }),
     archivedAt: timestamp("archived_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [
     uniqueIndex("contact_org_wa_identity_uq").on(t.organizationId, t.waIdentity),
+    index("contact_org_company_idx").on(t.organizationId, t.companyId),
     index("contact_org_wa_user_id_idx").on(t.organizationId, t.waUserId),
     index("contact_org_name_idx").on(t.organizationId, t.firstName),
     // 005 (DV-003) — unicidad de email/celular por organización, cuando no es NULL.
@@ -978,6 +990,20 @@ export const enrollment = pgTable(
       { onDelete: "set null" }
     ),
     attendanceWaiverRevokeReason: text("attendance_waiver_revoke_reason"),
+    /**
+     * 043 — Fecha de acceso fijada a mano: último día (inclusive) en que la
+     * persona ve los contenidos de la cohorte. NULL = la regla (un mes
+     * calendario después del fin, `src/lib/access-expiry.ts`). Reemplaza a
+     * la calculada, sea más tarde o más temprano. Guarda un DÍA (medianoche
+     * UTC), como `cohort.end_date`. Solo en la inscripción madre o simple:
+     * las hijas de una especialización heredan la de su madre.
+     */
+    accessUntil: timestamp("access_until"),
+    /** Cuándo y quién la fijó (o la borró). Una excepción sin autor no se revisa. */
+    accessUntilSetAt: timestamp("access_until_set_at"),
+    accessUntilSetBy: text("access_until_set_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -2853,9 +2879,12 @@ export const offlineQuizAttempt = pgTable(
     quizId: text("quiz_id")
       .notNull()
       .references(() => offlineQuiz.id, { onDelete: "cascade" }),
-    enrollmentId: text("enrollment_id")
-      .notNull()
-      .references(() => enrollment.id, { onDelete: "cascade" }),
+    /**
+     * 043 — NULL cuando el curso le llega a la persona por un acceso DIRECTO
+     * (`offline_course_grant`), que no cuelga de ninguna inscripción. Los
+     * intentos se cuentan por contacto, así que nada depende de esta columna.
+     */
+    enrollmentId: text("enrollment_id").references(() => enrollment.id, { onDelete: "cascade" }),
     contactId: text("contact_id")
       .notNull()
       .references(() => contact.id, { onDelete: "cascade" }),
@@ -2925,6 +2954,53 @@ export const offlineCourseAccess = pgTable(
       "offline_course_access_target_coherent",
       sql`(${t.cohortId} is not null and ${t.enrollmentId} is null and ${t.mode} is null)
        or (${t.enrollmentId} is not null and ${t.cohortId} is null and ${t.mode} is not null)`
+    ),
+  ]
+);
+
+/**
+ * 043 — Acceso DIRECTO de una persona a un curso offline, sin inscripción.
+ *
+ * Es de un CONTACTO, no de una inscripción ni de una cohorte: así se le da un
+ * curso a alguien de una empresa que nunca cursó. Lleva fecha límite
+ * obligatoria (`access_until`, un DÍA guardado como medianoche UTC) y vence
+ * solo, al leer. Se revoca MARCANDO (`revoked_at/_by`), no borrando: quién
+ * tuvo qué y quién se lo quitó se tiene que poder leer después. Un acceso
+ * activo por (persona, curso): el índice parcial lo garantiza.
+ */
+export const offlineCourseGrant = pgTable(
+  "offline_course_grant",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    contactId: text("contact_id")
+      .notNull()
+      .references(() => contact.id, { onDelete: "cascade" }),
+    offlineCourseId: text("offline_course_id")
+      .notNull()
+      .references(() => offlineCourse.id, { onDelete: "cascade" }),
+    accessUntil: timestamp("access_until").notNull(),
+    note: text("note"),
+    /** La empresa por la que se asignó en bloque, si fue así. Solo informativo. */
+    viaCompanyId: text("via_company_id").references(() => company.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+    updatedBy: text("updated_by").references(() => user.id, { onDelete: "set null" }),
+    revokedAt: timestamp("revoked_at"),
+    revokedBy: text("revoked_by").references(() => user.id, { onDelete: "set null" }),
+  },
+  (t) => [
+    uniqueIndex("offline_course_grant_activo_uq")
+      .on(t.contactId, t.offlineCourseId)
+      .where(sql`revoked_at is null`),
+    index("offline_course_grant_org_contact_idx").on(t.organizationId, t.contactId),
+    index("offline_course_grant_org_course_idx").on(t.organizationId, t.offlineCourseId),
+    check(
+      "offline_course_grant_revocacion_coherente",
+      sql`${t.revokedBy} is null or ${t.revokedAt} is not null`
     ),
   ]
 );

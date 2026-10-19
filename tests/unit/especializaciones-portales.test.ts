@@ -59,6 +59,15 @@ vi.mock("@/lib/db", () => ({
   ),
 }));
 
+/**
+ * 043 — El vencimiento de accesos hace sus propias consultas; acá no se
+ * prueba (lo prueban `vencimiento-de-accesos*.test.ts`) y no debe correr la
+ * cola posicional. Sin estado, nada vence.
+ */
+vi.mock("@/server/access-expiry", () => ({
+  estadosDeAccesoDeContacto: async () => new Map(),
+}));
+
 beforeEach(() => {
   selectQueue.length = 0;
   vi.resetModules();

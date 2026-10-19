@@ -63,6 +63,8 @@ const prefixes = {
   offlineAnswer: "oans",
   offlineQuizAttempt: "oatt",
   offlineCourseAccess: "oacc",
+  // 043 — acceso directo de una persona a un curso offline (sin inscripción).
+  offlineCourseGrant: "ogr",
   offlineTopicProgress: "otpg",
   // A course or lesson completed in the previous LMS, recognized by staff.
   offlineRecognition: "orec",

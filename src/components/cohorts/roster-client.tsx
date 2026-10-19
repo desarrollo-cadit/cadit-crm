@@ -30,6 +30,11 @@ import { CHECKLIST_ITEMS, checklistProgress } from "@/lib/onboarding-checklist";
 import { formatSentAt } from "@/lib/schedule-time";
 import type { SellerOption } from "@/lib/vendedores";
 import { notify } from "@/lib/notify";
+import {
+  AccessUntilLine,
+  resumenDeAcceso,
+  type EstadoDeAccesoDto,
+} from "@/components/access/content-access";
 
 /*
  * 035 (US4) — Las casillas del checklist y su progreso viven en
@@ -168,6 +173,31 @@ export function RosterClient({
   useEffect(() => {
     void refetch();
   }, [refetch]);
+
+  /**
+   * 043 — Hasta cuándo ve cada alumno sus contenidos. Ruta aparte
+   * (`academico.ver`): no es un dato de la venta y no engorda el roster.
+   */
+  const [accesos, setAccesos] = useState<{
+    sinFecha: boolean;
+    porInscripcion: Map<string, EstadoDeAccesoDto>;
+  } | null>(null);
+  const refetchAccesos = useCallback(async () => {
+    if (!canViewOfflineCourses) return;
+    const res = await fetch(`/api/cohorts/${cohortId}/content-access`).catch(() => null);
+    if (!res?.ok) return;
+    const body = (await res.json()) as {
+      cohort: { sinFecha: boolean } | null;
+      inscripciones: EstadoDeAccesoDto[];
+    };
+    setAccesos({
+      sinFecha: body.cohort?.sinFecha ?? false,
+      porInscripcion: new Map(body.inscripciones.map((i) => [i.enrollmentId, i])),
+    });
+  }, [cohortId, canViewOfflineCourses]);
+  useEffect(() => {
+    void refetchAccesos();
+  }, [refetchAccesos]);
 
   /**
    * 034 (US5) — El PAQUETE de una especialización se arma con cualquier
@@ -401,6 +431,14 @@ export function RosterClient({
                 onProgress={refetch}
               />
             )}
+            {/* 043 — Sin fin ni clases, el acceso de esta cohorte no vence. */}
+            {accesos?.sinFecha && (
+              <p className="rounded-md border border-warning-border bg-warning-soft px-3 py-2 text-xs">
+                Esta cohorte no tiene fecha de fin ni clases cargadas: el acceso de sus
+                alumnos a grabaciones, material y cursos offline no vence. Cargá la
+                fecha de fin para que venza un mes después.
+              </p>
+            )}
             {/* 035 (US1) — Un programa para todo el grupo, de una vez. */}
             <GroupLicensesPanel
               cohortId={cohortId}
@@ -455,6 +493,19 @@ export function RosterClient({
                             >
                               {e.contact.name}
                             </a>
+                            {/* 043 — hasta cuándo ve sus contenidos. */}
+                            {resumenDeAcceso(accesos?.porInscripcion.get(e.id)) && (
+                              <span
+                                className={cn(
+                                  "block text-xs font-normal",
+                                  accesos?.porInscripcion.get(e.id)?.vencido
+                                    ? "text-danger"
+                                    : "text-muted-foreground"
+                                )}
+                              >
+                                {resumenDeAcceso(accesos?.porInscripcion.get(e.id))}
+                              </span>
+                            )}
                           </TableCell>
                           <TableCell className="text-xs text-muted-foreground">
                             {e.contact.phone ?? "sin teléfono"}
@@ -776,6 +827,18 @@ export function RosterClient({
                                   </span>
                                 )}
                               </div>
+
+                              {/* 043 — Hasta cuándo ve grabaciones, material y
+                                  cursos offline de esta cohorte. */}
+                              {accesos?.porInscripcion.has(e.id) && (
+                                <div className="mt-3 border-t pt-3">
+                                  <AccessUntilLine
+                                    estado={accesos.porInscripcion.get(e.id)}
+                                    canEdit={canEditOfflineCourses}
+                                    onChanged={() => void refetchAccesos()}
+                                  />
+                                </div>
+                              )}
 
                               {/* cursos-offline — Library access for THIS
                                   student (exceptions over the cohort) and

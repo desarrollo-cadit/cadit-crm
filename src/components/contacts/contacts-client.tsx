@@ -17,6 +17,7 @@ import { ContactAvatar } from "@/components/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -412,9 +413,24 @@ function EditDialog({
     source: string | null;
     utmCampaign: string | null;
     notes: string | null;
+    companyId: string | null;
   }) => Promise<void>;
 }) {
   const [firstName, setFirstName] = useState(contact.firstName);
+  /**
+   * 043 — La empresa de la PERSONA (para "asignar a toda la empresa"). Se
+   * completa sola al inscribir con empresa; acá se corrige.
+   */
+  const [companyId, setCompanyId] = useState(contact.companyId ?? "");
+  const [empresas, setEmpresas] = useState<{ id: string; legalName: string }[]>([]);
+  useEffect(() => {
+    void (async () => {
+      const res = await fetch("/api/companies").catch(() => null);
+      if (!res?.ok) return;
+      const body = (await res.json()) as { companies: { id: string; legalName: string }[] };
+      setEmpresas(body.companies);
+    })();
+  }, []);
   const [lastName, setLastName] = useState(contact.lastName ?? "");
   const [email, setEmail] = useState(contact.email ?? "");
   const [nationalId, setNationalId] = useState(contact.nationalId ?? "");
@@ -480,6 +496,19 @@ function EditDialog({
               onChange={(e) => setNationalId(e.target.value)}
             />
           </div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium" htmlFor="edit-company">
+              Empresa
+            </label>
+            <Select id="edit-company" value={companyId} onChange={(e) => setCompanyId(e.target.value)}>
+              <option value="">Sin empresa</option>
+              {empresas.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.legalName}
+                </option>
+              ))}
+            </Select>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <label className="text-sm font-medium" htmlFor="edit-source">
@@ -529,6 +558,7 @@ function EditDialog({
                 source: source.trim() || null,
                 utmCampaign: utmCampaign.trim() || null,
                 notes: notes.trim() || null,
+                companyId: companyId || null,
               })
             }
           >

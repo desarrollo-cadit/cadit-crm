@@ -5,6 +5,12 @@ import { Award, FileText, GraduationCap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EnrollLauncher } from "@/components/enrollments/enroll-launcher";
+import { AccessUntilLine, type EstadoDeAccesoDto } from "@/components/access/content-access";
+import {
+  ContactPortalAccess,
+  DirectGrantsSection,
+  type ContactGrantDto,
+} from "@/components/access/direct-grants";
 
 type RecordCourse = {
   enrollmentId: string;
@@ -64,6 +70,9 @@ export function StudentRecordClient({
   contactId,
   canEnroll = false,
   canPrintTranscript = false,
+  canViewAccess = false,
+  canEditAccess = false,
+  canManagePortal = false,
 }: {
   contactId: string;
   /** Resuelto en el servidor: `inscripciones.editar`. */
@@ -73,8 +82,30 @@ export function StudentRecordClient({
    * ruta de la escolaridad. Sin ella el enlace no se dibuja: llevaría a un 403.
    */
   canPrintTranscript?: boolean;
+  /** 043 — `academico.ver` / `academico.editar` / `accesos.gestionar`, resueltas en el servidor. */
+  canViewAccess?: boolean;
+  canEditAccess?: boolean;
+  canManagePortal?: boolean;
 }) {
   const [data, setData] = useState<StudentRecord | null>(null);
+  /** 043 — Acceso a contenidos: fechas por cursada y accesos directos. Ruta propia. */
+  const [acceso, setAcceso] = useState<{
+    enrollments: Map<string, EstadoDeAccesoDto>;
+    grants: ContactGrantDto[];
+  } | null>(null);
+  const refetchAcceso = useCallback(async () => {
+    if (!canViewAccess) return;
+    const res = await fetch(`/api/contacts/${contactId}/content-access`).catch(() => null);
+    if (!res?.ok) return;
+    const body = (await res.json()) as { enrollments: EstadoDeAccesoDto[]; grants: ContactGrantDto[] };
+    setAcceso({
+      enrollments: new Map(body.enrollments.map((e) => [e.enrollmentId, e])),
+      grants: body.grants,
+    });
+  }, [contactId, canViewAccess]);
+  useEffect(() => {
+    void refetchAcceso();
+  }, [refetchAcceso]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -228,9 +259,40 @@ export function StudentRecordClient({
                 {c.approvalReasons.join(" · ")}
               </p>
             )}
+
+            {/* 043 — Hasta cuándo ve grabaciones, material y cursos offline. */}
+            {acceso?.enrollments.has(c.enrollmentId) && (
+              <div className="mt-3 border-t pt-3">
+                <AccessUntilLine
+                  estado={acceso.enrollments.get(c.enrollmentId)}
+                  canEdit={canEditAccess}
+                  onChanged={() => void refetchAcceso()}
+                />
+              </div>
+            )}
           </article>
         ))}
       </section>
+
+      {/* 043 — Accesos directos a cursos offline (sin inscripción). */}
+      {acceso && (
+        <DirectGrantsSection
+          contactId={contactId}
+          grants={acceso.grants}
+          canEdit={canEditAccess}
+          onChanged={() => void refetchAcceso()}
+        />
+      )}
+
+      {/* 043 — Quien solo tiene accesos directos también entra al portal. */}
+      {canManagePortal && data.courses.length === 0 && (acceso?.grants.some((g) => !g.revokedAt) ?? false) && (
+        <section className="space-y-2">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Acceso al portal
+          </h2>
+          <ContactPortalAccess contactId={contactId} />
+        </section>
+      )}
 
       {/* Solo existe si el servidor la mandó (FR-010). */}
       {data.account && (

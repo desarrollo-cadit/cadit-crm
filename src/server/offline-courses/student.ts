@@ -1,7 +1,7 @@
 import { asc, eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
-import { effectiveCourseIdsForContact } from "./access";
+import { offlineAccessForContact } from "./access";
 import type { OfflineVideoShown } from "@/lib/db/schema";
 import { parseVimeoUrl } from "@/lib/vimeo";
 import { attemptsRemaining, topicUnlocked, type CourseCompletion } from "./logic";
@@ -66,6 +66,8 @@ export type StudentOfflineCourseCard = {
   completion: CourseCompletion;
   /** The whole course was recognized (completed in the previous academy). */
   recognized: boolean;
+  /** 043 — Last day of access (inclusive), `YYYY-MM-DD`; `null` = no end. */
+  accessUntil: string | null;
 };
 
 export type StudentQuizSummary = {
@@ -140,10 +142,15 @@ export type StudentOfflineQuiz = StudentQuizSummary & {
  * Scope
  * ============================================================ */
 
-/** The published library courses this person can read. */
-async function readableCourseIds(orgId: string, contactId: string): Promise<string[]> {
-  const ids = await effectiveCourseIdsForContact(orgId, contactId);
-  if (ids.length === 0) return [];
+/**
+ * The published library courses this person can read NOW, with the last day
+ * of access. 043: expired cohort access and expired direct grants are already
+ * out — an expired course answers `null` (→ 404) like one that never existed.
+ */
+async function readableAccess(orgId: string, contactId: string): Promise<Map<string, string | null>> {
+  const access = await offlineAccessForContact(orgId, contactId);
+  const ids = [...access.keys()];
+  if (ids.length === 0) return new Map();
   const rows = await getDb()
     .select({ id: offlineCourse.id })
     .from(offlineCourse)
@@ -155,7 +162,12 @@ async function readableCourseIds(orgId: string, contactId: string): Promise<stri
         eq(offlineCourse.status, "published")
       )
     );
-  return rows.map((r) => r.id);
+  return new Map(rows.map((r) => [r.id, access.get(r.id) ?? null]));
+}
+
+/** The published library courses this person can read now. */
+async function readableCourseIds(orgId: string, contactId: string): Promise<string[]> {
+  return [...(await readableAccess(orgId, contactId)).keys()];
 }
 
 /** The course, when this person can read it; `null` otherwise (→ 404). */
@@ -270,7 +282,8 @@ export async function myCourses(
   orgId: string,
   contactId: string
 ): Promise<StudentOfflineCourseCard[]> {
-  const ids = await readableCourseIds(orgId, contactId);
+  const access = await readableAccess(orgId, contactId);
+  const ids = [...access.keys()];
   if (ids.length === 0) return [];
 
   const [courses, progress] = await Promise.all([
@@ -304,6 +317,7 @@ export async function myCourses(
       quizzesPassed: completion.quizzesPassed,
       completion,
       recognized: p?.state.courseRecognized ?? false,
+      accessUntil: access.get(c.id) ?? null,
     };
   });
 }

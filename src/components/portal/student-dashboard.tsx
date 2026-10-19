@@ -31,6 +31,7 @@ import {
   zoneLabel,
 } from "@/components/portal/student-bits";
 import type { ApprovalValue } from "@/components/portal/student-bits";
+import { textoDeAcceso, type StudentAccess } from "@/components/portal/access-notice";
 import {
   ChipDeEstado,
   EncabezadoDePagina,
@@ -98,6 +99,8 @@ type Course = {
    * Ausente en la cursada simple, que es el caso de la enorme mayoría.
    */
   modules?: Module[];
+  /** 043 — Hasta cuándo ve los contenidos de esta cursada. */
+  access?: StudentAccess;
 };
 
 /**
@@ -321,6 +324,12 @@ export function StudentDashboard() {
                       {formatDate(c.startDate)}
                       {c.endDate && ` – ${formatDate(c.endDate)}`}
                     </span>
+                    {/* 043 — Hasta cuándo ve grabaciones y material. */}
+                    {textoDeAcceso(c.access) && (
+                      <span className="block truncate text-xs text-text-3">
+                        {textoDeAcceso(c.access)}
+                      </span>
+                    )}
                   </span>
                   <span className="flex shrink-0 items-center gap-3">
                     <ApprovalBadge value={c.approval} />
@@ -336,7 +345,12 @@ export function StudentDashboard() {
       {data.courses.length === 0 && (
         <EmptyNote title="No tenés inscripciones registradas">
           Cuando la academia registre tu inscripción, aquí verás las fechas del
-          curso, tu asistencia y tu estado de cuenta.
+          curso, tu asistencia y tu estado de cuenta. Si te dieron acceso a un
+          curso offline, lo encontrás en{" "}
+          <Link href="/portal/cursos-offline" className="font-medium text-brand-text hover:underline">
+            Cursos offline
+          </Link>
+          .
         </EmptyNote>
       )}
     </div>

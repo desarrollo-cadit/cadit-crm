@@ -71,7 +71,7 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
     donde: "/academico",
   },
   "academico.editar": {
-    que: "crear un curso o una cohorte, cambiarle las fechas y generar su cronograma de clases",
+    que: "crear un curso o una cohorte, cambiarle las fechas y generar su cronograma de clases; fijar a mano hasta cuándo un alumno ve las grabaciones y el material de una cohorte (vencen solos un mes después del fin), y dar un curso offline a una persona o a toda una empresa con fecha de vencimiento",
     donde: "/academico",
   },
   "asistencia.ver": {
@@ -109,7 +109,7 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
     donde: "/contacts",
   },
   "contactos.editar": {
-    que: "dar de alta a una persona, corregir sus datos de contacto y darla de baja",
+    que: "dar de alta a una persona, corregir sus datos de contacto (incluida su empresa) y darla de baja",
     donde: "/contacts",
   },
   "inscripciones.ver": {

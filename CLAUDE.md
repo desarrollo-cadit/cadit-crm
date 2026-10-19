@@ -62,6 +62,10 @@ externas: el trabajo en segundo plano (agente, Laboratorio) es in-process.
 | Baja de alumnos y profesores | `src/server/contacts-admin.ts` (`decidirBaja`) |
 | **Licencias del grupo** (un programa para toda la cohorte; lo grupal bloquea lo individual) | `src/lib/group-licenses.ts` (planes puros: todo o nada, conversión, sincronización) + `src/server/group-licenses.ts` (`asignarAlGrupo`, `quitarDelGrupo`, `sincronizarLicenciasDelGrupo`, que llaman el alta, los módulos automáticos, "Mudar" y la baja) + `/api/cohorts/[id]/group-licenses` + `src/components/cohorts/group-licenses-panel.tsx`; el bloqueo individual vive en `assignLicense`/`unassignLicense` (`src/server/licenses.ts`) y en `setEnrollmentOverride` (cursos offline) |
 | **Vista de Licencias** (quién tiene cada programa) y **catálogo de programas** (alta, nombre, foto, total; ya no es una pestaña de Académico) | `src/lib/license-view.ts` (cuentas puras, misma regla que el stock) + `src/server/license-view.ts` + `/api/licenses` + `/licencias` (`src/components/licenses/licenses-view.tsx`; alta/edición con `src/components/licenses/software-form.tsx` → `/api/software`, controles sólo con `academico.editar`) |
+| **Vencimiento de accesos** (un mes después del fin de la cohorte) y fecha fijada a mano | `src/lib/access-expiry.ts` (reglas puras: referencia, +1 mes calendario, aviso) + `src/server/access-expiry.ts` (`estadosDeAcceso`, `fijarAccesoHasta`) + `PATCH /api/enrollments/[id]/access-until` + `/api/cohorts/[id]/content-access` + `/api/contacts/[id]/content-access` + `src/components/access/content-access.tsx`; el corte del alumno vive en `src/server/student-portal.ts` y `src/server/offline-courses/{access,student,submit}.ts` |
+| **Accesos directos a cursos offline** (persona sin inscripción, con fecha) y "asignar a toda la empresa" | `src/lib/offline-grants.ts` (planes puros) + `src/server/offline-courses/grants.ts` + `/api/offline-courses/[id]/{access,grants,grants/company}` + `/api/offline-course-grants/[id]` + `src/components/offline-courses/course-access-panel.tsx` + `src/components/access/direct-grants.tsx` |
+| La empresa de una persona (`contact.company_id`) | `src/server/contact-company.ts` (completa, nunca pisa) + `PATCH /api/contacts/[id]` |
+| Portal para quien no tiene inscripción | `grantPortalAccessToContact` en `src/server/access.ts` + `/api/contacts/[id]/portal-access` |
 | **Aislamiento entre organizaciones (RLS)** | `src/lib/db/with-tenant.ts` + `docs/rls-rol-de-conexion.md` |
 | Campos/tablas | `src/lib/db/schema.ts` → `pnpm db:generate` → migración nueva en `drizzle/` |
 | La ingesta/envío de mensajes | `src/server/inbox/` (ingest idempotente, send con guard de sandbox, ventana 24h) |
@@ -403,6 +407,31 @@ no por `id`: la copia crea filas nuevas, así que el `id` nunca coincide.
 - **La regla de aprobación vive en `src/lib/approval.ts`** para que la
   escolaridad la use sin arrastrar el servidor; `grading.ts` la re-exporta,
   así que los llamadores viejos no cambian.
+
+## Vencimiento de accesos (ciclo 043)
+
+- **Se calcula al LEER, no se revoca.** Un mes calendario después del fin de
+  la cohorte (`end_date`; sin ella, la última clase no cancelada; sin
+  ninguna, no vence) el alumno deja de ver grabaciones, enlaces de clase,
+  material, avisos y los cursos offline que le dio ESA cohorte. Notas,
+  asistencia, certificados, escolaridad y legajo no vencen. No hay cron ni
+  columna "vencido": `src/lib/access-expiry.ts` decide con fechas.
+- **El corte es del servidor.** Vencido = no viaja: `studentCourseDetail`
+  ni consulta material ni avisos y vacía `recordingUrl`/`meetingUrl`; los
+  cursos offline vencidos responden 404 como si no existieran.
+  `tests/unit/vencimiento-de-accesos-estructura.test.ts` obliga a clasificar
+  toda ruta nueva de `api/portal/me` como CONTENIDO (vence) o LOGRO (no).
+- **Especialización**: madre e hijas vencen juntas, un mes después del ÚLTIMO
+  módulo; un módulo sin fecha deja al programa sin vencimiento. La fecha
+  manual (`enrollment.access_until`) va en la madre; en una hija, 422.
+- **Cursos offline** = cohortes vigentes ∪ accesos directos vigentes
+  (`offline_course_grant`, de la PERSONA, con fecha obligatoria, se revoca
+  marcando). Gana la fecha más tarde. Un acceso directo da el curso aunque una
+  cohorte lo haya quitado. El intento de un curso que llega solo por acceso
+  directo se guarda con `enrollment_id` NULL.
+- El portal del profesor NO vence.
+- Antes de desplegar algo que toque esto: `scripts/accesos-que-vencen.sql`
+  lista a quién le vence a una fecha (solo lectura).
 
 ## Variables de entorno
 

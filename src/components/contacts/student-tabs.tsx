@@ -17,6 +17,9 @@ export function StudentTabs({
   canEnroll,
   canAudit,
   canPrintTranscript = false,
+  canViewAccess = false,
+  canEditAccess = false,
+  canManagePortal = false,
 }: {
   contactId: string;
   /** `inscripciones.editar`: el botón «Inscribir en una cohorte». */
@@ -25,6 +28,12 @@ export function StudentTabs({
   canAudit: boolean;
   /** 031 — `academico.ver`: el enlace «Escolaridad». */
   canPrintTranscript?: boolean;
+  /** 043 — `academico.ver`: hasta cuándo ve contenidos y sus accesos directos. */
+  canViewAccess?: boolean;
+  /** 043 — `academico.editar`: fijar la fecha y dar/quitar accesos directos. */
+  canEditAccess?: boolean;
+  /** 043 — `accesos.gestionar`: portal para quien no tiene inscripción. */
+  canManagePortal?: boolean;
 }) {
   const [tab, setTab] = useState<"record" | "admin">("record");
 
@@ -62,6 +71,9 @@ export function StudentTabs({
             contactId={contactId}
             canEnroll={canEnroll}
             canPrintTranscript={canPrintTranscript}
+            canViewAccess={canViewAccess}
+            canEditAccess={canEditAccess}
+            canManagePortal={canManagePortal}
           />
         )}
       </div>

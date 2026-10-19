@@ -1,18 +1,23 @@
-import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import type { OfflineAccessMode } from "@/lib/db/schema";
+import { accesoTerminaEn, diaCalendario } from "@/lib/access-expiry";
+import { estadosDeAcceso, zonaDeLaOrganizacion } from "@/server/access-expiry";
 import {
+  accesoOfflineDeContacto,
   courseStatesFor,
   MENSAJE_CURSO_DEL_GRUPO,
   overrideIndividualPermitido,
+  pickVigentes,
   planCohortCourses,
   planOverride,
-  resolveEffectiveAccess,
   studentCourseIds,
   type CourseState,
+  type DirectGrantSource,
   type EnrollmentAccessInput,
+  type EnrollmentAccessSource,
   type OverrideAction,
 } from "./logic";
 
@@ -32,7 +37,7 @@ export type AccessResult<T> =
   | { ok: true; data: T }
   | { ok: false; status: 404 | 409 | 422; code: string; message: string };
 
-const { offlineCourse, offlineCourseAccess, cohort, enrollment } = schema;
+const { offlineCourse, offlineCourseAccess, offlineCourseGrant, cohort, enrollment } = schema;
 
 /* ============================================================
  * Cohort level
@@ -308,30 +313,136 @@ export async function setEnrollmentOverride(
  * ============================================================ */
 
 /**
- * The library courses a contact can read: the UNION over their cohort
- * enrollments of (cohort assigned AND NOT revoked) OR granted.
+ * 043 — What a contact can read NOW, and until when (`null` = no end): the
+ * UNION of their NON-EXPIRED cohort enrollments — (cohort assigned AND NOT
+ * revoked) OR granted, the 035 rules unchanged — and their NON-EXPIRED direct
+ * grants. Expiry is computed here, at read time: nothing revokes anything.
  */
+export async function offlineAccessForContact(
+  orgId: string,
+  contactId: string,
+  now: Date = new Date()
+): Promise<Map<string, string | null>> {
+  const [enrollments, directos] = await Promise.all([
+    accessSourcesForContact(orgId, contactId, now),
+    directGrantSourcesForContact(orgId, contactId, now),
+  ]);
+  return accesoOfflineDeContacto(enrollments, directos);
+}
+
+/** The library courses a contact can read now (see `offlineAccessForContact`). */
 export async function effectiveCourseIdsForContact(
   orgId: string,
-  contactId: string
+  contactId: string,
+  now: Date = new Date()
 ): Promise<string[]> {
-  return studentCourseIds((await accessInputsForContact(orgId, contactId)).map((e) => e.input));
+  return [...(await offlineAccessForContact(orgId, contactId, now)).keys()];
 }
 
 /**
- * Per enrollment of the contact, the courses it effectively grants. The
- * portal needs it per enrollment (not only the union) to decide which
- * enrollment an attempt is recorded against.
+ * Every course the contact was EVER given (expired or not, revoked direct
+ * grants excluded) — for the staff's activity view, which reports what the
+ * person did, not what they can open today.
+ */
+export async function everCourseIdsForContact(orgId: string, contactId: string): Promise<string[]> {
+  const [inputs, grants] = await Promise.all([
+    accessInputsForContact(orgId, contactId),
+    activeGrantRows(orgId, { contactId }),
+  ]);
+  return [
+    ...new Set([...studentCourseIds(inputs.map((e) => e.input)), ...grants.map((g) => g.courseId)]),
+  ];
+}
+
+/**
+ * Per NON-EXPIRED enrollment of the contact, the courses it effectively
+ * grants, plus the courses that come from a non-expired direct grant. The
+ * portal needs it per enrollment to decide which enrollment an attempt is
+ * recorded against; a course reachable ONLY by a direct grant records the
+ * attempt without one.
  */
 export async function effectiveAccessByEnrollment(
   orgId: string,
-  contactId: string
-): Promise<Array<{ id: string; createdAt: Date; courseIds: string[] }>> {
-  return (await accessInputsForContact(orgId, contactId)).map((e) => ({
-    id: e.id,
-    createdAt: e.createdAt,
-    courseIds: resolveEffectiveAccess(e.input),
-  }));
+  contactId: string,
+  now: Date = new Date()
+): Promise<{
+  enrollments: Array<{ id: string; createdAt: Date; courseIds: string[] }>;
+  directCourseIds: string[];
+}> {
+  const [sources, directos] = await Promise.all([
+    accessSourcesForContact(orgId, contactId, now),
+    directGrantSourcesForContact(orgId, contactId, now),
+  ]);
+  return {
+    enrollments: pickVigentes(sources).map(({ id, createdAt, courseIds }) => ({ id, createdAt, courseIds })),
+    directCourseIds: directos.filter((g) => !g.vencido).map((g) => g.courseId),
+  };
+}
+
+async function accessSourcesForContact(
+  orgId: string,
+  contactId: string,
+  now: Date
+): Promise<EnrollmentAccessSource[]> {
+  const inputs = await accessInputsForContact(orgId, contactId);
+  if (inputs.length === 0) return [];
+  const estados = await estadosDeAcceso(
+    orgId,
+    inputs.map((e) => e.id),
+    now
+  );
+  return inputs.map((e) => {
+    const estado = estados.get(e.id);
+    return {
+      ...e,
+      // Sin estado (no debería pasar) = sin fecha: no se le quita nada a nadie
+      // por un dato que falta.
+      acceso: { vencido: estado?.vencido ?? false, hasta: estado?.hasta ?? null },
+    };
+  });
+}
+
+async function directGrantSourcesForContact(
+  orgId: string,
+  contactId: string,
+  now: Date
+): Promise<DirectGrantSource[]> {
+  const rows = await activeGrantRows(orgId, { contactId });
+  if (rows.length === 0) return [];
+  const timeZone = await zonaDeLaOrganizacion(orgId);
+  return rows.map((g) => {
+    const hasta = diaCalendario(g.accessUntil);
+    return {
+      courseId: g.courseId,
+      hasta,
+      vencido: now.getTime() >= accesoTerminaEn(hasta, timeZone).getTime(),
+    };
+  });
+}
+
+/** The non-revoked direct grants of a contact or of a course. */
+export async function activeGrantRows(
+  orgId: string,
+  by: { contactId: string } | { courseId: string }
+) {
+  return getDb()
+    .select({
+      id: offlineCourseGrant.id,
+      contactId: offlineCourseGrant.contactId,
+      courseId: offlineCourseGrant.offlineCourseId,
+      accessUntil: offlineCourseGrant.accessUntil,
+    })
+    .from(offlineCourseGrant)
+    .where(
+      scoped(
+        offlineCourseGrant.organizationId,
+        orgId,
+        "contactId" in by
+          ? eq(offlineCourseGrant.contactId, by.contactId)
+          : eq(offlineCourseGrant.offlineCourseId, by.courseId),
+        isNull(offlineCourseGrant.revokedAt)
+      )
+    );
 }
 
 async function accessInputsForContact(

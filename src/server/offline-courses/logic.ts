@@ -73,6 +73,69 @@ export function studentCourseIds(enrollments: EnrollmentAccessInput[]): string[]
 }
 
 /* ============================================================
+ * 043 — Expiry and direct grants
+ * ============================================================ */
+
+/** One cohort enrollment with what it brings and whether its access is still on. */
+export interface EnrollmentAccessSource {
+  id: string;
+  createdAt: Date;
+  input: EnrollmentAccessInput;
+  /** The enrollment's cohort access (`src/lib/access-expiry.ts`). `hasta` null = never expires. */
+  acceso: { vencido: boolean; hasta: string | null };
+}
+
+/** A course granted straight to the person (no enrollment), with its own date. */
+export interface DirectGrantSource {
+  courseId: string;
+  hasta: string;
+  vencido: boolean;
+}
+
+/** The enrollments whose access is still on, with the courses each effectively gives. */
+export function pickVigentes(
+  enrollments: EnrollmentAccessSource[]
+): Array<{ id: string; createdAt: Date; courseIds: string[]; hasta: string | null }> {
+  return enrollments
+    .filter((e) => !e.acceso.vencido)
+    .map((e) => ({
+      id: e.id,
+      createdAt: e.createdAt,
+      courseIds: resolveEffectiveAccess(e.input),
+      hasta: e.acceso.hasta,
+    }));
+}
+
+/**
+ * 043 — What a person can read, and until when:
+ * (non-expired cohort access, with the 035 rules inside) ∪ (non-expired
+ * direct grants). The same course from several sources keeps the LATEST
+ * date; a source without a date (cohort with no end) beats every date.
+ *
+ * A direct grant still grants a course that a cohort-level revoke hides: the
+ * revoke is an exception INSIDE that cohort, the grant is a decision about
+ * the person.
+ */
+export function accesoOfflineDeContacto(
+  enrollments: EnrollmentAccessSource[],
+  directos: DirectGrantSource[]
+): Map<string, string | null> {
+  const out = new Map<string, string | null>();
+  const sumar = (courseId: string, hasta: string | null) => {
+    if (!out.has(courseId)) {
+      out.set(courseId, hasta);
+      return;
+    }
+    const actual = out.get(courseId) ?? null;
+    if (actual === null || hasta === null) out.set(courseId, null);
+    else if (hasta > actual) out.set(courseId, hasta);
+  };
+  for (const e of pickVigentes(enrollments)) for (const id of e.courseIds) sumar(id, e.hasta);
+  for (const g of directos) if (!g.vencido) sumar(g.courseId, g.hasta);
+  return out;
+}
+
+/* ============================================================
  * Staff assignment (the write decisions, kept pure)
  * ============================================================ */
 

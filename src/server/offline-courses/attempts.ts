@@ -48,8 +48,11 @@ async function attemptsWhere(orgId: string, condition: SQL, withStudent: boolean
     .orderBy(desc(offlineQuizAttempt.createdAt));
 
   return rows.map(
-    ({ firstName, lastName, scorePercentage, createdAt, ...r }): OfflineAttemptRow => ({
+    ({ firstName, lastName, scorePercentage, createdAt, enrollmentId, ...r }): OfflineAttemptRow => ({
       ...r,
+      // 043 — The inner join on `enrollment` keeps only attempts made through
+      // an enrollment; the ones made with a direct grant never reach here.
+      enrollmentId: enrollmentId ?? "",
       scorePercentage: Number(scorePercentage),
       createdAt: createdAt.toISOString(),
       ...(withStudent ? { studentName: fullName({ firstName, lastName }) } : {}),

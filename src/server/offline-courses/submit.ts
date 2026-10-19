@@ -51,9 +51,11 @@ export async function submitAttempt(
 ): Promise<SubmitAttemptResult> {
   // Access: the same rule as the reads — a course the person cannot read and
   // a quiz that does not exist answer the same 404.
-  const enrollments = await effectiveAccessByEnrollment(orgId, contactId);
-  const enrollmentId = pickAttemptEnrollment(enrollments, courseId);
-  if (!enrollmentId) return NOT_FOUND;
+  // 043 — Solo cuentan las cohortes NO vencidas. Un curso que llega solo por
+  // un acceso directo (sin inscripción) registra el intento sin inscripción.
+  const access = await effectiveAccessByEnrollment(orgId, contactId);
+  const enrollmentId = pickAttemptEnrollment(access.enrollments, courseId);
+  if (!enrollmentId && !access.directCourseIds.includes(courseId)) return NOT_FOUND;
 
   const db = getDb();
   const {

@@ -58,6 +58,9 @@ export default async function LegajoPage({
           canEnroll={caps.includes("inscripciones.editar")}
           canAudit={caps.includes("alumnos.auditoria")}
           canPrintTranscript={caps.includes("academico.ver")}
+          canViewAccess={caps.includes("academico.ver")}
+          canEditAccess={caps.includes("academico.editar")}
+          canManagePortal={caps.includes("accesos.gestionar")}
         />
       </div>
     </div>

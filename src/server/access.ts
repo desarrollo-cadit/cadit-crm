@@ -13,6 +13,7 @@ import { assignPassword, signUpWithAssignedPassword } from "@/server/auth/assign
 import { resolveMembership } from "@/server/auth/on-signup";
 import { getBranding } from "@/server/branding";
 import { contenidoPortalPara } from "@/server/email/portal-access-copy";
+import { contactHasDirectGrant } from "@/server/offline-courses/grants";
 import { renderTemplate } from "@/server/email/templates";
 
 /**
@@ -44,6 +45,12 @@ export type AccessResult<T> =
 export type AccountLinkFacts = {
   /** FR-005b — ¿el contacto tiene al menos una inscripción? */
   contactHasEnrollment: boolean;
+  /**
+   * 043 — ¿tiene un acceso directo a un curso offline? Es la otra puerta por
+   * la que una persona tiene algo que ver en el portal: alguien de una
+   * empresa a quien se le dio un curso sin inscribirlo nunca.
+   */
+  contactHasDirectGrant?: boolean;
 };
 
 /**
@@ -86,13 +93,13 @@ export function validateAccountLink(
     };
   }
 
-  if (input.kind === "alumno" && !facts.contactHasEnrollment) {
+  if (input.kind === "alumno" && !facts.contactHasEnrollment && !facts.contactHasDirectGrant) {
     return {
       ok: false,
       status: 422,
       code: "not_enrolled",
       message:
-        "El contacto no tiene ninguna inscripción; el acceso de alumno nace de la inscripción",
+        "El contacto no tiene ninguna inscripción ni acceso directo a un curso; el acceso de alumno nace de alguno de los dos",
     };
   }
 
@@ -143,11 +150,12 @@ export async function createAccountLink(
   organizationId: string,
   input: AccountLinkInput
 ): Promise<AccessResult<AccountLinkDto>> {
+  const esAlumno = input.kind === "alumno" && input.contactId;
   const facts: AccountLinkFacts = {
-    contactHasEnrollment:
-      input.kind === "alumno" && input.contactId
-        ? await contactHasEnrollment(organizationId, input.contactId)
-        : false,
+    contactHasEnrollment: esAlumno ? await contactHasEnrollment(organizationId, input.contactId!) : false,
+    contactHasDirectGrant: esAlumno
+      ? await contactHasDirectGrant(organizationId, input.contactId!)
+      : false,
   };
 
   const valid = validateAccountLink(input, facts);
@@ -244,7 +252,38 @@ export async function portalAccessState(
   if (!ctx) {
     return { ok: false, status: 404, code: "not_found", message: "Inscripción no encontrada" };
   }
+  return portalAccessStateOf(organizationId, ctx.contact);
+}
 
+/**
+ * 043 — Lo mismo, por PERSONA: alguien con un acceso directo a un curso
+ * offline y ninguna inscripción también puede entrar al portal.
+ */
+export async function portalAccessStateForContact(
+  organizationId: string,
+  contactId: string
+): Promise<AccessResult<PortalAccessState>> {
+  const contact = await loadContact(organizationId, contactId);
+  if (!contact) {
+    return { ok: false, status: 404, code: "not_found", message: "Contacto no encontrado" };
+  }
+  return portalAccessStateOf(organizationId, contact);
+}
+
+async function loadContact(organizationId: string, contactId: string) {
+  const rows = await getDb()
+    .select()
+    .from(schema.contact)
+    .where(scoped(schema.contact.organizationId, organizationId, eq(schema.contact.id, contactId)))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+async function portalAccessStateOf(
+  organizationId: string,
+  contact: typeof schema.contact.$inferSelect
+): Promise<AccessResult<PortalAccessState>> {
+  const ctx = { contact };
   const links = await getDb()
     .select()
     .from(schema.accountLink)
@@ -374,8 +413,41 @@ export async function grantPortalAccess(
   if (!ctx) {
     return { ok: false, status: 404, code: "not_found", message: "Inscripción no encontrada" };
   }
-  const { contact } = ctx;
+  return grantPortalAccessOf(organizationId, ctx.contact, opts);
+}
 
+/**
+ * 043 — Habilita el portal de una PERSONA, sin pasar por una inscripción.
+ * Es la puerta de quien solo tiene un acceso directo a un curso offline; la
+ * regla de quién puede tener portal sigue en `validateAccountLink`.
+ */
+export async function grantPortalAccessToContact(
+  organizationId: string,
+  contactId: string,
+  opts: GrantPortalAccessOptions = {}
+): Promise<AccessResult<GrantPortalAccessResult | PortalAccessAlreadyGranted>> {
+  const contact = await loadContact(organizationId, contactId);
+  if (!contact) {
+    return { ok: false, status: 404, code: "not_found", message: "Contacto no encontrado" };
+  }
+  // La regla se pregunta ANTES de crear la cuenta: si falla después, queda un
+  // usuario sin vínculo que nadie pidió.
+  const valid = validateAccountLink(
+    { userId: "-", kind: "alumno", contactId: contact.id },
+    {
+      contactHasEnrollment: await contactHasEnrollment(organizationId, contact.id),
+      contactHasDirectGrant: await contactHasDirectGrant(organizationId, contact.id),
+    }
+  );
+  if (!valid.ok) return valid;
+  return grantPortalAccessOf(organizationId, contact, opts);
+}
+
+async function grantPortalAccessOf(
+  organizationId: string,
+  contact: typeof schema.contact.$inferSelect,
+  opts: GrantPortalAccessOptions
+): Promise<AccessResult<GrantPortalAccessResult | PortalAccessAlreadyGranted>> {
   if (!contact.email) {
     return { ok: false, status: 422, code: "no_email", message: SIN_CORREO };
   }
