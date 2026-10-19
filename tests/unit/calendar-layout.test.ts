@@ -29,6 +29,8 @@ const sesion = (
     endTime: null,
     canceled: false,
     projected: false,
+    teacherId: null,
+    teacherName: null,
   },
   dayIndex: 0,
   hasTime: true,

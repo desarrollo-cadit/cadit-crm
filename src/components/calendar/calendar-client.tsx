@@ -1,11 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { AlertTriangle, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn, WEEKDAY_LABELS } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  SIN_PROFESOR,
+  formatHours,
+  parseTeacherFilter,
+  serializeTeacherFilter,
+  weeklyTeacherLoad,
+} from "@/lib/teacher-load";
 /** Eje horario visible — cubre clases diurnas y nocturnas típicas. */
 const DAY_START_MIN = 7 * 60; // 07:00
 const DAY_END_MIN = 22 * 60; // 22:00
@@ -72,7 +81,18 @@ type CalendarClass = {
   canceled: boolean;
   /** `true` = proyección: la cohorte todavía no tiene cronograma generado. */
   projected: boolean;
+  /** 044 — Profesor efectivo (suplencia, si no el de la cohorte). */
+  teacherId: string | null;
+  teacherName: string | null;
 };
+
+/** 044 — Un profesor del filtro: solo id y nombre (sin tarifa, 040). */
+type CalendarTeacher = { id: string; name: string };
+
+/** 044 — "Prof.: Ana" para el title de un bloque. */
+function lineaDeProfesor(c: CalendarClass): string {
+  return c.teacherId === null ? "Sin profesor" : `Prof.: ${c.teacherName ?? "—"}`;
+}
 
 export type PositionedSession = {
   klass: CalendarClass;
@@ -213,8 +233,170 @@ export function recesosDelDia<R extends { fromDate: string; toDate: string }>(
   return recesos.filter((r) => r.fromDate <= dia && dia <= r.toDate);
 }
 
+/**
+ * 044 — Filtro de profesores (selección múltiple). Vacío = "Todos".
+ *
+ * Un `<details>` nativo: teclado y lector de pantalla vienen gratis. Se
+ * cierra al hacer clic afuera, que es lo que se espera de un menú.
+ */
+function TeacherFilter({
+  teachers,
+  selected,
+  onChange,
+}: {
+  teachers: CalendarTeacher[];
+  selected: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const ref = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const cerrar = (e: MouseEvent) => {
+      if (ref.current?.open && !ref.current.contains(e.target as Node)) ref.current.open = false;
+    };
+    document.addEventListener("mousedown", cerrar);
+    return () => document.removeEventListener("mousedown", cerrar);
+  }, []);
+
+  const opciones = [...teachers, { id: SIN_PROFESOR, name: "Sin profesor" }];
+  const nombre = (id: string) => opciones.find((o) => o.id === id)?.name ?? "Profesor";
+  const etiqueta =
+    selected.length === 0
+      ? "Todos los profesores"
+      : selected.length === 1
+        ? nombre(selected[0]!)
+        : `${selected.length} profesores`;
+  const alternar = (id: string) =>
+    onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
+
+  return (
+    <details ref={ref} className="relative">
+      <summary className="flex h-8 cursor-pointer list-none items-center gap-1.5 rounded-md border bg-background px-3 text-xs font-medium hover:bg-subtle">
+        <span className="max-w-[180px] truncate">{etiqueta}</span>
+        <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+      </summary>
+      <div className="absolute right-0 z-30 mt-1 max-h-80 w-64 overflow-auto rounded-md border bg-background p-1 shadow-md">
+        <button
+          type="button"
+          onClick={() => onChange([])}
+          className={cn(
+            "w-full rounded px-2 py-1.5 text-left text-xs hover:bg-subtle",
+            selected.length === 0 && "font-semibold"
+          )}
+        >
+          Todos
+        </button>
+        {opciones.map((o) => (
+          <label
+            key={o.id}
+            className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-subtle"
+          >
+            <Checkbox checked={selected.includes(o.id)} onChange={() => alternar(o.id)} />
+            <span className={cn("truncate", o.id === SIN_PROFESOR && "italic text-muted-foreground")}>
+              {o.name}
+            </span>
+          </label>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+/**
+ * 044 — La carga de la semana visible, por profesor. Sin dinero: clases y
+ * horas. La calcula `weeklyTeacherLoad` sobre las mismas clases que se
+ * dibujan, así que el panel y la grilla no pueden decir cosas distintas.
+ */
+function TeacherLoadPanel({ classes }: { classes: CalendarClass[] }) {
+  const filas = useMemo(() => weeklyTeacherLoad(classes), [classes]);
+  if (filas.length === 0) return null;
+  return (
+    <section className="mb-4 rounded-lg border">
+      <h3 className="border-b px-3 py-2 text-xs font-semibold">Carga de la semana</h3>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="text-muted-foreground">
+            <tr className="border-b">
+              <th className="px-3 py-1.5 text-left font-medium">Profesor</th>
+              <th className="px-3 py-1.5 text-right font-medium">Clases</th>
+              <th className="px-3 py-1.5 text-right font-medium">Horas</th>
+              <th className="px-3 py-1.5 text-right font-medium">Reales</th>
+              <th className="px-3 py-1.5 text-right font-medium">Proyectadas</th>
+              <th className="px-3 py-1.5 text-right font-medium">Canceladas</th>
+              <th className="px-3 py-1.5 text-left font-medium">Avisos</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filas.map((f) => (
+              <tr key={f.teacherId ?? SIN_PROFESOR} className="border-b last:border-b-0">
+                <td className={cn("px-3 py-1.5", f.teacherId === null && "italic text-muted-foreground")}>
+                  {f.teacherName}
+                </td>
+                <td className="px-3 py-1.5 text-right tabular-nums">{f.classes}</td>
+                <td className="px-3 py-1.5 text-right font-medium tabular-nums">{formatHours(f.minutes)}</td>
+                <td className="px-3 py-1.5 text-right tabular-nums">
+                  {f.realClasses} · {formatHours(f.realMinutes)}
+                </td>
+                <td className="px-3 py-1.5 text-right tabular-nums text-muted-foreground">
+                  {f.projectedClasses} · {formatHours(f.projectedMinutes)}
+                </td>
+                <td className="px-3 py-1.5 text-right tabular-nums text-muted-foreground">
+                  {f.canceledClasses}
+                </td>
+                <td className="px-3 py-1.5">
+                  <span className="flex flex-wrap gap-x-3 gap-y-0.5 text-warning">
+                    {f.untimedClasses > 0 && (
+                      <span className="inline-flex items-center gap-1" title="Cuentan como clase, con 0 h">
+                        <AlertTriangle className="h-3 w-3" />
+                        {f.untimedClasses} sin horario
+                      </span>
+                    )}
+                    {f.overlappingClasses > 0 && (
+                      <span
+                        className="inline-flex items-center gap-1"
+                        title="Clases del mismo profesor que se pisan el mismo día"
+                      >
+                        <AlertTriangle className="h-3 w-3" />
+                        {f.overlappingClasses} superpuestas
+                      </span>
+                    )}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 export function CalendarClient() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  /**
+   * 044 — El filtro de profesores vive en la URL (`?profesor=a,b`): el enlace
+   * se puede compartir, y como la semana no está en la URL, navegar semanas
+   * no lo toca.
+   */
+  const profesorParam = searchParams.get("profesor");
+  const teacherIds = useMemo(() => parseTeacherFilter(profesorParam), [profesorParam]);
+  const teacherKey = serializeTeacherFilter(teacherIds);
+  const setTeacherIds = useCallback(
+    (ids: string[]) => {
+      const p = new URLSearchParams(searchParams.toString());
+      if (ids.length === 0) p.delete("profesor");
+      else p.set("profesor", serializeTeacherFilter(ids));
+      const qs = p.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParams]
+  );
+
   const [classes, setClasses] = useState<CalendarClass[]>([]);
+  const [teachers, setTeachers] = useState<CalendarTeacher[]>([]);
+  /** Solo la ÚLTIMA consulta escribe: un cambio de filtro rápido no se pisa. */
+  const seqRef = useRef(0);
   const [recesses, setRecesses] = useState<CalendarRecess[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -235,26 +417,30 @@ export function CalendarClient() {
    * una semana sin clases.
    */
   const refetch = useCallback(async () => {
+    const seq = ++seqRef.current;
     setLoading(true);
     try {
       const { from, to } = rangoDeSemana(weekStart);
-      const res = await fetch(
-        `/api/calendar?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
-      );
+      const qs = new URLSearchParams({ from, to });
+      if (teacherKey) qs.set("teacherIds", teacherKey);
+      const res = await fetch(`/api/calendar?${qs.toString()}`);
       if (!res.ok) throw new Error(String(res.status));
       const data = (await res.json()) as {
         classes: CalendarClass[];
         recesses?: CalendarRecess[];
+        teachers?: CalendarTeacher[];
       };
+      if (seq !== seqRef.current) return;
       setClasses(data.classes);
       setRecesses(data.recesses ?? []);
+      setTeachers(data.teachers ?? []);
       setLoadError(false);
     } catch {
-      setLoadError(true);
+      if (seq === seqRef.current) setLoadError(true);
     } finally {
-      setLoading(false);
+      if (seq === seqRef.current) setLoading(false);
     }
-  }, [weekStart]);
+  }, [weekStart, teacherKey]);
 
   useEffect(() => {
     void refetch();
@@ -348,7 +534,8 @@ export function CalendarClient() {
     <div className="flex h-full flex-col">
       <header className="flex items-center justify-between gap-4 border-b px-6 py-4">
         <h2 className="font-semibold capitalize">{rangeLabel}</h2>
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
+          <TeacherFilter teachers={teachers} selected={teacherIds} onChange={setTeacherIds} />
           <Button variant="outline" size="sm" onClick={() => setWeekStart((w) => addDays(w, -7))}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
@@ -390,6 +577,8 @@ export function CalendarClient() {
             <Skeleton className="h-[420px] w-full" />
           </div>
         ) : (
+          <>
+          <TeacherLoadPanel classes={classes} />
           <div className="min-w-[720px]">
             {/* Encabezado de días */}
             <div className="grid grid-cols-[56px_repeat(7,1fr)] gap-px">
@@ -430,6 +619,7 @@ export function CalendarClient() {
                     <Link
                       key={`${c.cohortId}-${c.date}`}
                       href={`/cohorts/${c.cohortId}`}
+                      title={`${c.cohortName} · sin horario · ${lineaDeProfesor(c)}${c.canceled ? " · CANCELADA" : ""}${c.projected ? " · proyección (sin cronograma generado)" : ""}`}
                       className="block truncate rounded bg-brand-tint px-1 py-0.5 text-[10.5px] font-medium text-brand-text hover:opacity-80"
                     >
                       {c.cohortName}
@@ -486,7 +676,7 @@ export function CalendarClient() {
                         <Link
                           key={`${s.klass.cohortId}-${idx}`}
                           href={`/cohorts/${s.klass.cohortId}`}
-                          title={`${s.klass.cohortName} · ${s.klass.startTime ?? "sin horario"}–${s.klass.endTime ?? ""}${s.klass.canceled ? " · CANCELADA" : ""}${s.klass.projected ? " · proyección (sin cronograma generado)" : ""}`}
+                          title={`${s.klass.cohortName} · ${s.klass.startTime ?? "sin horario"}–${s.klass.endTime ?? ""} · ${lineaDeProfesor(s.klass)}${s.klass.canceled ? " · CANCELADA" : ""}${s.klass.projected ? " · proyección (sin cronograma generado)" : ""}`}
                           /**
                            * 013 — Color POR COHORTE, no por estado.
                            *
@@ -547,6 +737,13 @@ export function CalendarClient() {
                               {s.klass.endTime ? `–${s.klass.endTime}` : ""}
                             </span>
                           )}
+                          {/* 044 — El profesor, solo si hay lugar: una columna y
+                              al menos ~45 min de alto. Siempre está en el title. */}
+                          {s.columns === 1 && s.heightPx >= 48 && s.klass.teacherName && (
+                            <span className="block truncate text-[9.5px] opacity-80">
+                              {s.klass.teacherName}
+                            </span>
+                          )}
                         </Link>
                       );
                     })}
@@ -554,6 +751,7 @@ export function CalendarClient() {
               ))}
             </div>
           </div>
+          </>
         )}
       </div>
     </div>

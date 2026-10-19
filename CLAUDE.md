@@ -35,6 +35,7 @@ externas: el trabajo en segundo plano (agente, Laboratorio) es in-process.
 | Clases y asistencia | `src/server/attendance.ts` + `/api/cohorts/[id]/attendance` |
 | **Quién puede qué** | `src/lib/capabilities.ts` (lista CERRADA) + `src/server/roles.ts` + `/settings/roles` |
 | Clases, cronograma y calendario | `src/server/classes.ts` + `/api/cohorts/[id]/{classes,schedule}` + `/api/calendar` |
+| **Calendario por profesor** (filtro `?profesor=`, carga semanal sin dinero) | `src/lib/teacher-load.ts` (puro: profesor efectivo = suplencia ∪ cohorte, filtro, horas) + `listCalendarClasses(…, teacherIds)` / `listCalendarTeachers` en `src/server/classes.ts` + `/api/calendar?teacherIds=` + `src/components/calendar/calendar-client.tsx` |
 | Horarios con zona horaria | `src/lib/schedule-time.ts` — **el único lugar** que compone fechas de clase |
 | **Recesos** (días sin clase) y borrar / reprogramar clases | `src/lib/recess.ts` (puro) + `src/server/recesses.ts` + `src/server/class-changes.ts` + `/api/recesses` + `/settings/recesos` + `/api/class-sessions/[id]/reschedule` |
 | **Inscripción automática a módulos** (especializaciones) | `src/lib/module-auto-enroll.ts` (puro) + `src/server/module-enrollment.ts` + `/api/cohorts/[id]/modules/enrollments` (vista previa + regularización) + `/api/enrollments/[id]/module` (sacar de un módulo) |

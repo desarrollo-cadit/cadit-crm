@@ -31,6 +31,7 @@ vi.mock("drizzle-orm", async (importOriginal) => {
 
 let selectQueue: unknown[][] = [];
 let distinctQueue: unknown[][] = [];
+let selectArgs: unknown[] = [];
 
 function thenableChain(rows: unknown[]) {
   const chain: Record<string, unknown> = {};
@@ -44,7 +45,10 @@ function thenableChain(rows: unknown[]) {
 
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
-    select: () => thenableChain(selectQueue.shift() ?? []),
+    select: (cols?: unknown) => {
+      selectArgs.push(cols);
+      return thenableChain(selectQueue.shift() ?? []);
+    },
     selectDistinct: () => thenableChain(distinctQueue.shift() ?? []),
   }),
   schema: new Proxy(
@@ -72,11 +76,13 @@ const cohorte = {
   endTime: "21:30",
   parentCohortId: null,
   isSpecialization: false,
+  teacherId: "tch_tit",
 };
 
 beforeEach(() => {
   selectQueue = [];
   distinctQueue = [];
+  selectArgs = [];
   gteSpy.mockClear();
   lteSpy.mockClear();
 });
@@ -122,5 +128,85 @@ describe("listCalendarClasses — el rango va a la base", () => {
     const r = await listCalendarClasses("org_1", from, to);
     expect(r).toHaveLength(1);
     expect(r[0]).toMatchObject({ projected: false, canceled: true, cohortId: "coh_1" });
+  });
+});
+
+/**
+ * 044 — El profesor de cada clase y el filtro por profesor.
+ *
+ * Orden de lecturas: cohortes, clases del rango, recesos, profesores.
+ */
+describe("listCalendarClasses — profesor (044)", () => {
+  const profesores = [
+    { id: "tch_tit", name: "Titular" },
+    { id: "tch_sup", name: "Suplente" },
+  ];
+  const real = (p: Record<string, unknown> = {}) => ({
+    cohortId: "coh_1",
+    date: new Date("2026-09-21T00:00:00Z"),
+    startTime: "18:30",
+    endTime: "21:30",
+    canceledAt: null,
+    teacherId: null,
+    ...p,
+  });
+
+  it("la proyección usa el profesor de la cohorte", async () => {
+    selectQueue = [[cohorte], [], [], profesores];
+    distinctQueue = [[]];
+    const r = await listCalendarClasses("org_1", from, to);
+    expect(r[0]).toMatchObject({ projected: true, teacherId: "tch_tit", teacherName: "Titular" });
+  });
+
+  it("la suplencia de la clase manda sobre la cohorte", async () => {
+    selectQueue = [
+      [cohorte],
+      [real({ teacherId: "tch_sup" }), real({ date: new Date("2026-09-22T00:00:00Z") })],
+      [],
+      profesores,
+    ];
+    distinctQueue = [[{ cohortId: "coh_1" }]];
+    const r = await listCalendarClasses("org_1", from, to);
+    expect(r.map((c) => c.teacherId)).toEqual(["tch_sup", "tch_tit"]);
+    expect(r[0]!.teacherName).toBe("Suplente");
+  });
+
+  it("sin profesor en la clase ni en la cohorte: null", async () => {
+    selectQueue = [[{ ...cohorte, teacherId: null }], [], [], profesores];
+    distinctQueue = [[]];
+    const r = await listCalendarClasses("org_1", from, to);
+    expect(r[0]).toMatchObject({ teacherId: null, teacherName: null });
+  });
+
+  it("filtra por profesor en el servidor, incluida la suplencia", async () => {
+    selectQueue = [
+      [cohorte],
+      [real({ teacherId: "tch_sup" }), real({ date: new Date("2026-09-22T00:00:00Z") })],
+      [],
+      profesores,
+    ];
+    distinctQueue = [[{ cohortId: "coh_1" }]];
+    const r = await listCalendarClasses("org_1", from, to, ["tch_sup"]);
+    expect(r).toHaveLength(1);
+    expect(r[0]!.teacherId).toBe("tch_sup");
+  });
+
+  it("«Sin profesor» trae solo las clases sin profesor", async () => {
+    selectQueue = [[{ ...cohorte, teacherId: null }], [], [], profesores];
+    distinctQueue = [[]];
+    expect(await listCalendarClasses("org_1", from, to, ["sin-profesor"])).toHaveLength(1);
+
+    selectQueue = [[cohorte], [], [], profesores];
+    distinctQueue = [[]];
+    expect(await listCalendarClasses("org_1", from, to, ["sin-profesor"])).toHaveLength(0);
+  });
+
+  it("la tarifa por hora NO se lee (040: es dinero)", async () => {
+    selectQueue = [[cohorte], [], [], profesores];
+    distinctQueue = [[]];
+    await listCalendarClasses("org_1", from, to);
+    const columnas = JSON.stringify(selectArgs);
+    expect(columnas).not.toContain("hourlyRate");
+    expect(columnas).toContain("teacher.name");
   });
 });

@@ -16,6 +16,7 @@ import { etiquetaDeModulo, modulosConOrdinal } from "@/lib/program-order";
 import { resolveMeetingUrl } from "@/server/virtual-rooms";
 import { recesosDeCohorte } from "@/lib/recess";
 import { leerRecesos } from "@/server/recesses";
+import { effectiveTeacherId, matchesTeacherFilter } from "@/lib/teacher-load";
 
 /**
  * 013 (T008, DV-006) — La lista de clases de una cohorte, que es UNA sola.
@@ -250,7 +251,29 @@ export type CalendarClassDto = {
   canceled: boolean;
   /** `true` = proyección; el calendario la dibuja distinto. */
   projected: boolean;
+  /**
+   * 044 — El profesor de la clase: el de la clase si tiene (suplencia), si no
+   * el de la cohorte. `null` = sin profesor. Solo id y nombre: la tarifa por
+   * hora es dinero (040) y no viaja.
+   */
+  teacherId: string | null;
+  teacherName: string | null;
 };
+
+/** 044 — Un profesor para el filtro del calendario. Sin tarifa, a propósito. */
+export type CalendarTeacherDto = { id: string; name: string };
+
+/**
+ * 044 — Los profesores de la organización, para el filtro del calendario.
+ * Solo `id` y `name`: `hourly_rate` es dinero y no se consulta.
+ */
+export async function listCalendarTeachers(organizationId: string): Promise<CalendarTeacherDto[]> {
+  return getDb()
+    .select({ id: schema.teacher.id, name: schema.teacher.name })
+    .from(schema.teacher)
+    .where(scoped(schema.teacher.organizationId, organizationId))
+    .orderBy(asc(schema.teacher.name));
+}
 
 /**
  * 013 (T012, FR-004/SC-002) — Las clases de TODAS las cohortes en un rango.
@@ -267,7 +290,12 @@ export type CalendarClassDto = {
 export async function listCalendarClasses(
   organizationId: string,
   from: Date,
-  to: Date
+  to: Date,
+  /**
+   * 044 — Filtro por profesor (ids, o `SIN_PROFESOR`). Vacío = todos. Se
+   * aplica sobre el profesor EFECTIVO, así que la suplencia entra.
+   */
+  teacherIds: readonly string[] = []
 ): Promise<CalendarClassDto[]> {
   const db = getDb();
 
@@ -288,6 +316,7 @@ export async function listCalendarClasses(
        */
       parentCohortId: schema.cohort.parentCohortId,
       isSpecialization: schema.cohort.isSpecialization,
+      teacherId: schema.cohort.teacherId,
     })
     .from(schema.cohort)
     .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
@@ -318,6 +347,7 @@ export async function listCalendarClasses(
       startTime: schema.classSession.startTime,
       endTime: schema.classSession.endTime,
       canceledAt: schema.classSession.canceledAt,
+      teacherId: schema.classSession.teacherId,
     })
     .from(schema.classSession)
     .where(
@@ -359,6 +389,13 @@ export async function listCalendarClasses(
    * decenas de filas, no miles.
    */
   const recesos = await leerRecesos(db, organizationId);
+  const nombreDeProfesor = new Map(
+    (await listCalendarTeachers(organizationId)).map((t) => [t.id, t.name])
+  );
+  const profesor = (id: string | null) => ({
+    teacherId: id,
+    teacherName: id === null ? null : (nombreDeProfesor.get(id) ?? null),
+  });
 
   for (const c of cohorts) {
     const reales = porCohorte.get(c.id);
@@ -367,8 +404,11 @@ export async function listCalendarClasses(
     if (conCronograma.has(c.id)) {
       for (const s of reales ?? []) {
         if (!dentro(s.date)) continue;
+        const tid = effectiveTeacherId(s.teacherId, c.teacherId);
+        if (!matchesTeacherFilter(tid, teacherIds)) continue;
         out.push({
           ...comun,
+          ...profesor(tid),
           date: s.date.toISOString(),
           startTime: s.startTime,
           endTime: s.endTime,
@@ -382,6 +422,8 @@ export async function listCalendarClasses(
     // Sin cronograma: se dibuja, con la misma función de siempre.
     if (madres.has(c.id)) continue;
     if (!c.endDate) continue;
+    // 044 — La proyección no tiene suplencia: es del profesor de la cohorte.
+    if (!matchesTeacherFilter(c.teacherId, teacherIds)) continue;
     for (const p of buildClassSchedule(
       c.startDate,
       c.endDate,
@@ -393,6 +435,7 @@ export async function listCalendarClasses(
       out.push({
         ...comun,
         date: p.date.toISOString(),
+        ...profesor(c.teacherId),
         startTime: c.startTime,
         endTime: c.endTime,
         canceled: false,
