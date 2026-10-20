@@ -50,10 +50,22 @@ import { installmentStatus, type InstallmentStatus } from "@/server/billing";
 export type Periodo = {
   /** `"2026-08"`, la etiqueta con la que se pide y se comparte. */
   mes: string;
-  /** Primer instante del mes en la zona de la organización. */
+  /**
+   * Primer instante del mes en la zona de la organización. Sólo para
+   * INSTANTES (p. ej. `enrollment.enrolled_at`).
+   */
   desde: Date;
   /** Primer instante del mes SIGUIENTE: el fin es exclusivo. */
   hasta: Date;
+  /**
+   * 2026-10-20 — Medianoche UTC del primer día del mes. Para DÍAS de
+   * calendario (`payment.paid_at`, `installment.due_date`), que se guardan a
+   * medianoche UTC: compararlos contra `desde` (03:00Z en Montevideo) mandaba
+   * el pago del 1° al cierre del mes anterior.
+   */
+  diaDesde: Date;
+  /** Medianoche UTC del primer día del mes SIGUIENTE (exclusivo). */
+  diaHasta: Date;
   /** `"Agosto 2026"`, para el encabezado. */
   etiqueta: string;
   /**
@@ -145,9 +157,21 @@ export function resolverPeriodo(
     mes: elegido,
     desde,
     hasta,
+    diaDesde: primerDia,
+    diaHasta: primerDiaSiguiente,
     etiqueta: `${MESES[numero - 1]} ${año}`,
     timezone,
   };
+}
+
+/**
+ * 2026-10-20 — ¿Este DÍA de calendario (medianoche UTC) cae en el período?
+ * Es la misma regla que aplica la consulta del cierre sobre `paid_at` y
+ * `due_date`. Un instante NO pasa por acá: usa `desde`/`hasta`.
+ */
+export function diaEnPeriodo(dia: Date, periodo: Pick<Periodo, "diaDesde" | "diaHasta">): boolean {
+  const t = dia.getTime();
+  return t >= periodo.diaDesde.getTime() && t < periodo.diaHasta.getTime();
 }
 
 /* ============================================================
@@ -457,8 +481,9 @@ export async function cierreDePeriodo(
       scoped(
         schema.payment.organizationId,
         organizationId,
-        gte(schema.payment.paidAt, periodo.desde),
-        lt(schema.payment.paidAt, periodo.hasta),
+        // `paid_at` es un DÍA (medianoche UTC): se compara contra días.
+        gte(schema.payment.paidAt, periodo.diaDesde),
+        lt(schema.payment.paidAt, periodo.diaHasta),
         cohortId ? eq(schema.cohort.id, cohortId) : undefined
       )
     )
@@ -495,8 +520,9 @@ export async function cierreDePeriodo(
         schema.installment.organizationId,
         organizationId,
         isNull(schema.installment.canceledAt),
-        gte(schema.installment.dueDate, periodo.desde),
-        lt(schema.installment.dueDate, periodo.hasta),
+        // `due_date` es un DÍA (medianoche UTC): se compara contra días.
+        gte(schema.installment.dueDate, periodo.diaDesde),
+        lt(schema.installment.dueDate, periodo.diaHasta),
         cohortId ? eq(schema.cohort.id, cohortId) : undefined
       )
     )

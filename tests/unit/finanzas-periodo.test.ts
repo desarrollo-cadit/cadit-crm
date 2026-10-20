@@ -16,6 +16,7 @@ import {
   armarCaja,
   armarDevengado,
   cierreVacio,
+  diaEnPeriodo,
   resolverPeriodo,
   type CuotaDelPeriodo,
   type PagoDelPeriodo,
@@ -257,6 +258,60 @@ describe("FR-018 — los límites del período se resuelven en la zona de la org
   it("un mes mal escrito cae al mes anterior en vez de inventar fechas", () => {
     const p = resolverPeriodo("no-es-un-mes", "America/Montevideo", new Date("2026-09-07T15:00:00Z"));
     expect(p.mes).toBe("2026-08");
+  });
+});
+
+/**
+ * 2026-10-20 — `payment.paid_at` e `installment.due_date` son DÍAS de
+ * calendario guardados a medianoche UTC (el formulario manda "2026-11-01").
+ * Compararlos contra los límites ZONADOS (03:00Z en Montevideo) mandaba el
+ * pago del 1° de noviembre al cierre de OCTUBRE. Los días se comparan contra
+ * días: medianoche UTC del primer día y del primer día del mes siguiente.
+ */
+describe("los días de calendario (paid_at, due_date) caen en su propio mes", () => {
+  const TZ = "America/Montevideo";
+  const dentro = (dia: Date, mes: string) => diaEnPeriodo(dia, resolverPeriodo(mes, TZ));
+
+  it("los límites de días son medianoche UTC, sin correr por la zona", () => {
+    const p = resolverPeriodo("2026-11", TZ);
+    expect(p.diaDesde.toISOString()).toBe("2026-11-01T00:00:00.000Z");
+    expect(p.diaHasta.toISOString()).toBe("2026-12-01T00:00:00.000Z");
+    // Los límites zonados siguen ahí para los INSTANTES.
+    expect(p.desde.toISOString()).toBe("2026-11-01T03:00:00.000Z");
+  });
+
+  it("un pago del 1° de noviembre cae en noviembre, no en octubre", () => {
+    const primero = new Date("2026-11-01T00:00:00Z");
+    expect(dentro(primero, "2026-11")).toBe(true);
+    expect(dentro(primero, "2026-10")).toBe(false);
+  });
+
+  it("un pago del último día del mes se queda en ese mes", () => {
+    const ultimo = new Date("2026-11-30T00:00:00Z");
+    expect(dentro(ultimo, "2026-11")).toBe(true);
+    expect(dentro(ultimo, "2026-12")).toBe(false);
+  });
+
+  it("vale igual en una zona al este de UTC", () => {
+    const p = resolverPeriodo("2026-08", "Europe/Madrid");
+    expect(diaEnPeriodo(new Date("2026-08-01T00:00:00Z"), p)).toBe(true);
+    expect(diaEnPeriodo(new Date("2026-07-31T00:00:00Z"), p)).toBe(false);
+  });
+
+  it("la consulta del cierre filtra paid_at y due_date por los límites de DÍAS", () => {
+    const src = leer(MODULO);
+    expect(src).toContain("gte(schema.payment.paidAt, periodo.diaDesde)");
+    expect(src).toContain("lt(schema.payment.paidAt, periodo.diaHasta)");
+    expect(src).toContain("gte(schema.installment.dueDate, periodo.diaDesde)");
+    expect(src).toContain("lt(schema.installment.dueDate, periodo.diaHasta)");
+  });
+
+  it("la pantalla muestra los días con formatCalendarDay (UTC), no en la zona", () => {
+    const src = leer("src/components/finanzas/finanzas-client.tsx");
+    expect(src).toContain("formatCalendarDay");
+    expect(src).toMatch(/dia\(f\.fecha\)/);
+    expect(src).toMatch(/dia\(f\.vencimiento\)/);
+    expect(src).toMatch(/dia\(a\.fecha\)/);
   });
 });
 
