@@ -22,7 +22,7 @@ const fila = (area: "ventas" | "soporte" | "administracion") => ({
 
 describe("039 — área Administración", () => {
   it("es un área configurable, pero NO un área de derivación", () => {
-    expect(CONFIG_AREAS).toEqual(["ventas", "soporte", "administracion"]);
+    expect(CONFIG_AREAS).toEqual(["ventas", "soporte", "administracion", "interesados"]);
     expect(AREAS).toEqual(["ventas", "soporte"]);
     expect(isConfigArea("administracion")).toBe(true);
     expect(isArea("administracion")).toBe(false);
@@ -34,9 +34,9 @@ describe("039 — área Administración", () => {
     expect(out.map((a) => a.area)).toEqual(["ventas", "soporte"]);
   });
 
-  it("la pantalla de configuración ve las tres", () => {
+  it("la pantalla de configuración las ve todas", () => {
     const out = withAreaDefaults([fila("administracion")], CONFIG_AREAS);
-    expect(out.map((a) => a.area)).toEqual(["ventas", "soporte", "administracion"]);
+    expect(out.map((a) => a.area)).toEqual(["ventas", "soporte", "administracion", "interesados"]);
     expect(out[2]?.mailbox).toBe("administracion@academia.test");
   });
 

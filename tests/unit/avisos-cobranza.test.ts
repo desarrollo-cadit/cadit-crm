@@ -71,6 +71,8 @@ describe("claveDeAviso — la llave de idempotencia de cada aviso", () => {
       enrollmentId: null,
       paymentId: null,
       periodKey: "2026-W43",
+      // Avisos de nuevos interesados (0065): solo ese tipo llena `contactId`.
+      contactId: null,
     });
   });
 

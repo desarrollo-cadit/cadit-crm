@@ -35,7 +35,12 @@ import {
 import { addSingleInstallment } from "@/server/billing";
 import { createCourse } from "@/server/courses";
 import { organizationTimezone } from "@/server/finanzas-periodo";
-import { findOrCreatePublicContact, type PublicLeadInput } from "@/server/intake-forms";
+import {
+  findOrCreatePublicContact,
+  findOrCreatePublicContactWithStatus,
+  type PublicLeadInput,
+} from "@/server/intake-forms";
+import { avisarInteresadoNuevo } from "@/server/lead-notices-queue";
 
 /**
  * 033 — Talleres: lectura y escritura.
@@ -1062,7 +1067,13 @@ export async function submitPublicWorkshopRegistration(
   now: Date = new Date()
 ): Promise<RegisterResult> {
   const rows = await getDb()
-    .select({ cohortId: schema.cohort.id, courseName: schema.course.name })
+    .select({
+      cohortId: schema.cohort.id,
+      cohortName: schema.cohort.name,
+      startDate: schema.cohort.startDate,
+      startTime: schema.cohort.startTime,
+      courseName: schema.course.name,
+    })
     .from(schema.cohort)
     .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
     .where(
@@ -1080,16 +1091,37 @@ export async function submitPublicWorkshopRegistration(
 
   // Mismo prefijo `formulario:` que las otras captaciones públicas: el badge
   // del menú (`countRecentFormArrivals`) cuenta también a quien llegó por un taller.
-  const contactId = await findOrCreatePublicContact(
-    organizationId,
-    `formulario:Taller ${edicion.courseName}`,
-    input
-  );
-  if (!contactId) {
+  const source = `formulario:Taller ${edicion.courseName}`;
+  const contacto = await findOrCreatePublicContactWithStatus(organizationId, source, input);
+  if (!contacto) {
     return { ok: false, status: 422, code: "invalid_body", message: "No se pudo registrar el contacto." };
   }
 
-  return registerContact(organizationId, cohortId, contactId, "web", now);
+  const result = await registerContact(organizationId, cohortId, contacto.contactId, "web", now);
+
+  // Aviso a "Nuevos interesados": quien quedó anotado, y también quien no
+  // entró (lleno, cerrado), que igual es alguien interesado. Un reenvío de
+  // quien ya estaba anotado no avisa de nuevo.
+  const resultado = result.ok ? (result.data.created ? "anotado" : null) : result.status === 409 ? result.message : null;
+  if (resultado) {
+    await avisarInteresadoNuevo(organizationId, {
+      contactId: contacto.contactId,
+      contactoNuevo: contacto.created,
+      ref: `taller:${cohortId}`,
+      datos: input,
+      origen: source,
+      interes: {
+        tipo: "taller",
+        nombre: edicion.courseName,
+        cohorte: edicion.cohortName,
+        inicio: edicion.startDate.toISOString(),
+        horario: edicion.startTime,
+      },
+      resultado,
+      now,
+    });
+  }
+  return result;
 }
 
 /**

@@ -25,6 +25,7 @@ import {
 } from "@/lib/staff-notices";
 import { getAreaConfig } from "@/server/areas/config";
 import { listInstallments } from "@/server/billing";
+import { runLeadNoticesForOrg } from "@/server/lead-notices";
 import { organizationTimezone } from "@/server/finanzas-periodo";
 import {
   ACTOR_AVISOS,
@@ -418,14 +419,22 @@ export async function runBillingNoticesForOrg(organizationId: string, now = new 
   return pendientes.length;
 }
 
-/** La pasada completa de la periódica: avisos de cohorte (039) y de cobranza (041). */
+/**
+ * La pasada completa de la periódica: avisos de cohorte (039), de cobranza
+ * (041) y de nuevos interesados (`src/server/lead-notices.ts`).
+ */
 export async function runInternalNoticesForOrg(organizationId: string, now = new Date()): Promise<number> {
   let n = 0;
   try {
-    n += await runStaffNoticesForOrg(organizationId, now);
+    try {
+      n += await runStaffNoticesForOrg(organizationId, now);
+    } finally {
+      // Un fallo de los avisos de cohorte no deja sin correr los de cobranza.
+      n += await runBillingNoticesForOrg(organizationId, now);
+    }
   } finally {
-    // Un fallo de los avisos de cohorte no deja sin correr los de cobranza.
-    n += await runBillingNoticesForOrg(organizationId, now);
+    // Ni los de interesados.
+    n += await runLeadNoticesForOrg(organizationId, now);
   }
   return n;
 }

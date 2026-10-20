@@ -2,6 +2,7 @@ import { z } from "zod";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
+import { llevaVendedores } from "@/lib/area-config-form";
 import {
   AREAS,
   CONFIG_AREAS,
@@ -58,7 +59,7 @@ export type SellerRef = {
  */
 export function checkCcSellers(area: ConfigArea, ids: string[], sellers: SellerRef[]): string | null {
   if (ids.length === 0) return null;
-  if (area !== "ventas") return "Solo Ventas puede llevar vendedores en copia.";
+  if (!llevaVendedores(area)) return "Solo Ventas y Nuevos interesados pueden llevar vendedores en copia.";
   for (const id of ids) {
     const seller = sellers.find((s) => s.id === id);
     if (!seller) return `El vendedor ${id} no existe en esta organización.`;
@@ -184,7 +185,7 @@ export async function getAreaConfigs(organizationId: string): Promise<AreaConfig
   return withAreaDefaults(await readAreaRows(organizationId));
 }
 
-/** 039 — Las tres áreas configurables, para Configuración › Áreas. */
+/** 039 — Las áreas configurables (con Administración y Nuevos interesados), para Configuración › Áreas. */
 export async function getAllAreaConfigs(
   organizationId: string
 ): Promise<AreaConfigDto<ConfigArea>[]> {

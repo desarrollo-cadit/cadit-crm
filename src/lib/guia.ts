@@ -190,7 +190,7 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
   },
   // ── Agente de IA ───────────────────────────────────────────────────────
   "areas.configurar": {
-    que: "decidir a qué casilla y con qué copias manda el asistente de WhatsApp las consultas de Ventas y Soporte, qué le contesta al cliente y en qué horario, encender o apagar esa derivación, y a qué casilla llegan los avisos internos de Administración (cada inscripción nueva para facturar, cada pago registrado, la morosidad de la semana los lunes y la facturación pendiente antes del inicio de cada cohorte)",
+    que: "decidir a qué casilla y con qué copias manda el asistente de WhatsApp las consultas de Ventas y Soporte, qué le contesta al cliente y en qué horario, encender o apagar esa derivación, y a qué casilla llegan los avisos internos de Administración (cada inscripción nueva para facturar, cada pago registrado, la morosidad de la semana los lunes y la facturación pendiente antes del inicio de cada cohorte), y a quién le llega el aviso de cada nuevo interesado que deja sus datos en un formulario de la web o se anota a un taller (con vendedores en copia si querés)",
     donde: "/settings/areas",
   },
   // ── Grabaciones de Zoom (030) ──────────────────────────────────────────

@@ -33,13 +33,18 @@ export function isArea(value: string): value is Area {
  * Es otra lista y no una entrada más en `AREAS` a propósito: `AREAS` es lo que
  * el agente puede elegir en `derive_area` (`src/server/ai/actions.ts`) y lo que
  * ve el prompt. Administración no atiende clientes por WhatsApp.
+ *
+ * `interesados` (Nuevos interesados) tampoco: recibe el aviso de cada persona
+ * que deja sus datos en un formulario público (`src/lib/lead-notices.ts`). Va
+ * aparte de Ventas porque a quién se avisa puede variar.
  */
-export const CONFIG_AREAS = [...AREAS, "administracion"] as const;
+export const CONFIG_AREAS = [...AREAS, "administracion", "interesados"] as const;
 export type ConfigArea = (typeof CONFIG_AREAS)[number];
 
 export const CONFIG_AREA_LABELS: Record<ConfigArea, string> = {
   ...AREA_LABELS,
   administracion: "Administración",
+  interesados: "Nuevos interesados",
 };
 
 export function isConfigArea(value: string): value is ConfigArea {

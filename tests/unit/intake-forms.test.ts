@@ -83,13 +83,67 @@ vi.mock("@/lib/db", () => ({
   ),
 }));
 
+/**
+ * Aviso de nuevos interesados: la captación pública lo ENCOLA (el envío sale
+ * después del commit y se prueba en avisos-interesados.test.ts). Acá solo se
+ * verifica que cada puerta pública lo pide, con el dato de si el contacto es
+ * nuevo o ya existía.
+ */
+const avisos: { organizationId: string; envio: Record<string, unknown> }[] = [];
+vi.mock("@/server/lead-notices-queue", () => ({
+  avisarInteresadoNuevo: async (organizationId: string, envio: Record<string, unknown>) => {
+    avisos.push({ organizationId, envio });
+  },
+}));
+
 describe("submitIntakeForm (iteración 3, formularios de captación)", () => {
   beforeEach(() => {
     selectQueue.length = 0;
     insertReturnQueue.length = 0;
     inserts.length = 0;
     updates.length = 0;
+    avisos.length = 0;
     vi.resetModules();
+  });
+
+  it("avisa a Nuevos interesados: contacto nuevo, por el formulario", async () => {
+    selectQueue.push(
+      [{ id: "org_1" }],
+      [{ id: "frm_1", organizationId: "org_1", name: "Feria 2026", courseId: null }],
+      [],
+      [{ id: "stg_lead" }],
+      [{ max: -1 }]
+    );
+    insertReturnQueue.push([{ id: "ct_new" }]);
+
+    const { submitIntakeForm } = await import("@/server/intake-forms");
+    await submitIntakeForm("frm_1", { name: "Ana", phone: "59899123456", notes: "hola" });
+
+    expect(avisos).toHaveLength(1);
+    expect(avisos[0]!.organizationId).toBe("org_1");
+    expect(avisos[0]!.envio).toMatchObject({
+      contactId: "ct_new",
+      contactoNuevo: true,
+      ref: "form:frm_1",
+      origen: "formulario:Feria 2026",
+      interes: { tipo: "general", nombre: null },
+    });
+  });
+
+  it("avisa también cuando la persona ya existía (contactoNuevo: false)", async () => {
+    selectQueue.push(
+      [{ id: "org_1" }],
+      [{ id: "frm_1", organizationId: "org_1", name: "Feria 2026", courseId: null }],
+      [{ id: "ct_existing" }],
+      [{ id: "enr_existing" }]
+    );
+    insertReturnQueue.push([]);
+
+    const { submitIntakeForm } = await import("@/server/intake-forms");
+    await submitIntakeForm("frm_1", { name: "Ana", phone: "59899123456" });
+
+    expect(avisos).toHaveLength(1);
+    expect(avisos[0]!.envio).toMatchObject({ contactId: "ct_existing", contactoNuevo: false });
   });
 
   it("404 si el formId no existe en la organización de la instancia", async () => {
@@ -256,7 +310,29 @@ describe("submitCourseInterest (iteración 8, captación por curso)", () => {
     insertReturnQueue.length = 0;
     inserts.length = 0;
     updates.length = 0;
+    avisos.length = 0;
     vi.resetModules();
+  });
+
+  it("avisa a Nuevos interesados con el curso", async () => {
+    selectQueue.push(
+      [{ id: "org_1" }],
+      [{ id: "crs_revit", name: "Revit" }],
+      [],
+      [{ id: "stg_lead" }],
+      [{ max: -1 }]
+    );
+    insertReturnQueue.push([{ id: "ct_new" }]);
+
+    const { submitCourseInterest } = await import("@/server/intake-forms");
+    await submitCourseInterest("revit", { name: "Ana", phone: "59899123456" });
+
+    expect(avisos).toHaveLength(1);
+    expect(avisos[0]!.envio).toMatchObject({
+      ref: "curso:crs_revit",
+      interes: { tipo: "curso", nombre: "Revit" },
+      contactoNuevo: true,
+    });
   });
 
   it("404 si el slug no existe en la organización de la instancia", async () => {
@@ -276,8 +352,9 @@ describe("submitCourseInterest (iteración 8, captación por curso)", () => {
       expect(result.status).toBe(404);
       expect(result.code).toBe("not_found");
     }
-    // Nada se dio de alta cuando el curso no existe.
+    // Nada se dio de alta cuando el curso no existe, ni se avisó.
     expect(inserts).toHaveLength(0);
+    expect(avisos).toHaveLength(0);
   });
 
   it("slug válido: crea el contacto y atribuye el lead a ese curso, sin intake_form", async () => {

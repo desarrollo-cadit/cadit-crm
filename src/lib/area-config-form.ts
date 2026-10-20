@@ -27,6 +27,8 @@ export const AREA_HELP: Record<ConfigArea, string> = {
     "Recibe las consultas de soporte que el asistente de WhatsApp le deriva y el aviso de cada cohorte confirmada.",
   administracion:
     "Solo avisos internos: cada inscripción nueva para facturar (con copia al vendedor de la venta), cada pago registrado, la morosidad de la semana los lunes y la facturación pendiente de cada cohorte confirmada, 7 y 2 días antes del inicio.",
+  interesados:
+    "Solo avisos internos: cada persona que deja sus datos en un formulario de la web (la página de un curso, un formulario de campaña o la inscripción a un taller), con sus datos, qué le interesa y el enlace al contacto. Podés sumar vendedores en copia.",
 };
 
 /**
@@ -37,9 +39,9 @@ export function atiendeClientes(area: ConfigArea): boolean {
   return isArea(area);
 }
 
-/** Solo Ventas lleva vendedores en copia (`checkCcSellers`). */
+/** Ventas y Nuevos interesados llevan vendedores en copia (`checkCcSellers`). */
 export function llevaVendedores(area: ConfigArea): boolean {
-  return area === "ventas";
+  return area === "ventas" || area === "interesados";
 }
 
 export type AreaForm = {

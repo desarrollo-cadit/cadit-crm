@@ -3181,8 +3181,12 @@ export const areaConfig = pgTable(
      * 039 — `administracion` se suma solo para los AVISOS INTERNOS
      * (facturación pendiente antes del inicio de una cohorte). El agente no le
      * deriva consultas: `area_handoff.area` sigue siendo Ventas o Soporte.
+     *
+     * 0065 — `interesados` (Nuevos interesados): el aviso de cada persona que
+     * deja sus datos en un formulario público. Tampoco recibe derivaciones;
+     * como Ventas, puede llevar vendedores en copia.
      */
-    area: text("area", { enum: ["ventas", "soporte", "administracion"] }).notNull(),
+    area: text("area", { enum: ["ventas", "soporte", "administracion", "interesados"] }).notNull(),
     enabled: boolean("enabled").notNull().default(false),
     mailbox: text("mailbox"),
     ccEmails: text("cc_emails").array().notNull().default(sql`'{}'::text[]`),
@@ -3195,10 +3199,10 @@ export const areaConfig = pgTable(
   },
   (t) => [
     uniqueIndex("area_config_org_area_uq").on(t.organizationId, t.area),
-    check("area_config_area_valid", sql`${t.area} IN ('ventas','soporte','administracion')`),
+    check("area_config_area_valid", sql`${t.area} IN ('ventas','soporte','administracion','interesados')`),
     check(
       "area_config_sellers_only_ventas",
-      sql`${t.area} = 'ventas' OR cardinality(${t.ccSellerIds}) = 0`
+      sql`${t.area} IN ('ventas','interesados') OR cardinality(${t.ccSellerIds}) = 0`
     ),
   ]
 );
@@ -3355,6 +3359,15 @@ export const staffNotice = pgTable(
     paymentId: text("payment_id").references(() => payment.id, { onDelete: "cascade" }),
     /** 041 — La semana ISO (`2026-W43`) de `morosidad_semanal`. */
     periodKey: text("period_key"),
+    /** 0065 — El contacto de `interesado_nuevo` (formulario público). */
+    contactId: text("contact_id").references(() => contact.id, { onDelete: "cascade" }),
+    /**
+     * 0065 — Lo que dice el aviso de `interesado_nuevo`, congelado al encolar
+     * (`InteresadoNuevo` de `src/lib/lead-notices.ts`): el mensaje de quien ya
+     * existía no se guarda en el contacto, y "nuevo o ya existía" solo se sabe
+     * en ese momento. NULL en los demás avisos.
+     */
+    payload: jsonb("payload").$type<Record<string, unknown>>(),
     /** 041 — La llave de idempotencia (`claveDeAviso`), única por organización. */
     dedupKey: text("dedup_key").notNull(),
     kind: text("kind", {
@@ -3365,6 +3378,7 @@ export const staffNotice = pgTable(
         "inscripcion_nueva",
         "pago_registrado",
         "morosidad_semanal",
+        "interesado_nuevo",
       ],
     }).notNull(),
     status: text("status", {
@@ -3394,14 +3408,15 @@ export const staffNotice = pgTable(
     index("staff_notice_org_status_idx").on(t.organizationId, t.status),
     check(
       "staff_notice_kind_valid",
-      sql`${t.kind} IN ('cohorte_confirmada','facturacion_t7','facturacion_t2','inscripcion_nueva','pago_registrado','morosidad_semanal')`
+      sql`${t.kind} IN ('cohorte_confirmada','facturacion_t7','facturacion_t2','inscripcion_nueva','pago_registrado','morosidad_semanal','interesado_nuevo')`
     ),
     check(
       "staff_notice_subject_valid",
       sql`(${t.kind} IN ('cohorte_confirmada','facturacion_t7','facturacion_t2') AND ${t.cohortId} IS NOT NULL)
         OR (${t.kind} = 'inscripcion_nueva' AND ${t.enrollmentId} IS NOT NULL)
         OR (${t.kind} = 'pago_registrado' AND ${t.enrollmentId} IS NOT NULL AND ${t.paymentId} IS NOT NULL)
-        OR (${t.kind} = 'morosidad_semanal' AND ${t.periodKey} IS NOT NULL)`
+        OR (${t.kind} = 'morosidad_semanal' AND ${t.periodKey} IS NOT NULL)
+        OR (${t.kind} = 'interesado_nuevo' AND ${t.contactId} IS NOT NULL)`
     ),
     check(
       "staff_notice_status_valid",

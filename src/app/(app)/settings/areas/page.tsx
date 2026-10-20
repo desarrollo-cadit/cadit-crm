@@ -6,8 +6,8 @@ import { AreasClient } from "@/components/settings/areas-client";
 export const dynamic = "force-dynamic";
 
 /**
- * 029 (US4) + 039 — Configuración › Áreas: casilla y copias de Ventas, Soporte
- * y Administración, y el interruptor de la derivación del agente.
+ * 029 (US4) + 039 — Configuración › Áreas: casilla y copias de Ventas, Soporte,
+ * Administración y Nuevos interesados, y el interruptor de la derivación del agente.
  *
  * Gate propio con `areas.configurar`, la misma capacidad que exigen las rutas
  * `/api/settings/areas*`: la puerta del layout acepta varias capacidades y no

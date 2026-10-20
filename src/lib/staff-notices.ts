@@ -26,6 +26,8 @@ export const STAFF_NOTICE_KINDS = [
   "inscripcion_nueva",
   "pago_registrado",
   "morosidad_semanal",
+  // Avisos de nuevos interesados (`src/lib/lead-notices.ts`).
+  "interesado_nuevo",
 ] as const;
 export type StaffNoticeKind = (typeof STAFF_NOTICE_KINDS)[number];
 
@@ -43,7 +45,13 @@ export type SujetoDeAviso =
   | { kind: CohortNoticeKind; cohortId: string }
   | { kind: "inscripcion_nueva"; enrollmentId: string }
   | { kind: "pago_registrado"; enrollmentId: string; paymentId: string }
-  | { kind: "morosidad_semanal"; periodKey: string };
+  | { kind: "morosidad_semanal"; periodKey: string }
+  /**
+   * Un interesado que dejó sus datos en un formulario público. `envio`
+   * distingue un envío de otro de la MISMA persona (`claveDeInteresado` de
+   * `src/lib/lead-notices.ts`: interés + día).
+   */
+  | { kind: "interesado_nuevo"; contactId: string; envio: string };
 
 /**
  * La llave única por organización (`staff_notice.dedup_key`). Para los avisos
@@ -58,6 +66,8 @@ export function claveDeAviso(s: SujetoDeAviso): string {
       return `${s.kind}:${s.paymentId}`;
     case "morosidad_semanal":
       return `${s.kind}:${s.periodKey}`;
+    case "interesado_nuevo":
+      return `${s.kind}:${s.contactId}:${s.envio}`;
     default:
       return `${s.kind}:${s.cohortId}`;
   }
@@ -68,11 +78,19 @@ export type ColumnasDelSujeto = {
   enrollmentId: string | null;
   paymentId: string | null;
   periodKey: string | null;
+  /** El contacto de `interesado_nuevo` (migración 0065). */
+  contactId: string | null;
 };
 
-/** Qué columnas de `staff_notice` llena cada sujeto (el CHECK de la 0062 exige las suyas). */
+/** Qué columnas de `staff_notice` llena cada sujeto (el CHECK de la 0062/0065 exige las suyas). */
 export function columnasDelSujeto(s: SujetoDeAviso): ColumnasDelSujeto {
-  const vacio: ColumnasDelSujeto = { cohortId: null, enrollmentId: null, paymentId: null, periodKey: null };
+  const vacio: ColumnasDelSujeto = {
+    cohortId: null,
+    enrollmentId: null,
+    paymentId: null,
+    periodKey: null,
+    contactId: null,
+  };
   switch (s.kind) {
     case "inscripcion_nueva":
       return { ...vacio, enrollmentId: s.enrollmentId };
@@ -80,13 +98,23 @@ export function columnasDelSujeto(s: SujetoDeAviso): ColumnasDelSujeto {
       return { ...vacio, enrollmentId: s.enrollmentId, paymentId: s.paymentId };
     case "morosidad_semanal":
       return { ...vacio, periodKey: s.periodKey };
+    case "interesado_nuevo":
+      return { ...vacio, contactId: s.contactId };
     default:
       return { ...vacio, cohortId: s.cohortId };
   }
 }
 
-/** La inversa, para la periódica que lee filas. Una fila incompleta → `null`. */
-export function sujetoDeRegistro(r: { kind: StaffNoticeKind } & ColumnasDelSujeto): SujetoDeAviso | null {
+/**
+ * La inversa, para la periódica que lee filas. Una fila incompleta → `null`.
+ * `interesado_nuevo` necesita además la llave: la parte del envío vive solo ahí.
+ */
+export function sujetoDeRegistro(
+  r: { kind: StaffNoticeKind; dedupKey?: string; contactId?: string | null } & Omit<
+    ColumnasDelSujeto,
+    "contactId"
+  >
+): SujetoDeAviso | null {
   switch (r.kind) {
     case "inscripcion_nueva":
       return r.enrollmentId ? { kind: r.kind, enrollmentId: r.enrollmentId } : null;
@@ -96,6 +124,12 @@ export function sujetoDeRegistro(r: { kind: StaffNoticeKind } & ColumnasDelSujet
         : null;
     case "morosidad_semanal":
       return r.periodKey ? { kind: r.kind, periodKey: r.periodKey } : null;
+    case "interesado_nuevo": {
+      if (!r.contactId || !r.dedupKey) return null;
+      const prefijo = `${r.kind}:${r.contactId}:`;
+      if (!r.dedupKey.startsWith(prefijo) || r.dedupKey.length === prefijo.length) return null;
+      return { kind: r.kind, contactId: r.contactId, envio: r.dedupKey.slice(prefijo.length) };
+    }
     default:
       return r.cohortId ? { kind: r.kind, cohortId: r.cohortId } : null;
   }
@@ -119,6 +153,7 @@ export const STAFF_NOTICE_LABELS: Record<StaffNoticeKind, string> = {
   inscripcion_nueva: "Nueva inscripción",
   pago_registrado: "Pago registrado",
   morosidad_semanal: "Morosidad semanal",
+  interesado_nuevo: "Nuevo interesado",
 };
 
 export const STAFF_NOTICE_STATUS_LABELS: Record<StaffNoticeStatus, string> = {

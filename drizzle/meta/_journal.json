@@ -456,6 +456,13 @@
       "when": 1792436675185,
       "tag": "0064_vencimiento_de_accesos",
       "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1792500549866,
+      "tag": "0065_avisos_de_interesados",
+      "breakpoints": true
     }
   ]
 }

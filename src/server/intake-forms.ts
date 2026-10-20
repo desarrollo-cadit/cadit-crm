@@ -5,6 +5,7 @@ import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { normalizePhoneOrRaw } from "@/lib/phone";
 import { onLeadActivity } from "@/server/inbox/lead-activity";
+import { avisarInteresadoNuevo } from "@/server/lead-notices-queue";
 import { condicionDeCatalogo, resolveSoleOrganizationId } from "@/server/public-catalog";
 
 /**
@@ -126,10 +127,12 @@ async function registerPublicLead(
   organizationId: string,
   source: string,
   interestCourseId: string | null,
-  input: PublicLeadInput
+  input: PublicLeadInput,
+  aviso: { ref: string; courseName: string | null }
 ): Promise<IntakeFormSubmitResult> {
-  const contactId = await findOrCreatePublicContact(organizationId, source, input);
-  if (!contactId) {
+  const contacto = await findOrCreatePublicContactWithStatus(organizationId, source, input);
+  const contactId = contacto?.contactId;
+  if (!contacto || !contactId) {
     // Carrera extremadamente improbable: ni insert ni select encontraron fila.
     return {
       ok: false,
@@ -140,6 +143,32 @@ async function registerPublicLead(
   }
 
   await onLeadActivity(organizationId, contactId, new Date(), interestCourseId);
+
+  // Aviso a "Nuevos interesados": se encola acá y sale después del commit.
+  // Solo las puertas públicas llegan a esta función.
+  let courseName = aviso.courseName;
+  if (interestCourseId && !courseName) {
+    const rows = await getDb()
+      .select({ name: schema.course.name })
+      .from(schema.course)
+      .where(scoped(schema.course.organizationId, organizationId, eq(schema.course.id, interestCourseId)))
+      .limit(1);
+    courseName = rows[0]?.name ?? null;
+  }
+  await avisarInteresadoNuevo(organizationId, {
+    contactId,
+    contactoNuevo: contacto.created,
+    ref: aviso.ref,
+    datos: input,
+    origen: source,
+    interes: {
+      tipo: interestCourseId ? "curso" : "general",
+      nombre: courseName,
+      cohorte: null,
+      inicio: null,
+      horario: null,
+    },
+  });
 
   return { ok: true, contactId };
 }
@@ -159,6 +188,18 @@ export async function findOrCreatePublicContact(
   source: string,
   input: PublicLeadInput
 ): Promise<string | null> {
+  return (await findOrCreatePublicContactWithStatus(organizationId, source, input))?.contactId ?? null;
+}
+
+/**
+ * Igual que `findOrCreatePublicContact`, diciendo además si el contacto se
+ * CREÓ con este envío (el aviso de nuevos interesados lo cuenta).
+ */
+export async function findOrCreatePublicContactWithStatus(
+  organizationId: string,
+  source: string,
+  input: PublicLeadInput
+): Promise<{ contactId: string; created: boolean } | null> {
   const db = getDb();
   // 007 — misma normalización que la importación de planillas: si no, el
   // lead que entra por la web queda con "098574165" y el alumno ya cargado
@@ -188,6 +229,7 @@ export async function findOrCreatePublicContact(
     .returning();
 
   let contactId = inserted[0]?.id;
+  const created = Boolean(contactId);
   if (!contactId) {
     // Ya existía (mismo teléfono): reutiliza el contacto, sin pisar su source.
     const existing = await db
@@ -197,7 +239,7 @@ export async function findOrCreatePublicContact(
       .limit(1);
     contactId = existing[0]?.id;
   }
-  return contactId ?? null;
+  return contactId ? { contactId, created } : null;
 }
 
 /**
@@ -249,7 +291,8 @@ export async function submitIntakeForm(
     organizationId,
     `formulario:${form.name}`,
     form.courseId,
-    input
+    input,
+    { ref: `form:${form.id}`, courseName: null }
   );
 }
 
@@ -306,7 +349,8 @@ export async function submitCourseInterest(
     organizationId,
     `formulario:${course.name}`,
     course.id,
-    input
+    input,
+    { ref: `curso:${course.id}`, courseName: course.name }
   );
 }
 
