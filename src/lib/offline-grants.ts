@@ -69,3 +69,56 @@ export function planAsignacionPorEmpresa(
   }
   return plan;
 }
+
+/* ============================================================
+ * 045 — Desde la empresa (`/empresas`)
+ * ============================================================ */
+
+export type CursoDeEmpresa = {
+  courseId: string;
+  courseTitle: string;
+  /** Personas distintas con acceso directo VIGENTE a este curso. */
+  personas: number;
+  /** El vencimiento más próximo y el más lejano entre esas personas. */
+  primeraHasta: string;
+  ultimaHasta: string;
+};
+
+/**
+ * Qué cursos offline tiene HOY la gente de una empresa por acceso directo:
+ * cuántas personas y entre qué fechas vencen. Lo vencido no cuenta (es lo
+ * que tuvieron, no lo que tienen).
+ */
+export function resumenDeCursosDeEmpresa(
+  accesos: Array<{ contactId: string; courseId: string; courseTitle: string; hasta: string; vencido: boolean }>
+): CursoDeEmpresa[] {
+  const porCurso = new Map<string, { courseTitle: string; personas: Set<string>; fechas: string[] }>();
+  for (const a of accesos) {
+    if (a.vencido) continue;
+    const curso = porCurso.get(a.courseId) ?? { courseTitle: a.courseTitle, personas: new Set(), fechas: [] };
+    curso.personas.add(a.contactId);
+    curso.fechas.push(a.hasta);
+    porCurso.set(a.courseId, curso);
+  }
+  return [...porCurso.entries()]
+    .map(([courseId, c]) => {
+      const fechas = [...c.fechas].sort();
+      return {
+        courseId,
+        courseTitle: c.courseTitle,
+        personas: c.personas.size,
+        primeraHasta: fechas[0]!,
+        ultimaHasta: fechas[fechas.length - 1]!,
+      };
+    })
+    .sort((a, b) => a.courseTitle.localeCompare(b.courseTitle, "es"));
+}
+
+/**
+ * "Extender" desde la empresa solo corre la fecha hacia adelante: acortar es
+ * una decisión sobre una persona que se toma en el curso o en el legajo, a
+ * propósito, no con el botón de extender.
+ */
+export function esExtension(desde: string, hasta: string): boolean {
+  return esDiaValido(hasta) && hasta > desde;
+}

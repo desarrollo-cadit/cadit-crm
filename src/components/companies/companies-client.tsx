@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CompanyForm } from "@/components/companies/company-form";
+import { CompanyOfflineCourses } from "@/components/companies/company-offline-courses";
 import { condicionDePago } from "@/lib/company";
 import type { CompanyDto } from "@/lib/types";
 
@@ -77,7 +78,14 @@ function FichaDeFacturacion({ c }: { c: CompanyDto }) {
  * se dibujan solo con `empresas.editar` (lo decide el servidor y baja como
  * booleano); las rutas tienen su propio `requireCapability`.
  */
-export function CompaniesClient({ canEdit }: { canEdit: boolean }) {
+export function CompaniesClient({
+  canEdit,
+  canEditAcademic,
+}: {
+  canEdit: boolean;
+  /** 045 — `academico.editar`: asignar, extender y quitar cursos offline de la empresa. */
+  canEditAcademic: boolean;
+}) {
   const [companies, setCompanies] = useState<CompanyDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -244,6 +252,8 @@ export function CompaniesClient({ canEdit }: { canEdit: boolean }) {
                     ))}
                   </ul>
                 )}
+                {/* 045 — Cursos offline de su gente (acceso directo, 043). */}
+                <CompanyOfflineCourses companyId={c.id} canEdit={canEditAcademic} />
               </div>
             )}
           </li>

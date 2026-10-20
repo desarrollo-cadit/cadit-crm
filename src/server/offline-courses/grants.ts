@@ -13,6 +13,8 @@ import {
 import {
   planAsignacionIndividual,
   planAsignacionPorEmpresa,
+  resumenDeCursosDeEmpresa,
+  type CursoDeEmpresa,
   type PlanEmpresa,
 } from "@/lib/offline-grants";
 import { estadosDeAcceso, zonaDeLaOrganizacion } from "@/server/access-expiry";
@@ -618,4 +620,94 @@ export async function companiesWithPeople(
     .groupBy(company.id, company.legalName)
     .orderBy(asc(company.legalName));
   return rows.map((r) => ({ ...r, people: Number(r.people) }));
+}
+
+/* ============================================================
+ * 045 — Desde la empresa (`/empresas`)
+ * ============================================================ */
+
+export type CompanyOfflineGrants = {
+  /** Por curso: cuántas personas lo tienen HOY y entre qué fechas vence. */
+  courses: CursoDeEmpresa[];
+  /** La gente de la empresa hoy (archivadas afuera), cada una con sus accesos directos sin quitar. */
+  people: Array<{
+    contactId: string;
+    name: string;
+    grants: Array<{ id: string; courseId: string; courseTitle: string; hasta: string; vencido: boolean }>;
+  }>;
+};
+
+/**
+ * Los accesos directos de la gente de una empresa. Lo lee quien tiene
+ * `contactos.ver` (Ventas incluida), así que solo viajan nombres, cursos y
+ * fechas: ni datos de contacto, ni la nota, ni quién lo dio. `null` = la
+ * empresa no es de la organización.
+ */
+export async function companyOfflineGrants(
+  orgId: string,
+  companyId: string,
+  now: Date = new Date()
+): Promise<CompanyOfflineGrants | null> {
+  const db = getDb();
+  const [empresa] = await db
+    .select({ id: company.id })
+    .from(company)
+    .where(scoped(company.organizationId, orgId, eq(company.id, companyId)))
+    .limit(1);
+  if (!empresa) return null;
+
+  const personas = await db
+    .select({ id: contact.id, firstName: contact.firstName, lastName: contact.lastName })
+    .from(contact)
+    .where(
+      scoped(contact.organizationId, orgId, eq(contact.companyId, companyId), isNull(contact.archivedAt))
+    )
+    .orderBy(asc(contact.firstName), asc(contact.lastName));
+  const ids = personas.map((p) => p.id);
+
+  const filas = ids.length
+    ? await db
+        .select({
+          id: offlineCourseGrant.id,
+          contactId: offlineCourseGrant.contactId,
+          courseId: offlineCourse.id,
+          courseTitle: offlineCourse.title,
+          accessUntil: offlineCourseGrant.accessUntil,
+        })
+        .from(offlineCourseGrant)
+        .innerJoin(offlineCourse, eq(offlineCourse.id, offlineCourseGrant.offlineCourseId))
+        .where(
+          scoped(
+            offlineCourseGrant.organizationId,
+            orgId,
+            inArray(offlineCourseGrant.contactId, ids),
+            isNull(offlineCourseGrant.revokedAt)
+          )
+        )
+        .orderBy(asc(offlineCourse.title))
+    : [];
+
+  const timeZone = await zonaDeLaOrganizacion(orgId);
+  const accesos = filas.map((g) => {
+    const hasta = diaCalendario(g.accessUntil);
+    return {
+      id: g.id,
+      contactId: g.contactId,
+      courseId: g.courseId,
+      courseTitle: g.courseTitle,
+      hasta,
+      vencido: vencidoEl(hasta, now, timeZone),
+    };
+  });
+
+  return {
+    courses: resumenDeCursosDeEmpresa(accesos),
+    people: personas.map((p) => ({
+      contactId: p.id,
+      name: fullName(p),
+      grants: accesos
+        .filter((a) => a.contactId === p.id)
+        .map(({ id, courseId, courseTitle, hasta, vencido }) => ({ id, courseId, courseTitle, hasta, vencido })),
+    })),
+  };
 }

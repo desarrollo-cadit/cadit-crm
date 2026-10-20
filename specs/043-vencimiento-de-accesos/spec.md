@@ -260,8 +260,39 @@ a mano la fecha de quien corresponda después de desplegar.
 
 ## Fuera de alcance
 
-- Asignar a una empresa desde `/empresas` (se hace desde el curso offline).
+- ~~Asignar a una empresa desde `/empresas`~~ — se sumó en la adenda 045 (abajo).
 - Avisar por WhatsApp o correo que el acceso está por vencer.
 - Vencimiento de licencias de software (ya tienen su `expires_at`, 034).
 - Vencer el acceso del profesor.
 - Prueba E2E (decisión del dueño).
+
+## Adenda 045 — Cursos offline desde la empresa (2026-10-19)
+
+Lo mismo que "Asignar a toda una empresa", pero entrando por la empresa en
+`/empresas`, sin duplicar la lógica: la vista previa, la idempotencia y el
+"nunca acorta" siguen viviendo en `previewCompanyGrant` / `applyCompanyGrant`
+y en `planAsignacionPorEmpresa`.
+
+- **FR-045-1** `GET /api/companies/[id]/offline-grants` (`contactos.ver`,
+  igual que el reporte de la empresa) → `companyOfflineGrants()`: por curso,
+  cuántas personas lo tienen HOY (vigente, sin quitar) y entre qué fechas
+  vence (`resumenDeCursosDeEmpresa`, pura); y la gente de la empresa
+  (contactos con `company_id`, sin archivar) con sus accesos directos sin
+  quitar, vencidos marcados. Solo viajan **nombres, cursos y fechas**: ni
+  correo, ni teléfono, ni la nota, ni quién lo dio (hay test). 404 si la
+  empresa no es de la organización.
+- **FR-045-2** "Asignar curso offline" en la ficha de la empresa: curso de la
+  biblioteca (`GET /api/offline-courses`) + fecha → vista previa → confirmar,
+  contra la MISMA `POST /api/offline-courses/[id]/grants/company` de 043
+  (`academico.editar`). No hizo falta una ruta por empresa: la de 043 ya
+  recibe `companyId` en el body.
+- **FR-045-3** Por persona: "Extender" y "Quitar" con
+  `PATCH|DELETE /api/offline-course-grants/[id]` (043). Desde la empresa,
+  extender solo acepta una fecha POSTERIOR (`esExtension`, pura): acortar
+  sigue siendo una decisión de a una persona, en la pantalla del curso.
+- **FR-045-4** Los controles se dibujan solo con `academico.editar` (lo decide
+  el servidor y baja como booleano). Con `contactos.ver` solo (Ventas), la
+  sección es de lectura.
+
+Tests: `tests/unit/accesos-por-empresa.test.ts`. Sin E2E (decisión del
+dueño).

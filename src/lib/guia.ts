@@ -71,7 +71,7 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
     donde: "/academico",
   },
   "academico.editar": {
-    que: "crear un curso o una cohorte, cambiarle las fechas y generar su cronograma de clases; fijar a mano hasta cuándo un alumno ve las grabaciones y el material de una cohorte (vencen solos un mes después del fin), y dar un curso offline a una persona o a toda una empresa con fecha de vencimiento",
+    que: "crear un curso o una cohorte, cambiarle las fechas y generar su cronograma de clases; fijar a mano hasta cuándo un alumno ve las grabaciones y el material de una cohorte (vencen solos un mes después del fin), y dar un curso offline a una persona o a toda una empresa con fecha de vencimiento (desde el curso offline o desde la empresa en /empresas)",
     donde: "/academico",
   },
   "asistencia.ver": {

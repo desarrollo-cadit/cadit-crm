@@ -39,13 +39,13 @@ type Fila = {
   origen: "calculado" | "manual" | "sin_fecha" | "directo";
 };
 
-type Plan = {
+export type Plan = {
   crear: { contactId: string; name: string; antesQuitado: boolean }[];
   extender: { grantId: string; contactId: string; name: string; desde: string }[];
   sinCambios: { grantId: string; contactId: string; name: string; hasta: string }[];
 };
 
-async function mensajeDeError(res: Response | null, fallback: string) {
+export async function mensajeDeError(res: Response | null, fallback: string) {
   const body = (await res?.json().catch(() => null)) as { error?: { message?: string } } | null;
   return body?.error?.message ?? fallback;
 }
@@ -439,7 +439,7 @@ function DarAUnaEmpresa({ courseId, onDone }: { courseId: string; onDone: () => 
   );
 }
 
-function PlanLista({ titulo, nombres }: { titulo: string; nombres: string[] }) {
+export function PlanLista({ titulo, nombres }: { titulo: string; nombres: string[] }) {
   if (nombres.length === 0) return null;
   return (
     <div>
