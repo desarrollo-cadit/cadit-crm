@@ -6,6 +6,7 @@ import { markAttendance, type AttendanceStatus } from "@/server/attendance";
 import { listCohortClasses, type ClassRowDto, type CohortClassesDto } from "@/server/classes";
 import { computeCohortStatus } from "@/lib/cohort-status";
 import { ACADEMY_TIME_ZONE } from "@/lib/schedule-time";
+import { resumenDeHoras, type ResumenDeHoras } from "@/lib/class-hours";
 import { cohortGrading, recordResults, type AssessmentDto } from "@/server/grading";
 import {
   createResource,
@@ -777,29 +778,33 @@ export async function teacherCohortContent(
  * cuentan clases y horas, que es lo que el profesor necesita para controlar
  * que le liquiden bien.
  */
-export type TeacherHoursDto = {
-  sessions: number;
-  hours: number;
-  byCohort: {
-    cohortId: string;
-    cohortName: string | null;
-    sessions: number;
-    hours: number;
-  }[];
-};
+export type TeacherHoursDto = ResumenDeHoras;
 
+/**
+ * Dictadas = ya TERMINARON en la zona de la academia (`classHasEnded`) y no
+ * están canceladas; las futuras viajan aparte como programadas y no suman.
+ * Las horas son exactas (1,5 y no 2): la misma cuenta que `teacherHours` del
+ * staff, en `src/lib/class-hours.ts`. Del curso viaja solo el nombre.
+ */
 export async function teacherOwnHours(
   organizationId: string,
-  teacherId: string
+  teacherId: string,
+  now: Date = new Date()
 ): Promise<TeacherHoursDto> {
+  const timeZone = await teacherPortalTimezone(organizationId);
   const rows = await getDb()
     .select({
       cohortId: schema.classSession.cohortId,
       cohortName: schema.cohort.name,
+      courseName: schema.course.name,
+      date: schema.classSession.date,
+      startTime: schema.classSession.startTime,
+      endTime: schema.classSession.endTime,
       hours: schema.classSession.hours,
     })
     .from(schema.classSession)
     .innerJoin(schema.cohort, eq(schema.classSession.cohortId, schema.cohort.id))
+    .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
     .where(
       scoped(
         schema.classSession.organizationId,
@@ -810,26 +815,7 @@ export async function teacherOwnHours(
       )
     );
 
-  const porCohorte = new Map<
-    string,
-    { cohortName: string | null; sessions: number; hours: number }
-  >();
-  for (const r of rows) {
-    const acc = porCohorte.get(r.cohortId) ?? {
-      cohortName: r.cohortName,
-      sessions: 0,
-      hours: 0,
-    };
-    acc.sessions += 1;
-    acc.hours += r.hours ?? 0;
-    porCohorte.set(r.cohortId, acc);
-  }
-
-  return {
-    sessions: rows.length,
-    hours: rows.reduce((sum, r) => sum + (r.hours ?? 0), 0),
-    byCohort: [...porCohorte.entries()].map(([cohortId, v]) => ({ cohortId, ...v })),
-  };
+  return resumenDeHoras(rows, timeZone, now);
 }
 
 /* ============================================================

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, Check } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { notify } from "@/lib/notify";
 
@@ -78,9 +79,15 @@ export function PortalAttendanceSheet({
       () => null
     );
     if (!res?.ok) {
-      setError("No pudimos cargar la clase. Desde el listado podés abrirla de nuevo.");
+      // 404: la clase se borró o se reprogramó (la reprogramada es OTRA clase).
+      setError(
+        res?.status === 404
+          ? "Esta clase ya no está disponible: puede que la hayan borrado o reprogramado. Volvé al listado para ver las clases vigentes."
+          : "No pudimos cargar la clase. Podés reintentar o volver al listado."
+      );
       return;
     }
+    setError(null);
     setSheet((await res.json()) as Sheet);
   }, [classSessionId]);
 
@@ -127,6 +134,27 @@ export function PortalAttendanceSheet({
   }
 
   if (!sheet) {
+    // Primero el error: si no, una carga fallida queda como "cargando" para
+    // siempre, sin mensaje y sin forma de volver.
+    if (error) {
+      return (
+        <div className="space-y-3">
+          <button
+            type="button"
+            onClick={onBack}
+            className="inline-flex h-11 items-center gap-1 text-sm text-muted-foreground"
+          >
+            <ArrowLeft className="h-4 w-4" /> Volver a las clases
+          </button>
+          <div className="space-y-3 rounded-lg border border-dashed p-6 text-center">
+            <p className="text-sm text-destructive">{error}</p>
+            <Button variant="outline" size="sm" onClick={() => void refetch()}>
+              Reintentar
+            </Button>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="space-y-2">
         <Skeleton className="h-10 w-full" />

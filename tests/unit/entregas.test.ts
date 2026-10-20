@@ -851,3 +851,56 @@ describe("031 — la corrección del profesor usa el formulario compartido", () 
     expect(bloque).toContain("setCorrigiendo");
   });
 });
+
+/**
+ * Grupo finalizado: el servidor ya respondía 422 `cohorte_finalizada` a
+ * corregir, reabrir, prorrogar y mover el plazo, pero la pantalla seguía
+ * ofreciendo los botones. El payload dice si se puede editar —con la MISMA
+ * regla del 422 (`teacherCohortDetail().editable`)— y la pantalla obedece.
+ */
+describe("Grupo finalizado — las entregas se ven, no se tocan", () => {
+  it("el payload lleva `editable: false` cuando el grupo terminó", async () => {
+    const { entregasDeCohorte } = await import("@/server/submissions");
+    detalleDeCohorte = { editable: false };
+    selectQueue.push([{ timezone: "America/Montevideo" }], [], []);
+
+    const r = await entregasDeCohorte("org_1", "ct_profe", "coh_1");
+
+    expect(r?.editable).toBe(false);
+  });
+
+  it("y `editable: true` con el grupo en curso", async () => {
+    const { entregasDeCohorte } = await import("@/server/submissions");
+    selectQueue.push([{ timezone: "America/Montevideo" }], [], []);
+
+    const r = await entregasDeCohorte("org_1", "ct_profe", "coh_1");
+
+    expect(r?.editable).toBe(true);
+  });
+
+  it("un grupo que el profesor no alcanza sigue siendo null (404)", async () => {
+    const { entregasDeCohorte } = await import("@/server/submissions");
+    detalleDeCohorte = null;
+
+    expect(await entregasDeCohorte("org_1", "ct_ajeno", "coh_1")).toBeNull();
+  });
+
+  it("la pantalla esconde Corregir, Reabrir, Otorgar prórroga y Modificar plazo", () => {
+    // La fila del alumno: todas las acciones cuelgan de `editable`.
+    const fila = ENTREGAS_PROFE.slice(ENTREGAS_PROFE.indexOf("function AlumnoFila("));
+    const acciones = fila.slice(0, fila.indexOf("{corrigiendo && ("));
+    expect(acciones.match(/\{editable && \(/g)?.length).toBe(2);
+    // El plazo del grupo, también.
+    const bloque = ENTREGAS_PROFE.slice(
+      ENTREGAS_PROFE.indexOf("function EvaluacionBloque("),
+      ENTREGAS_PROFE.indexOf("function AlumnoFila(")
+    );
+    const plazo = bloque.indexOf("Modificar plazo");
+    expect(bloque.lastIndexOf("{editable && (", plazo)).toBeGreaterThan(-1);
+  });
+
+  it("y lo dice con una nota de solo consulta", () => {
+    expect(ENTREGAS_PROFE).toContain("!datos.editable && (");
+    expect(ENTREGAS_PROFE).toContain("El grupo finalizó: las entregas están disponibles solo para consulta.");
+  });
+});

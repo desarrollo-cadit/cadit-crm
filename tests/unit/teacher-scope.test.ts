@@ -359,22 +359,32 @@ describe("T021 — ni plata ni datos de contacto salen del portal", () => {
 
   /** US5/FR-010: horas sí, tarifa no. Ni la suya. */
   it("las horas dictadas no llevan tarifa", async () => {
+    const pasada = new Date("2026-10-01T00:00:00.000Z");
     responder("classSession", [
-      { cohortId: "coh_1", cohortName: "Revit MEP 1", hours: 3 },
-      { cohortId: "coh_1", cohortName: "Revit MEP 1", hours: 3 },
-      { cohortId: "coh_2", cohortName: "Revit MEP 2", hours: 2 },
+      { cohortId: "coh_1", cohortName: "Revit MEP 1", courseName: "Revit MEP", date: pasada, startTime: null, endTime: null, hours: 3 },
+      { cohortId: "coh_1", cohortName: "Revit MEP 1", courseName: "Revit MEP", date: pasada, startTime: null, endTime: null, hours: 3 },
+      { cohortId: "coh_2", cohortName: "Revit MEP 2", courseName: "Revit MEP", date: pasada, startTime: null, endTime: null, hours: 2 },
     ]);
 
     const { teacherOwnHours } = await import("@/server/teacher-portal");
-    const horas = await teacherOwnHours(ORG, PROFE_A);
+    const horas = await teacherOwnHours(ORG, PROFE_A, new Date("2026-10-20T12:00:00.000Z"));
 
     expect(horas.sessions).toBe(3);
     expect(horas.hours).toBe(8);
-    expect(Object.keys(horas).sort()).toEqual(["byCohort", "hours", "sessions"]);
+    expect(Object.keys(horas).sort()).toEqual([
+      "byCohort",
+      "hours",
+      "scheduledHours",
+      "scheduledSessions",
+      "sessions",
+    ]);
     expect(Object.keys(horas.byCohort[0] ?? {}).sort()).toEqual([
       "cohortId",
       "cohortName",
+      "courseName",
       "hours",
+      "scheduledHours",
+      "scheduledSessions",
       "sessions",
     ]);
   });
@@ -382,14 +392,37 @@ describe("T021 — ni plata ni datos de contacto salen del portal", () => {
   /** Una clase sin horas cargadas cuenta como clase, pero suma 0 horas. */
   it("una clase sin `hours` no rompe la suma", async () => {
     responder("classSession", [
-      { cohortId: "coh_1", cohortName: "Revit MEP 1", hours: null },
+      { cohortId: "coh_1", cohortName: "Revit MEP 1", courseName: "Revit MEP", date: new Date("2026-10-01T00:00:00.000Z"), startTime: null, endTime: null, hours: null },
     ]);
 
     const { teacherOwnHours } = await import("@/server/teacher-portal");
-    const horas = await teacherOwnHours(ORG, PROFE_A);
+    const horas = await teacherOwnHours(ORG, PROFE_A, new Date("2026-10-20T12:00:00.000Z"));
 
     expect(horas.sessions).toBe(1);
     expect(horas.hours).toBe(0);
+  });
+
+  /**
+   * "Horas dictadas" eran TODAS las clases no canceladas, incluidas las de
+   * diciembre. Una clase futura no se dictó: va aparte, como programada.
+   * Y la hora y media es 1,5, no 2.
+   */
+  it("solo cuenta lo que ya terminó, exacto, en la zona de la academia", async () => {
+    responder("organization", [{ timezone: "America/Montevideo" }]);
+    responder("classSession", [
+      // 18:30–20:00 en Montevideo = termina 23:00Z del 14.
+      { cohortId: "coh_1", cohortName: null, courseName: "Revit Básico", date: new Date("2026-10-14T00:00:00.000Z"), startTime: "18:30", endTime: "20:00", hours: 2 },
+      { cohortId: "coh_1", cohortName: null, courseName: "Revit Básico", date: new Date("2026-12-01T00:00:00.000Z"), startTime: "18:30", endTime: "20:00", hours: 2 },
+    ]);
+
+    const { teacherOwnHours } = await import("@/server/teacher-portal");
+    const horas = await teacherOwnHours(ORG, PROFE_A, new Date("2026-10-20T12:00:00.000Z"));
+
+    expect(horas.sessions).toBe(1);
+    expect(horas.hours).toBe(1.5);
+    expect(horas.scheduledSessions).toBe(1);
+    expect(horas.scheduledHours).toBe(1.5);
+    expect(horas.byCohort[0]?.courseName).toBe("Revit Básico");
   });
 
   /**

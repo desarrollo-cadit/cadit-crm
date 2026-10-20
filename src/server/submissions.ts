@@ -6,7 +6,7 @@ import { scoped } from "@/lib/db/tenant";
 import { classInstant } from "@/lib/schedule-time";
 import { admiteAtajo, plantillaDe } from "@/lib/grading-template";
 import { guardarCorreccion } from "@/server/corrections";
-import { teacherCohortDetail, teacherReachesCohort } from "@/server/teacher-portal";
+import { teacherCohortDetail } from "@/server/teacher-portal";
 
 /**
  * 016 — Entregas y corrección: entrega → corrección → resultado.
@@ -444,6 +444,12 @@ export type EvaluacionConEntregasDto = {
  */
 export type EntregasDeCohorteDto = {
   timezone: string;
+  /**
+   * Si el profesor puede corregir, reabrir, prorrogar o mover plazos. Es la
+   * MISMA regla que devuelve 422 `cohorte_finalizada` (`alcanceParaEditar`):
+   * `teacherCohortDetail().editable`. La pantalla obedece; el 422 se queda.
+   */
+  editable: boolean;
   assessments: EvaluacionConEntregasDto[];
 };
 
@@ -463,7 +469,10 @@ export async function entregasDeCohorte(
   teacherId: string,
   cohortId: string
 ): Promise<EntregasDeCohorteDto | null> {
-  if (!(await teacherReachesCohort(organizationId, teacherId, cohortId))) return null;
+  // El alcance y si sigue abierta, en una sola pregunta (como `alcanceParaEditar`).
+  const detalle = await teacherCohortDetail(organizationId, teacherId, cohortId);
+  if (!detalle) return null;
+  const editable = detalle.editable;
 
   const timezone = await zonaDeLaOrganizacion(organizationId);
   if (!timezone) return null;
@@ -507,6 +516,7 @@ export async function entregasDeCohorte(
   if (evaluaciones.length === 0 || inscriptos.length === 0) {
     return {
       timezone,
+      editable,
       assessments: evaluaciones.map((a) => ({
         assessmentId: a.id,
         assessmentName: a.name,
@@ -583,7 +593,7 @@ export async function entregasDeCohorte(
     }),
   }));
 
-  return { timezone, assessments };
+  return { timezone, editable, assessments };
 }
 
 /* ============================================================

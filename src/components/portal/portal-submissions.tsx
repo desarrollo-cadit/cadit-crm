@@ -86,7 +86,11 @@ function fechaYHora(iso: string, timeZone: string): string {
   }).format(new Date(iso));
 }
 
-type Payload = { timezone: string; assessments: Evaluacion[] };
+/**
+ * `editable` lo decide el servidor con la misma regla de su 422
+ * `cohorte_finalizada`: con el grupo terminado, las acciones no se ofrecen.
+ */
+type Payload = { timezone: string; editable: boolean; assessments: Evaluacion[] };
 
 export function PortalSubmissions({ cohortId }: { cohortId: string }) {
   const [datos, setDatos] = useState<Payload | null>(null);
@@ -146,10 +150,16 @@ export function PortalSubmissions({ cohortId }: { cohortId: string }) {
           día.
         </p>
       )}
+      {!datos.editable && (
+        <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+          El grupo finalizó: las entregas están disponibles solo para consulta.
+        </p>
+      )}
       {datos.assessments.map((e) => (
         <EvaluacionBloque
           key={e.assessmentId}
           evaluacion={e}
+          editable={datos.editable}
           zona={datos.timezone}
           onCambio={refetch}
           onError={(m) => {
@@ -163,11 +173,14 @@ export function PortalSubmissions({ cohortId }: { cohortId: string }) {
 
 function EvaluacionBloque({
   evaluacion,
+  editable,
   zona,
   onCambio,
   onError,
 }: {
   evaluacion: Evaluacion;
+  /** Grupo finalizado = solo consulta: sin plazo ni acciones por alumno. */
+  editable: boolean;
   /** FR-005e — la zona de la academia, la única con la que se lee un plazo. */
   zona: string;
   onCambio: () => void;
@@ -190,17 +203,19 @@ function EvaluacionBloque({
             {pendientes > 0 && ` · ${pendientes} sin corregir`}
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setEditandoPlazo((v) => !v)}
-        >
-          <CalendarClock className="h-4 w-4" />
-          {evaluacion.dueAt ? "Modificar plazo" : "Establecer plazo"}
-        </Button>
+        {editable && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setEditandoPlazo((v) => !v)}
+          >
+            <CalendarClock className="h-4 w-4" />
+            {evaluacion.dueAt ? "Modificar plazo" : "Establecer plazo"}
+          </Button>
+        )}
       </div>
 
-      {editandoPlazo && (
+      {editable && editandoPlazo && (
         <PlazoDelGrupo
           assessmentId={evaluacion.assessmentId}
           dueAt={evaluacion.dueAt}
@@ -224,6 +239,7 @@ function EvaluacionBloque({
               key={a.enrollmentId}
               assessmentId={evaluacion.assessmentId}
               alumno={a}
+              editable={editable}
               zona={zona}
               onCambio={onCambio}
               onError={onError}
@@ -238,12 +254,14 @@ function EvaluacionBloque({
 function AlumnoFila({
   assessmentId,
   alumno,
+  editable,
   zona,
   onCambio,
   onError,
 }: {
   assessmentId: string;
   alumno: Alumno;
+  editable: boolean;
   zona: string;
   onCambio: () => void;
   onError: (m: string | null) => void;
@@ -332,62 +350,68 @@ function AlumnoFila({
             </p>
           )}
 
-          <div className="flex flex-wrap gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setCorrigiendo((v) => !v)}
-            >
-              {ultima.correctedAt ? "Corregir de nuevo" : "Corregir"}
-            </Button>
-            {/*
-              FR-013 — Reabrir es lo ÚNICO que habilita al alumno a volver a
-              entregar. No borra la corrección: la reentrega va a ser una fila
-              nueva y la anterior queda (FR-008).
-            */}
-            {/*
-              Ya reabierta, el botón no hace nada bueno: volver a apretarlo pisa
-              `reopenedAt` con la fecha de hoy y la reapertura real —la que el
-              alumno está esperando— pierde su momento y su autor. Una excepción
-              sin cuándo ni quién es la que después no se puede revisar.
-            */}
-            {/*
-              Y antes de la corrección no hay nada que reabrir: la entrega
-              todavía espera devolución. Ofrecerlo ahí invita a "reabrir" lo
-              que nunca se cerró, y deja una excepción registrada sobre un
-              trabajo que el profesor no miró.
-            */}
-            {ultima.correctedAt && (
+          {editable && (
+            <div className="flex flex-wrap gap-2">
               <Button
                 size="sm"
                 variant="outline"
-                disabled={ocupado || ultima.reopenedAt !== null}
-                onClick={() => void reabrir()}
+                onClick={() => setCorrigiendo((v) => !v)}
               >
-                <RotateCcw className="h-4 w-4" />
-                {ultima.reopenedAt ? "Reabierta" : "Reabrir"}
+                {ultima.correctedAt ? "Corregir de nuevo" : "Corregir"}
               </Button>
-            )}
-            <Button size="sm" variant="outline" onClick={() => setProrrogando((v) => !v)}>
-              Otorgar prórroga
-            </Button>
-          </div>
+              {/*
+                FR-013 — Reabrir es lo ÚNICO que habilita al alumno a volver a
+                entregar. No borra la corrección: la reentrega va a ser una fila
+                nueva y la anterior queda (FR-008).
+              */}
+              {/*
+                Ya reabierta, el botón no hace nada bueno: volver a apretarlo pisa
+                `reopenedAt` con la fecha de hoy y la reapertura real —la que el
+                alumno está esperando— pierde su momento y su autor. Una excepción
+                sin cuándo ni quién es la que después no se puede revisar.
+              */}
+              {/*
+                Y antes de la corrección no hay nada que reabrir: la entrega
+                todavía espera devolución. Ofrecerlo ahí invita a "reabrir" lo
+                que nunca se cerró, y deja una excepción registrada sobre un
+                trabajo que el profesor no miró.
+              */}
+              {ultima.correctedAt && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={ocupado || ultima.reopenedAt !== null}
+                  onClick={() => void reabrir()}
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  {ultima.reopenedAt ? "Reabierta" : "Reabrir"}
+                </Button>
+              )}
+              <Button size="sm" variant="outline" onClick={() => setProrrogando((v) => !v)}>
+                Otorgar prórroga
+              </Button>
+            </div>
+          )}
 
         </div>
       ) : (
         <div className="flex flex-wrap items-center gap-2">
           <p className="text-xs text-muted-foreground">Todavía no entregó.</p>
-          {/*
-            031 (FR-014) — Se corrige aunque no haya entrega: un examen
-            presencial o un trabajo que llegó por otro canal también tienen
-            nota, y sin esto quedaban fuera del sistema.
-          */}
-          <Button size="sm" variant="outline" onClick={() => setCorrigiendo((v) => !v)}>
-            Corregir
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => setProrrogando((v) => !v)}>
-            Otorgar prórroga
-          </Button>
+          {editable && (
+            <>
+              {/*
+                031 (FR-014) — Se corrige aunque no haya entrega: un examen
+                presencial o un trabajo que llegó por otro canal también tienen
+                nota, y sin esto quedaban fuera del sistema.
+              */}
+              <Button size="sm" variant="outline" onClick={() => setCorrigiendo((v) => !v)}>
+                Corregir
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setProrrogando((v) => !v)}>
+                Otorgar prórroga
+              </Button>
+            </>
+          )}
         </div>
       )}
 
@@ -396,7 +420,7 @@ function AlumnoFila({
         puerta del profesor. La plantilla, la versión vigente y si se publica o
         se envía a aprobación los trae el servidor.
       */}
-      {corrigiendo && (
+      {editable && corrigiendo && (
         <CorrectionPanel
           endpoint={`/api/portal/assessments/${assessmentId}/corrections/${alumno.enrollmentId}`}
           entregaSugerida={ultima?.id ?? null}
@@ -408,7 +432,7 @@ function AlumnoFila({
         />
       )}
 
-      {prorrogando && (
+      {editable && prorrogando && (
         <FormularioDeProrroga
           assessmentId={assessmentId}
           enrollmentId={alumno.enrollmentId}

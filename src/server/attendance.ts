@@ -5,6 +5,8 @@ import { scoped } from "@/lib/db/tenant";
 import { etiquetaDeModulo, modulosConOrdinal } from "@/lib/program-order";
 import { fechaEnReceso, recesosDeCohorte, type Receso } from "@/lib/recess";
 import { leerRecesos } from "@/server/recesses";
+import { resumenDeHoras } from "@/lib/class-hours";
+import { ACADEMY_TIME_ZONE } from "@/lib/schedule-time";
 
 /**
  * 009 — Clases dictadas y asistencia.
@@ -364,7 +366,15 @@ export async function generateSchedule(
   return { ok: true, data: await listSessions(organizationId, cohortId) };
 }
 
-/** "18:30"–"20:30" -> 2. Null si falta alguna o el rango no cierra. */
+/**
+ * "18:30"–"20:30" -> 2. Null si falta alguna o el rango no cierra.
+ *
+ * Es el valor que se GUARDA en `class_session.hours`, que es una columna
+ * entera: por eso redondea. Las horas dictadas (staff y portal) NO suman esta
+ * columna: se calculan exactas del horario con `resumenDeHoras`
+ * (`src/lib/class-hours.ts`), y la columna solo cuenta si la clase no tiene
+ * horario.
+ */
 export function hoursFromTimes(start: string | null, end: string | null): number | null {
   if (!start || !end) return null;
   const toMinutes = (t: string) => {
@@ -817,13 +827,32 @@ export async function cohortAttendance(
   };
 }
 
-/** Clases dictadas y horas de un profesor: lo que multiplica `hourly_rate`. */
+/**
+ * Clases dictadas y horas de un profesor: lo que multiplica `hourly_rate`.
+ *
+ * La MISMA cuenta que ve el profesor en su portal (`teacherOwnHours`):
+ * `resumenDeHoras` de `src/lib/class-hours.ts`. Dictada = ya terminó en la
+ * zona de la academia y no está cancelada; horas exactas (1,5 y no 2).
+ */
 export async function teacherHours(
   organizationId: string,
-  teacherId: string
+  teacherId: string,
+  now: Date = new Date()
 ): Promise<{ sessions: number; hours: number }> {
-  const rows = await getDb()
-    .select({ hours: schema.classSession.hours })
+  const db = getDb();
+  const org = await db
+    .select({ timezone: schema.organization.timezone })
+    .from(schema.organization)
+    .where(eq(schema.organization.id, organizationId))
+    .limit(1);
+  const rows = await db
+    .select({
+      cohortId: schema.classSession.cohortId,
+      date: schema.classSession.date,
+      startTime: schema.classSession.startTime,
+      endTime: schema.classSession.endTime,
+      hours: schema.classSession.hours,
+    })
     .from(schema.classSession)
     .where(
       scoped(
@@ -833,8 +862,10 @@ export async function teacherHours(
         isNull(schema.classSession.canceledAt)
       )
     );
-  return {
-    sessions: rows.length,
-    hours: rows.reduce((sum, r) => sum + (r.hours ?? 0), 0),
-  };
+  const resumen = resumenDeHoras(
+    rows.map((r) => ({ ...r, cohortName: null, courseName: null })),
+    org[0]?.timezone ?? ACADEMY_TIME_ZONE,
+    now
+  );
+  return { sessions: resumen.sessions, hours: resumen.hours };
 }

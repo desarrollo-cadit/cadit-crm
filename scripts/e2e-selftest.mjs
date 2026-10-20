@@ -1683,6 +1683,12 @@ async function main() {
     !JSON.stringify(horas.json).match(/rate|tarifa|precio|monto/i),
     JSON.stringify(horas.json)
   );
+  ok(
+    "las programadas van aparte y cada grupo lleva su curso",
+    typeof horas.json?.scheduledSessions === "number" &&
+      (horas.json?.byCohort ?? []).every((c) => "courseName" in c),
+    JSON.stringify(horas.json)
+  );
 
   // 014 fase 2 — copiar evaluaciones entre cohortes (DV-009).
   const evalA = await api(`/api/cohorts/${coh13Id}/grading`, {
@@ -4382,6 +4388,11 @@ async function main() {
     vistaProfe016.res.ok &&
       filaA016?.entregas?.[0]?.url?.includes(`${sello016}/entrega-1`),
     `${vistaProfe016.res.status} ${JSON.stringify(filaA016)}`
+  );
+  ok(
+    "con el grupo en curso, las entregas viajan como editables",
+    vistaProfe016.json?.editable === true,
+    `${vistaProfe016.json?.editable}`
   );
   ok(
     "SC-003 — y una entrega fuera de plazo se distingue a simple vista",

@@ -3,17 +3,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { etiquetaDeGrupo, formatHorasEs, type ResumenDeHoras } from "@/lib/class-hours";
 
-type Hours = {
-  sessions: number;
-  hours: number;
-  byCohort: {
-    cohortId: string;
-    cohortName: string | null;
-    sessions: number;
-    hours: number;
-  }[];
-};
+type Hours = ResumenDeHoras;
 
 /**
  * 014 (T030, US5/FR-010) — Mis horas dictadas.
@@ -55,7 +47,7 @@ export function PortalHoursClient() {
     );
   }
 
-  if (datos.sessions === 0) {
+  if (datos.sessions === 0 && datos.scheduledSessions === 0) {
     return (
       <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
         No hay clases dictadas registradas a tu nombre. Se mostrarán aquí a
@@ -72,27 +64,46 @@ export function PortalHoursClient() {
           <p className="text-xs text-muted-foreground">clases dictadas</p>
         </div>
         <div className="rounded-lg border p-4">
-          <p className="text-2xl font-semibold">{datos.hours}</p>
-          <p className="text-xs text-muted-foreground">horas</p>
+          <p className="text-2xl font-semibold">{formatHorasEs(datos.hours)}</p>
+          <p className="text-xs text-muted-foreground">horas dictadas</p>
         </div>
       </div>
+
+      {datos.scheduledSessions > 0 && (
+        <p className="text-sm text-muted-foreground">
+          Además, {datos.scheduledSessions}{" "}
+          {datos.scheduledSessions === 1 ? "clase programada" : "clases programadas"} (
+          {formatHorasEs(datos.scheduledHours)} h) que todavía no se dictaron: no se
+          suman al total.
+        </p>
+      )}
 
       <ul className="divide-y rounded-lg border">
         {datos.byCohort.map((c) => (
           <li key={c.cohortId} className="flex items-center justify-between gap-3 p-3">
             <span className="min-w-0 truncate text-sm">
-              {c.cohortName ?? "Grupo sin nombre"}
+              {etiquetaDeGrupo(c.courseName, c.cohortName)}
             </span>
-            <span className="shrink-0 text-xs text-muted-foreground">
-              {c.sessions} {c.sessions === 1 ? "clase" : "clases"} · {c.hours} h
+            <span className="shrink-0 text-right text-xs text-muted-foreground">
+              {c.sessions} {c.sessions === 1 ? "clase dictada" : "clases dictadas"} ·{" "}
+              {formatHorasEs(c.hours)} h
+              {c.scheduledSessions > 0 && (
+                <>
+                  <br />
+                  {c.scheduledSessions}{" "}
+                  {c.scheduledSessions === 1 ? "programada" : "programadas"} ·{" "}
+                  {formatHorasEs(c.scheduledHours)} h
+                </>
+              )}
             </span>
           </li>
         ))}
       </ul>
 
       <p className="text-xs text-muted-foreground">
-        Las clases canceladas no se cuentan. El listado es informativo: si ves
-        alguna diferencia, escribinos y lo revisamos.
+        Solo se cuentan las clases que ya terminaron; las canceladas no se
+        cuentan. El listado es informativo: si ves alguna diferencia,
+        escribinos y lo revisamos.
       </p>
     </div>
   );
