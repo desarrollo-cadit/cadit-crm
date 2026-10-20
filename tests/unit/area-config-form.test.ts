@@ -131,7 +131,7 @@ describe("Configuración › Áreas — formulario", () => {
   });
 
   it("cada área dice qué le llega", () => {
-    expect(AREA_HELP.soporte).toMatch(/cohorte confirmada/);
+    expect(AREA_HELP.soporte).toMatch(/grupo confirmado/);
     expect(AREA_HELP.administracion).toMatch(/facturación/);
     // 041 — Lo que le llega a Administración desde los avisos de cobranza.
     expect(AREA_HELP.administracion).toMatch(/inscripción nueva/);

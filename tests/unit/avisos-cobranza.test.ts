@@ -406,7 +406,7 @@ describe("armarAvisoInscripcion", () => {
   it("lleva inicio, vendedor, monto con moneda, cuotas y si ya tiene factura — escapado", () => {
     const { html } = armarAvisoInscripcion(datos);
     expect(html).toContain("Ana &lt;Pérez&gt;");
-    expect(html).toContain("martes 27 de octubre de 2026, 18:30 (hora de America/Montevideo)");
+    expect(html).toContain("martes 27 de octubre de 2026, 18:30 (hora de Uruguay)");
     expect(html).toContain("Valeria Díaz");
     expect(html).toContain("UYU 24.000");
     expect(html).toContain("4 cuotas");

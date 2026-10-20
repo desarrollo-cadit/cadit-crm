@@ -120,7 +120,7 @@ export async function createEnrollment(
     )
     .limit(1);
   if (!cohortRows[0]) {
-    return { ok: false, status: 422, code: "invalid_body", message: "Cohorte inexistente" };
+    return { ok: false, status: 422, code: "invalid_body", message: "Grupo inexistente" };
   }
 
   /**

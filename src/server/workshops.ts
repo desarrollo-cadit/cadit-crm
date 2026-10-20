@@ -33,11 +33,13 @@ import {
   type WorkshopSource,
 } from "@/lib/workshops";
 import { addSingleInstallment } from "@/server/billing";
+import { vincularEmpresaPorNombre } from "@/server/companies";
 import { createCourse } from "@/server/courses";
 import { organizationTimezone } from "@/server/finanzas-periodo";
 import {
   findOrCreatePublicContact,
   findOrCreatePublicContactWithStatus,
+  publicLeadSchema,
   type PublicLeadInput,
 } from "@/server/intake-forms";
 import { avisarInteresadoNuevo } from "@/server/lead-notices-queue";
@@ -112,6 +114,19 @@ export const manualAttendeeSchema = z.union([
 ]);
 export type ManualAttendeeInput = z.infer<typeof manualAttendeeSchema>;
 
+/**
+ * El body de la inscripción pública a un taller: el de los formularios de
+ * cursos (`publicLeadSchema`) más la empresa, opcional. Vacía = no vino.
+ */
+export const publicWorkshopRegistrationSchema = publicLeadSchema.extend({
+  company: z
+    .string()
+    .trim()
+    .max(200, "El nombre de la empresa admite hasta 200 caracteres.")
+    .optional()
+    .transform((v) => (v ? v : undefined)),
+});
+
 export type WorkshopEditionDto = {
   id: string;
   courseId: string;
@@ -120,6 +135,8 @@ export type WorkshopEditionDto = {
   name: string | null;
   displayName: string;
   description: string | null;
+  /** La imagen del taller (la portada del curso); la publica la web. */
+  imageUrl: string | null;
   startDate: string;
   endDate: string | null;
   startTime: string | null;
@@ -142,6 +159,8 @@ export type WorkshopAttendeeDto = {
   id: string;
   enrollmentId: string;
   contact: { id: string; name: string; phone: string | null; email: string | null };
+  /** La empresa de la persona (`contact.company_id`), si tiene. */
+  company: { id: string; name: string } | null;
   conversationId: string | null;
   status: WorkshopAttendeeStatus;
   source: WorkshopSource;
@@ -245,6 +264,7 @@ function toEditionDto(
     name: cohort.name,
     displayName: cohort.name ?? course.name,
     description: course.description,
+    imageUrl: course.imageUrl,
     startDate: cohort.startDate.toISOString(),
     endDate: cohort.endDate?.toISOString() ?? null,
     startTime: cohort.startTime,
@@ -327,6 +347,7 @@ export async function getWorkshopEdition(
       registration: schema.workshopRegistration,
       enrollment: schema.enrollment,
       contact: schema.contact,
+      company: { id: schema.company.id, legalName: schema.company.legalName },
       conversationId: schema.conversation.id,
     })
     .from(schema.workshopRegistration)
@@ -335,6 +356,7 @@ export async function getWorkshopEdition(
       eq(schema.workshopRegistration.enrollmentId, schema.enrollment.id)
     )
     .innerJoin(schema.contact, eq(schema.enrollment.contactId, schema.contact.id))
+    .leftJoin(schema.company, eq(schema.contact.companyId, schema.company.id))
     .leftJoin(
       schema.conversation,
       and(
@@ -411,6 +433,7 @@ export async function getWorkshopEdition(
         phone: r.contact.phone,
         email: r.contact.email,
       },
+      company: r.company ? { id: r.company.id, name: r.company.legalName } : null,
       conversationId: r.conversationId,
       status: r.registration.status,
       source: r.registration.source,
@@ -1063,7 +1086,7 @@ function publicableDe(cohort: CohortRow, course: CourseRow): Omit<EdicionPublica
 export async function submitPublicWorkshopRegistration(
   organizationId: string,
   cohortId: string,
-  input: PublicLeadInput,
+  input: PublicLeadInput & { company?: string | null },
   now: Date = new Date()
 ): Promise<RegisterResult> {
   const rows = await getDb()
@@ -1096,6 +1119,10 @@ export async function submitPublicWorkshopRegistration(
   if (!contacto) {
     return { ok: false, status: 422, code: "invalid_body", message: "No se pudo registrar el contacto." };
   }
+
+  // La empresa que escribió (opcional): completa la del contacto, nunca la
+  // pisa, y si falla no se lleva la inscripción.
+  await vincularEmpresaPorNombre(organizationId, contacto.contactId, input.company);
 
   const result = await registerContact(organizationId, cohortId, contacto.contactId, "web", now);
 

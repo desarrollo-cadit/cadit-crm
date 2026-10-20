@@ -113,7 +113,7 @@ export function OverduePanel() {
             <TableHeader className="bg-subtle">
               <TableRow>
                 <TableHead>Alumno</TableHead>
-                <TableHead>Cohorte</TableHead>
+                <TableHead>Grupo</TableHead>
                 <TableHead className="text-right">Vencido</TableHead>
                 <TableHead className="text-center">Cuotas</TableHead>
                 <TableHead className="text-right">Atraso</TableHead>

@@ -141,7 +141,7 @@ export function AnnouncementsClient({
         </div>
       ) : items.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          Todavía no hay avisos en esta cohorte.
+          Todavía no hay avisos en este grupo.
         </p>
       ) : (
         <ul className="space-y-3">

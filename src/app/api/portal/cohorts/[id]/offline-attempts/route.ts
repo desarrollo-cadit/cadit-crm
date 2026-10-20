@@ -16,7 +16,7 @@ type Params = { params: Promise<{ id: string }> };
 export const GET = requireTeacherPortal(async (ctx, _req: Request, routeCtx: Params) => {
   const { id } = await routeCtx.params;
   if (!(await teacherReachesCohort(ctx.organizationId, ctx.teacherId, id))) {
-    return apiError(404, "not_found", "Cohorte no encontrada");
+    return apiError(404, "not_found", "Grupo no encontrado");
   }
   const attempts = await attemptsForCohort(ctx.organizationId, id);
   return Response.json({ attempts });

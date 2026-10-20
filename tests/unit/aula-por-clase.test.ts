@@ -297,7 +297,7 @@ describe("023 US5 — el aula de una clase, desde la pantalla de clases", () => 
    * un campo la convierte en un descuido indistinguible de un olvido.
    */
   it("«vuelve a heredar de la cohorte» es una opción explícita del selector", () => {
-    expect(CLASES).toContain("Hereda de la cohorte");
+    expect(CLASES).toContain("Hereda del grupo");
     expect(CLASES).toContain("cohortVirtualRoomId");
   });
 

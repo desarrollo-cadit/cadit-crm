@@ -20,7 +20,7 @@ export const GET = requireCapability(
   async (session, _req: Request, ctx: Params) => {
     const { id } = await ctx.params;
     const overview = await bulkSendOverview(session.organizationId, id, ["portal_access"]);
-    if (!overview) return apiError(404, "not_found", "Cohorte no encontrada");
+    if (!overview) return apiError(404, "not_found", "Grupo no encontrado");
     return Response.json({ kinds: overview });
   }
 );

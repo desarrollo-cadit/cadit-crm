@@ -73,7 +73,7 @@ describe("correo de acceso al portal", () => {
         contenidoPortal: contenidoPortalPara("profesor"),
       })
     );
-    expect(html).toContain("tus cohortes");
+    expect(html).toContain("tus grupos");
     expect(html).not.toMatch(/legajo/i);
     expect(html).not.toMatch(/alumno/i);
   });

@@ -103,7 +103,7 @@ export function BillingBulkPanel({
       >
         <span className="inline-flex items-center gap-2 text-sm font-medium">
           <Wallet className="h-4 w-4 text-muted-foreground" />
-          Cargar la cobranza de esta cohorte
+          Cargar la cobranza de este grupo
         </span>
         {/* El número ANTES de apretar: qué se va a tocar y qué no. */}
         <span className="text-xs text-muted-foreground">

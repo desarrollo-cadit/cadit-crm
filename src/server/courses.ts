@@ -810,7 +810,7 @@ export async function createModuloConCursoPropio(
   if (!cohort.ok) {
     // Ya validado arriba: llegar acá es una carrera (la madre cambió en el
     // medio). Lanzar revierte también el curso recién creado.
-    throw new Error(`032 — no se pudo crear la cohorte del módulo: ${cohort.message}`);
+    throw new Error(`032 — no se pudo crear el grupo del módulo: ${cohort.message}`);
   }
   return { ...cohort, courseId: course.id };
 }
@@ -924,7 +924,7 @@ export async function updateCohort(
     )
     .returning();
   const cohort = updated[0];
-  if (!cohort) return { ok: false, status: 404, code: "not_found", message: "Cohorte no encontrada" };
+  if (!cohort) return { ok: false, status: 404, code: "not_found", message: "Grupo no encontrado" };
 
   if (input.softwareIds !== undefined) {
     await db
@@ -998,7 +998,7 @@ export async function reordenarModulos(
     )
     .limit(1);
   if (!madre[0]) {
-    return { ok: false, status: 404, code: "not_found", message: "Cohorte no encontrada" };
+    return { ok: false, status: 404, code: "not_found", message: "Grupo no encontrado" };
   }
 
   const actuales = await db
@@ -1298,8 +1298,8 @@ export function decidirBajaCamada(h: HistorialDeLaCamada): DecisionDeBajaCamada 
     accion: "bloquear",
     motivo:
       `Tiene ${partes.join(", ")}. No se borra: eso es historia de personas ` +
-      "reales. Si la camada ya terminó, marcala como finalizada; si te " +
-      "equivocaste al crearla, sacale primero las inscripciones.",
+      "reales. Si el grupo ya terminó, marcalo como finalizado; si te " +
+      "equivocaste al crearlo, sacale primero las inscripciones.",
   };
 }
 
@@ -1326,7 +1326,7 @@ export async function deleteCohort(
     .where(scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, cohortId)))
     .limit(1);
   if (!existe[0]) {
-    return { ok: false, status: 404, code: "not_found", message: "Camada no encontrada" };
+    return { ok: false, status: 404, code: "not_found", message: "Grupo no encontrado" };
   }
 
   const [inscripciones, clases, evaluaciones] = await Promise.all([
@@ -1451,7 +1451,7 @@ export type DecisionDeBorradoCurso = {
 export function decidirBorradoCurso(u: UsoDelCurso): DecisionDeBorradoCurso {
   const partes: string[] = [];
   if (u.cohortes > 0) {
-    partes.push(`${u.cohortes} ${u.cohortes === 1 ? "cohorte" : "cohortes"}`);
+    partes.push(`${u.cohortes} ${u.cohortes === 1 ? "grupo" : "grupos"}`);
   }
   if (u.interesados > 0) {
     partes.push(

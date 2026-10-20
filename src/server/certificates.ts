@@ -141,7 +141,7 @@ async function emitirCertificado(
       ok: false,
       status: 404,
       code: "not_found",
-      message: "Inscripción no encontrada o sin cohorte",
+      message: "Inscripción no encontrada o sin grupo",
     };
   }
   const dispensada = dispensaVigente(enrollment);
@@ -328,7 +328,7 @@ function noTermino(fin: Date | null): { ok: false; status: 422; code: string; me
     code: "cursada_no_terminada",
     message: fin
       ? `Todavía no se puede emitir: la cursada termina el ${fechaCorta(fin)}`
-      : "Todavía no se puede emitir: la cohorte no tiene fecha de fin cargada",
+      : "Todavía no se puede emitir: el grupo no tiene fecha de fin cargada",
   };
 }
 

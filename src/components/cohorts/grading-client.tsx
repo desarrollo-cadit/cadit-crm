@@ -343,7 +343,7 @@ export function GradingClient({
             {origenes && origenes.length > 0 && (
               <>
                 <Select
-                  aria-label="Copiar evaluaciones de otra cohorte"
+                  aria-label="Copiar evaluaciones de otro grupo"
                   className="h-8 w-64 text-xs"
                   value={origenId}
                   onChange={(e) => setOrigenId(e.target.value)}
@@ -425,15 +425,15 @@ export function GradingClient({
               Sin evaluaciones todavía. Agregá la primera arriba — por ejemplo
               &quot;Trabajo final&quot;
               {origenes && origenes.length > 0
-                ? ", o copiá las de otra cohorte del mismo curso."
+                ? ", o copiá las de otro grupo del mismo curso."
                 : "."}
               <span className="mt-2 block text-xs">
-                Copiar no ata las dos cohortes: quedan independientes, así que
-                cambiar éstas nunca toca las de la otra.
+                Copiar no ata los dos grupos: quedan independientes, así que
+                cambiar éstas nunca toca las del otro.
               </span>
             </>
           ) : (
-            "Esta cohorte todavía no tiene evaluaciones cargadas."
+            "Este grupo todavía no tiene evaluaciones cargadas."
           )}
         </p>
       ) : (
@@ -619,7 +619,7 @@ export function GradingClient({
                 autoFocus
                 value={motivoAnulacion}
                 onChange={(e) => setMotivoAnulacion(e.target.value)}
-                placeholder="Se emitió sobre una cohorte equivocada"
+                placeholder="Se emitió sobre un grupo equivocada"
               />
             </label>
             <Button

@@ -187,7 +187,7 @@ export function RoomsPanel({ canEdit = false }: { canEdit?: boolean }) {
             <p className="text-sm font-medium">Todavía no cargaste ninguna aula</p>
             <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
               Cargá acá tus salas de reunión —una por cuenta de Zoom— y asignalas
-              a cada cohorte. A partir de ahí el sistema sabe quién usa cada una y
+              a cada grupo. A partir de ahí el sistema sabe quién usa cada una y
               te avisa cuando dos clases se pisan.
             </p>
           </div>
@@ -218,8 +218,8 @@ export function RoomsPanel({ canEdit = false }: { canEdit?: boolean }) {
 
                 <span className="shrink-0 text-xs text-text-3">
                   {room.cohortCount === 0
-                    ? "sin cohortes"
-                    : `${room.cohortCount} cohorte${room.cohortCount === 1 ? "" : "s"}`}
+                    ? "sin grupos"
+                    : `${room.cohortCount} grupo${room.cohortCount === 1 ? "" : "s"}`}
                 </span>
 
                 <div className="flex shrink-0 items-center gap-1">

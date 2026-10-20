@@ -17,7 +17,7 @@ export const GET = requireTeacherPortal(
   async (ctx, _req: Request, routeCtx: Params) => {
     const { id } = await routeCtx.params;
     const data = await entregasDeCohorte(ctx.organizationId, ctx.teacherId, id);
-    if (!data) return apiError(404, "not_found", "Cohorte no encontrada");
+    if (!data) return apiError(404, "not_found", "Grupo no encontrado");
     // FR-005e — viaja `timezone` junto a las entregas: el plazo se pinta con la
     // zona de la academia y no con el reloj de quien mira.
     return Response.json(data);

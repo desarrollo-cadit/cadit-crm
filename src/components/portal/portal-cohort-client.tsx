@@ -17,6 +17,7 @@ import { ZoomRecordingPlayer, isZoomRecording } from "@/components/portal/zoom-r
 import { CorrectionPanel } from "@/components/grading/correction-panel";
 import { admiteAtajo, plantillaDe, type Template } from "@/lib/grading-template";
 import { notify } from "@/lib/notify";
+import { conZona } from "@/lib/schedule-time";
 
 type Cohort = {
   id: string;
@@ -59,7 +60,13 @@ export type ClassRow = {
 type ClassesPayload = {
   cohort: Cohort;
   editable: boolean;
-  classes: { projected: boolean; cannotGenerateReason: string | null; classes: ClassRow[] };
+  classes: {
+    projected: boolean;
+    cannotGenerateReason: string | null;
+    /** La zona de la academia: la hora de cada clase se dice en ella. */
+    timezone: string;
+    classes: ClassRow[];
+  };
 };
 
 type GradingPayload = {
@@ -173,10 +180,10 @@ export function PortalCohortClient({ cohortId }: { cohortId: string }) {
     return (
       <div className="space-y-3">
         <Link href="/portal/dictado" className="inline-flex h-11 items-center gap-1 text-sm text-muted-foreground">
-          <ArrowLeft className="h-4 w-4" /> Mis cohortes
+          <ArrowLeft className="h-4 w-4" /> Mis grupos
         </Link>
         <div className="rounded-lg border border-dashed p-6 text-center">
-          <p className="text-sm font-medium">No encontramos esta cohorte entre las asignadas a tu cuenta</p>
+          <p className="text-sm font-medium">No encontramos este grupo entre los asignados a tu cuenta</p>
           <p className="mt-2 text-sm text-muted-foreground">
             Si creés que es un error, escribinos y lo revisamos.
           </p>
@@ -209,7 +216,7 @@ export function PortalCohortClient({ cohortId }: { cohortId: string }) {
     <div className="space-y-4">
       <div>
         <Link href="/portal/dictado" className="inline-flex h-11 items-center gap-1 text-sm text-muted-foreground">
-          <ArrowLeft className="h-4 w-4" /> Mis cohortes
+          <ArrowLeft className="h-4 w-4" /> Mis grupos
         </Link>
         <h1 className="text-xl font-semibold tracking-tight">
           {datos.cohort.courseName}
@@ -217,7 +224,7 @@ export function PortalCohortClient({ cohortId }: { cohortId: string }) {
         <p className="text-sm text-muted-foreground">
           {datos.cohort.program &&
             `${datos.cohort.program.name} · `}
-          {datos.cohort.name ?? "Cohorte sin nombre"} · {datos.cohort.students}{" "}
+          {datos.cohort.name ?? "Grupo sin nombre"} · {datos.cohort.students}{" "}
           {datos.cohort.students === 1 ? "alumno" : "alumnos"}
           {datos.cohort.role === "suplente" && " · suplencia"}
         </p>
@@ -316,7 +323,7 @@ function Clases({
   if (filas.length === 0) {
     return (
       <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-        Esta cohorte todavía no tiene cronograma.
+        Este grupo todavía no tiene cronograma.
         {datos.classes.cannotGenerateReason && (
           <span className="mt-2 block">{datos.classes.cannotGenerateReason}</span>
         )}
@@ -353,7 +360,7 @@ function Clases({
                     Clase {c.number}
                     <span className="ml-2 font-normal text-muted-foreground">
                       {fecha(c.date)}
-                      {c.startTime && ` · ${c.startTime}`}
+                      {c.startTime && ` · ${conZona(c.startTime, datos.classes.timezone)}`}
                     </span>
                   </p>
                   {c.topic && (
@@ -499,7 +506,7 @@ function Evaluacion({ cohortId }: { cohortId: string }) {
   if (datos.assessments.length === 0) {
     return (
       <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-        Esta cohorte aún no tiene evaluaciones. La academia las define; una
+        Este grupo aún no tiene evaluaciones. La academia las define; una
         vez creadas, vas a poder registrar aquí los resultados.
       </p>
     );
@@ -509,7 +516,7 @@ function Evaluacion({ cohortId }: { cohortId: string }) {
     <div className="space-y-3">
       {!datos.editable && (
         <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-          La cohorte finalizó: los resultados están disponibles solo para
+          El grupo finalizó: los resultados están disponibles solo para
           consulta.
         </p>
       )}
@@ -662,7 +669,7 @@ function Material({ cohortId }: { cohortId: string }) {
 
       {vacio && (
         <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-          Todavía no hay material ni avisos publicados para esta cohorte.
+          Todavía no hay material ni avisos publicados para este grupo.
         </p>
       )}
 
@@ -858,7 +865,7 @@ function DialogoMaterial({
       <div className="w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-pop">
         <h3 className="text-base font-semibold tracking-tight">Publicar material</h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          Lo van a ver los alumnos de esta cohorte. Funciona con enlaces de
+          Lo van a ver los alumnos de este grupo. Funciona con enlaces de
           Drive, WeTransfer o Autodesk Docs; no guardamos archivos.
         </p>
 

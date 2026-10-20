@@ -161,6 +161,56 @@ export function formatSentAt(iso: string, timeZone: string = ACADEMY_TIME_ZONE):
   }).format(instante);
 }
 
+/**
+ * 2026-10-20 — Cómo se nombra la zona de la academia en un texto para
+ * personas: "hora de Uruguay".
+ *
+ * Un `"15:00"` suelto en un WhatsApp o un correo lo lee cada uno en su reloj,
+ * y hay alumnos en Dominicana y en España. El identificador IANA
+ * ("America/Montevideo") es preciso pero nadie dice así la hora; por eso las
+ * zonas de donde hay alumnos tienen nombre de país, y el resto cae a la
+ * ciudad del identificador ("America/Costa_Rica" → "hora de Costa Rica").
+ */
+const PAIS_DE_LA_ZONA: Record<string, string> = {
+  "America/Montevideo": "Uruguay",
+  "America/Asuncion": "Paraguay",
+  "America/Santo_Domingo": "República Dominicana",
+  "Europe/Madrid": "España",
+  "America/Argentina/Buenos_Aires": "Argentina",
+  "America/Buenos_Aires": "Argentina",
+  "America/Santiago": "Chile",
+  "America/Bogota": "Colombia",
+  "America/Lima": "Perú",
+  "America/Mexico_City": "México",
+};
+
+export function etiquetaDeZona(timeZone: string): string {
+  const zona = timeZone.trim();
+  if (!zona) return "hora de la academia";
+  if (zona === "UTC" || zona === "Etc/UTC") return "hora UTC";
+  const pais = PAIS_DE_LA_ZONA[zona];
+  if (pais) return `hora de ${pais}`;
+  const ciudad = (zona.split("/").pop() ?? zona).replace(/_/g, " ");
+  return `hora de ${ciudad}`;
+}
+
+/** `"15:00"` → `"15:00 (hora de Uruguay)"`; también un horario de texto libre. */
+export function conZona(texto: string, timeZone: string): string {
+  return `${texto} (${etiquetaDeZona(timeZone)})`;
+}
+
+/**
+ * 2026-10-20 — El último DÍA (`AAAA-MM-DD`) de un plazo guardado como el
+ * instante en que termina ese día en la academia (`classEndsAt`), como el
+ * vencimiento de las licencias del grupo: el 31/03 se guarda como 01/04 00:00
+ * de Montevideo, y mostrarlo tal cual dice "1/4". Se lee un milisegundo
+ * antes, en la zona dada. Fecha o zona inválida → `null`.
+ */
+export function ultimoDiaDelPlazo(finExclusivo: Date, timeZone: string): string | null {
+  if (Number.isNaN(finExclusivo.getTime())) return null;
+  return wallClockInZone(new Date(finExclusivo.getTime() - 1), timeZone)?.fecha ?? null;
+}
+
 /** El horario de pared (`"18:30"`) de un instante, en la zona dada. */
 export function formatInZone(instant: Date, timeZone: string): string {
   return new Intl.DateTimeFormat("en-GB", {

@@ -1,6 +1,6 @@
 import { escapeHtml } from "@/lib/utils";
 import { pendienteDeFacturar } from "@/lib/facturacion-regla";
-import { classInstant, formatInZone, wallClockInZone } from "@/lib/schedule-time";
+import { classInstant, conZona, formatInZone, wallClockInZone } from "@/lib/schedule-time";
 
 /**
  * 039 — Confirmación de cohortes y avisos internos por correo: las reglas.
@@ -411,7 +411,7 @@ export function diaCorto(day: Date): string {
 }
 
 /**
- * "martes 27 de octubre de 2026, 18:30 (hora de America/Montevideo)".
+ * "martes 27 de octubre de 2026, 18:30 (hora de Uruguay)".
  *
  * La hora sale de `classInstant()` (el único lugar que compone fechas de
  * clase) y se vuelve a leer en la zona de la academia: nunca se pega el texto
@@ -421,7 +421,7 @@ export function fechaDeInicio(startDate: Date, startTime: string | null, timeZon
   const dia = diaEnPalabras(startDate);
   const instante = classInstant(startDate, startTime, timeZone);
   if (!instante) return `${dia} (sin horario cargado)`;
-  return `${dia}, ${formatInZone(instante, timeZone)} (hora de ${timeZone})`;
+  return `${dia}, ${conZona(formatInZone(instante, timeZone), timeZone)}`;
 }
 
 const miles = new Intl.NumberFormat("es-UY", { maximumFractionDigits: 0 });
@@ -502,14 +502,14 @@ function licenciasEnTexto(a: AlumnoParaSoporte): string {
 /** El aviso a Soporte al confirmar la cohorte. */
 export function armarAvisoSoporte(d: DatosAvisoSoporte): { subject: string; html: string } {
   const titulo = nombreDeCohorte(d.curso, d.cohorte);
-  const subject = `[Soporte] Cohorte confirmada: ${titulo} · inicia ${diaCorto(d.startDate)}`;
+  const subject = `[Soporte] Grupo confirmado: ${titulo} · inicia ${diaCorto(d.startDate)}`;
 
   const datos = [
     ["Curso", e(d.curso)],
-    ["Cohorte", e(d.cohorte?.trim() || d.curso)],
+    ["Grupo", e(d.cohorte?.trim() || d.curso)],
     ["Inicio", e(fechaDeInicio(d.startDate, d.startTime, d.timeZone))],
     ["Profesor", d.profesor ? e(d.profesor) : "sin profesor asignado"],
-    ["Software de la cohorte", d.softwareDeLaCohorte.length > 0 ? e(d.softwareDeLaCohorte.join(", ")) : "ninguno declarado"],
+    ["Software del grupo", d.softwareDeLaCohorte.length > 0 ? e(d.softwareDeLaCohorte.join(", ")) : "ninguno declarado"],
     ["Programas del grupo", d.programasDelGrupo.length > 0 ? e(d.programasDelGrupo.join(", ")) : "ninguno"],
   ];
 
@@ -524,7 +524,7 @@ export function armarAvisoSoporte(d: DatosAvisoSoporte): { subject: string; html
         );
 
   const html = documento(
-    `Cohorte confirmada: ${titulo}`,
+    `Grupo confirmado: ${titulo}`,
     tabla(["Dato", "Valor"], datos.map(([k, v]) => [e(k), v!])) +
       '<h3 style="margin:20px 0 8px;">Alumnos y licencias</h3>' +
       alumnos
@@ -561,7 +561,7 @@ export function armarAvisoFacturacion(
 
   const html = documento(
     `Facturación pendiente: ${titulo}`,
-    `<p>La cohorte empieza el ${e(fechaDeInicio(d.startDate, d.startTime, d.timeZone))}. ` +
+    `<p>El grupo empieza el ${e(fechaDeInicio(d.startDate, d.startTime, d.timeZone))}. ` +
       `Hay ${n} ${n === 1 ? "inscripción sin factura" : "inscripciones sin factura"}:</p>` +
       tabla(["Alumno", "Documento", "Correo", "Monto", "Empresa"], filas)
   );

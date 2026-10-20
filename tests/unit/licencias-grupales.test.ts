@@ -267,7 +267,7 @@ describe("licenciaDelGrupoBloquea (FR-008)", () => {
 
   it("el motivo nombra el programa y dice dónde se cambia", () => {
     expect(MENSAJE_LICENCIA_DEL_GRUPO("Revit")).toBe(
-      "Revit está asignado al grupo de la cohorte: se asigna y se quita desde la cohorte, no por alumno."
+      "Revit está asignado al grupo: se asigna y se quita desde el grupo, no por alumno."
     );
   });
 });

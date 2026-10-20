@@ -680,7 +680,7 @@ function buildCourse(
   return {
     enrollmentId: enrollment.id,
     cohortId: cohort?.id ?? null,
-    cohortName: cohort?.name ?? course?.name ?? "Inscripción sin cohorte",
+    cohortName: cohort?.name ?? course?.name ?? "Inscripción sin grupo",
     courseName: course?.name ?? "—",
     status: cohort?.status ?? "sin_cohorte",
     startDate: cohort?.startDate?.toISOString() ?? null,
@@ -1427,7 +1427,7 @@ export async function studentAccount(
 
       return {
         enrollmentId: e.enrollment.id,
-        cohortName: e.cohort?.name ?? e.course?.name ?? "Inscripción sin cohorte",
+        cohortName: e.cohort?.name ?? e.course?.name ?? "Inscripción sin grupo",
         courseName: e.course?.name ?? "—",
         currency: e.enrollment.currency,
         billedToCompany: Boolean(e.enrollment.companyId),
@@ -1956,8 +1956,8 @@ function detalleDeModulo(modulo: {
   if (modulo.otraCamada) {
     partes.push(
       modulo.camadaName
-        ? `Cursado con la cohorte ${modulo.camadaName}`
-        : "Cursado con otra cohorte"
+        ? `Cursado con el grupo ${modulo.camadaName}`
+        : "Cursado con otro grupo"
     );
   }
   if (modulo.certificate) {

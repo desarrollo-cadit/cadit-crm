@@ -67,40 +67,40 @@ export type EntradaGuia = {
 export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
   // ── Académico ──────────────────────────────────────────────────────────
   "academico.ver": {
-    que: "ver los cursos, las cohortes en marcha, el cronograma de clases y quién tiene cada licencia",
+    que: "ver los cursos, los grupos en marcha, el cronograma de clases y quién tiene cada licencia",
     donde: "/academico",
   },
   "academico.editar": {
-    que: "crear un curso o una cohorte, cambiarle las fechas y generar su cronograma de clases; fijar a mano hasta cuándo un alumno ve las grabaciones y el material de una cohorte (vencen solos un mes después del fin), y dar un curso offline a una persona o a toda una empresa con fecha de vencimiento (desde el curso offline o desde la empresa en /empresas)",
+    que: "crear un curso o un grupo, cambiarle las fechas y generar su cronograma de clases; fijar a mano hasta cuándo un alumno ve las grabaciones y el material de un grupo (vencen solos un mes después del fin), y dar un curso offline a una persona o a toda una empresa con fecha de vencimiento (desde el curso offline o desde la empresa en /empresas)",
     donde: "/academico",
   },
   "asistencia.ver": {
     que: "ver quién vino a cada clase y cuánta asistencia lleva acumulada cada alumno",
-    donde: "Académico → la cohorte → Asistencia",
+    donde: "Académico → el grupo → Asistencia",
   },
   "asistencia.editar": {
     que: "pasar lista de una clase, y corregir una lista que ya se había tomado",
-    donde: "Académico → la cohorte → Asistencia",
+    donde: "Académico → el grupo → Asistencia",
   },
   "evaluacion.ver": {
     que: "ver las notas de cada alumno y si le alcanzan para aprobar",
-    donde: "Académico → la cohorte → Evaluación",
+    donde: "Académico → el grupo → Evaluación",
   },
   "evaluacion.editar": {
-    que: "crear las evaluaciones de una cohorte, copiarlas de otra cohorte y cargar las notas",
-    donde: "Académico → la cohorte → Evaluación",
+    que: "crear las evaluaciones de un grupo, copiarlas de otro grupo y cargar las notas",
+    donde: "Académico → el grupo → Evaluación",
   },
   "correcciones.aprobar": {
     que: "revisar las correcciones que mandan los profesores y publicarlas o devolverlas con un comentario",
     donde: "/correcciones",
   },
   "cohortes.confirmar": {
-    que: "confirmar que una cohorte sale (o quitarle la confirmación): al confirmarla le llega a Soporte la lista de alumnos con sus licencias, y a Administración los que todavía no tienen factura, 7 y 2 días antes del inicio",
-    donde: "Académico → la cohorte",
+    que: "confirmar que un grupo sale (o quitarle la confirmación): al confirmarlo le llega a Soporte la lista de alumnos con sus licencias, y a Administración los que todavía no tienen factura, 7 y 2 días antes del inicio",
+    donde: "Académico → el grupo",
   },
   "certificados.emitir": {
     que: "emitir el certificado de un alumno que aprobó, imprimirlo y anularlo si se emitió por error",
-    donde: "Académico → la cohorte → Evaluación",
+    donde: "Académico → el grupo → Evaluación",
   },
 
   // ── Comercial y financiero ─────────────────────────────────────────────
@@ -113,7 +113,7 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
     donde: "/contacts",
   },
   "inscripciones.ver": {
-    que: "mirar el embudo de interesados y quiénes están anotados en cada cohorte, sin cambiar nada",
+    que: "mirar el embudo de interesados y quiénes están anotados en cada grupo, sin cambiar nada",
     donde: "/pipeline",
   },
   /**
@@ -121,11 +121,11 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
    * de esa capacidad pasó a decir "sin cambiar nada" porque ahora es cierto.
    */
   "inscripciones.seguimiento": {
-    que: "mover a un interesado de etapa en el embudo, tildar el checklist de cada alumno y mandarle los términos o la bienvenida, de a uno o a toda la cohorte",
-    donde: "Académico → la cohorte → Alumnos",
+    que: "mover a un interesado de etapa en el embudo, tildar el checklist de cada alumno y mandarle los términos o la bienvenida, de a uno o a todo el grupo",
+    donde: "Académico → el grupo → Alumnos",
   },
   "inscripciones.editar": {
-    que: "anotar a alguien en una cohorte, moverlo de etapa, acordar el precio de su cursada e indicar quién la vendió; también cargar y archivar vendedores en Ajustes → Vendedores",
+    que: "anotar a alguien en un grupo, moverlo de etapa, acordar el precio de su cursada e indicar quién la vendió; también cargar y archivar vendedores en Ajustes → Vendedores",
     donde: "/pipeline",
   },
   /**
@@ -190,7 +190,7 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
   },
   // ── Agente de IA ───────────────────────────────────────────────────────
   "areas.configurar": {
-    que: "decidir a qué casilla y con qué copias manda el asistente de WhatsApp las consultas de Ventas y Soporte, qué le contesta al cliente y en qué horario, encender o apagar esa derivación, y a qué casilla llegan los avisos internos de Administración (cada inscripción nueva para facturar, cada pago registrado, la morosidad de la semana los lunes y la facturación pendiente antes del inicio de cada cohorte), y a quién le llega el aviso de cada nuevo interesado que deja sus datos en un formulario de la web o se anota a un taller (con vendedores en copia si querés)",
+    que: "decidir a qué casilla y con qué copias manda el asistente de WhatsApp las consultas de Ventas y Soporte, qué le contesta al cliente y en qué horario, encender o apagar esa derivación, y a qué casilla llegan los avisos internos de Administración (cada inscripción nueva para facturar, cada pago registrado, la morosidad de la semana los lunes y la facturación pendiente antes del inicio de cada grupo), y a quién le llega el aviso de cada nuevo interesado que deja sus datos en un formulario de la web o se anota a un taller (con vendedores en copia si querés)",
     donde: "/settings/areas",
   },
   // ── Grabaciones de Zoom (030) ──────────────────────────────────────────

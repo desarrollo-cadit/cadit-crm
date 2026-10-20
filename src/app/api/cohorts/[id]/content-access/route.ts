@@ -15,7 +15,7 @@ export const GET = requireCapability(
   async (session, _req: Request, ctx: Params) => {
     const { id } = await ctx.params;
     const data = await estadosDeAccesoDeCohorte(session.organizationId, id);
-    if (!data.cohort) return apiError(404, "not_found", "Cohorte no encontrada");
+    if (!data.cohort) return apiError(404, "not_found", "Grupo no encontrado");
     return Response.json(data);
   }
 );

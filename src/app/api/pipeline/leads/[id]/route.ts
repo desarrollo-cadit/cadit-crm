@@ -75,7 +75,7 @@ export const PATCH = requireCapability(
         )
       )
       .limit(1);
-    if (!cohort[0]) return apiError(422, "invalid_cohort", "Cohorte inexistente");
+    if (!cohort[0]) return apiError(422, "invalid_cohort", "Grupo inexistente");
     courseKind = cohort[0].courseKind;
 
     /**
@@ -101,7 +101,7 @@ export const PATCH = requireCapability(
       return apiError(
         422,
         "seller_required",
-        "Para pasar a esta persona a una cohorte hace falta saber quién hizo la venta. Se puede inscribir desde su ficha, con el formulario de inscripción, que pide el vendedor."
+        "Para pasar a esta persona a un grupo hace falta saber quién hizo la venta. Se puede inscribir desde su ficha, con el formulario de inscripción, que pide el vendedor."
       );
     }
   }

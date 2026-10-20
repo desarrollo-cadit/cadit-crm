@@ -42,7 +42,7 @@ export default async function OfflineCoursesPage() {
             </h2>
             <p className="text-sm text-muted-foreground">
               Guías teóricas y cuestionarios importados de la academia anterior.
-              Se asignan desde cada cohorte, en la pestaña «Cursos offline».
+              Se asignan desde cada grupo, en la pestaña «Cursos offline».
             </p>
           </div>
           {canEdit && <NewCourseButton />}

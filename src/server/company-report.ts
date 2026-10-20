@@ -179,7 +179,7 @@ export async function companyReport(
       return {
         employeeName: fullName(contact),
         email: contact.email,
-        cohortName: cohort?.name ?? course?.name ?? "Sin cohorte",
+        cohortName: cohort?.name ?? course?.name ?? "Sin grupo",
         courseName: course?.name ?? "—",
         attendancePct: pct,
         minAttendancePct: minPct,
@@ -217,7 +217,7 @@ export function exportCompanyReportCsv(report: CompanyReportDto): string {
     "Empleado",
     "Correo",
     "Curso",
-    "Cohorte",
+    "Grupo",
     "Asistencia %",
     "Mínimo %",
     "Estado",

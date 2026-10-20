@@ -121,9 +121,9 @@ export function VentasPorVendedor({
   return (
     <section className="space-y-6">
       <p className="text-xs text-text-3">
-        Inscripciones en una cohorte con fecha de inscripción en el período. En una
+        Inscripciones en un grupo con fecha de inscripción en el período. En una
         especialización cuenta sólo la inscripción al programa, no cada módulo. Los
-        totales van por moneda y no se suman entre sí. El filtro de camada no aplica a
+        totales van por moneda y no se suman entre sí. El filtro de grupo no aplica a
         esta vista.
       </p>
 
@@ -132,7 +132,7 @@ export function VentasPorVendedor({
           {reporte.sinVendedor === 1
             ? "Hay 1 venta sin vendedor en este período."
             : `Hay ${reporte.sinVendedor} ventas sin vendedor en este período.`}{" "}
-          Están al final de la lista, con un enlace a la cohorte para indicarlo.
+          Están al final de la lista, con un enlace al grupo para indicarlo.
         </p>
       )}
 
@@ -174,7 +174,7 @@ export function VentasPorVendedor({
                 <TableRow>
                   <TableHead>Fecha</TableHead>
                   <TableHead>Alumno</TableHead>
-                  <TableHead>Cohorte / curso</TableHead>
+                  <TableHead>Grupo / curso</TableHead>
                   <TableHead className="text-right">Importe</TableHead>
                   <TableHead>Moneda</TableHead>
                 </TableRow>
@@ -197,7 +197,7 @@ export function VentasPorVendedor({
                       <a
                         href={`/cohorts/${f.cohortId}`}
                         className="underline decoration-dotted underline-offset-2 hover:decoration-solid"
-                        title={g.vendedor ? "Ver la cohorte" : "Ir a la cohorte para indicar el vendedor"}
+                        title={g.vendedor ? "Ver el grupo" : "Ir al grupo para indicar el vendedor"}
                       >
                         {f.cohorte} · {f.curso}
                       </a>

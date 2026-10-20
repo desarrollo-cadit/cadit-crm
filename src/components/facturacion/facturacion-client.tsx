@@ -171,8 +171,8 @@ export function FacturacionClient({ puedeFacturar }: { puedeFacturar: boolean })
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Las ventas que todavía no tienen número de factura. Es la misma lista que
-            Administración recibe por correo 7 y 2 días antes del inicio de cada cohorte
-            confirmada.
+            Administración recibe por correo 7 y 2 días antes del inicio de cada grupo
+            confirmado.
             {puedeFacturar
               ? " Anotá el número y la venta sale de la lista."
               : " Para anotar números hace falta el permiso de registrar facturas."}
@@ -204,12 +204,12 @@ export function FacturacionClient({ puedeFacturar }: { puedeFacturar: boolean })
 
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1 text-xs text-text-3">
-            Cohorte
+            Grupo
             <Select
               className="w-64"
               value={filtros.cohortId ?? ""}
               onChange={(e) => setFiltro("cohortId", e.target.value || null)}
-              aria-label="Cohorte"
+              aria-label="Grupo"
             >
               <option value="">Todas</option>
               {cohortes.map(([id, nombre]) => (
@@ -252,7 +252,7 @@ export function FacturacionClient({ puedeFacturar }: { puedeFacturar: boolean })
           </label>
           <div className="pb-2">
             <CheckboxField
-              label="Solo cohortes confirmadas"
+              label="Solo grupos confirmados"
               checked={filtros.soloConfirmadas}
               onChange={(e) => setFiltro("soloConfirmadas", e.target.checked)}
             />
@@ -297,7 +297,7 @@ export function FacturacionClient({ puedeFacturar }: { puedeFacturar: boolean })
               <TableHeader>
                 <TableRow>
                   <TableHead>Alumno</TableHead>
-                  <TableHead>Curso y cohorte</TableHead>
+                  <TableHead>Curso y grupo</TableHead>
                   <TableHead>Inicio</TableHead>
                   <TableHead>Vendedor</TableHead>
                   <TableHead className="text-right">Monto</TableHead>
@@ -323,7 +323,7 @@ export function FacturacionClient({ puedeFacturar }: { puedeFacturar: boolean })
                         <span>{dia(f.inicio)}</span>
                         <span className="mt-0.5 block">
                           {f.confirmada ? (
-                            <Badge variant="success">Confirmada</Badge>
+                            <Badge variant="success">Confirmado</Badge>
                           ) : (
                             <Badge variant="secondary">Sin confirmar</Badge>
                           )}

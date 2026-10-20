@@ -183,7 +183,7 @@ export async function notifyWorkshopAttendee(
             organizationId,
             conversationId: conversation.id,
             templateId: templates[0]!.id,
-            variable: variableDelAviso(tipo, edicion),
+            variable: variableDelAviso(tipo, edicion, timeZone),
           });
         }
       } catch (err) {

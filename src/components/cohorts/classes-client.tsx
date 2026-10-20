@@ -422,7 +422,7 @@ export function ClassesClient({
 
       {data.classes.length === 0 && (
         <p className="text-sm text-muted-foreground">
-          Esta cohorte todavía no tiene clases ni días de cursada declarados.
+          Este grupo todavía no tiene clases ni días de cursada declarados.
         </p>
       )}
 
@@ -513,7 +513,7 @@ export function ClassesClient({
                     value={draft}
                     placeholder={
                       editing.campo === "meetingUrl"
-                        ? "https://zoom.us/j/… (vacío = usar el de la cohorte)"
+                        ? "https://zoom.us/j/… (vacío = usar el del grupo)"
                         : "https://…"
                     }
                     className="h-8 w-72"
@@ -586,7 +586,7 @@ export function ClassesClient({
                      clase tiene aula propia o hereda, que es lo único cierto
                      mientras no se la pueda nombrar. */
                   <span className="text-xs text-muted-foreground">
-                    {c.virtualRoomId ? "Aula propia" : "Hereda de la cohorte"}
+                    {c.virtualRoomId ? "Aula propia" : "Hereda del grupo"}
                   </span>
                 ) : (
                   <Select
@@ -603,8 +603,8 @@ export function ClassesClient({
                   >
                     <option value="">
                       {aulaDeLaCohorte
-                        ? `Hereda de la cohorte (${aulaDeLaCohorte})`
-                        : "Hereda de la cohorte (sin aula)"}
+                        ? `Hereda del grupo (${aulaDeLaCohorte})`
+                        : "Hereda del grupo (sin aula)"}
                     </option>
                     {aulasActivas.map((a) => (
                       <option key={a.id} value={a.id}>

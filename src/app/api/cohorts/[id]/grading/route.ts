@@ -19,7 +19,7 @@ export const GET = requireCapability(
   async (session, _req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const data = await cohortGrading(session.organizationId, id);
-  if (!data) return apiError(404, "not_found", "Cohorte no encontrada");
+  if (!data) return apiError(404, "not_found", "Grupo no encontrado");
   /*
     031 (DV-008) — Qué plantillas quedaron congeladas, para que el editor las
     abra así y nadie arme un cambio entero para enterarse del 409 al final.

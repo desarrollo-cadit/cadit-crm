@@ -69,7 +69,7 @@ export function CohortConfirmation({
       setDialogo(null);
       notify.success(
         accion === "confirmar"
-          ? "Cohorte confirmada. Soporte recibe el aviso por correo."
+          ? "Grupo confirmado. Soporte recibe el aviso por correo."
           : "Se quitó la confirmación."
       );
     } finally {
@@ -84,7 +84,7 @@ export function CohortConfirmation({
       {confirmada ? (
         <Badge variant="success">
           <CheckCircle2 className="mr-1 h-3.5 w-3.5" aria-hidden />
-          Confirmada
+          Confirmado
         </Badge>
       ) : (
         <Badge variant="outline">Sin confirmar</Badge>
@@ -117,7 +117,7 @@ export function CohortConfirmation({
             </Button>
           ) : (
             <Button size="sm" onClick={() => setDialogo("confirmar")}>
-              Confirmar cohorte
+              Confirmar grupo
             </Button>
           )}
         </div>
@@ -125,15 +125,15 @@ export function CohortConfirmation({
 
       {dialogo === "confirmar" ? (
         <ConfirmSendDialog
-          title="Confirmar cohorte"
-          confirmLabel="Confirmar cohorte"
+          title="Confirmar grupo"
+          confirmLabel="Confirmar grupo"
           busyLabel="Confirmando…"
           busy={enVuelo}
           onConfirm={() => void aplicar("confirmar")}
           onClose={() => setDialogo(null)}
         >
           <p>
-            La cohorte queda confirmada: sale. Soporte recibe por correo la lista de alumnos con las
+            El grupo queda confirmado: sale. Soporte recibe por correo la lista de alumnos con las
             licencias que necesita cada uno.
           </p>
           <p>

@@ -200,7 +200,7 @@ export async function borrarClasesSinHistoria(
       return {
         id: c.id,
         cohortId,
-        cohortName: nombres.get(cohortId) ?? "Cohorte",
+        cohortName: nombres.get(cohortId) ?? "Grupo",
         date: c.date.toISOString(),
         motivo: c.motivo,
         detalle: MOTIVO_PARA_CONSERVAR[c.motivo],
@@ -242,7 +242,7 @@ export async function crearReceso(
 
   const db = getDb();
   if (input.cohortId && !(await cohorteExiste(db, organizationId, input.cohortId))) {
-    return { ok: false, status: 404, code: "not_found", message: "Cohorte no encontrada" };
+    return { ok: false, status: 404, code: "not_found", message: "Grupo no encontrado" };
   }
 
   const id = newId("recess");

@@ -99,7 +99,7 @@ export function AccessUntilLine({
       ) : estado.origen === "calculado" ? (
         <Badge variant="secondary">Calculada: un mes después del fin</Badge>
       ) : (
-        <Badge variant="outline">La cohorte no tiene fecha de fin ni clases</Badge>
+        <Badge variant="outline">El grupo no tiene fecha de fin ni clases</Badge>
       )}
       {estado.origen === "manual" && estado.calculada && (
         <span className="text-muted-foreground">(la calculada sería el {formatearDia(estado.calculada)})</span>

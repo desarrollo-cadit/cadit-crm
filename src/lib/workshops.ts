@@ -9,7 +9,7 @@
  */
 
 import type { Currency } from "@/lib/db/schema";
-import { classEndsAt, classInstant, wallClockInZone } from "@/lib/schedule-time";
+import { classEndsAt, classInstant, conZona, wallClockInZone } from "@/lib/schedule-time";
 import {
   WORKSHOP_ATTENDEE_STATUSES,
   type WorkshopAttendeeStatus,
@@ -427,8 +427,10 @@ function fechaEnPalabras(day: Date): string {
   }).format(day);
 }
 
-function cuandoYDonde(e: DatosDelAviso["edicion"]): string {
-  const hora = e.startTime ? ` a las ${e.startTime}` : "";
+function cuandoYDonde(e: DatosDelAviso["edicion"], timeZone: string): string {
+  // La hora es de pared en la academia y se dice de qué zona: hay alumnos en
+  // Dominicana y en España, y un "a las 15:00" suelto lo lee cada uno en su reloj.
+  const hora = e.startTime ? ` a las ${conZona(e.startTime, timeZone)}` : "";
   const modalidad =
     e.modality === "presencial"
       ? `Presencial${e.classroom ? ` (${e.classroom})` : ""}`
@@ -442,21 +444,21 @@ function cuandoYDonde(e: DatosDelAviso["edicion"]): string {
  * 033 (FR-019) — La confirmación. Sin el enlace de la reunión: ese sale en el
  * recordatorio, que es el que se manda a quien confirmó.
  */
-export function textoConfirmacion(d: DatosDelAviso, _timeZone: string): string {
+export function textoConfirmacion(d: DatosDelAviso, timeZone: string): string {
   const taller = d.edicion.cohortName ?? d.edicion.courseName;
   return [
     `¡Hola ${d.nombre}! Quedaste anotado/a en el taller "${taller}".`,
-    `📅 ${cuandoYDonde(d.edicion)}`,
+    `📅 ${cuandoYDonde(d.edicion, timeZone)}`,
     "Te vamos a escribir para confirmar tu lugar.",
   ].join("\n");
 }
 
 /** 033 (FR-020) — El recordatorio del día anterior; con el enlace si es online. */
-export function textoRecordatorio(d: DatosDelAviso, _timeZone: string): string {
+export function textoRecordatorio(d: DatosDelAviso, timeZone: string): string {
   const taller = d.edicion.cohortName ?? d.edicion.courseName;
   const lineas = [
     `¡Hola ${d.nombre}! Te recordamos que mañana es el taller "${taller}".`,
-    `📅 ${cuandoYDonde(d.edicion)}`,
+    `📅 ${cuandoYDonde(d.edicion, timeZone)}`,
   ];
   if (d.edicion.modality === "online" && d.edicion.meetingUrl) {
     lineas.push(`Enlace para entrar: ${d.edicion.meetingUrl}`);
@@ -511,9 +513,13 @@ export function canalDelAviso(input: {
  * línea, porque WhatsApp rechaza saltos de línea en una variable. El
  * recordatorio de un online suma el enlace; la confirmación nunca.
  */
-export function variableDelAviso(tipo: TipoDeAviso, edicion: DatosDelAviso["edicion"]): string {
+export function variableDelAviso(
+  tipo: TipoDeAviso,
+  edicion: DatosDelAviso["edicion"],
+  timeZone: string
+): string {
   const taller = edicion.cohortName ?? edicion.courseName;
-  const partes = [`${taller}, ${cuandoYDonde(edicion)}`];
+  const partes = [`${taller}, ${cuandoYDonde(edicion, timeZone)}`];
   if (tipo === "recordatorio" && edicion.modality === "online" && edicion.meetingUrl) {
     partes.push(`enlace: ${edicion.meetingUrl}`);
   }

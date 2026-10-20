@@ -626,7 +626,7 @@ function ModulosTab({ modules }: { modules: Module[] }) {
               {/* US4 — el módulo que cursa con otra camada lo dice. */}
               {m.otraCamada && (
                 <ChipDeEstado tono="curso" className="mt-1.5">
-                  Cursado con {m.camadaName ? `la cohorte ${m.camadaName}` : "otra cohorte"}
+                  Cursado con {m.camadaName ? `el grupo ${m.camadaName}` : "otro grupo"}
                 </ChipDeEstado>
               )}
             </span>
@@ -864,7 +864,7 @@ function AvisosTab({
   }
   if (announcements.length === 0) {
     return (
-      <EmptyNote title="No hay avisos para tu cohorte">
+      <EmptyNote title="No hay avisos para tu grupo">
         Los avisos de la academia o de tu profesor se publicarán aquí, con su
         autor y fecha.
       </EmptyNote>

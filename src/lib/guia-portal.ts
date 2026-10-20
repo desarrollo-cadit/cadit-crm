@@ -38,9 +38,9 @@ export const GUIA_PORTAL_ALUMNO: Record<HrefAlumno, string> = {
 
 export const GUIA_PORTAL_PROFESOR: Record<HrefProfesor, string> = {
   "/portal/dictado":
-    "Las cohortes a tu cargo. Desde acá registrás la asistencia de cada clase, cargás los resultados de las evaluaciones, revisás las entregas y publicás material.",
+    "Los grupos a tu cargo. Desde acá registrás la asistencia de cada clase, cargás los resultados de las evaluaciones, revisás las entregas y publicás material.",
   "/portal/horas":
-    "Las horas que dictaste, con el total general y el de cada cohorte. Sirve como referencia para controlar la liquidación.",
+    "Las horas que dictaste, con el total general y el de cada grupo. Sirve como referencia para controlar la liquidación.",
 };
 
 /**

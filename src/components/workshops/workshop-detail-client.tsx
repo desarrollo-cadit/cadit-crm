@@ -30,6 +30,7 @@ import {
   type WorkshopSource,
 } from "@/lib/workshops";
 import { WorkshopEditionFields, type EditionPayload } from "./workshop-edition-form";
+import { WorkshopImageField } from "./workshop-image-field";
 import type { EditionRow } from "./workshops-client";
 import {
   REGISTRATION_BADGE,
@@ -44,6 +45,7 @@ import {
 type Edition = EditionRow & {
   name: string | null;
   description: string | null;
+  imageUrl: string | null;
   meetingUrl: string | null;
   startsAt: string;
 };
@@ -52,6 +54,7 @@ type Attendee = {
   id: string;
   enrollmentId: string;
   contact: { id: string; name: string; phone: string | null; email: string | null };
+  company: { id: string; name: string } | null;
   conversationId: string | null;
   status: WorkshopAttendeeStatus;
   source: WorkshopSource;
@@ -233,6 +236,14 @@ export function WorkshopDetailClient({
         </div>
       </header>
 
+      <WorkshopImageField
+        courseId={edition.courseId}
+        imageUrl={edition.imageUrl}
+        workshopName={edition.courseName}
+        canEdit={canEdit}
+        onChanged={() => void refetch()}
+      />
+
       {editando && (
         <div className="rounded-md border p-4">
           <WorkshopEditionFields
@@ -291,6 +302,7 @@ export function WorkshopDetailClient({
                 <TableHead>Nombre</TableHead>
                 <TableHead>Teléfono</TableHead>
                 <TableHead>Correo</TableHead>
+                <TableHead>Empresa</TableHead>
                 <TableHead>Estado</TableHead>
                 <TableHead>Inscripción</TableHead>
                 <TableHead>Origen</TableHead>
@@ -347,7 +359,7 @@ function FilaInscripto({
   onEstado: (s: WorkshopAttendeeStatus) => void;
   onPagoCerrado: () => void;
 }) {
-  const columnas = 7 + (canSeeBilling && conCosto ? 1 : 0);
+  const columnas = 8 + (canSeeBilling && conCosto ? 1 : 0);
   return (
     <>
       <TableRow>
@@ -361,6 +373,7 @@ function FilaInscripto({
         </TableCell>
         <TableCell>{a.contact.phone ?? "—"}</TableCell>
         <TableCell>{a.contact.email ?? "—"}</TableCell>
+        <TableCell>{a.company?.name ?? "—"}</TableCell>
         <TableCell>
           {canEditAttendees ? (
             <Select

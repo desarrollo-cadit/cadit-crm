@@ -105,9 +105,9 @@ export type PlanDeInscripcionAModulos = {
 
 const DETALLE: Record<MotivoDeExclusion, string> = {
   baja: "Está dado de baja de la especialización.",
-  recursada_otra_camada: "Cursa este módulo con otra camada.",
+  recursada_otra_camada: "Cursa este módulo con otro grupo.",
   sacado_del_modulo: "La coordinación lo sacó de este módulo.",
-  inscripto_en_la_cohorte: "Ya tiene una inscripción en la cohorte de este módulo.",
+  inscripto_en_la_cohorte: "Ya tiene una inscripción en el grupo de este módulo.",
 };
 
 export function planDeInscripcionAModulos(
@@ -277,7 +277,7 @@ export function decidirSalidaDeModulo(h: HistoriaDeLaHija): SalidaDeModulo {
       code: "modulo_con_historia",
       message:
         `Ya tiene ${partes.join(", ")} en este módulo: sacarlo borraría esa historia. ` +
-        "Si no lo va a terminar, mudá la cursada a otra camada desde el Recorrido de la especialización.",
+        "Si no lo va a terminar, mudá la cursada a otro grupo desde el Recorrido de la especialización.",
     };
   }
   return { ok: true, licenciasLiberadas: h.licencias };

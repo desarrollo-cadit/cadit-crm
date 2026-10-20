@@ -22,7 +22,7 @@ export const GET = requireCapability(
   async (session, _req: Request, ctx: Params) => {
     const { id } = await ctx.params;
     const result = await listCohortClasses(session.organizationId, id);
-    if (!result) return apiError(404, "not_found", "Cohorte no encontrada");
+    if (!result) return apiError(404, "not_found", "Grupo no encontrado");
     return Response.json(result);
   }
 );

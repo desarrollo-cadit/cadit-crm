@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { CohortDto, CompanyDto, ContactDto } from "@/lib/types";
-import { fullName } from "@/lib/utils";
+import { formatCalendarDay, fullName } from "@/lib/utils";
 import { cohortesInscribibles, etiquetaDeCohorte } from "@/lib/cohortes-inscribibles";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,12 +20,9 @@ export type EnrollSavedResult = {
   cohortLabel: string | null;
 };
 
+/** El inicio de la cohorte: un DÍA (medianoche UTC), no un instante. */
 function fechaCorta(iso: string): string {
-  return new Date(iso).toLocaleDateString("es-UY", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  return formatCalendarDay(iso, { day: "2-digit", month: "short", year: "numeric" });
 }
 
 /**
@@ -159,7 +156,7 @@ export function EnrollForm({
     setError(null);
     const targetCohortId = cohortId ?? selectedCohortId;
     if (!targetCohortId) {
-      setError("Falta elegir la cohorte.");
+      setError("Falta elegir el grupo.");
       return;
     }
     if (mode === "existing" && !contactId) {
@@ -173,7 +170,7 @@ export function EnrollForm({
     // 2026-10-06 — Toda inscripción en una cohorte es una venta: el servidor
     // la rechaza sin vendedor, y acá se anticipa para no perder lo cargado.
     if (!sellerId) {
-      setError("Falta indicar el vendedor: toda inscripción en una cohorte es una venta.");
+      setError("Falta indicar el vendedor: toda inscripción en un grupo es una venta.");
       return;
     }
 
@@ -236,7 +233,7 @@ export function EnrollForm({
 
         {!cohortId && (
           <div className="mb-4 space-y-1.5">
-            <Label htmlFor="enr-cohort">Cohorte</Label>
+            <Label htmlFor="enr-cohort">Grupo</Label>
             <Select
               id="enr-cohort"
               value={selectedCohortId}
@@ -244,7 +241,7 @@ export function EnrollForm({
               onChange={(e) => setSelectedCohortId(e.target.value)}
             >
               <option value="">
-                {cohortOptions === null ? "Cargando cohortes…" : "Elegí una cohorte"}
+                {cohortOptions === null ? "Cargando grupos…" : "Elegí un grupo"}
               </option>
               {(cohortOptions ?? []).map((c) => (
                 <option key={c.id} value={c.id}>
@@ -258,13 +255,13 @@ export function EnrollForm({
             </Select>
             {cohortLoadFailed && (
               <p className="text-xs text-destructive">
-                No pudimos cargar las cohortes. Podés cerrar el formulario y
+                No pudimos cargar los grupos. Podés cerrar el formulario y
                 volver a abrirlo en un rato.
               </p>
             )}
             {!cohortLoadFailed && cohortOptions?.length === 0 && (
               <p className="text-xs text-muted-foreground">
-                Por ahora no tenemos cohortes abiertas para inscribir.
+                Por ahora no tenemos grupos abiertos para inscribir.
               </p>
             )}
           </div>

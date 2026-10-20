@@ -16,7 +16,7 @@ export const GET = requireTeacherPortal(
   async (ctx, _req: Request, routeCtx: Params) => {
     const { id } = await routeCtx.params;
     const data = await teacherCohortContent(ctx.organizationId, ctx.teacherId, id);
-    if (!data) return apiError(404, "not_found", "Cohorte no encontrada");
+    if (!data) return apiError(404, "not_found", "Grupo no encontrado");
     return Response.json(data);
   }
 );

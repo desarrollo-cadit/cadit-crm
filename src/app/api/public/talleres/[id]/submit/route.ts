@@ -6,9 +6,12 @@ import {
   publicFormRateLimit,
   tooManyRequests,
 } from "@/lib/rate-limit";
-import { publicLeadSchema } from "@/server/intake-forms";
 import { resolveSoleOrganizationId } from "@/server/public-catalog";
-import { scheduleConfirmation, submitPublicWorkshopRegistration } from "@/server/workshops";
+import {
+  publicWorkshopRegistrationSchema,
+  scheduleConfirmation,
+  submitPublicWorkshopRegistration,
+} from "@/server/workshops";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +25,8 @@ export function OPTIONS(req: Request) {
 /**
  * 033 (FR-006..FR-010) — Inscripción pública a una edición de taller.
  *
- * Mismo contrato de body que los formularios de cursos (`publicLeadSchema`) y
+ * Mismo contrato de body que los formularios de cursos (`publicLeadSchema`),
+ * más la empresa opcional (`publicWorkshopRegistrationSchema`), y
  * el MISMO límite por origen (`publicFormRateLimit`, con la misma clave): un
  * script que dispara envíos no gana cupo extra por cambiar de puerta.
  *
@@ -48,7 +52,7 @@ export const POST = withOrganization(
       return withCors(req, tooManyRequests(rl.windowMs));
     }
 
-    const body = await parseBody(req, publicLeadSchema);
+    const body = await parseBody(req, publicWorkshopRegistrationSchema);
     if (!body.ok) return withCors(req, body.response);
 
     const result = await submitPublicWorkshopRegistration(organizationId, id, {
@@ -57,6 +61,7 @@ export const POST = withOrganization(
       phone: body.data.phone,
       email: body.data.email ?? null,
       notes: body.data.message ?? null,
+      company: body.data.company ?? null,
     });
     if (!result.ok) {
       return withCors(req, apiError(result.status, result.code, result.message));

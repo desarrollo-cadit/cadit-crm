@@ -80,7 +80,7 @@ export function TodayPanel({ nombre }: { nombre: string }) {
           <Cifra
             icono={<GraduationCap className="h-4 w-4" />}
             valor={datos.activeCohorts}
-            label="cohortes en curso"
+            label="grupos en curso"
             href="/academico"
             destacada
           />
@@ -140,7 +140,7 @@ export function TodayPanel({ nombre }: { nombre: string }) {
                     {c.courseName}
                   </Link>
                   <span className="block truncate text-xs text-muted-foreground">
-                    {c.cohortName ?? "Sin nombre de edición"}
+                    {c.cohortName ?? "Sin nombre de grupo"}
                     {c.endTime && ` · termina ${c.endTime}`}
                   </span>
                 </span>

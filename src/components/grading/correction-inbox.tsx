@@ -136,7 +136,7 @@ export function CorrectionInbox() {
             </p>
           </div>
           <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-            Cohorte
+            Grupo
             <Select
               className="h-9 w-56"
               value={cohortId}

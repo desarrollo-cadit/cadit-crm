@@ -117,10 +117,10 @@ export function CohortOfflineCoursesClient({
         <header>
           <h3 id="offline-asignados" className="flex items-center gap-2 text-sm font-semibold">
             <Library className="h-4 w-4" aria-hidden />
-            Cursos offline de la cohorte
+            Cursos offline del grupo
           </h3>
           <p className="text-xs text-muted-foreground">
-            Todos los alumnos de la cohorte heredan los cursos marcados. Las excepciones por
+            Todos los alumnos del grupo heredan los cursos marcados. Las excepciones por
             alumno se manejan desde la pestaña «Alumnos», abriendo su fila.
           </p>
         </header>

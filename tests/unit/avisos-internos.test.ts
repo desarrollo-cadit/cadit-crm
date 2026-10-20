@@ -228,7 +228,7 @@ describe("sinFacturar — a quién le falta la factura", () => {
 describe("fechaDeInicio — compuesta con schedule-time, nunca a mano", () => {
   it("día en palabras y hora de pared de la academia", () => {
     expect(fechaDeInicio(dia("2026-10-27"), "18:30", MVD)).toBe(
-      "martes 27 de octubre de 2026, 18:30 (hora de America/Montevideo)"
+      "martes 27 de octubre de 2026, 18:30 (hora de Uruguay)"
     );
   });
 
@@ -269,7 +269,7 @@ describe("armarAvisoSoporte", () => {
 
   it("asunto con curso, cohorte y fecha", () => {
     const { subject } = armarAvisoSoporte(datos);
-    expect(subject).toBe("[Soporte] Cohorte confirmada: Revit Arquitectura — Octubre <2026> · inicia 27/10/2026");
+    expect(subject).toBe("[Soporte] Grupo confirmado: Revit Arquitectura — Octubre <2026> · inicia 27/10/2026");
   });
 
   it("lleva profesor, inicio, alumnos y sus licencias, todo escapado", () => {

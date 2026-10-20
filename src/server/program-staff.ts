@@ -679,7 +679,7 @@ export async function moverModuloDeRecorrido(
       status: 422,
       code: "no_es_una_cursada_de_modulo",
       message:
-        "Esta inscripción no es la cursada de un módulo: sólo se muda una inscripción hija a otra camada",
+        "Esta inscripción no es la cursada de un módulo: sólo se muda una inscripción hija a otro grupo",
     };
   }
 
@@ -695,7 +695,7 @@ export async function moverModuloDeRecorrido(
     )
     .limit(1);
   if (!destino[0]) {
-    return { ok: false, status: 422, code: "invalid_body", message: "Cohorte inexistente" };
+    return { ok: false, status: 422, code: "invalid_body", message: "Grupo inexistente" };
   }
 
   const treeError = await verificarVinculoDeInscripcion(db, organizationId, {

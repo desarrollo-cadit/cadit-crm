@@ -33,7 +33,7 @@ export const GET = requireCapability(
       id,
       sessionCapabilities(session)
     );
-    if (!data) return apiError(404, "not_found", "Cohorte no encontrada");
+    if (!data) return apiError(404, "not_found", "Grupo no encontrado");
     return Response.json(data);
   }
 );

@@ -25,7 +25,7 @@ const NO_ENCONTRADA = {
   ok: false,
   status: 404,
   code: "not_found",
-  message: "Cohorte no encontrada",
+  message: "Grupo no encontrado",
 } as const;
 
 /** El estado de confirmación y de sus avisos; `null` si la cohorte no existe. */

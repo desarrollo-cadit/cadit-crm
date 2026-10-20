@@ -8,9 +8,23 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { ConfirmSendDialog } from "@/components/cohorts/confirm-send-dialog";
 import { notify } from "@/lib/notify";
+import { ACADEMY_TIME_ZONE, ultimoDiaDelPlazo } from "@/lib/schedule-time";
+import { formatCalendarDay } from "@/lib/utils";
 import type { GroupLicenseDto } from "@/server/group-licenses";
 
 type Programa = { id: string; name: string };
+
+/**
+ * El vencimiento viaja como el instante en que TERMINA el día elegido en la
+ * academia (01/04 00:00 de Montevideo para el 31/03): se muestra ese día, no
+ * el siguiente ni el anterior.
+ */
+function diaDeVencimiento(iso: string): string {
+  const dia = ultimoDiaDelPlazo(new Date(iso), ACADEMY_TIME_ZONE);
+  return dia
+    ? formatCalendarDay(`${dia}T00:00:00.000Z`, { day: "2-digit", month: "2-digit", year: "numeric" })
+    : "—";
+}
 
 /**
  * 035 (US1, FR-001..FR-005) — "Licencias para todo el grupo", arriba del
@@ -134,7 +148,7 @@ export function GroupLicensesPanel({
             {p.name}
             {p.expiresAt && (
               <span className="text-muted-foreground">
-                · vence {new Date(p.expiresAt).toLocaleDateString("es-UY")}
+                · vence {diaDeVencimiento(p.expiresAt)}
               </span>
             )}
             {p.faltan > 0 && (
@@ -213,7 +227,7 @@ export function GroupLicensesPanel({
           onConfirm={() => void asignar(confirmar.programa)}
         >
           <p className="text-foreground">
-            Cada alumno activo de la cohorte recibe una licencia y el stock baja en esa cantidad. Si
+            Cada alumno activo del grupo recibe una licencia y el stock baja en esa cantidad. Si
             no alcanza para todos, no se asigna ninguna.
           </p>
           <p>

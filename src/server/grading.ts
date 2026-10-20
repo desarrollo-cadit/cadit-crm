@@ -221,7 +221,7 @@ export async function createAssessment(
     .where(scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, cohortId)))
     .limit(1);
   if (!cohortRows[0]) {
-    return { ok: false, status: 404, code: "not_found", message: "Cohorte no encontrada" };
+    return { ok: false, status: 404, code: "not_found", message: "Grupo no encontrado" };
   }
 
   const existing = await listAssessments(organizationId, cohortId);
@@ -513,7 +513,7 @@ export function planAssessmentCopy(
     return {
       aCopiar: [],
       omitidas: [],
-      aviso: "La cohorte de origen no tiene evaluaciones cargadas: no hay nada que copiar.",
+      aviso: "El grupo de origen no tiene evaluaciones cargadas: no hay nada que copiar.",
     };
   }
 
@@ -553,7 +553,7 @@ export function planAssessmentCopy(
     omitidas,
     aviso:
       aCopiar.length === 0
-        ? "La cohorte ya tenía todas esas evaluaciones: no se copió ninguna."
+        ? "El grupo ya tenía todas esas evaluaciones: no se copió ninguna."
         : null,
   };
 }
@@ -579,7 +579,7 @@ export async function copyAssessments(
       ok: false,
       status: 422,
       code: "misma_cohorte",
-      message: "El origen y el destino son la misma cohorte",
+      message: "El origen y el destino son la mismo grupo",
     };
   }
 
@@ -599,14 +599,14 @@ export async function copyAssessments(
     );
   const encontradas = new Set(cohortes.map((c) => c.id));
   if (!encontradas.has(haciaCohorteId)) {
-    return { ok: false, status: 404, code: "not_found", message: "Cohorte no encontrada" };
+    return { ok: false, status: 404, code: "not_found", message: "Grupo no encontrado" };
   }
   if (!encontradas.has(desdeCohorteId)) {
     return {
       ok: false,
       status: 404,
       code: "origen_not_found",
-      message: "La cohorte de origen no existe",
+      message: "El grupo de origen no existe",
     };
   }
 

@@ -158,7 +158,7 @@ function OfflineCoursesCard({ courses }: { courses: AdminActivityDto["offlineCou
           Progreso en cursos offline
         </CardTitle>
         <CardDescription>
-          Los cursos que tiene asignados por sus cohortes o de forma individual.
+          Los cursos que tiene asignados por sus grupos o de forma individual.
         </CardDescription>
       </CardHeader>
       <CardContent>

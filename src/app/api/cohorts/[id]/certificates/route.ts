@@ -23,7 +23,7 @@ export const POST = requireCapability(
     const resultados = await emitirATodos(session.organizationId, id, {
       issuedBy: session.userId,
     });
-    if (!resultados) return apiError(404, "not_found", "Cohorte no encontrada");
+    if (!resultados) return apiError(404, "not_found", "Grupo no encontrado");
     return Response.json({ resultados });
   }
 );

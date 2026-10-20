@@ -130,7 +130,7 @@ export function CourseAccessPanel({ courseId, canEdit }: { courseId: string; can
                 </Link>
                 {f.source.kind === "cohorte" ? (
                   <span className="text-xs text-muted-foreground">
-                    Cohorte {f.source.cohortName}
+                    Grupo {f.source.cohortName}
                     {f.source.individual ? " (otorgado a esta inscripción)" : ""}
                   </span>
                 ) : (

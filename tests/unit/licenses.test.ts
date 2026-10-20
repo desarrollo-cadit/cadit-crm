@@ -258,7 +258,7 @@ describe("035 — lo del grupo no se toca por alumno", () => {
       status: 409,
       code: "asignado_al_grupo",
       message:
-        "Revit está asignado al grupo de la cohorte: se asigna y se quita desde la cohorte, no por alumno.",
+        "Revit está asignado al grupo: se asigna y se quita desde el grupo, no por alumno.",
     });
     expect(inserts).toHaveLength(0);
     expect(updates).toHaveLength(0);

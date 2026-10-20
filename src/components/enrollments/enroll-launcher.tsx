@@ -25,7 +25,7 @@ import { notify } from "@/lib/notify";
  */
 export function EnrollLauncher({
   initialContact,
-  label = "Inscribir en una cohorte",
+  label = "Inscribir en un grupo",
   variant = "outline",
   className,
   onEnrolled,
@@ -81,8 +81,8 @@ export function EnrollLauncher({
           onClose={() => setOpen(false)}
           onSaved={(result) => {
             setOpen(false);
-            notify.success(`Inscripción creada en ${result.cohortLabel ?? "la cohorte"}.`, {
-              action: { label: "Ver la cohorte", href: `/cohorts/${result.cohortId}` },
+            notify.success(`Inscripción creada en ${result.cohortLabel ?? "el grupo"}.`, {
+              action: { label: "Ver el grupo", href: `/cohorts/${result.cohortId}` },
             });
             onEnrolled?.();
           }}

@@ -37,6 +37,7 @@ import { seccionVendedores } from "./e2e/vendedores.mjs";
 import { seccionAgentePorAreas } from "./e2e/agente-por-areas.mjs";
 import { seccionRoles } from "./e2e/roles.mjs";
 import { seccionGrabacionesZoom, seccionGrabacionesZoomPeriodica } from "./e2e/grabaciones-zoom.mjs";
+import { seccionPortalZonasHorarias } from "./e2e/portal-zonas-horarias.mjs";
 import {
   alEntrar,
   claveVigente,
@@ -230,6 +231,7 @@ async function main() {
       "grabaciones-zoom": seccionGrabacionesZoom,
       // 030 US5 (check 19): solo con la app en ZOOM_SYNC_INTERVAL_MIN=1; si no, se salta con aviso.
       "grabaciones-zoom-periodica": seccionGrabacionesZoomPeriodica,
+      "portal-zonas-horarias": seccionPortalZonasHorarias,
     };
     for (const nombre of soloSecciones) {
       const seccion = SECCIONES[nombre];
@@ -5012,7 +5014,7 @@ async function main() {
 
     // El listado académico: la madre con su insignia, los módulos adentro.
     await pagina.goto(`${BASE}/academico`, { timeout: 120000 });
-    await pagina.getByRole("button", { name: "Cohortes", exact: true }).click();
+    await pagina.getByRole("button", { name: "Grupos", exact: true }).click();
     const filaMadre = pagina.locator("li", { hasText: nombreEsp }).first();
     await filaMadre.waitFor({ timeout: 30000 });
     const insigniaDeMadre = filaMadre.getByRole("button", { name: /Especialización · 2 módulos/ });
@@ -5161,7 +5163,7 @@ async function main() {
   ok(
     "inscribir a la misma persona dos veces en la misma cohorte responde 409 con mensaje claro",
     repetidaInsc.res.status === 409 &&
-      repetidaInsc.json?.error?.message === "Esta persona ya está inscripta en esa cohorte.",
+      repetidaInsc.json?.error?.message === "Esta persona ya está inscripta en ese grupo.",
     `${repetidaInsc.res.status} ${JSON.stringify(repetidaInsc.json?.error)}`
   );
 
@@ -5191,6 +5193,9 @@ async function main() {
   await seccionGrabacionesZoom({ api, ok, BASE, getCookie: () => cookie });
   // 030 US5 — La periódica (check 19): se salta con aviso si la app corre con la periódica apagada.
   await seccionGrabacionesZoomPeriodica({ api, ok, BASE, getCookie: () => cookie });
+
+  // El portal del alumno en tres zonas: la hora local y el botón de la clase en el mismo instante.
+  await seccionPortalZonasHorarias({ api, ok, BASE });
 
   console.log(`\n===== ${checks - failures}/${checks} checks OK, ${failures} fallos =====`);
   process.exit(failures > 0 ? 1 : 0);

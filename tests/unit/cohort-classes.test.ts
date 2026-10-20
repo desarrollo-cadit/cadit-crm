@@ -185,7 +185,7 @@ describe("cannotGenerateReason — el motivo, no un botón que falla", () => {
   it("sin días declarados, lo dice y dice qué destraba", () => {
     const motivo = cannotGenerateReason({ endDate: new Date("2026-06-01"), daysOfWeek: null });
     expect(motivo).toBe(
-      "La cohorte todavía no tiene días de cursada. Cuando los cargues, vas a poder generar el cronograma."
+      "El grupo todavía no tiene días de cursada. Cuando los cargues, vas a poder generar el cronograma."
     );
   });
 

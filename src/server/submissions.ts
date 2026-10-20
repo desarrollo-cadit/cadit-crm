@@ -826,7 +826,7 @@ const COHORTE_FINALIZADA = {
   ok: false,
   status: 422,
   code: "cohorte_finalizada",
-  message: "Esta cohorte ya terminó, así que sus entregas quedaron cerradas",
+  message: "Este grupo ya terminó, así que sus entregas quedaron cerradas",
 } as const;
 
 type VeredictoDeAlcance =

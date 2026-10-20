@@ -2,7 +2,14 @@ import { asc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
-import { cambiaElRut, normalizarRut, resolverEmpresa, type CompanyInput } from "@/lib/company";
+import {
+  buscarEmpresaPorNombre,
+  cambiaElRut,
+  normalizarRut,
+  resolverEmpresa,
+  type CompanyInput,
+} from "@/lib/company";
+import { completarEmpresaDelContacto } from "@/server/contact-company";
 import type { CompanyDto } from "@/lib/types";
 
 type CompanyRow = typeof schema.company.$inferSelect;
@@ -97,6 +104,49 @@ export async function createCompany(
     return { ok: false, status: 422, code: "not_created", message: "No se pudo guardar la empresa" };
   }
   return { ok: true, company: serializeCompany(row) };
+}
+
+/**
+ * La empresa que alguien escribió al anotarse a un taller desde la web.
+ *
+ * Busca una empresa de la organización con esa razón social o ese nombre
+ * comercial (`buscarEmpresaPorNombre`); si no hay, la crea con lo escrito como
+ * razón social (sin RUT, así que no hay duplicado de RUT que controlar). Después
+ * COMPLETA la empresa del contacto: nunca pisa una que ya tenía.
+ *
+ * Corre en un SAVEPOINT y no lanza: la empresa es un dato opcional, y perder
+ * la inscripción por culpa de ella sería peor que perder el dato.
+ */
+export async function vincularEmpresaPorNombre(
+  organizationId: string,
+  contactId: string,
+  nombre: string | null | undefined
+): Promise<void> {
+  const escrito = nombre?.trim();
+  if (!escrito) return;
+  try {
+    await getDb().transaction(async () => {
+      const empresas = await getDb()
+        .select({
+          id: schema.company.id,
+          legalName: schema.company.legalName,
+          tradeName: schema.company.tradeName,
+        })
+        .from(schema.company)
+        .where(scoped(schema.company.organizationId, organizationId));
+      let companyId = buscarEmpresaPorNombre(empresas, escrito);
+      if (!companyId) {
+        const creada = await createCompany(organizationId, { legalName: escrito });
+        if (!creada.ok) return;
+        companyId = creada.company.id;
+      }
+      await completarEmpresaDelContacto(organizationId, contactId, companyId);
+    });
+  } catch (err) {
+    console.error(
+      `[empresas] contacto ${contactId}: no se pudo vincular la empresa (${err instanceof Error ? err.name : "error"})`
+    );
+  }
 }
 
 /**

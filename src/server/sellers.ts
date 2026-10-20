@@ -28,7 +28,7 @@ export type SellerResult =
   | { ok: false; status: 404 | 409 | 422; code: string; message: string };
 
 export const VENDEDOR_OBLIGATORIO =
-  "Falta indicar el vendedor. Toda inscripción en una cohorte es una venta, y para pagar la comisión hace falta saber quién la hizo.";
+  "Falta indicar el vendedor. Toda inscripción en un grupo es una venta, y para pagar la comisión hace falta saber quién la hizo.";
 
 /**
  * Qué inscripción es una VENTA y por lo tanto lleva vendedor.

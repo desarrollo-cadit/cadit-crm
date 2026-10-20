@@ -92,7 +92,7 @@ describe("deleteTeacher — reasignar antes de dar de baja", () => {
     expect(r.code).toBe("has_cohorts");
     expect(r.cohorts).toBe(18);
     expect(r.message).toContain("18");
-    expect(r.message).toContain("Reasignalas");
+    expect(r.message).toContain("Reasignalos");
     // Lo importante: no tocó nada.
     expect(deletes).toHaveLength(0);
   });
@@ -106,7 +106,7 @@ describe("deleteTeacher — reasignar antes de dar de baja", () => {
 
     expect(r.ok).toBe(false);
     if (r.ok) return;
-    expect(r.message).toContain("1 cohorte asignada");
+    expect(r.message).toContain("1 grupo asignado");
     expect(deletes).toHaveLength(0);
   });
 

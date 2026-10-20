@@ -21,7 +21,7 @@ import type {
   SoftwareDto,
   TeacherDto,
 } from "@/lib/types";
-import { WEEKDAY_LABELS } from "@/lib/utils";
+import { formatCalendarDay, WEEKDAY_LABELS } from "@/lib/utils";
 import {
   TODOS_LOS_ANIOS,
   alternarTipo,
@@ -45,7 +45,7 @@ import { notify } from "@/lib/notify";
 
 const TABS = [
   { key: "courses", label: "Cursos" },
-  { key: "cohorts", label: "Cohortes" },
+  { key: "cohorts", label: "Grupos" },
   { key: "teachers", label: "Profesores" },
   // 023 — Las salas de reunión. Van acá y no en Configuración porque se tocan
   // armando el cronograma, no una vez al instalar.
@@ -53,13 +53,14 @@ const TABS = [
 ] as const;
 type Tab = (typeof TABS)[number]["key"];
 
+/** Inicio y fin de cohorte: DÍAS (medianoche UTC), no instantes. */
 function formatDate(iso: string | null) {
   if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("es-MX", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  return formatCalendarDay(
+    iso,
+    { day: "2-digit", month: "short", year: "numeric" },
+    "es-MX"
+  );
 }
 
 function formatCost(cost: number | null) {
@@ -84,9 +85,9 @@ const STATUS_BADGE: Record<
   CohortDto["status"],
   { label: string; variant: "warning" | "success" | "outline" }
 > = {
-  planificada: { label: "Planificada", variant: "warning" },
+  planificada: { label: "Planificado", variant: "warning" },
   en_curso: { label: "En curso", variant: "success" },
-  finalizada: { label: "Finalizada", variant: "outline" },
+  finalizada: { label: "Finalizado", variant: "outline" },
 };
 
 const STATUS_ORDER: CohortDto["status"][] = ["planificada", "en_curso", "finalizada"];
@@ -365,7 +366,7 @@ export function AcademicClient({
       const body = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      notify.error(body?.error?.message ?? "No se pudo borrar la cohorte.");
+      notify.error(body?.error?.message ?? "No se pudo borrar el grupo.");
       return;
     }
 
@@ -545,7 +546,7 @@ export function AcademicClient({
             {/* 032 (FR-012) — aparece con cualquier año, y se dice por qué. */}
             {sinFechas(cohort) && <Badge variant="warning">sin fechas</Badge>}
             {/* 039 — confirmada ("sale"): independiente del estado por fechas. */}
-            {cohort.confirmedAt && <Badge variant="success">Confirmada</Badge>}
+            {cohort.confirmedAt && <Badge variant="success">Confirmado</Badge>}
             {insignia}
           </div>
           {subtitulo && (
@@ -604,7 +605,7 @@ export function AcademicClient({
         <div className="flex shrink-0 items-center gap-1.5">
           <Link href={`/cohorts/${cohort.id}`}>
             <Button variant="outline" size="sm">
-              Ver cohorte
+              Ver grupo
             </Button>
           </Link>
           {canEdit && (
@@ -644,7 +645,7 @@ export function AcademicClient({
                 disabled={courses.length === 0}
                 onClick={() => setCohortForm({ mode: "create" })}
               >
-                <Plus className="h-4 w-4" /> Nueva cohorte
+                <Plus className="h-4 w-4" /> Nuevo grupo
               </Button>
             </>
           )}
@@ -717,7 +718,7 @@ export function AcademicClient({
               <label className="flex items-center gap-2 text-xs text-muted-foreground">
                 Año:
                 <select
-                  aria-label="Año de la cohorte"
+                  aria-label="Año del grupo"
                   className="h-8 rounded-md border border-input bg-card px-2 text-xs text-foreground"
                   value={String(yearFilter)}
                   onChange={(e) => elegirAnio(leerFiltroDeAnio(e.target.value))}
@@ -752,15 +753,15 @@ export function AcademicClient({
         {!loading && tab === "cohorts" &&
           (cohorts.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-              <p className="text-sm font-medium">Sin cohorte</p>
+              <p className="text-sm font-medium">Sin grupo</p>
               <p className="max-w-sm text-xs text-muted-foreground">
-                Creá un curso y después una cohorte con costo, horario, aula,
+                Creá un curso y después un grupo con costo, horario, aula,
                 temario, software y profesor.
               </p>
             </div>
           ) : grupos.length === 0 ? (
             <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-              Ninguna cohorte coincide con el filtro.
+              Ningún grupo coincide con el filtro.
             </p>
           ) : (
             <div className="space-y-6">
@@ -781,7 +782,7 @@ export function AcademicClient({
                             className="rounded-lg border bg-card transition-colors hover:border-brand-soft"
                           >
                             {ficha(cohort, {
-                              titulo: cohort.name || 'Cohorte sin nombre',
+                              titulo: cohort.name || 'Grupo sin nombre',
                               subtitulo: cohort.courseName,
                               insignia: cohort.isSpecialization ? (
                                 <button
@@ -809,7 +810,7 @@ export function AcademicClient({
                                 {modules.length === 0 && (
                                   <li className="text-xs text-muted-foreground">
                                     Todavía no tiene módulos. Agregalos desde la
-                                    pestaña Especialización de la cohorte.
+                                    pestaña Especialización del grupo.
                                   </li>
                                 )}
                                 {modules.map((m) => (

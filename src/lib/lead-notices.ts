@@ -1,4 +1,4 @@
-import { wallClockInZone } from "@/lib/schedule-time";
+import { conZona, wallClockInZone } from "@/lib/schedule-time";
 import {
   destinatariosDeArea,
   diaCorto,
@@ -51,6 +51,8 @@ export type InteresadoNuevo = {
   telefono: string | null;
   email: string | null;
   mensaje: string | null;
+  /** La empresa que escribió (formulario de taller). Opcional: los avisos viejos no la traen. */
+  empresa?: string | null;
   interes: InteresDelInteresado;
   /** El `source` de la captación: "formulario:<nombre>". */
   origen: string;
@@ -119,7 +121,7 @@ function queLeInteresa(i: InteresDelInteresado): string | null {
 function cuando(recibidoEn: string, timeZone: string): string {
   const pared = wallClockInZone(new Date(recibidoEn), timeZone);
   if (!pared) return recibidoEn;
-  return `${diaCorto(new Date(`${pared.fecha}T00:00:00.000Z`))} ${pared.hora} (hora de ${timeZone})`;
+  return `${diaCorto(new Date(`${pared.fecha}T00:00:00.000Z`))} ${conZona(pared.hora, timeZone)}`;
 }
 
 export function armarAvisoInteresado(
@@ -142,8 +144,9 @@ export function armarAvisoInteresado(
     ["Nombre", e(quien)],
     ["Teléfono", d.telefono ? e(d.telefono) : "—"],
     ["Correo", d.email ? e(d.email) : "—"],
-    ["Le interesa", interesHtml],
   ];
+  if (d.empresa?.trim()) filas.push(["Empresa", e(d.empresa.trim())]);
+  filas.push(["Le interesa", interesHtml]);
   if (d.interes.tipo === "taller" && d.resultado) {
     filas.push([
       "Inscripción",

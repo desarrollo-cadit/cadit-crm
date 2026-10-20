@@ -552,7 +552,7 @@ export function CalendarClient() {
         {!loading && loadError && (
           <div className="mb-4 flex items-center justify-between gap-4 rounded-lg border border-danger-border px-4 py-3">
             <p className="text-sm text-destructive">
-              No se pudieron cargar las cohortes. El calendario puede estar vacío
+              No se pudieron cargar los grupos. El calendario puede estar vacío
               por error, no por falta de clases.
             </p>
             <Button variant="outline" size="sm" onClick={() => void refetch()}>

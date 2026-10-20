@@ -154,7 +154,7 @@ export function AttendanceClient({
   if (sheet.sessions.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-        <p className="text-sm font-medium">Esta cohorte todavía no tiene cronograma</p>
+        <p className="text-sm font-medium">Este grupo todavía no tiene cronograma</p>
         <p className="max-w-md text-xs text-muted-foreground">
           Se genera una clase por cada día de cursada declarado, entre la fecha de
           inicio y la de fin. Es una acción explícita: dar de alta cuarenta clases

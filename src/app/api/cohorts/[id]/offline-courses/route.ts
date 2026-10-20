@@ -16,7 +16,7 @@ export const GET = requireCapability(
   async (session, _req: Request, ctx: Params) => {
     const { id } = await ctx.params;
     const assigned = await cohortCourses(session.organizationId, id);
-    if (!assigned) return apiError(404, "not_found", "Cohorte no encontrada");
+    if (!assigned) return apiError(404, "not_found", "Grupo no encontrado");
     const courses = await listCourses(session.organizationId);
     return Response.json({ courseIds: assigned, courses });
   }

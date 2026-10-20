@@ -81,7 +81,7 @@ export function PortalHoursClient() {
         {datos.byCohort.map((c) => (
           <li key={c.cohortId} className="flex items-center justify-between gap-3 p-3">
             <span className="min-w-0 truncate text-sm">
-              {c.cohortName ?? "Cohorte sin nombre"}
+              {c.cohortName ?? "Grupo sin nombre"}
             </span>
             <span className="shrink-0 text-xs text-muted-foreground">
               {c.sessions} {c.sessions === 1 ? "clase" : "clases"} · {c.hours} h

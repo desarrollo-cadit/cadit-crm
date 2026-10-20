@@ -374,14 +374,14 @@ type Result<T> =
   | { ok: false; status: 404 | 409 | 422; code: string; message: string };
 
 const NADA_PARA_ENVIAR: Record<BulkSendKind, string> = {
-  terms: "Todos los alumnos de la cohorte con correo ya recibieron los términos de la licencia.",
-  welcome: "Todos los alumnos de la cohorte con correo ya recibieron la bienvenida.",
+  terms: "Todos los alumnos del grupo con correo ya recibieron los términos de la licencia.",
+  welcome: "Todos los alumnos del grupo con correo ya recibieron la bienvenida.",
   portal_access:
     "No hay alumnos para invitar: quienes tienen correo cargado ya tienen acceso al portal.",
 };
 
 const SIN_ENLACE_DEL_GRUPO =
-  "La cohorte no tiene enlace del grupo de WhatsApp. Cargalo en la edición de la cohorte para poder enviar la bienvenida.";
+  "El grupo no tiene enlace de WhatsApp. Cargalo en la edición del grupo para poder enviar la bienvenida.";
 
 /** Vista previa por tipo, con la última corrida de cada uno. null = cohorte inexistente. */
 export async function bulkSendOverview(
@@ -443,7 +443,7 @@ export async function startBulkSend(
       ok: false,
       status: 409,
       code: "run_in_progress",
-      message: "Ya hay un envío de este tipo en curso para esta cohorte. Su avance se ve en este mismo panel.",
+      message: "Ya hay un envío de este tipo en curso para este grupo. Su avance se ve en este mismo panel.",
     };
   }
 
@@ -451,7 +451,7 @@ export async function startBulkSend(
   try {
     const roster = await getCohortRoster(organizationId, cohortId, []);
     if (!roster) {
-      return { ok: false, status: 404, code: "not_found", message: "Cohorte no encontrada" };
+      return { ok: false, status: 404, code: "not_found", message: "Grupo no encontrado" };
     }
     const candidates = candidatesFromRoster(roster.enrollments);
     const p = partitionRecipients(kind, candidates);

@@ -402,7 +402,7 @@ export function ProximaClase({
             : course.totalClasses > 0
               ? // Hay cronograma, pero ninguna clase por delante tiene fecha confirmada.
                 "Las próximas clases aún no tienen fecha confirmada. La fecha y el enlace de acceso se publicarán aquí."
-              : "Cuando la academia publique el cronograma de tu cohorte, aquí verás la próxima clase y su enlace de acceso."}
+              : "Cuando la academia publique el cronograma de tu grupo, aquí verás la próxima clase y su enlace de acceso."}
         </p>
       </Tarjeta>
     );
@@ -641,7 +641,7 @@ function ModulesList({ modules }: { modules: Module[] }) {
                 ? "Sin cronograma"
                 : `${m.completedClasses} de ${m.totalClasses} clases`}
               {m.attendancePct !== null && ` · ${m.attendancePct}% de asistencia`}
-              {m.otraCamada && ` · cursado con ${m.camadaName ? `la cohorte ${m.camadaName}` : "otra cohorte"}`}
+              {m.otraCamada && ` · cursado con ${m.camadaName ? `el grupo ${m.camadaName}` : "otro grupo"}`}
             </span>
           </span>
           <ApprovalBadge value={m.approval} />

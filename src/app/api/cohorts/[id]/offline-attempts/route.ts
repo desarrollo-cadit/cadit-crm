@@ -12,7 +12,7 @@ export const GET = requireCapability(
   async (session, _req: Request, ctx: Params) => {
     const { id } = await ctx.params;
     if (!(await cohortExists(session.organizationId, id))) {
-      return apiError(404, "not_found", "Cohorte no encontrada");
+      return apiError(404, "not_found", "Grupo no encontrado");
     }
     const attempts = await attemptsForCohort(session.organizationId, id);
     return Response.json({ attempts });

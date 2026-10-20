@@ -85,7 +85,24 @@ function plano(s: string): string {
     .trim();
 }
 
-const NOMBRES_DE_URUGUAY = new Set(["uruguay", "uy", "rou", "republica oriental del uruguay"]);
+/**
+ * La empresa que una persona escribió a mano (formulario de taller): la que
+ * tiene esa razón social o ese nombre comercial, comparando sin tildes, sin
+ * mayúsculas y con los espacios colapsados. Igualdad exacta, no parecido:
+ * vincular a alguien con la empresa equivocada es peor que crear otra.
+ */
+export function buscarEmpresaPorNombre(
+  empresas: readonly { id: string; legalName: string; tradeName: string | null }[],
+  nombre: string
+): string | null {
+  const buscado = plano(nombre);
+  if (!buscado) return null;
+  const porRazonSocial = empresas.find((e) => plano(e.legalName) === buscado);
+  if (porRazonSocial) return porRazonSocial.id;
+  return empresas.find((e) => e.tradeName !== null && plano(e.tradeName) === buscado)?.id ?? null;
+}
+
+const NOMBRES_DE_URUGUAY =new Set(["uruguay", "uy", "rou", "republica oriental del uruguay"]);
 
 /** DV-004 — El país decide cómo se valida el RUT. País vacío: no se valida. */
 export function esUruguay(country: string | null | undefined): boolean {

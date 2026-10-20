@@ -15,6 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { VentasPorVendedor } from "@/components/finanzas/ventas-por-vendedor";
+import { formatCalendarDay } from "@/lib/utils";
 
 /**
  * 026 — Administración y finanzas: el cierre de un mes, para transcribir.
@@ -135,6 +136,16 @@ const ESTADO: Record<Estado, { texto: string; variante: "success" | "warning" | 
  */
 const miles = new Intl.NumberFormat("es-UY", { maximumFractionDigits: 0 });
 
+/**
+ * 2026-10-20 — Fecha de cobro y vencimiento: DÍAS de calendario guardados a
+ * medianoche UTC. Leídos en la zona de la academia, el 1° se mostraba como el
+ * último día del mes anterior. Se leen en UTC.
+ */
+function dia(iso: string): string {
+  return formatCalendarDay(iso, { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+/** Un INSTANTE (cuándo se anuló): ese sí, en la zona de la academia. */
 function fecha(iso: string, timeZone: string): string {
   try {
     return new Intl.DateTimeFormat("es-UY", {
@@ -260,12 +271,12 @@ export function FinanzasClient() {
           {/* DV-005 — Filtro opcional por camada, encima del período: cuando
               algo no cuadra, la pregunta siguiente siempre es de qué camada era. */}
           <label className="flex flex-col gap-1 text-xs text-text-3">
-            Camada
+            Grupo
             <Select
               className="w-64"
               value={cohortId}
               onChange={(e) => setCohortId(e.target.value)}
-              aria-label="Camada"
+              aria-label="Grupo"
             >
               <option value="">Todas</option>
               {cohortes.map((c) => (
@@ -285,7 +296,7 @@ export function FinanzasClient() {
             Buscar en las filas
             <Input
               className="w-64"
-              placeholder="Alumno, camada o curso"
+              placeholder="Alumno, grupo o curso"
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
             />
@@ -364,7 +375,7 @@ export function FinanzasClient() {
                         <TableRow>
                           <TableHead>Fecha</TableHead>
                           <TableHead>Alumno</TableHead>
-                          <TableHead>Camada / curso</TableHead>
+                          <TableHead>Grupo / curso</TableHead>
                           <TableHead>Medio</TableHead>
                           <TableHead>Recibo</TableHead>
                           <TableHead className="text-right">Importe</TableHead>
@@ -374,7 +385,7 @@ export function FinanzasClient() {
                         {bloque.filas.filter(filtra).map((f) => (
                           <TableRow key={f.id}>
                             <TableCell className="tabular-nums">
-                              {fecha(f.fecha, cierre.periodo.timezone)}
+                              {dia(f.fecha)}
                             </TableCell>
                             <TableCell>{f.alumno}</TableCell>
                             <TableCell className="text-text-2">
@@ -434,7 +445,7 @@ export function FinanzasClient() {
                         <TableRow>
                           <TableHead>Vencimiento</TableHead>
                           <TableHead>Alumno</TableHead>
-                          <TableHead>Camada / curso</TableHead>
+                          <TableHead>Grupo / curso</TableHead>
                           <TableHead>Cuota</TableHead>
                           <TableHead>Estado</TableHead>
                           <TableHead className="text-right">Importe</TableHead>
@@ -446,7 +457,7 @@ export function FinanzasClient() {
                         {bloque.filas.filter(filtra).map((f) => (
                           <TableRow key={f.id}>
                             <TableCell className="tabular-nums">
-                              {fecha(f.vencimiento, cierre.periodo.timezone)}
+                              {dia(f.vencimiento)}
                             </TableCell>
                             <TableCell>{f.alumno}</TableCell>
                             <TableCell className="text-text-2">
@@ -501,7 +512,7 @@ export function FinanzasClient() {
                     <TableHead>Fecha del cobro</TableHead>
                     <TableHead>Anulado el</TableHead>
                     <TableHead>Alumno</TableHead>
-                    <TableHead>Camada / curso</TableHead>
+                    <TableHead>Grupo / curso</TableHead>
                     <TableHead>Motivo</TableHead>
                     <TableHead className="text-right">Importe</TableHead>
                   </TableRow>
@@ -510,7 +521,7 @@ export function FinanzasClient() {
                   {cierre.anulados.map((a) => (
                     <TableRow key={a.id}>
                       <TableCell className="tabular-nums">
-                        {fecha(a.fecha, cierre.periodo.timezone)}
+                        {dia(a.fecha)}
                       </TableCell>
                       <TableCell className="tabular-nums">
                         {fecha(a.anuladoEl, cierre.periodo.timezone)}

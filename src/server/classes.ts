@@ -165,10 +165,10 @@ export function cannotGenerateReason(cohort: {
 }): string | null {
   if (cohort.tieneModulos) return CAMADA_CON_MODULOS_SIN_CLASES;
   if (!cohort.daysOfWeek?.trim()) {
-    return "La cohorte todavía no tiene días de cursada. Cuando los cargues, vas a poder generar el cronograma.";
+    return "El grupo todavía no tiene días de cursada. Cuando los cargues, vas a poder generar el cronograma.";
   }
   if (!cohort.endDate) {
-    return "La cohorte todavía no tiene fecha de fin. Cuando la cargues, vas a poder generar el cronograma.";
+    return "El grupo todavía no tiene fecha de fin. Cuando la cargues, vas a poder generar el cronograma.";
   }
   return null;
 }

@@ -24,9 +24,9 @@ export const AREA_HELP: Record<ConfigArea, string> = {
   ventas:
     "Recibe las consultas comerciales que el asistente de WhatsApp le deriva (interesados, precios, inscripciones).",
   soporte:
-    "Recibe las consultas de soporte que el asistente de WhatsApp le deriva y el aviso de cada cohorte confirmada.",
+    "Recibe las consultas de soporte que el asistente de WhatsApp le deriva y el aviso de cada grupo confirmado.",
   administracion:
-    "Solo avisos internos: cada inscripción nueva para facturar (con copia al vendedor de la venta), cada pago registrado, la morosidad de la semana los lunes y la facturación pendiente de cada cohorte confirmada, 7 y 2 días antes del inicio.",
+    "Solo avisos internos: cada inscripción nueva para facturar (con copia al vendedor de la venta), cada pago registrado, la morosidad de la semana los lunes y la facturación pendiente de cada grupo confirmado, 7 y 2 días antes del inicio.",
   interesados:
     "Solo avisos internos: cada persona que deja sus datos en un formulario de la web (la página de un curso, un formulario de campaña o la inscripción a un taller), con sus datos, qué le interesa y el enlace al contacto. Podés sumar vendedores en copia.",
 };

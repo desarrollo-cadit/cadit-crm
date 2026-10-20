@@ -1,5 +1,5 @@
 import { requireTeacherPortal } from "@/lib/portal-api";
-import { listTeacherCohorts } from "@/server/teacher-portal";
+import { listTeacherCohorts, teacherPortalTimezone } from "@/server/teacher-portal";
 
 export const dynamic = "force-dynamic";
 
@@ -12,5 +12,7 @@ export const dynamic = "force-dynamic";
  */
 export const GET = requireTeacherPortal(async (ctx) => {
   const cohorts = await listTeacherCohorts(ctx.organizationId, ctx.teacherId);
-  return Response.json({ cohorts });
+  // La zona de la academia: la pantalla dice de qué zona es cada hora.
+  const timezone = await teacherPortalTimezone(ctx.organizationId);
+  return Response.json({ cohorts, timezone });
 });

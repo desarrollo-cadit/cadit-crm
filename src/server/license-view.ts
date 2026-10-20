@@ -27,7 +27,7 @@ export type VistaDeLicenciasDto = {
 };
 
 const nombreDeCohorte = (c: { cohortName: string | null; courseName: string | null }) =>
-  c.cohortName ?? c.courseName ?? "Cohorte";
+  c.cohortName ?? c.courseName ?? "Grupo";
 
 export async function vistaDeLicencias(organizationId: string): Promise<VistaDeLicenciasDto> {
   const db = getDb();

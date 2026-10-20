@@ -190,7 +190,7 @@ export function ModuleRosterClient({
             No va a cursar este módulo: se borra su inscripción al módulo y se
             liberan sus licencias del módulo. Su inscripción a la especialización
             y a los otros módulos no cambia. Si ya tiene asistencia o notas acá,
-            no se puede: mudalo a otra camada desde el Recorrido.
+            no se puede: mudalo a otro grupo desde el Recorrido.
           </p>
           <div className="mt-3 flex gap-2">
             <Button variant="destructive" disabled={guardando} onClick={() => void sacar()}>

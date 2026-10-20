@@ -173,7 +173,7 @@ export async function courseAccessList(
         kind: "cohorte",
         enrollmentId: e.enrollmentId,
         cohortId: e.cohortId,
-        cohortName: e.cohortName ?? e.courseName ?? "Cohorte",
+        cohortName: e.cohortName ?? e.courseName ?? "Grupo",
         individual: otorgadas.has(e.enrollmentId),
       },
       hasta: estado?.hasta ?? null,

@@ -3,7 +3,7 @@ import { requireCapability } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { listInstallments, listPayments } from "@/server/billing";
-import { escapeHtml, fullName } from "@/lib/utils";
+import { escapeHtml, formatCalendarDay, fullName } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +11,9 @@ type Params = { params: Promise<{ id: string }> };
 
 const SYMBOL: Record<string, string> = { UYU: "$", PYG: "Gs. ", USD: "US$" };
 const money = (n: number, c: string) => `${SYMBOL[c] ?? "$"}${n.toLocaleString("es-UY")}`;
-const day = (iso: string) => new Date(iso).toLocaleDateString("es-UY");
+// Vencimiento y fecha de pago son DÍAS (medianoche UTC): se leen en UTC, no en la zona del servidor.
+const day = (iso: string) =>
+  formatCalendarDay(iso, { day: "2-digit", month: "2-digit", year: "numeric" });
 
 
 /**

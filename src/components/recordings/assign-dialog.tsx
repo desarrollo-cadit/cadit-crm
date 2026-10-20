@@ -205,7 +205,7 @@ export function AssignDialog({
           <p className="text-sm text-muted-foreground">Cargando…</p>
         ) : data.suggested.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No hay clases ese día ni candidatas. Buscá la cohorte abajo.
+            No hay clases ese día ni candidatas. Buscá el grupo abajo.
           </p>
         ) : (
           <ul className="space-y-1.5" data-testid="sugeridas">
@@ -218,7 +218,7 @@ export function AssignDialog({
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Buscar otra clase</p>
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1 text-xs text-text-3">
-            Cohorte o curso
+            Grupo o curso
             <span className="relative">
               <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" aria-hidden />
               <Input
@@ -275,13 +275,13 @@ export function AssignDialog({
           </ul>
         )}
         {q.trim().length >= 2 && data && data.cohorts.length === 0 && !cohortId && (
-          <p className="text-sm text-muted-foreground">Ninguna cohorte coincide con «{q.trim()}».</p>
+          <p className="text-sm text-muted-foreground">Ningún grupo coincide con «{q.trim()}».</p>
         )}
 
         {data && (cohortId || date) && (
           data.results.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              {cohortId ? "Esa cohorte todavía no tiene cronograma generado." : "No hay clases ese día."}
+              {cohortId ? "Ese grupo todavía no tiene cronograma generado." : "No hay clases ese día."}
             </p>
           ) : (
             <ul className="max-h-72 space-y-1.5 overflow-y-auto" data-testid="resultados">

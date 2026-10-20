@@ -185,9 +185,9 @@ export function avisoDeFacturaRepetida(
 const ENCABEZADO = [
   "Alumno",
   "Curso",
-  "Cohorte",
+  "Grupo",
   "Inicio",
-  "Confirmada",
+  "Grupo confirmado",
   "Vendedor",
   "Monto",
   "Moneda",

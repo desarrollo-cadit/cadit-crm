@@ -306,7 +306,7 @@ describe("facturacionCsv", () => {
     ]);
     const [encabezado, linea] = csv.split("\r\n");
     expect(encabezado).toBe(
-      "Alumno,Curso,Cohorte,Inicio,Confirmada,Vendedor,Monto,Moneda,Factura,Razón social,RUT,Correo de facturación,Condición de pago"
+      "Alumno,Curso,Grupo,Inicio,Grupo confirmado,Vendedor,Monto,Moneda,Factura,Razón social,RUT,Correo de facturación,Condición de pago"
     );
     expect(linea).toBe('Ana Pérez,Revit,Octubre,2026-10-20,Sí,Valeria,1000,UYU,,"ACME, SA",2100,f@acme.uy,Contado');
   });

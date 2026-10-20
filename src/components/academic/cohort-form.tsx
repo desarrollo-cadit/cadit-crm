@@ -311,7 +311,7 @@ export function CohortForm({
       const body = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      notify.error(body?.error?.message ?? "No se pudo guardar la cohorte");
+      notify.error(body?.error?.message ?? "No se pudo guardar el grupo");
       return;
     }
 
@@ -335,7 +335,7 @@ export function CohortForm({
       setWarnings(messages);
       return; // la cohorte ya está guardada; el usuario cierra el aviso para continuar.
     }
-    notify.success("Cohorte guardada.", { id: "cohorte-guardada" });
+    notify.success("Grupo guardado.", { id: "cohorte-guardada" });
     onSaved({ autoEnrolled: body?.autoEnrolled });
   }
 
@@ -356,10 +356,10 @@ export function CohortForm({
               : initial
                 ? esEspecializacion
                   ? "Editar especialización"
-                  : "Editar cohorte"
+                  : "Editar grupo"
                 : esEspecializacion
                   ? "Nueva especialización"
-                  : "Nueva cohorte"}
+                  : "Nuevo grupo"}
         </h3>
 
         <div className="space-y-3">
@@ -386,12 +386,12 @@ export function CohortForm({
             <div className="space-y-1.5">
               <div
                 role="radiogroup"
-                aria-label="Tipo de cohorte"
+                aria-label="Tipo de grupo"
                 className="inline-flex gap-1 rounded-lg bg-secondary p-1"
               >
                 {(
                   [
-                    { key: "comun", label: "Cohorte común" },
+                    { key: "comun", label: "Grupo común" },
                     { key: "especializacion", label: "Especialización" },
                   ] as const
                 ).map((t) => (
@@ -414,8 +414,8 @@ export function CohortForm({
               </div>
               <p className="text-xs text-muted-foreground">
                 {esEspecializacion
-                  ? "Un programa de varios módulos. Cada módulo es su propia cohorte, con profesor y horario; se agregan desde la pestaña Especialización."
-                  : "Una edición de un curso, con su profesor, su horario y sus clases."}
+                  ? "Un programa de varios módulos. Cada módulo es su propio grupo, con profesor y horario; se agregan desde la pestaña Especialización."
+                  : "Un grupo de un curso, con su profesor, su horario y sus clases."}
               </p>
             </div>
           )}
@@ -460,7 +460,7 @@ export function CohortForm({
               <p className="text-xs text-muted-foreground">
                 {moduloNuevo
                   ? "Una etapa propia del programa. Se crea con este nombre, sin atarla a ningún curso del catálogo."
-                  : "El módulo se dicta como una edición de un curso que ya tenés cargado."}
+                  : "El módulo se dicta como un grupo de un curso que ya tenés cargado."}
               </p>
             </div>
           )}
@@ -509,7 +509,7 @@ export function CohortForm({
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="cohort-name">Nombre de la cohorte</Label>
+                <Label htmlFor="cohort-name">Nombre del grupo</Label>
                 <Input
                   id="cohort-name"
                   placeholder="Revit Arquitectura 4 — dejalo vacío para usar el nombre del curso"
@@ -629,7 +629,7 @@ export function CohortForm({
               onChange={(e) => setWhatsappGroupLink(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              Enlace de invitación al grupo de esta cohorte.
+              Enlace de invitación al grupo de WhatsApp de este grupo.
             </p>
           </div>
 
@@ -686,7 +686,7 @@ export function CohortForm({
               ))}
             </div>
             <p className="text-[11px] text-muted-foreground">
-              Sin días marcados, la cohorte se muestra en TODOS los días entre
+              Sin días marcados, el grupo se muestra en TODOS los días entre
               inicio y fin en el calendario.
             </p>
           </div>
@@ -724,7 +724,7 @@ export function CohortForm({
               <p className="text-xs text-muted-foreground">
                 {rooms.length === 0
                   ? "Cargá tus cuentas de Zoom en la pestaña Aulas."
-                  : "La cuenta de Zoom que usa. Con esto te avisamos si dos cohortes se superponen."}
+                  : "La cuenta de Zoom que usa. Con esto te avisamos si dos grupos se superponen."}
               </p>
             </div>
           </div>
@@ -750,7 +750,7 @@ export function CohortForm({
               onChange={(e) => setMeetingUrl(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              El de la reunión recurrente de ESTA cohorte. Es lo que ve el
+              El de la reunión recurrente de ESTE grupo. Es lo que ve el
               alumno, y solo dentro del horario de su clase.
             </p>
           </div>
@@ -787,7 +787,7 @@ export function CohortForm({
         {warnings && (
           <div className="mt-3 space-y-1 rounded-md border border-warning-border bg-warning-soft p-3 text-xs text-warning">
             <p className="font-medium">
-              La cohorte se guardó, pero revisá lo siguiente:
+              El grupo se guardó, pero revisá lo siguiente:
             </p>
             <ul className="list-disc space-y-0.5 pl-4">
               {warnings.map((w) => (

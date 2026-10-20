@@ -137,7 +137,7 @@ describe("el correo", () => {
     const { subject, html } = armarAvisoInteresado(taller, opts);
     expect(subject).toBe("Nuevo interesado: Ana Pérez — Taller de Dynamo — Noviembre");
     expect(html).toContain("jueves 5 de noviembre de 2026");
-    expect(html).toContain("19:00");
+    expect(html).toContain("19:00 (hora de Uruguay)");
     expect(html).toContain("Quedó anotado");
   });
 

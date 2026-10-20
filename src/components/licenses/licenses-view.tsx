@@ -22,7 +22,8 @@ import { filtrarFilas, type EstadoDeLicencia, type FilaDeLicenciaVista } from "@
 import type { LicenseSource } from "@/lib/license-source";
 import type { VistaDeLicenciasDto } from "@/server/license-view";
 import type { SoftwareDto } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { ACADEMY_TIME_ZONE, ultimoDiaDelPlazo } from "@/lib/schedule-time";
+import { cn, formatCalendarDay } from "@/lib/utils";
 import { notify } from "@/lib/notify";
 
 const ORIGEN: Record<LicenseSource, string> = { grupo: "Del grupo", individual: "Individual" };
@@ -33,10 +34,20 @@ const ESTADO: Record<EstadoDeLicencia, { label: string; variant: "success" | "se
   curso_terminado: { label: "Curso terminado", variant: "secondary" },
 };
 
+const DIA_CORTO = { day: "2-digit", month: "2-digit", year: "numeric" } as const;
+
+/** Cuándo se asignó: un INSTANTE, en la hora de quien mira. */
 const fecha = (iso: string | null) =>
-  iso
-    ? new Date(iso).toLocaleDateString("es-UY", { day: "2-digit", month: "2-digit", year: "numeric" })
-    : "—";
+  iso ? new Date(iso).toLocaleDateString("es-UY", DIA_CORTO) : "—";
+
+/**
+ * El vencimiento se guarda como el instante en que TERMINA el día elegido en
+ * la academia (01/04 00:00 de Montevideo para el 31/03): se muestra ese día.
+ */
+const vence = (iso: string | null) => {
+  const dia = iso ? ultimoDiaDelPlazo(new Date(iso), ACADEMY_TIME_ZONE) : null;
+  return dia ? formatCalendarDay(`${dia}T00:00:00.000Z`, DIA_CORTO) : "—";
+};
 
 /**
  * 035 (US3, FR-013..FR-016) — Licencias por programa: quién tiene cada una
@@ -126,8 +137,7 @@ export function LicensesView({ canEdit }: { canEdit: boolean }) {
         <div>
           <h1 className="font-semibold">Licencias</h1>
           <p className="text-xs text-muted-foreground">
-            Los programas, su stock y quién tiene cada uno. Las del grupo se quitan desde la
-            cohorte.
+            Los programas, su stock y quién tiene cada uno. Las asignadas a un grupo se quitan desde ese grupo.
           </p>
         </div>
         {canEdit && data && data.programas.length > 0 && (
@@ -159,7 +169,7 @@ export function LicensesView({ canEdit }: { canEdit: boolean }) {
               <p className="text-sm text-muted-foreground">
                 Un programa es el software que se les da a los alumnos —por ejemplo Revit o
                 AutoCAD—, con la cantidad de licencias que tiene la academia. Cargalo acá y
-                después asignalo a una cohorte o a un alumno.
+                después asignalo a un grupo o a un alumno.
               </p>
             </div>
             {canEdit ? (
@@ -265,11 +275,11 @@ export function LicensesView({ canEdit }: { canEdit: boolean }) {
                   <h2 className="mr-auto font-semibold">{programa.name}</h2>
                   <Select
                     className="h-8 w-auto text-xs"
-                    aria-label="Filtrar por cohorte"
+                    aria-label="Filtrar por grupo"
                     value={cohorte}
                     onChange={(ev) => setCohorte(ev.target.value)}
                   >
-                    <option value="">Todas las cohortes</option>
+                    <option value="">Todos los grupos</option>
                     {data.cohortes.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name}
@@ -320,7 +330,7 @@ export function LicensesView({ canEdit }: { canEdit: boolean }) {
                     </ul>
                     <p className="mt-1.5 text-muted-foreground">
                       Reciben la licencia cuando haya stock: liberá alguna o subí el total con
-                      «Editar» en este programa, y reasigná el programa al grupo desde la cohorte.
+                      «Editar» en este programa, y volvé a asignar el programa desde el grupo.
                     </p>
                   </div>
                 )}
@@ -337,7 +347,7 @@ export function LicensesView({ canEdit }: { canEdit: boolean }) {
                       <TableHeader className="bg-subtle">
                         <TableRow>
                           <TableHead>Alumno</TableHead>
-                          <TableHead>Cohorte</TableHead>
+                          <TableHead>Grupo</TableHead>
                           <TableHead>Origen</TableHead>
                           <TableHead>Asignada</TableHead>
                           <TableHead>Vence</TableHead>
@@ -362,12 +372,12 @@ export function LicensesView({ canEdit }: { canEdit: boolean }) {
                                   {f.cohortName}
                                 </Link>
                               ) : (
-                                <span className="text-muted-foreground">sin cohorte</span>
+                                <span className="text-muted-foreground">sin grupo</span>
                               )}
                             </TableCell>
                             <TableCell className="text-xs">{ORIGEN[f.source]}</TableCell>
                             <TableCell className="text-xs tabular-nums">{fecha(f.assignedAt)}</TableCell>
-                            <TableCell className="text-xs tabular-nums">{fecha(f.expiresAt)}</TableCell>
+                            <TableCell className="text-xs tabular-nums">{vence(f.expiresAt)}</TableCell>
                             <TableCell>
                               <Badge variant={ESTADO[f.estado].variant}>{ESTADO[f.estado].label}</Badge>
                             </TableCell>
@@ -379,10 +389,10 @@ export function LicensesView({ canEdit }: { canEdit: boolean }) {
                                     href={`/cohorts/${f.cohortId}`}
                                     className="text-muted-foreground underline underline-offset-2"
                                   >
-                                    Se quita desde la cohorte
+                                    Se quita desde el grupo
                                   </Link>
                                 ) : (
-                                  <span className="text-muted-foreground">Se quita desde la cohorte</span>
+                                  <span className="text-muted-foreground">Se quita desde el grupo</span>
                                 )
                               ) : canEdit ? (
                                 <Button

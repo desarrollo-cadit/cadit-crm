@@ -337,7 +337,7 @@ export async function fijarAccesoHasta(
       ok: false,
       status: 422,
       code: "sin_cohorte",
-      message: "Una inscripción sin cohorte no da acceso a contenidos.",
+      message: "Una inscripción sin grupo no da acceso a contenidos.",
     };
   }
 

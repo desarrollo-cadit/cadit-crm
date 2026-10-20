@@ -48,7 +48,7 @@ export function EditCohortButton({ cohortId }: { cohortId: string }) {
         : [];
       setDatos({ cohort, courses, teachers, software, cohorts: madre });
     } catch {
-      notify.error("No se pudo abrir la cohorte para editarla. Probá de nuevo en un momento.");
+      notify.error("No se pudo abrir el grupo para editarla. Probá de nuevo en un momento.");
     } finally {
       setCargando(false);
     }
@@ -58,7 +58,7 @@ export function EditCohortButton({ cohortId }: { cohortId: string }) {
     <>
       <Button variant="outline" size="sm" onClick={() => void abrir()} loading={cargando}>
         <Pencil className="h-3.5 w-3.5" />
-        Editar cohorte
+        Editar grupo
       </Button>
       {datos && (
         <CohortForm

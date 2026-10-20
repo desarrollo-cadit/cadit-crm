@@ -50,9 +50,9 @@ describe("023 — baja de una camada", () => {
     expect(d.motivo).toContain("2 pagos");
   });
 
-  it("y ofrece las dos salidas: finalizarla o sacarle las inscripciones", () => {
+  it("y ofrece las dos salidas: finalizarlo o sacarle las inscripciones", () => {
     const d = decidirBajaCamada({ ...vacia, enrollments: 1 });
-    expect(d.motivo).toContain("finalizada");
+    expect(d.motivo).toContain("marcalo como finalizado");
     expect(d.motivo).toContain("inscripciones");
   });
 

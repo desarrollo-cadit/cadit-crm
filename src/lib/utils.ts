@@ -97,6 +97,24 @@ export function formatAmount(
  * mapear el mismo índice — con tres copias, una termina desfasada y la cohorte
  * se dibuja el día equivocado.
  */
+/**
+ * 2026-10-20 — Un DÍA de calendario (inicio y fin de cohorte, fecha de clase,
+ * vencimiento de cuota, fecha de pago, acceso hasta…).
+ *
+ * Se guardan a medianoche UTC, así que se leen en UTC: leídos en la zona de
+ * quien mira, en Uruguay (UTC-3) son las 21:00 del día ANTERIOR, y la cohorte
+ * que empieza el 9 de noviembre decía "8 nov". La zona se fuerza aunque
+ * alguien pase otra. Un INSTANTE (cuándo se creó, se envió, se anuló) no pasa
+ * por acá: ese sí se lee en la hora de quien mira.
+ */
+export function formatCalendarDay(
+  value: string | Date,
+  options: Intl.DateTimeFormatOptions,
+  locale: string = "es-UY"
+): string {
+  return new Date(value).toLocaleDateString(locale, { ...options, timeZone: "UTC" });
+}
+
 export const WEEKDAY_LABELS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"] as const;
 
 /**

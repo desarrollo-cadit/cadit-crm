@@ -110,7 +110,7 @@ describe("withAuth: mapeo de errores (DV-002)", () => {
     const res = await handler();
     expect(res.status).toBe(409);
     const body = (await res.json()) as { error: { message: string } };
-    expect(body.error.message).toBe("Esta persona ya está inscripta en esa cohorte.");
+    expect(body.error.message).toBe("Esta persona ya está inscripta en ese grupo.");
   });
 
   it("una constraint 23505 sin nombre reconocido cae al mensaje genérico", async () => {

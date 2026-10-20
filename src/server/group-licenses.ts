@@ -182,7 +182,7 @@ export async function asignarAlGrupo(
   const db = getDb();
   const cohorte = await cohorteConFechas(db, organizationId, cohortId);
   if (!cohorte) {
-    return { ok: false, status: 404, code: "not_found", message: "Cohorte no encontrada" };
+    return { ok: false, status: 404, code: "not_found", message: "Grupo no encontrado" };
   }
   // En fila con cualquier otra asignación del mismo programa, ANTES de leer el
   // stock y de mirar si ya está: dos clics seguidos no asignan dos veces.
@@ -193,7 +193,7 @@ export async function asignarAlGrupo(
       ok: false,
       status: 409,
       code: "ya_en_el_grupo",
-      message: "Ese programa ya está asignado al grupo de esta cohorte",
+      message: "Ese programa ya está asignado a este grupo",
     };
   }
 
@@ -288,7 +288,7 @@ export async function quitarDelGrupo(
       ok: false,
       status: 404,
       code: "not_found",
-      message: "Ese programa no está asignado al grupo de esta cohorte",
+      message: "Ese programa no está asignado a este grupo",
     };
   }
 

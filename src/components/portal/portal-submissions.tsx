@@ -131,7 +131,7 @@ export function PortalSubmissions({ cohortId }: { cohortId: string }) {
   if (datos.assessments.length === 0) {
     return (
       <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-        Esta cohorte aún no tiene evaluaciones. La academia las define; una
+        Este grupo aún no tiene evaluaciones. La academia las define; una
         vez creadas, aquí verás las entregas de cada alumno.
       </p>
     );
@@ -215,7 +215,7 @@ function EvaluacionBloque({
 
       {evaluacion.students.length === 0 ? (
         <p className="rounded-md border border-dashed p-4 text-center text-xs text-muted-foreground">
-          Esta cohorte todavía no tiene alumnos inscriptos.
+          Este grupo todavía no tiene alumnos inscriptos.
         </p>
       ) : (
         <ul className="divide-y rounded-lg border">
@@ -525,7 +525,7 @@ function PlazoDelGrupo({
   return (
     <div className="space-y-3 rounded-md border border-dashed p-3">
       <p className="text-xs text-muted-foreground">
-        El plazo se aplica a toda la cohorte. Vencido el plazo, las entregas
+        El plazo se aplica a todo el grupo. Vencido el plazo, las entregas
         se siguen recibiendo, marcadas como fuera de plazo; la decisión de
         aceptarlas queda a tu criterio.
       </p>

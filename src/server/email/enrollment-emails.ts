@@ -4,7 +4,8 @@ import { scoped } from "@/lib/db/tenant";
 import { getEnv } from "@/lib/env";
 import { sendMail } from "@/lib/m365/client";
 import { recesosDeCohorte } from "@/lib/recess";
-import { fullName } from "@/lib/utils";
+import { ACADEMY_TIME_ZONE, conZona } from "@/lib/schedule-time";
+import { formatCalendarDay, fullName } from "@/lib/utils";
 import { buildClassSchedule } from "@/server/attendance";
 import { getBranding } from "@/server/branding";
 import { renderTemplate } from "@/server/email/templates";
@@ -59,12 +60,15 @@ async function loadContext(organizationId: string, enrollmentId: string) {
       teacherName: schema.teacher.name,
       // 036 — El docente va en el equipo del correo y en copia.
       teacherEmail: schema.teacher.email,
+      // 2026-10-20 — La zona de la academia: el horario del correo la nombra.
+      timezone: schema.organization.timezone,
     })
     .from(schema.enrollment)
     .innerJoin(schema.contact, eq(schema.enrollment.contactId, schema.contact.id))
     .innerJoin(schema.cohort, eq(schema.enrollment.cohortId, schema.cohort.id))
     .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
     .leftJoin(schema.teacher, eq(schema.cohort.teacherId, schema.teacher.id))
+    .leftJoin(schema.organization, eq(schema.enrollment.organizationId, schema.organization.id))
     .where(
       scoped(
         schema.enrollment.organizationId,
@@ -141,7 +145,8 @@ function listaEnPalabras(nombres: string[]): string | null {
 
 function formatDate(d: Date | null): string {
   if (!d) return "a confirmar";
-  return d.toLocaleDateString("es-UY", { day: "2-digit", month: "long", year: "numeric" });
+  // Un día de calendario (medianoche UTC): se lee en UTC, no en la zona del servidor.
+  return formatCalendarDay(d, { day: "2-digit", month: "long", year: "numeric" });
 }
 
 const MODALITY_LABEL: Record<string, string> = {
@@ -266,7 +271,11 @@ async function welcomeFacts(
     esEspecializacion,
     inicio: cohort.startDate,
     fin,
-    horario: cohort.frequency,
+    // El horario es texto libre en la hora de la academia: se dice de qué zona,
+    // porque hay alumnos en Dominicana y en España.
+    horario: cohort.frequency?.trim()
+      ? conZona(cohort.frequency.trim(), ctx.timezone ?? ACADEMY_TIME_ZONE)
+      : null,
     clases: esEspecializacion ? null : await classCount(organizationId, cohort),
     modalidad: MODALITY_LABEL[cohort.modality ?? course.modality ?? ""] ?? null,
     docente: ctx.teacherName ? { name: ctx.teacherName, email: ctx.teacherEmail } : null,
@@ -315,7 +324,7 @@ export async function sendEnrollmentEmail(
       status: 422,
       code: "missing_group_link",
       message:
-        "La cohorte no tiene enlace del grupo de WhatsApp. Cargalo en la edición de la cohorte.",
+        "El grupo no tiene enlace de WhatsApp. Cargalo en la edición del grupo.",
     };
   }
 

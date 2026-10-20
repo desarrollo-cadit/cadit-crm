@@ -117,7 +117,7 @@ export function validarPadreDeCohorte(input: PadreDeCohorte): ProgramGuardError 
       return {
         code: "modulo_con_alumnos_cursandolo",
         message:
-          "Este módulo tiene alumnos cursándolo dentro de una especialización: sacarlo del programa los dejaría colgados de una camada que ya no es un módulo",
+          "Este módulo tiene alumnos cursándolo dentro de una especialización: sacarlo del programa los dejaría colgados de un grupo que ya no es un módulo",
       };
     }
     return null;
@@ -126,37 +126,37 @@ export function validarPadreDeCohorte(input: PadreDeCohorte): ProgramGuardError 
   if (input.padreId === input.cohorteId) {
     return {
       code: "cohorte_padre_de_si_misma",
-      message: "Una cohorte no puede ser su propia camada padre",
+      message: "Un grupo no puede ser su propio grupo padre",
     };
   }
   if (!input.padreExiste) {
-    return { code: "padre_inexistente", message: "Camada padre inexistente" };
+    return { code: "padre_inexistente", message: "Grupo padre inexistente" };
   }
   if (input.padreYaEsModulo) {
     return {
       code: "anidamiento_de_dos_niveles",
       message:
-        "La camada elegida ya es un módulo de otro programa: un módulo no tiene sub-módulos",
+        "El grupo elegido ya es un módulo de otro programa: un módulo no tiene sub-módulos",
     };
   }
   if (!input.padreEsEspecializacion) {
     return {
       code: "padre_no_es_especializacion",
       message:
-        "La camada elegida no es una especialización: marcala como especialización antes de agregarle módulos",
+        "El grupo elegido no es una especialización: marcalo como especialización antes de agregarle módulos",
     };
   }
   if (input.cohorteEsEspecializacion) {
     return {
       code: "especializacion_no_es_modulo",
-      message: "Esta cohorte es una especialización: no puede ser a la vez módulo de otra",
+      message: "Este grupo es una especialización: no puede ser a la vez módulo de otra",
     };
   }
   if (input.cohorteYaTieneModulos) {
     return {
       code: "anidamiento_de_dos_niveles",
       message:
-        "Esta camada ya tiene módulos propios: no puede pasar a ser módulo de otra",
+        "Este grupo ya tiene módulos propios: no puede pasar a ser módulo de otra",
     };
   }
   return null;
@@ -209,7 +209,7 @@ export function validarVinculoDeInscripcion(
       return {
         code: "modulo_sin_inscripcion_directa",
         message:
-          "Una cohorte de módulo no admite inscripciones directas: la inscripción cuelga de la madre",
+          "Un grupo de módulo no admite inscripciones directas: la inscripción cuelga de la madre",
       };
     }
     return null;
@@ -241,7 +241,7 @@ export function validarVinculoDeInscripcion(
     return {
       code: "hija_fuera_de_un_modulo",
       message:
-        "Una inscripción hija tiene que apuntar a una cohorte de módulo, no a una camada suelta",
+        "Una inscripción hija tiene que apuntar a un grupo de módulo, no a un grupo suelto",
     };
   }
   return null;
@@ -418,7 +418,7 @@ export function validarMarcaDeEspecializacion(
     return {
       code: "especializacion_con_modulos",
       message:
-        "Esta especialización todavía tiene módulos: sacalos o movelos antes de convertirla en una cohorte común",
+        "Esta especialización todavía tiene módulos: sacalos o movelos antes de convertirla en un grupo común",
     };
   }
   return null;

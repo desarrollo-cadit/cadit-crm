@@ -7,6 +7,6 @@ import type { AccountLinkKind } from "@/lib/db/schema";
  */
 export function contenidoPortalPara(kind: AccountLinkKind): string {
   return kind === "profesor"
-    ? "Ahí vas a encontrar tus cohortes, la asistencia de cada clase y tus horas dictadas."
+    ? "Ahí vas a encontrar tus grupos, la asistencia de cada clase y tus horas dictadas."
     : "Ahí vas a encontrar tus cursadas, tu legajo y tus certificados.";
 }

@@ -25,6 +25,7 @@ import {
   type WorkshopRegistrationStatus,
 } from "@/lib/workshops";
 import { WorkshopEditionFields, type EditionPayload } from "./workshop-edition-form";
+import { subirImagenDeTaller } from "./workshop-image-field";
 import {
   REGISTRATION_BADGE,
   costLabel,
@@ -254,6 +255,7 @@ async function leerError(res: Response | null): Promise<string> {
 function NuevoTaller({ onDone, onCancel }: { onDone: () => void; onCancel: () => void }) {
   const [courseName, setCourseName] = useState("");
   const [description, setDescription] = useState("");
+  const [imagen, setImagen] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function guardar(edition: EditionPayload) {
@@ -267,12 +269,20 @@ function NuevoTaller({ onDone, onCancel }: { onDone: () => void; onCancel: () =>
         edition,
       }),
     }).catch(() => null);
-    setBusy(false);
     if (!res?.ok) {
+      setBusy(false);
       notify.error(await leerError(res));
       return;
     }
-    notify.success("Taller creado.");
+    // La imagen va DESPUÉS de crear el taller: recién ahí hay curso.
+    const { courseId } = (await res.json()) as { courseId: string };
+    const errorDeImagen = imagen ? await subirImagenDeTaller(courseId, imagen) : null;
+    setBusy(false);
+    if (errorDeImagen) {
+      notify.error(`El taller se creó, pero la imagen no: ${errorDeImagen}`);
+    } else {
+      notify.success("Taller creado.");
+    }
     onDone();
   }
 
@@ -299,6 +309,16 @@ function NuevoTaller({ onDone, onCancel }: { onDone: () => void; onCancel: () =>
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="taller-imagen-nueva">Imagen (sale en la web, opcional)</Label>
+          <Input
+            id="taller-imagen-nueva"
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            onChange={(e) => setImagen(e.target.files?.[0] ?? null)}
+          />
+          <p className="text-xs text-muted-foreground">JPG, PNG o WebP, hasta 5 MB.</p>
         </div>
       </WorkshopEditionFields>
     </div>

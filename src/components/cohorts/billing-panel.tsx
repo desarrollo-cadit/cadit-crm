@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { notify } from "@/lib/notify";
+import { formatCalendarDay } from "@/lib/utils";
 
 type Currency = "UYU" | "PYG" | "USD";
 type Status = "pagada" | "parcial" | "vencida" | "pendiente";
@@ -37,8 +38,9 @@ type Payment = {
 
 const SYMBOL: Record<Currency, string> = { UYU: "$", PYG: "Gs. ", USD: "US$" };
 const money = (n: number, c: Currency) => `${SYMBOL[c]}${n.toLocaleString("es-UY")}`;
+/** Vencimiento de cuota y fecha de pago: DÍAS (medianoche UTC), no instantes. */
 const day = (iso: string) =>
-  new Date(iso).toLocaleDateString("es-UY", { day: "2-digit", month: "2-digit", year: "2-digit" });
+  formatCalendarDay(iso, { day: "2-digit", month: "2-digit", year: "2-digit" });
 
 const STATUS_CLASS: Record<Status, string> = {
   pagada: "text-primary",

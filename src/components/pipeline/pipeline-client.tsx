@@ -126,13 +126,13 @@ export function PipelineClient({
         <h2 className="font-semibold">Pipeline</h2>
         <div className="flex items-center gap-2">
           <select
-            aria-label="Filtrar por cohorte"
+            aria-label="Filtrar por grupo"
             className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
             value={cohortFilter}
             onChange={(e) => setCohortFilter(e.target.value)}
           >
-            <option value="unassigned">Sin cohorte (lead general)</option>
-            <option value="all">Todas las cohortes</option>
+            <option value="unassigned">Sin grupo (lead general)</option>
+            <option value="all">Todos los grupos</option>
             {cohorts.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name ?? c.courseName}

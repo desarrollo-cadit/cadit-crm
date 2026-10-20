@@ -144,7 +144,7 @@ export function TeacherForm({
             {/* Se dice para qué sirve: sin esto parece un dato interno más y
                 nadie lo carga. */}
             <p className="text-xs text-muted-foreground">
-              Se muestra en la web, junto a la foto, en las cohortes que dicta.
+              Se muestra en la web, junto a la foto, en los grupos que dicta.
             </p>
           </div>
           <div className="space-y-1.5">

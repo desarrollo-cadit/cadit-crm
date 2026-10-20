@@ -60,7 +60,7 @@ export async function borrarClasesDeRango(
     .from(schema.cohort)
     .where(scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, cohortId)))
     .limit(1);
-  if (!cohorte) return { ok: false, status: 404, code: "not_found", message: "Cohorte no encontrada" };
+  if (!cohorte) return { ok: false, status: 404, code: "not_found", message: "Grupo no encontrado" };
   return {
     ok: true,
     data: await borrarClasesSinHistoria(organizationId, { cohortId, fromDate, toDate }),

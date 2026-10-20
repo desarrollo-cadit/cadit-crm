@@ -128,7 +128,7 @@ export function estadoDeCelda(
     title,
     href,
   });
-  const otra = vigente.camadaName ?? "otra camada";
+  const otra = vigente.camadaName ?? "otro grupo";
 
   if (intentos.length > 1) {
     if (vigente.state === "aprobado") return celda("aprobado", "Aprobado (recursó)");

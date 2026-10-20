@@ -212,7 +212,7 @@ export function overrideIndividualPermitido(cohortHas: boolean, action: Override
 }
 
 export const MENSAJE_CURSO_DEL_GRUPO =
-  "Ese curso está asignado al grupo de la cohorte: se asigna y se quita desde la cohorte, no por alumno.";
+  "Ese curso está asignado al grupo: se asigna y se quita desde el grupo, no por alumno.";
 
 /**
  * 035 (FR-011/FR-012) — Qué se le ofrece al staff por curso en la ficha.

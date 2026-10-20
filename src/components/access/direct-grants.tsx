@@ -121,7 +121,7 @@ export function DirectGrantsSection({
       </h2>
       <p className="text-xs text-muted-foreground">
         Un acceso directo es de la persona, no de una inscripción: vence solo en su fecha. Los cursos
-        que le llegan por una cohorte se ven y se cambian desde la cohorte.
+        que le llegan por un grupo se ven y se cambian desde el grupo.
       </p>
 
       {activos.length === 0 && (

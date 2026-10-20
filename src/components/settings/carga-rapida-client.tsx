@@ -158,8 +158,8 @@ export function CargaRapidaClient() {
           Precio de lista por curso
         </h3>
         <p className="text-xs text-muted-foreground">
-          La cohorte lo hereda salvo que tenga uno propio. Los que más cohortes
-          tienen van primero: cargar el precio del curso con 12 cohortes rinde
+          El grupo lo hereda salvo que tenga uno propio. Los que más grupos
+          tienen van primero: cargar el precio del curso con 12 grupos rinde
           doce veces más que el de una.
         </p>
         <ul className="divide-y rounded-lg border">
@@ -168,7 +168,7 @@ export function CargaRapidaClient() {
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm">{c.name}</span>
                 <span className="block text-xs text-muted-foreground">
-                  {c.cohortes} cohorte{c.cohortes === 1 ? "" : "s"}
+                  {c.cohortes} grupo{c.cohortes === 1 ? "" : "s"}
                   {c.cohortesConPrecioPropio > 0 &&
                     ` · ${c.cohortesConPrecioPropio} con precio propio`}
                 </span>
@@ -226,7 +226,7 @@ export function CargaRapidaClient() {
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm">{p.name}</span>
                 <span className="block text-xs text-muted-foreground">
-                  {p.cohortes} cohorte{p.cohortes === 1 ? "" : "s"}
+                  {p.cohortes} grupo{p.cohortes === 1 ? "" : "s"}
                   {p.tieneAcceso && " · ya tiene acceso"}
                 </span>
               </span>

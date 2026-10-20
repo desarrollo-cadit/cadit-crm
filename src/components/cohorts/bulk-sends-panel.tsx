@@ -23,17 +23,17 @@ import { notify } from "@/lib/notify";
 const ETIQUETA: Record<BulkSendKind, { boton: string; titulo: string; correo: string }> = {
   terms: {
     boton: "Términos de la licencia",
-    titulo: "Enviar los términos de la licencia a la cohorte",
+    titulo: "Enviar los términos de la licencia al grupo",
     correo: "los términos de la licencia ATC",
   },
   welcome: {
     boton: "Bienvenida + grupo",
-    titulo: "Enviar la bienvenida a la cohorte",
+    titulo: "Enviar la bienvenida al grupo",
     correo: "la bienvenida con la invitación al grupo de WhatsApp",
   },
   portal_access: {
     boton: "Acceso al portal",
-    titulo: "Dar acceso al portal a la cohorte",
+    titulo: "Dar acceso al portal al grupo",
     correo: "el acceso al portal (usuario y contraseña temporal)",
   },
 };
@@ -158,7 +158,7 @@ export function BulkSendsPanel({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 id="envios-cohorte" className="text-sm font-semibold">
-            Envíos a la cohorte
+            Envíos al grupo
           </h3>
           <p className="text-xs text-muted-foreground">
             Cada correo les llega solo a quienes todavía no lo recibieron.

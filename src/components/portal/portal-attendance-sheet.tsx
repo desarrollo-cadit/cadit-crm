@@ -161,7 +161,7 @@ export function PortalAttendanceSheet({
         <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
           {sheet.classSession.canceled
             ? "Esta clase está cancelada: no cuenta para la asistencia."
-            : "La cohorte finalizó: la asistencia está disponible solo para consulta."}
+            : "El grupo finalizó: la asistencia está disponible solo para consulta."}
         </p>
       )}
 
@@ -231,7 +231,7 @@ export function PortalAttendanceSheet({
 
       {sheet.students.length === 0 && (
         <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-          Esta cohorte aún no tiene alumnos inscriptos.
+          Este grupo aún no tiene alumnos inscriptos.
         </p>
       )}
     </div>

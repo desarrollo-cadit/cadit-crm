@@ -128,7 +128,7 @@ function buildRoutingBlocks(routing: RoutingPromptInput): string[] {
       "ÁREAS (re-clasificá el tema en CADA turno: puede cambiar a mitad de la charla):",
       "- ventas → área Ventas (no usa este chat; le llega un correo): compra de licencias de software para personas o empresas, cotizaciones, renovaciones. Datos a pedir: nombre, empresa si es para una empresa, producto, cantidad y un correo de contacto.",
       "- soporte → área Soporte (no usa este chat; le llega un correo): problemas técnicos con licencias o programas (no activa, da error, instalación). Datos a pedir: qué problema, con qué producto, desde cuándo y un correo de contacto.",
-      "- academia → la Academia, que atendés vos: cursos, cohortes, inscripciones, clases, material y pagos de cursos.",
+      "- academia → la Academia, que atendés vos: cursos, grupos, inscripciones, clases, material y pagos de cursos.",
       "- sin_determinar → no queda claro de qué se trata.",
       "Pedí los datos de a pocos, máximo dos por mensaje. La identidad de WhatsApp del cliente ya cuenta como contacto: el correo pedilo, pero no insistas.",
       "Si el tema es ambiguo (por ejemplo, \"tengo un problema con Revit\": ¿compra o falla técnica?), NO derives: hacé una pregunta de aclaración con topic sin_determinar.",

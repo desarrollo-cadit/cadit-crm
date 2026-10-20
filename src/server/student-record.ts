@@ -434,7 +434,7 @@ export async function getStudentRecord(
       dispensada: dispensa !== null,
       enrollmentId: enrollment.id,
       cohortId: cohort?.id ?? null,
-      cohortName: cohort?.name ?? course?.name ?? "Lead sin cohorte",
+      cohortName: cohort?.name ?? course?.name ?? "Lead sin grupo",
       courseName: course?.name ?? "—",
       startDate: cohort?.startDate?.toISOString() ?? null,
       endDate: cohort?.endDate?.toISOString() ?? null,
@@ -443,7 +443,7 @@ export async function getStudentRecord(
       minAttendancePct: minPct,
       approval: sinDatos ? "sin_datos" : state,
       approvalReasons: sinDatos
-        ? ["Todavía no hay evaluaciones ni asistencia registradas en esta cohorte"]
+        ? ["Todavía no hay evaluaciones ni asistencia registradas en este grupo"]
         : reasons,
       assessments: misResultados.map(({ name, passed }) => ({ name, passed })),
       certificate: cert

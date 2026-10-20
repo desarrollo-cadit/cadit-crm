@@ -160,7 +160,7 @@ export function StatusToggle({ value, onChange }: { value: Status; onChange: (va
       </div>
       <p className="text-xs text-muted-foreground">
         {value === "published"
-          ? "Los alumnos de las cohortes asignadas lo ven en su portal."
+          ? "Los alumnos de los grupos asignadas lo ven en su portal."
           : "Nadie lo ve en el portal, aunque esté asignado."}
       </p>
     </div>

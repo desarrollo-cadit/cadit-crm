@@ -229,7 +229,7 @@ export const ITEMS_ALUMNO = [
 ] as const satisfies readonly NavItem[];
 
 export const ITEMS_PROFESOR = [
-  { href: "/portal/dictado", label: "Mis cohortes", icon: Users },
+  { href: "/portal/dictado", label: "Mis grupos", icon: Users },
   { href: "/portal/horas", label: "Horas dictadas", icon: CalendarClock },
 ] as const satisfies readonly NavItem[];
 

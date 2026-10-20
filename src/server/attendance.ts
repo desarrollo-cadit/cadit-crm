@@ -156,7 +156,7 @@ export function resolveMinAttendance(
  * programa se carga como clase del módulo 1.
  */
 export const CAMADA_CON_MODULOS_SIN_CLASES =
-  "Esta camada es una especialización: las clases se cargan en cada módulo, no en la camada padre.";
+  "Este grupo es una especialización: las clases se cargan en cada módulo, no en el grupo padre.";
 
 /**
  * 028 (FR-030, regla 5) — La asistencia de un recorrido, MÓDULO POR MÓDULO.
@@ -252,7 +252,7 @@ export async function generateSchedule(
     .limit(1);
   const cohort = rows[0];
   if (!cohort) {
-    return { ok: false, status: 404, code: "not_found", message: "Cohorte no encontrada" };
+    return { ok: false, status: 404, code: "not_found", message: "Grupo no encontrado" };
   }
 
   /**
@@ -296,7 +296,7 @@ export async function generateSchedule(
       ok: false,
       status: 422,
       code: "no_end_date",
-      message: "La cohorte todavía no tiene fecha de fin. Cuando la cargues, vas a poder generar el cronograma.",
+      message: "El grupo todavía no tiene fecha de fin. Cuando la cargues, vas a poder generar el cronograma.",
     };
   }
   if (!cohort.daysOfWeek) {
@@ -304,7 +304,7 @@ export async function generateSchedule(
       ok: false,
       status: 422,
       code: "no_days",
-      message: "La cohorte todavía no tiene días de cursada. Cuando los cargues, vas a poder generar el cronograma.",
+      message: "El grupo todavía no tiene días de cursada. Cuando los cargues, vas a poder generar el cronograma.",
     };
   }
 
@@ -323,7 +323,7 @@ export async function generateSchedule(
       ok: false,
       status: 409,
       code: "schedule_exists",
-      message: "La cohorte ya tiene cronograma. Borralo antes de regenerarlo.",
+      message: "El grupo ya tiene cronograma. Borralo antes de regenerarlo.",
     };
   }
 
@@ -498,7 +498,7 @@ export async function generateProgramSchedule(
     .where(scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, cohortId)))
     .limit(1);
   if (!madre) {
-    return { ok: false, status: 404, code: "not_found", message: "Cohorte no encontrada" };
+    return { ok: false, status: 404, code: "not_found", message: "Grupo no encontrado" };
   }
 
   const modulos = await db
@@ -528,7 +528,7 @@ export async function generateProgramSchedule(
       ok: false,
       status: 422,
       code: "not_a_program",
-      message: "Esta cohorte no es una especialización: generá su cronograma desde su pestaña Clases.",
+      message: "Este grupo no es una especialización: generá su cronograma desde su pestaña Clases.",
     };
   }
   if (modulos.length === 0) return { ok: true, data: { generated: [], skipped: [] } };

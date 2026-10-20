@@ -124,12 +124,12 @@ export function RecessManager({
       <div>
         <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
           <CalendarOff className="h-4 w-4" aria-hidden />
-          {cohortId ? "Recesos de esta cohorte" : "Recesos de la academia"}
+          {cohortId ? "Recesos de este grupo" : "Recesos de la academia"}
         </h3>
         <p className="mt-1 text-xs text-muted-foreground">
           {cohortId
-            ? "En estos días no se generan ni se proyectan clases de esta cohorte. Los recesos de la academia también aplican."
-            : "En estos días ninguna cohorte genera ni proyecta clases. Las fechas de inicio y fin de las cohortes no cambian."}
+            ? "En estos días no se generan ni se proyectan clases de este grupo. Los recesos de la academia también aplican."
+            : "En estos días ningún grupo genera ni proyecta clases. Las fechas de inicio y fin de los grupos no cambian."}
         </p>
       </div>
 
@@ -205,7 +205,7 @@ export function RecessManager({
             ))}
           </ul>
           <p className="mt-1 text-muted-foreground">
-            Revisalas en la pestaña Clases de cada cohorte y cancelalas si corresponde.
+            Revisalas en la pestaña Clases de cada grupo y cancelalas si corresponde.
           </p>
         </div>
       ) : null}

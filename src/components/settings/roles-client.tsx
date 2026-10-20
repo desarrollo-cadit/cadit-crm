@@ -29,15 +29,15 @@ type Role = {
  * es la que aparece en los mensajes de error.
  */
 const CAPABILITY_LABELS: Record<string, string> = {
-  "academico.ver": "Ver cursos y cohortes",
-  "academico.editar": "Crear y editar cursos y cohortes",
+  "academico.ver": "Ver cursos y grupos",
+  "academico.editar": "Crear y editar cursos y grupos",
   "asistencia.ver": "Ver asistencia",
   "asistencia.editar": "Tomar asistencia",
   "evaluacion.ver": "Ver evaluaciones",
   "evaluacion.editar": "Cargar y corregir evaluaciones",
   "correcciones.aprobar": "Aprobar las correcciones de los profesores",
   "certificados.emitir": "Emitir certificados",
-  "cohortes.confirmar": "Confirmar cohortes (avisa a Soporte y a Administración)",
+  "cohortes.confirmar": "Confirmar grupos (avisa a Soporte y a Administración)",
   "contactos.ver": "Ver contactos",
   "contactos.editar": "Crear y editar contactos",
   "inscripciones.ver": "Ver inscripciones",

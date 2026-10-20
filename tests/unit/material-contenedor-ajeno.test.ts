@@ -66,7 +66,7 @@ beforeEach(() => {
 describe("createResource — el contenedor tiene que ser de la organización", () => {
   it.each([
     ["courseId", "course", "Curso inexistente"],
-    ["cohortId", "cohort", "Camada inexistente"],
+    ["cohortId", "cohort", "Grupo inexistente"],
     ["classSessionId", "classSession", "Clase inexistente"],
   ] as const)("rechaza un %s de otra organización", async (campo, tabla, mensaje) => {
     selectQueue.push([]); // en la organización propia no existe

@@ -397,13 +397,13 @@ export function ProgramClient({
       const body = (await res?.json().catch(() => null)) as
         | { error?: { message?: string } }
         | null;
-      notify.error(body?.error?.message ?? "No se pudo registrar el cambio de camada");
+      notify.error(body?.error?.message ?? "No se pudo registrar el cambio de grupo");
       return;
     }
 
     setAccion(null);
     if (accion.via === "baja") {
-      notify.success("Módulo mudado a la otra camada.", {
+      notify.success("Módulo mudado al otro grupo.", {
         description: "La madre y el plan de cuotas del paquete quedaron intactos.",
       });
     } else {
@@ -501,7 +501,7 @@ export function ProgramClient({
             Esta especialización todavía no tiene módulos
           </p>
           <p className="mx-auto mt-1 max-w-md text-xs text-muted-foreground">
-            Cada módulo es una cohorte propia, con su curso, su profesor y su
+            Cada módulo es un grupo propia, con su curso, su profesor y su
             horario. Se cursan en el orden en que los agregues, y ese orden se
             puede cambiar después.
           </p>
@@ -598,7 +598,7 @@ export function ProgramClient({
                 {m.clases.cannotGenerateReason ??
                   `Todavía no tiene clases cargadas${
                     m.clases.total > 0 ? ` (${m.clases.total} proyectadas)` : ""
-                  }. Generá el cronograma desde la camada del módulo.`}
+                  }. Generá el cronograma desde el grupo del módulo.`}
               </p>
             ) : m.clases.canceladas > 0 ? (
               <p className="mt-2 text-xs text-muted-foreground">
@@ -742,7 +742,7 @@ export function ProgramClient({
             liberan sus licencias del módulo. Su inscripción a la especialización
             y a los otros módulos no cambia, y la inscripción automática no lo
             vuelve a meter. Si ya tiene asistencia o notas en el módulo no se
-            puede: en ese caso mudalo a otra camada.
+            puede: en ese caso mudalo a otro grupo.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <Button variant="destructive" onClick={() => void confirmarSacar()} disabled={guardando}>
@@ -759,25 +759,25 @@ export function ProgramClient({
         <div className="rounded-lg border bg-card p-4">
           <h4 className="text-sm font-semibold text-foreground">
             {accion.via === "baja"
-              ? `Mudar ${accion.modulo.label} de ${accion.alumno.contact.name} a otra camada`
+              ? `Mudar ${accion.modulo.label} de ${accion.alumno.contact.name} a otro grupo`
               : `Recursar ${accion.modulo.label} — ${accion.alumno.contact.name}`}
           </h4>
           <p className="mt-1 text-xs text-muted-foreground">
             {accion.via === "baja"
-              ? "Baja voluntaria: la misma cursada pasa a la camada siguiente. No se toca ni la inscripción madre ni el plan de cuotas del paquete: ya está pago."
+              ? "Baja voluntaria: la misma cursada pasa al grupo siguiente. No se toca ni la inscripción madre ni el plan de cuotas del paquete: ya está pago."
               : "Recursada tras reprobar: se crea una cursada NUEVA con su propio monto y su propio plan de cuotas. El intento anterior se conserva — es la evidencia de por qué hay que recursar."}
           </p>
 
           <div className="mt-3 flex flex-wrap items-end gap-2">
             <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-              Camada de destino
+              Grupo de destino
               <Select value={destino} onChange={(e) => setDestino(e.target.value)}>
-                <option value="">Elegí una camada…</option>
+                <option value="">Elegí un grupo…</option>
                 {candidatas.map((c) => (
                   <option key={c.id} value={c.id}>
                     {(c.name ?? c.courseName) +
                       (c.parentCohortId
-                        ? ` — ${nombreDeCamada.get(c.parentCohortId) ?? "otra camada"}`
+                        ? ` — ${nombreDeCamada.get(c.parentCohortId) ?? "otro grupo"}`
                         : "")}
                   </option>
                 ))}
@@ -806,8 +806,8 @@ export function ProgramClient({
 
           {candidatas.length === 0 ? (
             <p className="mt-2 text-xs text-warning">
-              No hay ninguna otra camada con este módulo cargado. Creala primero y
-              colgala de su especialización.
+              No hay ningún otro grupo con este módulo cargado. Crealo primero y
+              colgalo de su especialización.
             </p>
           ) : null}
         </div>

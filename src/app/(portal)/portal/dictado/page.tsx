@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export default function PortalDictadoPage() {
   return (
     <div className="space-y-5">
-      <h1 className="text-2xl font-semibold tracking-tight">Mis cohortes</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Mis grupos</h1>
       <PortalCohortsClient />
     </div>
   );

@@ -100,7 +100,7 @@ export function IssueAllCertificates({
             </Button>
           </div>
           {resultados.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Esta cohorte no tiene alumnos inscriptos.</p>
+            <p className="text-sm text-muted-foreground">Este grupo no tiene alumnos inscriptos.</p>
           ) : (
             GRUPOS.map((g) => {
               const filas = resultados.filter((r) => r.estado === g.estado);

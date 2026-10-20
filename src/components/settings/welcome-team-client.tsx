@@ -93,7 +93,7 @@ export function WelcomeTeamClient() {
           <CardTitle>Correo de bienvenida</CardTitle>
           <CardDescription>
             Elegí quién figura en el equipo del correo que recibe cada alumno al inscribirse. El
-            docente sale de la cohorte; acá se eligen soporte técnico y coordinación.
+            docente sale del grupo; acá se eligen soporte técnico y coordinación.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">

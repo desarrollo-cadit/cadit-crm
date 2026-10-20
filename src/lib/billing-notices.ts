@@ -411,7 +411,7 @@ export type DatosAvisoPago = {
 export function armarAvisoPago(d: DatosAvisoPago): { subject: string; html: string } {
   const importe = monto(d.amount, d.currency);
   const subject = `[Administración] Pago registrado: ${d.alumno} · ${importe}`;
-  const curso = d.curso ? nombreDeCohorte(d.curso, d.cohorte) : "sin cohorte (lead)";
+  const curso = d.curso ? nombreDeCohorte(d.curso, d.cohorte) : "sin grupo (lead)";
 
   const saldo =
     d.saldos.length === 0

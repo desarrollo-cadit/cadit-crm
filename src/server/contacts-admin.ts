@@ -274,8 +274,8 @@ export async function deleteTeacher(
       cohorts: cohortes.length,
       message:
         `Este profesor tiene ${cohortes.length} ` +
-        `${cohortes.length === 1 ? "cohorte asignada" : "cohortes asignadas"}. ` +
-        "Reasignalas a otro docente antes de darlo de baja.",
+        `${cohortes.length === 1 ? "grupo asignado" : "grupos asignados"}. ` +
+        "Reasignalos a otro docente antes de darlo de baja.",
     };
   }
 

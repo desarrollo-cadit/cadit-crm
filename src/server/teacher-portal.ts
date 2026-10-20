@@ -5,6 +5,7 @@ import { scoped } from "@/lib/db/tenant";
 import { markAttendance, type AttendanceStatus } from "@/server/attendance";
 import { listCohortClasses, type ClassRowDto, type CohortClassesDto } from "@/server/classes";
 import { computeCohortStatus } from "@/lib/cohort-status";
+import { ACADEMY_TIME_ZONE } from "@/lib/schedule-time";
 import { cohortGrading, recordResults, type AssessmentDto } from "@/server/grading";
 import {
   createResource,
@@ -214,6 +215,20 @@ function nombreDelPrograma(
   const padre = padres.find((p) => p.id === padreId);
   if (!padre) return null;
   return { name: padre.courseName, ordinal };
+}
+
+/**
+ * 2026-10-20 — La zona de la academia, para que la lista de cohortes diga de
+ * qué zona es la hora ("18:30 (hora de Uruguay)"): hay profesores y alumnos
+ * fuera de Uruguay, y un "18:30" suelto lo lee cada uno en su reloj.
+ */
+export async function teacherPortalTimezone(organizationId: string): Promise<string> {
+  const rows = await getDb()
+    .select({ timezone: schema.organization.timezone })
+    .from(schema.organization)
+    .where(eq(schema.organization.id, organizationId))
+    .limit(1);
+  return rows[0]?.timezone ?? ACADEMY_TIME_ZONE;
 }
 
 /** Las cohortes de este profesor, la más reciente primero. */
@@ -603,7 +618,7 @@ export async function teacherMarkAttendance(
       ok: false,
       status: 422,
       code: "cohorte_finalizada",
-      message: "Esta cohorte ya terminó, así que su asistencia quedó cerrada",
+      message: "Este grupo ya terminó, así que su asistencia quedó cerrada",
     };
   }
   // Descartada la cohorte, lo único que queda no editable es la cancelación.
@@ -708,7 +723,7 @@ export async function teacherRecordResult(
       ok: false,
       status: 422,
       code: "cohorte_finalizada",
-      message: "Esta cohorte ya terminó, así que sus resultados quedaron cerrados",
+      message: "Este grupo ya terminó, así que sus resultados quedaron cerrados",
     };
   }
 
@@ -971,7 +986,7 @@ export async function teacherAddCohortResource(
 ): Promise<PortalResult<ResourceDto>> {
   if (!(await teacherReachesCohort(organizationId, teacherId, cohortId))) {
     // Ausencia = 404: un 403 confirmaría que la camada existe.
-    return { ok: false, status: 404, code: "not_found", message: "Cohorte no encontrada" };
+    return { ok: false, status: 404, code: "not_found", message: "Grupo no encontrado" };
   }
 
   const creado = await createResource(organizationId, {

@@ -357,7 +357,7 @@ export function RosterClient({
   if (notFound) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Cohorte no encontrada
+        Grupo no encontrado
       </div>
     );
   }
@@ -378,7 +378,7 @@ export function RosterClient({
     <div className="flex h-full flex-col">
       <header className="flex items-center justify-between gap-4 border-b px-6 py-4">
         <div>
-          <h2 className="font-semibold">{roster?.cohort.name ?? roster?.cohort.courseName ?? "Cohorte"}</h2>
+          <h2 className="font-semibold">{roster?.cohort.name ?? roster?.cohort.courseName ?? "Grupo"}</h2>
           {roster?.cohort.name && (
             <p className="text-xs text-muted-foreground">{roster.cohort.courseName}</p>
           )}
@@ -434,7 +434,7 @@ export function RosterClient({
             {/* 043 — Sin fin ni clases, el acceso de esta cohorte no vence. */}
             {accesos?.sinFecha && (
               <p className="rounded-md border border-warning-border bg-warning-soft px-3 py-2 text-xs">
-                Esta cohorte no tiene fecha de fin ni clases cargadas: el acceso de sus
+                Este grupo no tiene fecha de fin ni clases cargadas: el acceso de sus
                 alumnos a grabaciones, material y cursos offline no vence. Cargá la
                 fecha de fin para que venza un mes después.
               </p>
@@ -730,7 +730,7 @@ export function RosterClient({
                                   </span>
                                 ) : !roster.cohort.whatsappGroupLink ? (
                                   <span className="text-muted-foreground">
-                                    Cargá el enlace del grupo en la cohorte para poder enviarla.
+                                    Cargá el enlace de WhatsApp en la edición del grupo para poder enviarla.
                                   </span>
                                 ) : null}
                               </div>

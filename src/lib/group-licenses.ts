@@ -167,4 +167,4 @@ export function licenciaDelGrupoBloquea(
 }
 
 export const MENSAJE_LICENCIA_DEL_GRUPO = (programa: string) =>
-  `${programa} está asignado al grupo de la cohorte: se asigna y se quita desde la cohorte, no por alumno.`;
+  `${programa} está asignado al grupo: se asigna y se quita desde el grupo, no por alumno.`;

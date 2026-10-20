@@ -479,7 +479,7 @@ describe("DV-005 — una cohorte finalizada no se corrige por la puerta de las e
     });
 
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.message).toMatch(/^Esta cohorte ya terminó, así que /);
+    if (!r.ok) expect(r.message).toMatch(/^Este grupo ya terminó, así que /);
   });
 
   it("reabrir tampoco: la reapertura habilita una entrega que ya no puede entrar", async () => {

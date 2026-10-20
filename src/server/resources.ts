@@ -69,8 +69,8 @@ export function validateResource(input: ResourceInput): ResourceResult<ResourceI
       code: "invalid_container",
       message:
         contenedores === 0
-          ? "Un material tiene que ir en un curso, en una camada o en una clase"
-          : "Un material va en UN solo lugar: curso, camada o clase",
+          ? "Un material tiene que ir en un curso, en un grupo o en una clase"
+          : "Un material va en UN solo lugar: curso, grupo o clase",
     };
   }
 
@@ -277,7 +277,7 @@ async function validateResourceForeignKeys(
       .from(schema.cohort)
       .where(scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, input.cohortId)))
       .limit(1);
-    if (!rows[0]) return "Camada inexistente";
+    if (!rows[0]) return "Grupo inexistente";
   }
   if (input.classSessionId) {
     const rows = await db
@@ -433,7 +433,7 @@ export async function createAnnouncement(
     .where(scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, cohortId)))
     .limit(1);
   if (!cohorte[0]) {
-    return { ok: false, status: 404, code: "not_found", message: "Cohorte no encontrada" };
+    return { ok: false, status: 404, code: "not_found", message: "Grupo no encontrado" };
   }
 
   const inserted = await getDb()

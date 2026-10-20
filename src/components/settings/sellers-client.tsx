@@ -277,7 +277,7 @@ export function SellersClient({ canGrantAccount = false }: { canGrantAccount?: b
           <div className="space-y-2 rounded-md border bg-subtle px-3 py-3">
             <p className="text-xs text-muted-foreground">
               Se le crea una cuenta del panel con el rol <strong>Ventas</strong> y el usuario{" "}
-              <strong>{s.email}</strong>: ve los cursos, las cohortes y quién está anotado, sin
+              <strong>{s.email}</strong>: ve los cursos, los grupos y quién está anotado, sin
               montos ni pagos, y puede cargar empresas. Si ese correo ya es de un profesor, se le
               agrega el panel a su misma cuenta y no hace falta contraseña.
             </p>
@@ -317,7 +317,7 @@ export function SellersClient({ canGrantAccount = false }: { canGrantAccount?: b
         <CardHeader>
           <CardTitle>Agregar vendedor</CardTitle>
           <CardDescription>
-            Toda inscripción en una cohorte es una venta y lleva vendedor. Se puede
+            Toda inscripción en un grupo es una venta y lleva vendedor. Se puede
             cargar a quien vende aunque no use el sistema; el correo es opcional.
           </CardDescription>
         </CardHeader>

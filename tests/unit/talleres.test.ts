@@ -332,7 +332,8 @@ describe("033 (US4) — el texto de los avisos", () => {
     const texto = textoConfirmacion({ nombre: "Ana", edicion }, TZ);
     expect(texto).toContain("Ana");
     expect(texto).toContain("Introducción a Revit");
-    expect(texto).toContain("10:00");
+    // La hora dice en qué zona está: hay alumnos en Dominicana y en España.
+    expect(texto).toContain("a las 10:00 (hora de Uruguay)");
     expect(texto.toLowerCase()).toContain("online");
     expect(texto).not.toContain("zoom.us");
   });
@@ -415,10 +416,11 @@ describe("033 (FR-019, US4) — por dónde sale un aviso", () => {
 
   it("la variable de la plantilla va en UNA línea (WhatsApp no admite saltos en {{1}})", async () => {
     const { variableDelAviso } = await import("@/lib/workshops");
-    const v = variableDelAviso("recordatorio", edicion);
+    const v = variableDelAviso("recordatorio", edicion, TZ);
     expect(v).not.toMatch(/\n/);
     expect(v).toContain("Introducción a Revit");
     expect(v).toContain("https://zoom.us/j/123456789?pwd=secreto");
-    expect(variableDelAviso("confirmacion", edicion)).not.toContain("zoom.us");
+    expect(v).toContain("10:00 (hora de Uruguay)");
+    expect(variableDelAviso("confirmacion", edicion, TZ)).not.toContain("zoom.us");
   });
 });

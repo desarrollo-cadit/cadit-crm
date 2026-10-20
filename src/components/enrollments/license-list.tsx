@@ -102,7 +102,7 @@ export function LicenseList({
           <span
             key={g.id}
             className="flex items-center gap-1 rounded-full border bg-subtle px-2 py-0.5 text-foreground"
-            title="Se asigna y se quita desde la cohorte, no por alumno"
+            title="Se asigna y se quita desde el grupo, no por alumno"
           >
             {g.name}
             <span className="text-muted-foreground">· Asignado al grupo</span>

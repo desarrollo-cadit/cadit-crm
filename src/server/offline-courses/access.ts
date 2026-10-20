@@ -88,7 +88,7 @@ export async function setCohortCourses(
   userId: string
 ): Promise<AccessResult<{ courseIds: string[] }>> {
   if (!(await cohortExists(orgId, cohortId))) {
-    return { ok: false, status: 404, code: "not_found", message: "Cohorte no encontrada" };
+    return { ok: false, status: 404, code: "not_found", message: "Grupo no encontrado" };
   }
 
   const desired = [...new Set(courseIds)];

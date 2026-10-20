@@ -194,6 +194,35 @@ describe("bienvenida: copia y asunto", () => {
     expect(enviado.subject).toBe("Te damos la bienvenida a REVIT Arquitectura");
   });
 
+  /**
+   * 2026-10-20 — El horario es texto libre en la hora de la academia. Hay
+   * alumnos en Dominicana y en España: el correo dice de qué zona es.
+   */
+  it("el horario dice la zona de la academia", async () => {
+    const c = contextoBienvenida();
+    selectQueue.push([
+      {
+        ...c,
+        cohort: { ...c.cohort, frequency: "martes y jueves de 18:30 a 20:30" },
+        timezone: "America/Montevideo",
+      },
+    ]);
+    selectQueue.push([]); // cohort_software
+    selectQueue.push([]); // licencias propias
+    selectQueue.push([]); // clases
+    equipo.mockResolvedValue({ soporte: [], coordinacion: [] });
+    sendMail.mockResolvedValue({ ok: true });
+
+    const { sendEnrollmentEmail } = await import("@/server/email/enrollment-emails");
+    const r = await sendEnrollmentEmail("org_1", "enr_1", "welcome");
+
+    expect(r.ok).toBe(true);
+    // La plantilla está simulada: se mira lo que recibió para dibujar.
+    expect(JSON.stringify(renderTemplate.mock.calls)).toContain(
+      "martes y jueves de 18:30 a 20:30 (hora de Uruguay)"
+    );
+  });
+
   it("sin enlace del grupo sigue respondiendo 422 sin mandar nada", async () => {
     const c = contextoBienvenida();
     selectQueue.push([{ ...c, cohort: { ...c.cohort, whatsappGroupLink: null } }]);

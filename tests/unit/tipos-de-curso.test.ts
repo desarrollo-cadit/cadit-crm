@@ -150,13 +150,13 @@ describe("032 (FR-015/FR-016) — borrar un curso", () => {
   it("con cohortes se bloquea, dice cuántas y sugiere la alternativa", () => {
     const d = decidirBorradoCurso({ ...nada, cohortes: 3 });
     expect(d.accion).toBe("bloquear");
-    expect(d.motivo).toContain("3 cohortes");
+    expect(d.motivo).toContain("3 grupos");
     expect(d.motivo).toMatch(/tipo/);
     expect(d.motivo).toMatch(/despublic/);
   });
 
   it("con una sola cohorte, en singular", () => {
-    expect(decidirBorradoCurso({ ...nada, cohortes: 1 }).motivo).toContain("1 cohorte");
+    expect(decidirBorradoCurso({ ...nada, cohortes: 1 }).motivo).toContain("1 grupo");
   });
 
   it("con interesados se bloquea y dice cuántos", () => {
@@ -173,7 +173,7 @@ describe("032 (FR-015/FR-016) — borrar un curso", () => {
 
   it("junta todos los motivos, no solo el primero", () => {
     const d = decidirBorradoCurso({ cohortes: 2, interesados: 1, formularios: ["A", "B"] });
-    expect(d.motivo).toContain("2 cohortes");
+    expect(d.motivo).toContain("2 grupos");
     expect(d.motivo).toContain("1 persona");
     expect(d.motivo).toContain('"A"');
     expect(d.motivo).toContain('"B"');

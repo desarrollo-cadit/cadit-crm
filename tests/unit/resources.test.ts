@@ -67,7 +67,7 @@ describe("validateResource — un curso, una camada o una clase: uno solo", () =
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.code).toBe("invalid_container");
-    expect(r.message).toContain("tiene que ir en un curso, en una camada o en una clase");
+    expect(r.message).toContain("tiene que ir en un curso, en un grupo o en una clase");
   });
 
   /**

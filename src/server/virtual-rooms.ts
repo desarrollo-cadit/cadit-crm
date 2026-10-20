@@ -578,7 +578,7 @@ export async function detectClashes(
 
   const nombreAula = new Map(rooms.map((r) => [r.id, r.name]));
   const nombreCohorte = new Map(
-    filas.map((f) => [f.cohortId, f.courseName ?? f.cohortName ?? "Cohorte"])
+    filas.map((f) => [f.cohortId, f.courseName ?? f.cohortName ?? "Grupo"])
   );
 
   const salida = clashes.map((c) => ({
@@ -589,9 +589,9 @@ export async function detectClashes(
     otherStartsAt: c.b.startsAt,
     otherEndsAt: c.b.endsAt,
     cohortId: c.a.cohortId,
-    cohortName: nombreCohorte.get(c.a.cohortId) ?? "Cohorte",
+    cohortName: nombreCohorte.get(c.a.cohortId) ?? "Grupo",
     otherCohortId: c.b.cohortId,
-    otherCohortName: nombreCohorte.get(c.b.cohortId) ?? "Cohorte",
+    otherCohortName: nombreCohorte.get(c.b.cohortId) ?? "Grupo",
     classSessionId: c.a.classSessionId,
     otherClassSessionId: c.b.classSessionId,
   }));
@@ -683,7 +683,7 @@ export async function roomAgenda(
       roomName: nombreAula.get(roomId) ?? "Aula",
       classSessionId: f.id,
       cohortId: f.cohortId,
-      cohortName: f.cohortName ?? f.courseName ?? "Cohorte",
+      cohortName: f.cohortName ?? f.courseName ?? "Grupo",
       courseName: f.courseName ?? "—",
       teacherName: f.teacherName,
       startsAt: startsAt.toISOString(),

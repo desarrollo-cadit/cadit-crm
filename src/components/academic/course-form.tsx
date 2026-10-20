@@ -357,7 +357,7 @@ export function CourseForm({
             </select>
             <p className="text-xs text-muted-foreground">
               {kind === "modulo"
-                ? "Una etapa de una especialización. No aparece en el catálogo web aunque esté publicado, ni se ofrece al crear una cohorte común."
+                ? "Una etapa de una especialización. No aparece en el catálogo web aunque esté publicado, ni se ofrece al crear un grupo común."
                 : kind === "taller"
                   ? "Un taller. Por ahora se gestiona como cualquier curso; se lista aparte con el filtro de tipo."
                   : "Un curso del catálogo, el caso de siempre."}
@@ -376,7 +376,7 @@ export function CourseForm({
               </span>
               <span className="block text-xs text-muted-foreground">
                 Destildalo para talleres a medida y capacitaciones in-company:
-                el curso sigue existiendo en el CRM, con sus cohortes e
+                el curso sigue existiendo en el CRM, con sus grupos e
                 inscripciones, pero no aparece en tu sitio ni recibe leads del
                 formulario público.
               </span>
@@ -563,7 +563,7 @@ export function CourseForm({
                 onChange={(e) => setMinAttendancePct(e.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                Cada cohorte puede pisarlo. Vacío = sin requisito de presencia.
+                Cada grupo puede pisarlo. Vacío = sin requisito de presencia.
               </p>
             </div>
           </div>

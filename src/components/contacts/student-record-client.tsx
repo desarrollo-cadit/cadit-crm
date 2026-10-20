@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Award, FileText, GraduationCap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { formatCalendarDay } from "@/lib/utils";
 import { EnrollLauncher } from "@/components/enrollments/enroll-launcher";
 import { AccessUntilLine, type EstadoDeAccesoDto } from "@/components/access/content-access";
 import {
@@ -137,8 +138,9 @@ export function StudentRecordClient({
     return <p className="p-6 text-sm text-muted-foreground">{error}</p>;
   }
 
+  // Inicio y fin de la cursada: DÍAS (medianoche UTC), no instantes.
   const fecha = (iso: string | null) =>
-    iso ? new Date(iso).toLocaleDateString("es-UY", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+    iso ? formatCalendarDay(iso, { day: "2-digit", month: "short", year: "numeric" }) : "—";
 
   return (
     <div className="space-y-6 p-6">

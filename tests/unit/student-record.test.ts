@@ -295,7 +295,7 @@ describe("getStudentRecord — el estado de cuenta y las capacidades", () => {
     expect(r!.courses.map((c) => c.cohortName)).toEqual([
       "Revit MEP 2",
       "AutoCAD 2D",
-      "Lead sin cohorte",
+      "Lead sin grupo",
     ]);
   });
 });

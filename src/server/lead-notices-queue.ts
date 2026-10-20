@@ -39,6 +39,8 @@ export type EnvioDeFormulario = {
     phone: string | null;
     email?: string | null;
     notes?: string | null;
+    /** Solo talleres: la empresa que escribió en el formulario. */
+    company?: string | null;
   };
   /** El `source` de la captación ("formulario:<nombre>"). */
   origen: string;
@@ -61,6 +63,7 @@ export async function avisarInteresadoNuevo(organizationId: string, envio: Envio
     telefono: envio.datos.phone,
     email: envio.datos.email ?? null,
     mensaje: envio.datos.notes ?? null,
+    empresa: envio.datos.company ?? null,
     interes: envio.interes,
     origen: envio.origen,
     contactoNuevo: envio.contactoNuevo,

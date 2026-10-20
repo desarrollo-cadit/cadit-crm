@@ -5,6 +5,7 @@ import Link from "next/link";
 import { CalendarDays, MapPin, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ACADEMY_TIME_ZONE, conZona } from "@/lib/schedule-time";
 
 type Cohort = {
   id: string;
@@ -41,7 +42,7 @@ const ESTADO: Record<
 > = {
   en_curso: { label: "En curso", variant: "success" },
   planificada: { label: "Por iniciar", variant: "warning" },
-  finalizada: { label: "Finalizada", variant: "secondary" },
+  finalizada: { label: "Finalizado", variant: "secondary" },
 };
 
 function fecha(iso: string): string {
@@ -63,16 +64,19 @@ function fecha(iso: string): string {
 export function PortalCohortsClient() {
   const [cohorts, setCohorts] = useState<Cohort[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // La zona de la academia: la hora de cada cohorte se dice en ella.
+  const [timezone, setTimezone] = useState<string>(ACADEMY_TIME_ZONE);
 
   useEffect(() => {
     void (async () => {
       const res = await fetch("/api/portal/cohorts").catch(() => null);
       if (!res?.ok) {
-        setError("No pudimos cargar tus cohortes. Suele ser algo momentáneo: en unos minutos deberían aparecer.");
+        setError("No pudimos cargar tus grupos. Suele ser algo momentáneo: en unos minutos deberían aparecer.");
         setCohorts([]);
         return;
       }
-      const body = (await res.json()) as { cohorts: Cohort[] };
+      const body = (await res.json()) as { cohorts: Cohort[]; timezone?: string };
+      if (body.timezone) setTimezone(body.timezone);
       setCohorts(body.cohorts);
     })();
   }, []);
@@ -91,9 +95,9 @@ export function PortalCohortsClient() {
   if (cohorts.length === 0) {
     return (
       <div className="rounded-lg border border-dashed p-6 text-center">
-        <p className="text-sm font-medium">No tenés cohortes asignadas</p>
+        <p className="text-sm font-medium">No tenés grupos asignados</p>
         <p className="mt-2 text-sm text-muted-foreground">
-          Las cohortes se mostrarán aquí cuando la academia te asigne una o te
+          Los grupos se mostrarán aquí cuando la academia te asigne uno o te
           designe como suplente en una clase.
         </p>
       </div>
@@ -105,9 +109,18 @@ export function PortalCohortsClient() {
 
   return (
     <div className="space-y-6">
-      <Grupo titulo="En curso" cohorts={activas} vacio="No hay cohortes en curso." />
+      <Grupo
+        titulo="En curso"
+        cohorts={activas}
+        timezone={timezone}
+        vacio="No hay grupos en curso."
+      />
       {cerradas.length > 0 && (
-        <Grupo titulo={`Finalizadas (${cerradas.length})`} cohorts={cerradas} />
+        <Grupo
+          titulo={`Finalizados (${cerradas.length})`}
+          cohorts={cerradas}
+          timezone={timezone}
+        />
       )}
     </div>
   );
@@ -116,10 +129,13 @@ export function PortalCohortsClient() {
 function Grupo({
   titulo,
   cohorts,
+  timezone,
   vacio,
 }: {
   titulo: string;
   cohorts: Cohort[];
+  /** Zona de la academia, para decir de qué zona es la hora. */
+  timezone: string;
   vacio?: string;
 }) {
   return (
@@ -141,7 +157,7 @@ function Grupo({
                   <div className="min-w-0">
                     <p className="truncate text-base font-semibold">{c.courseName}</p>
                     <p className="truncate text-sm text-muted-foreground">
-                      {c.name ?? "Cohorte sin nombre"}
+                      {c.name ?? "Grupo sin nombre"}
                     </p>
                     {c.program && (
                       <p className="truncate text-xs text-text-3">
@@ -168,7 +184,7 @@ function Grupo({
                   <span className="inline-flex items-center gap-1">
                     <CalendarDays className="h-3.5 w-3.5" />
                     {fecha(c.startDate)}
-                    {c.startTime && ` · ${c.startTime}`}
+                    {c.startTime && ` · ${conZona(c.startTime, timezone)}`}
                   </span>
                   <span className="inline-flex items-center gap-1">
                     <Users className="h-3.5 w-3.5" />
