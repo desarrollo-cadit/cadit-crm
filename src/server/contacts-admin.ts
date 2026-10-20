@@ -81,7 +81,7 @@ async function historialDe(
   const db = getDb();
 
   const inscripciones = await db
-    .select({ id: schema.enrollment.id })
+    .select({ id: schema.enrollment.id, cohortId: schema.enrollment.cohortId })
     .from(schema.enrollment)
     .where(
       scoped(
@@ -138,8 +138,12 @@ async function historialDe(
     pagos = rows[0]?.n ?? 0;
   }
 
+  // El lead general (`cohort_id` NULL) que crea un formulario o el embudo es
+  // la tarjeta del seguimiento comercial, no historial académico: contarlo
+  // hacía que un lead recién llegado no se pudiera borrar. Sus certificados y
+  // pagos —si los hubiera— sí cuentan arriba, sobre TODAS las filas.
   return {
-    enrollments: inscripciones.length,
+    enrollments: inscripciones.filter((e) => e.cohortId !== null).length,
     certificates: certificados[0]?.n ?? 0,
     payments: pagos,
   };
