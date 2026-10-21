@@ -10,7 +10,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * asistencia sí se pisa), la validación previa y lo que devuelven.
  */
 
-type Insert = { values: Record<string, unknown>[]; set: Record<string, unknown> | null };
+type Insert = {
+  values: Record<string, unknown>[];
+  set: Record<string, unknown> | null;
+  doNothing?: boolean;
+};
+/** Cuántas filas "entran" con ON CONFLICT DO NOTHING (las demás ya tenían marca). */
+let insertadasSinConflicto = 0;
 let inserts: Insert[] = [];
 let selectRows: unknown[] = [];
 
@@ -35,6 +41,13 @@ vi.mock("@/lib/db", () => ({
           onConflictDoUpdate: async (cfg: { set: Record<string, unknown> }) => {
             registro.set = cfg.set;
             return [];
+          },
+          onConflictDoNothing: () => {
+            registro.doNothing = true;
+            return {
+              returning: async () =>
+                registro.values.slice(0, insertadasSinConflicto).map((v) => ({ id: v.id })),
+            };
           },
         };
       },
@@ -101,6 +114,33 @@ describe("markAttendance — una sola sentencia", () => {
       data: { marked: 0 },
     });
     expect(inserts).toHaveLength(0);
+  });
+
+  /**
+   * 2026-10-21 — "Todos presentes": marca SOLO a quien no tiene marca. Se
+   * resuelve en la misma sentencia con ON CONFLICT DO NOTHING: si alguien
+   * marcó a un alumno entre que se abrió la planilla y se confirmó, su marca
+   * no se pisa.
+   */
+  it("soloSinMarca: una sentencia que NUNCA pisa una marca existente", async () => {
+    selectRows = [{ id: "cls_1", canceledAt: null }];
+    insertadasSinConflicto = 2;
+    const r = await markAttendance(
+      "org_1",
+      "cls_1",
+      [
+        { enrollmentId: "enr_1", status: "presente" },
+        { enrollmentId: "enr_2", status: "presente" },
+        { enrollmentId: "enr_3", status: "presente" },
+      ],
+      "usr_staff",
+      { soloSinMarca: true }
+    );
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]!.doNothing).toBe(true);
+    expect(inserts[0]!.set).toBeNull();
+    // `marked` = las que se escribieron de verdad, no las pedidas.
+    expect(r).toEqual({ ok: true, data: { marked: 2 } });
   });
 
   it("una clase cancelada se rechaza antes de escribir", async () => {

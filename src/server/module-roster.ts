@@ -5,7 +5,12 @@ import { fullName } from "@/lib/utils";
 import { estadoDeModulo, type ModuleState } from "@/lib/approval";
 import { resumirLicencias } from "@/lib/license-rules";
 import { softwareDelGrupo } from "@/server/licenses";
-import { attendanceByModule, resolveMinAttendance } from "@/server/attendance";
+import {
+  asistenciaTomadaSql,
+  attendanceByModule,
+  relojDeAsistencia,
+  resolveMinAttendance,
+} from "@/server/attendance";
 import { dispensaDeInscripcion } from "@/server/grading";
 
 /**
@@ -114,13 +119,16 @@ export async function rosterDeModulo(
   const ids = hijas.map((h) => h.id);
   const madreIds = [...new Set(hijas.map((h) => h.parentEnrollmentId).filter((m): m is string => !!m))];
 
+  const reloj = await relojDeAsistencia(organizationId);
   const [sesiones, marcas, evaluaciones, resultados, licencias, madres] = await Promise.all([
     db
       .select({
         id: schema.classSession.id,
         cohortId: schema.classSession.cohortId,
         date: schema.classSession.date,
+        endTime: schema.classSession.endTime,
         canceledAt: schema.classSession.canceledAt,
+        tomada: asistenciaTomadaSql(),
       })
       .from(schema.classSession)
       .where(
@@ -186,7 +194,8 @@ export async function rosterDeModulo(
   const porcentaje = attendanceByModule(
     hijas.map((h) => ({ enrollmentId: h.id, cohortId, enrolledAt: h.enrolledAt })),
     sesiones,
-    marcas
+    marcas,
+    reloj
   );
   const madrePorId = new Map(madres.map((m) => [m.id, m]));
   const obligatorias = evaluaciones.filter((a) => a.required);

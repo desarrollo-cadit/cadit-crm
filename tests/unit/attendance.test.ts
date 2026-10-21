@@ -80,14 +80,17 @@ describe("buildClassSchedule", () => {
 
 describe("attendancePercentage", () => {
   const d = (s: string) => new Date(`${s}T00:00:00`);
+  /** Todas estas clases ya se dieron: el reloj está muy después. */
+  const RELOJ_PASADO = { timeZone: "America/Montevideo", now: new Date("2030-01-01T00:00:00Z") };
 
   it("tarde cuenta como presente (DV-002)", () => {
     const pct = attendancePercentage(
       [
-        { sessionDate: d("2026-09-01"), canceled: false, status: "presente" },
-        { sessionDate: d("2026-09-03"), canceled: false, status: "tarde" },
+        { sessionDate: d("2026-09-01"), canceled: false, status: "presente", tomada: true },
+        { sessionDate: d("2026-09-03"), canceled: false, status: "tarde", tomada: true },
       ],
-      null
+      null,
+      RELOJ_PASADO
     );
     expect(pct).toBe(100);
   });
@@ -95,10 +98,11 @@ describe("attendancePercentage", () => {
   it("justificado NO suma: el alumno no estuvo", () => {
     const pct = attendancePercentage(
       [
-        { sessionDate: d("2026-09-01"), canceled: false, status: "presente" },
-        { sessionDate: d("2026-09-03"), canceled: false, status: "justificado" },
+        { sessionDate: d("2026-09-01"), canceled: false, status: "presente", tomada: true },
+        { sessionDate: d("2026-09-03"), canceled: false, status: "justificado", tomada: true },
       ],
-      null
+      null,
+      RELOJ_PASADO
     );
     expect(pct).toBe(50);
   });
@@ -107,10 +111,11 @@ describe("attendancePercentage", () => {
   it("las clases canceladas salen del denominador", () => {
     const pct = attendancePercentage(
       [
-        { sessionDate: d("2026-09-01"), canceled: false, status: "presente" },
-        { sessionDate: d("2026-09-03"), canceled: true, status: null },
+        { sessionDate: d("2026-09-01"), canceled: false, status: "presente", tomada: true },
+        { sessionDate: d("2026-09-03"), canceled: true, status: null, tomada: true },
       ],
-      null
+      null,
+      RELOJ_PASADO
     );
     expect(pct).toBe(100);
   });
@@ -119,11 +124,12 @@ describe("attendancePercentage", () => {
   it("las clases anteriores a la inscripción no cuentan", () => {
     const pct = attendancePercentage(
       [
-        { sessionDate: d("2026-09-01"), canceled: false, status: null },
-        { sessionDate: d("2026-09-03"), canceled: false, status: null },
-        { sessionDate: d("2026-09-10"), canceled: false, status: "presente" },
+        { sessionDate: d("2026-09-01"), canceled: false, status: null, tomada: true },
+        { sessionDate: d("2026-09-03"), canceled: false, status: null, tomada: true },
+        { sessionDate: d("2026-09-10"), canceled: false, status: "presente", tomada: true },
       ],
-      d("2026-09-08")
+      d("2026-09-08"),
+      RELOJ_PASADO
     );
     expect(pct).toBe(100);
   });
@@ -131,10 +137,11 @@ describe("attendancePercentage", () => {
   it("una falta sin marcar cuenta como ausencia", () => {
     const pct = attendancePercentage(
       [
-        { sessionDate: d("2026-09-01"), canceled: false, status: "presente" },
-        { sessionDate: d("2026-09-03"), canceled: false, status: null },
+        { sessionDate: d("2026-09-01"), canceled: false, status: "presente", tomada: true },
+        { sessionDate: d("2026-09-03"), canceled: false, status: null, tomada: true },
       ],
-      null
+      null,
+      RELOJ_PASADO
     );
     expect(pct).toBe(50);
   });
@@ -145,11 +152,12 @@ describe("attendancePercentage", () => {
    * alguien va a usar para decidir.
    */
   it("sin clases elegibles devuelve null, no 0", () => {
-    expect(attendancePercentage([], null)).toBeNull();
+    expect(attendancePercentage([], null, RELOJ_PASADO)).toBeNull();
     expect(
       attendancePercentage(
-        [{ sessionDate: d("2026-09-01"), canceled: true, status: null }],
-        null
+        [{ sessionDate: d("2026-09-01"), canceled: true, status: null, tomada: true }],
+        null,
+      RELOJ_PASADO
       )
     ).toBeNull();
   });

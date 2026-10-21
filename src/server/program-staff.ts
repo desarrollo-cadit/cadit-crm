@@ -4,7 +4,12 @@ import { scoped } from "@/lib/db/tenant";
 import { sincronizarLicenciasDelGrupo } from "@/server/group-licenses";
 import { fullName } from "@/lib/utils";
 import type { Capability } from "@/lib/capabilities";
-import { attendanceByModule, resolveMinAttendance } from "@/server/attendance";
+import {
+  asistenciaTomadaSql,
+  attendanceByModule,
+  relojDeAsistencia,
+  resolveMinAttendance,
+} from "@/server/attendance";
 import { listProgramClasses } from "@/server/classes";
 import { ACADEMY_TIME_ZONE, classEndsAt } from "@/lib/schedule-time";
 import {
@@ -426,6 +431,7 @@ async function grillaDeAlumnos(
   ];
   const inscripcionIds = hijas.map((h) => h.id);
 
+  const reloj = await relojDeAsistencia(organizationId);
   const [sesiones, marcas, evaluaciones, resultados] = await Promise.all([
     cohorteIds.length
       ? db
@@ -433,7 +439,9 @@ async function grillaDeAlumnos(
             id: schema.classSession.id,
             cohortId: schema.classSession.cohortId,
             date: schema.classSession.date,
+            endTime: schema.classSession.endTime,
             canceledAt: schema.classSession.canceledAt,
+            tomada: asistenciaTomadaSql(),
           })
           .from(schema.classSession)
           .where(
@@ -517,7 +525,8 @@ async function grillaDeAlumnos(
   const porModulo = attendanceByModule(
     hijas.map((h) => ({ enrollmentId: h.id, cohortId: h.cohortId, enrolledAt: h.enrolledAt })),
     sesiones,
-    marcas
+    marcas,
+    reloj
   );
 
   /**

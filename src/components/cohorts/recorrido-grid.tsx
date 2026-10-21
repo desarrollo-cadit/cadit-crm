@@ -9,15 +9,10 @@ import {
   type ColumnaDeModulo,
   type IntentoDeModulo,
 } from "@/lib/recorrido";
+import { nivelDePorcentaje, type NivelDePorcentaje } from "@/lib/attendance-grid";
+import { etiquetaCortaDeModulo } from "@/lib/program-order";
 import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 
 /** El estado GENERAL de la especialización: `sin_datos` es de los módulos. */
 type Estado = "aprobado" | "reprobado" | "pendiente";
@@ -41,16 +36,31 @@ const GENERAL: Record<Estado, { label: string; variant: "success" | "destructive
   pendiente: { label: "Pendiente", variant: "outline" },
 };
 
+/** El % de asistencia contra el mínimo del módulo; solo tokens. */
+const NIVEL_CLASS: Record<NivelDePorcentaje, string> = {
+  sin_datos: "text-muted-foreground",
+  sin_minimo: "text-text-2",
+  bajo: "text-danger",
+  ok: "text-success",
+};
+
+const BADGE_COMPACTO = "px-1.5 py-0 text-[11px] leading-5";
+
 /**
- * 029 — La grilla alumno × módulo del Recorrido, UNA para las tres pantallas
- * que la muestran: la pestaña Recorrido (con acciones por celda) y el resumen
- * "Todos" de Asistencia y Evaluación (de solo lectura).
+ * 029 / 2026-10-21 — La grilla alumno × módulo del Recorrido, UNA para las
+ * tres pantallas que la muestran: la pestaña Recorrido (con acciones por
+ * celda) y el resumen "Todos" de Asistencia y Evaluación (de solo lectura).
  *
- * Cada celda es una insignia que DICE el estado —aprobado, cursando,
- * reprobado, pendiente, sin datos, baja → otra camada, recursa—; el color
- * acompaña. Al
- * pasar el mouse, la asistencia real y los motivos; el clic lleva al módulo.
- * La última columna es el estado general del certificado. Nada de plata.
+ * Compacta como la planilla de asistencia: una fila por alumno, nombre y
+ * encabezado fijos, desplazamiento dentro de la tabla. Cada celda es una
+ * insignia que DICE el estado —aprobado, cursando, reprobado, pendiente, sin
+ * datos, baja → otra camada, recursa— y el % de asistencia (la regla de
+ * `attendancePercentage`: solo clases dictadas). El clic lleva al módulo.
+ *
+ * FR-025 — El motivo de cada celda (y la lista del certificado) NO va como
+ * texto suelto en la fila: va en el `title` y como descripción accesible
+ * (`aria-describedby`), así el lector de pantalla lo lee completo y la grilla
+ * se puede recorrer de un vistazo. Nada de plata.
  */
 export function RecorridoGrid<I extends IntentoDelRecorrido>({
   columnas,
@@ -65,81 +75,135 @@ export function RecorridoGrid<I extends IntentoDelRecorrido>({
   acciones?: (alumno: AlumnoDelRecorrido<I>, intento: I) => ReactNode;
 }) {
   return (
-    <div className="overflow-x-auto rounded-md border">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Alumno</TableHead>
+    <div className="max-h-[calc(100vh-14rem)] max-w-full overflow-auto rounded-lg border">
+      <table className="border-separate border-spacing-0 text-xs" aria-label="Recorrido por módulo">
+        <thead>
+          <tr>
+            <th
+              scope="col"
+              className="sticky left-0 top-0 z-30 min-w-[12rem] border-b border-r bg-subtle px-3 py-1.5 text-left font-medium text-muted-foreground"
+            >
+              Alumno
+            </th>
             {columnas.map((c) => (
-              <TableHead key={c.cohortId} className="min-w-[9rem]">
-                <Link href={`/cohorts/${c.cohortId}`} className="hover:underline">
-                  {c.label}
+              <th
+                key={c.cohortId}
+                scope="col"
+                className="sticky top-0 z-20 min-w-[8.5rem] border-b bg-subtle px-2 py-1.5 text-left font-medium"
+              >
+                <Link
+                  href={`/cohorts/${c.cohortId}`}
+                  title={c.label}
+                  className="block max-w-[11rem] truncate hover:underline"
+                >
+                  {etiquetaCortaDeModulo(c.label)}
                 </Link>
-              </TableHead>
+              </th>
             ))}
-            <TableHead>Certificado</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {alumnos.map((a) => (
-            <TableRow key={a.enrollmentId}>
-              <TableCell className="font-medium">{a.contact.name}</TableCell>
-              {columnas.map((col) => {
-                const intentos = intentosDeLaColumna(a.modules, col);
-                const celda = estadoDeCelda(intentos, col, ahora);
-                const vigente = intentoVigente(intentos);
-                return (
-                  <TableCell key={col.cohortId} data-estado={celda.kind}>
-                    {celda.href ? (
-                      <Link
-                        href={celda.href}
-                        title={celda.title}
-                        aria-label={`${a.contact.name}, ${col.label}: ${celda.label}. ${celda.title}`}
-                      >
-                        <Badge variant={celda.variant}>{celda.label}</Badge>
-                      </Link>
-                    ) : (
-                      <span className="text-xs text-muted-foreground" title={celda.title}>
-                        —
-                      </span>
-                    )}
-                    {vigente?.attendancePct !== undefined && vigente.attendancePct !== null ? (
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {vigente.attendancePct}% asistencia
-                      </p>
-                    ) : null}
-                    {/*
-                      FR-025 — El motivo no alcanza con que viaje en el título:
-                      tiene que LEERSE en la celda. "Con dispensa" dice que la
-                      hay; la línea de motivos dice quién, cuándo y por qué —y,
-                      sin dispensa, por qué el módulo está como está—.
-                    */}
-                    {vigente?.dispensada ? (
-                      <p className="mt-1 text-xs text-warning">Con dispensa</p>
-                    ) : null}
-                    {vigente && vigente.reasons.length > 0 ? (
-                      <p className="mt-1 max-w-[14rem] text-xs text-muted-foreground">
-                        {vigente.reasons.join(" · ")}
-                      </p>
-                    ) : null}
-                    {acciones && vigente ? (
-                      <div className="mt-1 flex flex-wrap gap-1">{acciones(a, vigente)}</div>
-                    ) : null}
-                  </TableCell>
-                );
-              })}
-              <TableCell title={a.reasons.join(" · ") || undefined}>
-                <Badge variant={GENERAL[a.state].variant}>{GENERAL[a.state].label}</Badge>
-                {a.reasons.length > 0 ? (
-                  <p className="mt-1 max-w-[16rem] text-xs text-muted-foreground">
-                    {a.reasons.join(" · ")}
-                  </p>
-                ) : null}
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+            <th
+              scope="col"
+              className="sticky top-0 z-20 border-b border-l bg-subtle px-2 py-1.5 text-left font-medium text-muted-foreground"
+            >
+              Certificado
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {alumnos.map((a) => {
+            const idCert = `cert-${a.enrollmentId}`;
+            const motivosCert = a.reasons.join(" · ");
+            return (
+              <tr key={a.enrollmentId} className="group">
+                <th
+                  scope="row"
+                  className="sticky left-0 z-10 h-8 max-w-[16rem] truncate border-b border-r bg-card px-3 text-left font-medium group-hover:bg-accent"
+                  title={a.contact.name}
+                >
+                  {a.contact.name}
+                </th>
+                {columnas.map((col) => {
+                  const intentos = intentosDeLaColumna(a.modules, col);
+                  const celda = estadoDeCelda(intentos, col, ahora);
+                  const vigente = intentoVigente(intentos);
+                  const pct = vigente?.attendancePct ?? null;
+                  const nivel = nivelDePorcentaje(pct, vigente?.minAttendancePct ?? null);
+                  const idMotivo = `mot-${a.enrollmentId}-${col.cohortId}`;
+                  const motivos = vigente && vigente.reasons.length > 0 ? vigente.reasons.join(" · ") : "";
+                  return (
+                    <td
+                      key={col.cohortId}
+                      data-estado={celda.kind}
+                      className="h-8 border-b px-2 group-hover:bg-accent"
+                    >
+                      <div className="flex items-center gap-1.5 whitespace-nowrap">
+                        {celda.href ? (
+                          <Link
+                            href={celda.href}
+                            title={celda.title}
+                            aria-label={`${a.contact.name}, ${col.label}: ${celda.label}`}
+                            aria-describedby={idMotivo}
+                            className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            <Badge variant={celda.variant} className={BADGE_COMPACTO}>
+                              {celda.label}
+                            </Badge>
+                          </Link>
+                        ) : (
+                          <span
+                            className="text-muted-foreground"
+                            title={celda.title}
+                            aria-label={`${a.contact.name}, ${col.label}: ${celda.title}`}
+                          >
+                            —
+                          </span>
+                        )}
+                        {vigente ? (
+                          <span
+                            className={cn("tabular-nums", NIVEL_CLASS[nivel])}
+                            title={
+                              pct === null
+                                ? "Asistencia: sin datos"
+                                : vigente.minAttendancePct === null
+                                  ? `Asistencia ${pct}%`
+                                  : `Asistencia ${pct}% (mínimo ${vigente.minAttendancePct}%)`
+                            }
+                          >
+                            {pct === null ? "—" : `${pct}%`}
+                          </span>
+                        ) : null}
+                        {vigente?.dispensada ? (
+                          <span className="text-warning" title="Con dispensa de asistencia">
+                            D<span className="sr-only">: con dispensa</span>
+                          </span>
+                        ) : null}
+                        {/* La descripción completa para el lector de pantalla: estado, asistencia y motivos. */}
+                        <span id={idMotivo} className="sr-only">
+                          {[celda.title, motivos].filter(Boolean).join(" · ")}
+                        </span>
+                      </div>
+                      {acciones && vigente ? (
+                        <div className="mt-0.5 flex flex-wrap gap-1 pb-1">{acciones(a, vigente)}</div>
+                      ) : null}
+                    </td>
+                  );
+                })}
+                <td className="h-8 border-b border-l px-2 group-hover:bg-accent">
+                  <span title={motivosCert || undefined} aria-describedby={motivosCert ? idCert : undefined}>
+                    <Badge variant={GENERAL[a.state].variant} className={BADGE_COMPACTO}>
+                      {GENERAL[a.state].label}
+                    </Badge>
+                  </span>
+                  {motivosCert ? (
+                    <span id={idCert} className="sr-only">
+                      {motivosCert}
+                    </span>
+                  ) : null}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

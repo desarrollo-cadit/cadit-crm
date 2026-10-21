@@ -76,6 +76,7 @@ function colaBase() {
       course: CURSO,
     },
   ]);
+  selectQueue.push([]); // zona de la academia (reloj de asistencia)
   selectQueue.push([]); // asistencia
   selectQueue.push([]); // clases
   selectQueue.push([]); // resultados
@@ -223,6 +224,7 @@ describe("getStudentRecord — el estado de cuenta y las capacidades", () => {
         course: CURSO,
       },
     ]);
+    selectQueue.push([]); // zona de la academia (reloj de asistencia)
     selectQueue.push([]); // asistencia: NADIE pasó lista
     selectQueue.push([
       // pero las clases SÍ existen
@@ -251,6 +253,7 @@ describe("getStudentRecord — el estado de cuenta y las capacidades", () => {
         course: CURSO,
       },
     ]);
+    selectQueue.push([]); // zona de la academia (reloj de asistencia)
     selectQueue.push([
       { enrollmentId: "enr_1", classSessionId: "cls_1", status: "presente" },
     ]);
@@ -310,6 +313,7 @@ describe("getStudentRecord — el estado de cuenta y las capacidades", () => {
     ]);
     // Sin grupos no hay asistencia, clases, evaluaciones ni camadas que pedir;
     // las consultas por inscripción (asistencia, resultados, certificados) sí corren.
+    selectQueue.push([]); // zona de la academia (reloj de asistencia)
     for (let i = 0; i < 3; i++) selectQueue.push([]);
     selectQueue.push([
       { id: "ins_1", enrollmentId: "enr_lead", currency: "UYU", amount: 5000, dueDate: new Date("2026-11-01"), canceledAt: null },

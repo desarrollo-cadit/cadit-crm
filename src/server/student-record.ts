@@ -7,6 +7,8 @@ import type { Capability } from "@/lib/capabilities";
 import type { Currency } from "@/lib/db/schema";
 import {
   attendancePercentage,
+  columnasDeClaseConLista,
+  relojDeAsistencia,
   resolveMinAttendance,
 } from "@/server/attendance";
 import {
@@ -229,6 +231,7 @@ export async function getStudentRecord(
 
   // Se traen todas las piezas de una vez y se cruzan en memoria: una persona
   // con tres cursadas no debería costar quince consultas.
+  const reloj = await relojDeAsistencia(organizationId);
   const [asistencias, clases, resultados, evaluaciones, certificados, camadas, modulosDeProgramas] =
     await Promise.all([
       enrollmentIds.length
@@ -245,7 +248,7 @@ export async function getStudentRecord(
         : [],
       cohortIds.length
         ? db
-            .select()
+            .select(columnasDeClaseConLista())
             .from(schema.classSession)
             .where(
               scoped(
@@ -383,11 +386,14 @@ export async function getStudentRecord(
         : attendancePercentage(
             clasesDeLaCohorte.map((c) => ({
               sessionDate: c.date,
+              endTime: c.endTime,
               canceled: Boolean(c.canceledAt),
+              tomada: Boolean(c.tomada),
               status:
                 asistenciaDeEsta.find((a) => a.classSessionId === c.id)?.status ?? null,
             })),
-            enrollment.enrolledAt
+            enrollment.enrolledAt,
+            reloj
           );
 
     const minPct = resolveMinAttendance(

@@ -280,6 +280,7 @@ function colaDeMadre(
   selectQueue.push([{ id: "enr_madre", cohortId: "coh_padre" }]);
   selectQueue.push(hijas);
   selectQueue.push([]); // módulos del programa
+  selectQueue.push([]); // zona de la academia (reloj de asistencia)
   selectQueue.push([]); // sesiones
   selectQueue.push([]); // marcas
   selectQueue.push(evaluaciones);

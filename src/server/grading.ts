@@ -16,8 +16,10 @@ import {
   type TextField,
 } from "@/lib/grading-template";
 import {
+  asistenciaTomadaSql,
   attendanceByModule,
   attendancePercentage,
+  relojDeAsistencia,
   resolveMinAttendance,
 } from "@/server/attendance";
 import {
@@ -775,6 +777,7 @@ export async function programGrading(
     .filter((id): id is string => id !== null);
   const inscripcionIds = hijas.map((h) => h.id);
 
+  const reloj = await relojDeAsistencia(organizationId);
   const [sesiones, marcas, evaluaciones, resultados] = await Promise.all([
     cohorteIds.length
       ? db
@@ -782,7 +785,9 @@ export async function programGrading(
             id: schema.classSession.id,
             cohortId: schema.classSession.cohortId,
             date: schema.classSession.date,
+            endTime: schema.classSession.endTime,
             canceledAt: schema.classSession.canceledAt,
+            tomada: asistenciaTomadaSql(),
           })
           .from(schema.classSession)
           .where(
@@ -846,7 +851,8 @@ export async function programGrading(
       enrolledAt: h.enrolledAt,
     })),
     sesiones,
-    marcas
+    marcas,
+    reloj
   );
 
   const modules: ModuleGrading[] = hijas.map((h, i) => {
@@ -1068,6 +1074,8 @@ export async function cohortGrading(
     scoresByEnrollment.set(row.enrollmentId, notas);
   }
 
+  // Clases donde alguien pasó lista: solo esas cuentan para el %.
+  const clasesConLista = new Set(marks.map((m) => m.attendance.classSessionId));
   const attendanceByEnrollment = new Map<string, Map<string, string>>();
   for (const m of marks) {
     const row = m.attendance;
@@ -1078,6 +1086,8 @@ export async function cohortGrading(
 
   const certByEnrollment = new Map(certs.map((c) => [c.certificate.enrollmentId, c]));
   const obligatorias = assessments.filter((a) => a.required);
+  // Solo cuentan las clases ya dictadas (la misma regla que la planilla de asistencia).
+  const relojDeLaPlanilla = { timeZone: cohort.timezone, now: new Date() };
 
   return {
     assessments,
@@ -1090,7 +1100,9 @@ export async function cohortGrading(
       const pct = attendancePercentage(
         sessions.map((s) => ({
           sessionDate: s.date,
+          endTime: s.endTime,
           canceled: Boolean(s.canceledAt),
+          tomada: clasesConLista.has(s.id),
           status: (asistencia.get(s.id) ?? null) as
             | "presente"
             | "tarde"
@@ -1098,7 +1110,8 @@ export async function cohortGrading(
             | "justificado"
             | null,
         })),
-        e.enrolledAt
+        e.enrolledAt,
+        relojDeLaPlanilla
       );
 
       // Solo las obligatorias definen la aprobación; una evaluación sin

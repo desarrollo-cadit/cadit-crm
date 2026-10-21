@@ -5,6 +5,7 @@ import { ArrowLeft, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { notify } from "@/lib/notify";
+import { textoTodosPresentes } from "@/lib/attendance-grid";
 
 type Status = "presente" | "tarde" | "ausente" | "justificado";
 
@@ -207,7 +208,8 @@ export function PortalAttendanceSheet({
           className="flex h-11 w-full items-center justify-center gap-2 rounded-md border text-sm font-medium hover:bg-accent disabled:opacity-50"
         >
           <Check className="h-4 w-4" />
-          Marcar como presentes a los {sinMarcar.length} alumnos sin registrar
+          {/* El MISMO texto que "Todos presentes" en la planilla del staff. */}
+          {textoTodosPresentes(sinMarcar.length)}
         </button>
       )}
 

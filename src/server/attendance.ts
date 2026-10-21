@@ -1,4 +1,4 @@
-import { asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { asc, eq, getTableColumns, inArray, isNull, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
@@ -7,6 +7,13 @@ import { fechaEnReceso, recesosDeCohorte, type Receso } from "@/lib/recess";
 import { leerRecesos } from "@/server/recesses";
 import { resumenDeHoras } from "@/lib/class-hours";
 import { ACADEMY_TIME_ZONE } from "@/lib/schedule-time";
+import {
+  attendancePercentage,
+  estadoDeClase,
+  type AttendanceStatus,
+  type EstadoDeClase,
+  type RelojDeAsistencia,
+} from "@/lib/attendance-percentage";
 
 /**
  * 009 — Clases dictadas y asistencia.
@@ -16,17 +23,46 @@ import { ACADEMY_TIME_ZONE } from "@/lib/schedule-time";
  * después de tomada la asistencia.
  */
 
-export type AttendanceStatus = "presente" | "tarde" | "ausente" | "justificado";
+export type { AttendanceStatus, RelojDeAsistencia } from "@/lib/attendance-percentage";
+/**
+ * 2026-10-21 — La regla del porcentaje vive en `src/lib/attendance-percentage.ts`
+ * (solo clases DICTADAS, la marca cuenta siempre, inscripción contra el fin de
+ * la clase). Se reexporta acá para los llamadores de siempre.
+ */
+export { attendancePercentage };
 
 /**
- * `tarde` cuenta como PRESENTE (DV-002): se registra para que el dato quede,
- * pero no penaliza el porcentaje. `justificado` tampoco descuenta —es una
- * ausencia con aviso—, pero SÍ sale del numerador: el alumno no estuvo.
+ * 2026-10-21 — ¿Se TOMÓ asistencia en esta clase? (al menos una marca de
+ * cualquiera). Va como columna de la MISMA consulta de clases —un `exists`—,
+ * no como un viaje aparte: quien arma el porcentaje de UNA persona (legajo,
+ * portal, escolaridad, empresa) solo tiene las marcas de esa persona, y sin
+ * esto no puede distinguir "faltó" de "nadie pasó lista".
  */
-const CUENTA_COMO_PRESENTE: ReadonlySet<AttendanceStatus> = new Set<AttendanceStatus>([
-  "presente",
-  "tarde",
-]);
+export function asistenciaTomadaSql() {
+  return sql<boolean>`exists (select 1 from ${schema.attendance} where ${schema.attendance.classSessionId} = ${schema.classSession.id})`;
+}
+
+/** Todas las columnas de `class_session` más `tomada`. */
+export function columnasDeClaseConLista() {
+  return { ...getTableColumns(schema.classSession), tomada: asistenciaTomadaSql() };
+}
+
+/**
+ * El reloj con el que se pregunta "¿esta clase ya se dio?": la zona de la
+ * organización y el instante. Una sola lectura para quien no la trae ya en su
+ * propia consulta.
+ */
+export async function relojDeAsistencia(
+  organizationId: string,
+  now: Date = new Date()
+): Promise<RelojDeAsistencia> {
+  const rows = await getDb()
+    .select({ timezone: schema.organization.timezone })
+    .from(schema.organization)
+    .where(eq(schema.organization.id, organizationId))
+    .limit(1);
+  return { timeZone: rows[0]?.timezone ?? ACADEMY_TIME_ZONE, now };
+}
 
 export type ClassSessionDto = {
   id: string;
@@ -99,40 +135,6 @@ export function buildClassSchedule(
   return out;
 }
 
-export type AttendanceInput = {
-  sessionDate: Date;
-  canceled: boolean;
-  status: AttendanceStatus | null;
-};
-
-/**
- * Porcentaje de asistencia de UN alumno.
- *
- * El denominador tiene dos reglas que lo separan de un `count` cualquiera
- * (FR-004):
- *  - las clases CANCELADAS no cuentan; si no, cancelar una clase le baja la
- *    asistencia a toda la cohorte;
- *  - las clases ANTERIORES a su inscripción tampoco; el que entra en la
- *    cuarta semana no arranca con tres semanas de faltas.
- *
- * Sin clases elegibles devuelve `null` y NO 0: "todavía no hay de qué
- * calcular" y "vino a cero clases" son cosas distintas, y mostrar 0% en una
- * cohorte que no empezó es una mentira que alguien va a usar para decidir.
- */
-export function attendancePercentage(
-  sessions: AttendanceInput[],
-  enrolledAt: Date | null
-): number | null {
-  const eligible = sessions.filter(
-    (s) => !s.canceled && (!enrolledAt || s.sessionDate >= enrolledAt)
-  );
-  if (eligible.length === 0) return null;
-  const present = eligible.filter(
-    (s) => s.status !== null && CUENTA_COMO_PRESENTE.has(s.status)
-  ).length;
-  return Math.round((present / eligible.length) * 100);
-}
-
 /**
  * Mínimo para aprobar: manda la cohorte, y si no declaró nada hereda del curso
  * (DV-001). `null` en los dos = la cohorte no exige presencia.
@@ -188,13 +190,22 @@ export function attendanceByModule(
     id: string;
     cohortId: string;
     date: Date;
+    /** Para saber si la clase ya terminó (`classHasEnded`); sin horario, el fin del día. */
+    endTime?: string | null;
     canceledAt: Date | null;
+    /**
+     * ¿Alguien pasó lista? (`asistenciaTomadaSql`). Sin el dato se deduce de
+     * las marcas recibidas, que pueden no ser las de todo el grupo.
+     */
+    tomada?: boolean;
   }[],
   marcas: readonly {
     enrollmentId: string;
     classSessionId: string;
     status: AttendanceStatus;
-  }[]
+  }[],
+  /** 2026-10-21 — Solo cuentan las clases ya dictadas: la zona y el "ahora". */
+  reloj: RelojDeAsistencia
 ): Map<string, number | null> {
   const out = new Map<string, number | null>();
 
@@ -213,15 +224,19 @@ export function attendanceByModule(
     }
 
     const propias = sesiones.filter((s) => s.cohortId === m.cohortId);
+    const conMarcas = new Set(marcas.map((k) => k.classSessionId));
     out.set(
       m.enrollmentId,
       attendancePercentage(
         propias.map((s) => ({
           sessionDate: s.date,
+          endTime: s.endTime ?? null,
           canceled: Boolean(s.canceledAt),
+          tomada: Boolean(s.tomada) || conMarcas.has(s.id),
           status: mias.find((k) => k.classSessionId === s.id)?.status ?? null,
         })),
-        m.enrolledAt
+        m.enrolledAt,
+        reloj
       )
     );
   }
@@ -618,7 +633,14 @@ export async function markAttendance(
    * 014 (DV-001) — Quién marca. Con el portal, la asistencia deja de tocarla
    * solo la coordinación, y una corrección sin autor no se puede revisar.
    */
-  recordedBy?: string | null
+  recordedBy?: string | null,
+  /**
+   * 2026-10-21 — "Todos presentes": escribe solo donde NO hay marca, en la
+   * misma sentencia (ON CONFLICT DO NOTHING). La pantalla calcula a quién
+   * marcar con lo que tenía cargado; si alguien marcó a un alumno mientras
+   * tanto, su marca gana.
+   */
+  opciones: { soloSinMarca?: boolean } = {}
 ): Promise<AttendanceResult<{ marked: number }>> {
   const db = getDb();
 
@@ -658,19 +680,30 @@ export async function markAttendance(
   for (const e of entries) ultimaPorInscripcion.set(e.enrollmentId, e);
 
   const now = new Date();
+  const filas = [...ultimaPorInscripcion.values()].map((e) => ({
+    id: newId("attendance"),
+    organizationId,
+    classSessionId,
+    enrollmentId: e.enrollmentId,
+    status: e.status,
+    notes: e.notes ?? null,
+    recordedBy: recordedBy ?? null,
+  }));
+
+  if (opciones.soloSinMarca) {
+    const escritas = await db
+      .insert(schema.attendance)
+      .values(filas)
+      .onConflictDoNothing({
+        target: [schema.attendance.classSessionId, schema.attendance.enrollmentId],
+      })
+      .returning({ id: schema.attendance.id });
+    return { ok: true, data: { marked: escritas.length } };
+  }
+
   await db
     .insert(schema.attendance)
-    .values(
-      [...ultimaPorInscripcion.values()].map((e) => ({
-        id: newId("attendance"),
-        organizationId,
-        classSessionId,
-        enrollmentId: e.enrollmentId,
-        status: e.status,
-        notes: e.notes ?? null,
-        recordedBy: recordedBy ?? null,
-      }))
-    )
+    .values(filas)
     .onConflictDoUpdate({
       target: [schema.attendance.classSessionId, schema.attendance.enrollmentId],
       set: {
@@ -727,7 +760,16 @@ export async function cancelSession(
 
 export type CohortAttendanceDto = {
   minAttendancePct: number | null;
-  sessions: ClassSessionDto[];
+  /**
+   * 2026-10-21 — Cada clase viaja con su `estado` (`estadoDeClase`): la
+   * pantalla atenúa las futuras y no las deja editar, sin recalcular zonas
+   * horarias en el navegador.
+   */
+  sessions: (ClassSessionDto & {
+    estado: EstadoDeClase;
+    /** Alguien pasó lista en esta clase: solo entonces cuenta para el %. */
+    tomada: boolean;
+  })[];
   students: {
     enrollmentId: string;
     contactName: string;
@@ -741,7 +783,8 @@ export type CohortAttendanceDto = {
 /** Planilla completa de la cohorte: clases, alumnos y porcentaje derivado. */
 export async function cohortAttendance(
   organizationId: string,
-  cohortId: string
+  cohortId: string,
+  now: Date = new Date()
 ): Promise<CohortAttendanceDto | null> {
   const db = getDb();
 
@@ -750,16 +793,26 @@ export async function cohortAttendance(
       id: schema.cohort.id,
       minAttendancePct: schema.cohort.minAttendancePct,
       courseMinPct: schema.course.minAttendancePct,
+      // En la MISMA consulta: "¿ya se dio esta clase?" depende de la zona.
+      timezone: schema.organization.timezone,
     })
     .from(schema.cohort)
     .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
+    .innerJoin(schema.organization, eq(schema.cohort.organizationId, schema.organization.id))
     .where(scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, cohortId)))
     .limit(1);
   const cohort = cohortRows[0];
   if (!cohort) return null;
 
+  const reloj: RelojDeAsistencia = { timeZone: cohort.timezone ?? ACADEMY_TIME_ZONE, now };
   const minPct = resolveMinAttendance(cohort.minAttendancePct, cohort.courseMinPct);
-  const sessions = await listSessions(organizationId, cohortId);
+  const sessions = (await listSessions(organizationId, cohortId)).map((s) => ({
+    ...s,
+    estado: estadoDeClase(
+      { sessionDate: new Date(s.date), endTime: s.endTime, canceled: Boolean(s.canceledAt) },
+      reloj
+    ),
+  }));
 
   const enrollments = await db
     .select({
@@ -794,6 +847,7 @@ export async function cohortAttendance(
       )
     );
 
+  const tomadas = new Set(marks.map((m) => m.attendance.classSessionId));
   const byEnrollment = new Map<string, Map<string, AttendanceStatus>>();
   for (const m of marks) {
     const row = m.attendance;
@@ -804,16 +858,19 @@ export async function cohortAttendance(
 
   return {
     minAttendancePct: minPct,
-    sessions,
+    sessions: sessions.map((s) => ({ ...s, tomada: tomadas.has(s.id) })),
     students: enrollments.map((e) => {
       const map = byEnrollment.get(e.id) ?? new Map<string, AttendanceStatus>();
       const percentage = attendancePercentage(
         sessions.map((s) => ({
           sessionDate: new Date(s.date),
+          endTime: s.endTime,
           canceled: Boolean(s.canceledAt),
           status: map.get(s.id) ?? null,
+          tomada: tomadas.has(s.id),
         })),
-        e.enrolledAt
+        e.enrolledAt,
+        reloj
       );
       return {
         enrollmentId: e.id,

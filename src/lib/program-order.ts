@@ -30,7 +30,33 @@
  * pelado, porque inventar un número sería afirmar algo que nadie cargó.
  */
 export function etiquetaDeModulo(ordinal: number | null, nombre: string): string {
-  return ordinal === null ? nombre : `Módulo ${ordinal} — ${nombre}`;
+  if (ordinal === null) return nombre;
+  /*
+    2026-10-21 — El nombre de la cohorte de módulo suele traer ya su ordinal
+    ("Módulo 1 - BIM Management") y la etiqueta lo repetía: "Módulo 1 — Módulo
+    1 - BIM Management". Se quita SOLO si el número coincide: si dice otro, la
+    discrepancia es un dato mal cargado y esconderla sería peor.
+  */
+  const prefijo = PREFIJO_DE_MODULO.exec(nombre);
+  if (prefijo && Number(prefijo[1]) === ordinal) {
+    const resto = nombre.slice(prefijo[0].length).trim();
+    return resto ? `Módulo ${ordinal} — ${resto}` : `Módulo ${ordinal}`;
+  }
+  return `Módulo ${ordinal} — ${nombre}`;
+}
+
+/** "Módulo 1 - ", "MODULO 2:", "módulo 3 —" al principio del nombre. */
+const PREFIJO_DE_MODULO = /^\s*m[óo]dulo\s+(\d+)\s*(?:[-–—:·.]\s*)?/i;
+
+/**
+ * La versión corta para encabezados angostos: "Módulo 1 — BIM Management" →
+ * "M1 · BIM Management". Recibe la etiqueta ya armada por `etiquetaDeModulo`,
+ * así que no recalcula ordinales.
+ */
+export function etiquetaCortaDeModulo(etiqueta: string): string {
+  const m = /^Módulo (\d+)(?: — (.+))?$/.exec(etiqueta);
+  if (!m) return etiqueta;
+  return m[2] ? `M${m[1]} · ${m[2]}` : `M${m[1]}`;
 }
 
 /** Lo mínimo que hace falta para ubicar un módulo en el orden del programa. */

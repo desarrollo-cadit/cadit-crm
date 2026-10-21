@@ -8,6 +8,7 @@ import { buildClassRow, type ClassRowDto } from "@/server/classes";
 import { installmentStatus, type InstallmentStatus } from "@/server/billing";
 import {
   attendancePercentage,
+  columnasDeClaseConLista,
   resolveMinAttendance,
   type AttendanceStatus,
 } from "@/server/attendance";
@@ -32,6 +33,7 @@ import {
   type MeetingWindow,
 } from "@/lib/schedule-time";
 import { avisoDeAcceso, type AvisoDeAcceso } from "@/lib/access-expiry";
+import { claseCuentaParaElAlumno, cuentaComoPresente } from "@/lib/attendance-percentage";
 import {
   estadosDeAccesoDeContacto,
   type EstadoDeAccesoDeInscripcion,
@@ -377,7 +379,7 @@ export async function studentOverview(
     await Promise.all([
       cohortIds.length
         ? db
-            .select()
+            .select(columnasDeClaseConLista())
             .from(schema.classSession)
             .where(
               scoped(
@@ -525,7 +527,8 @@ export async function studentOverview(
 type CrossData = {
   /** Zona de la academia: decide cuándo TERMINÓ una clase (`classHasEnded`). */
   timezone: string;
-  sesiones: (typeof schema.classSession.$inferSelect)[];
+  /** `tomada`: alguien pasó lista en la clase (`asistenciaTomadaSql`). */
+  sesiones: (typeof schema.classSession.$inferSelect & { tomada?: boolean })[];
   asistencias: (typeof schema.attendance.$inferSelect)[];
   evaluaciones: (typeof schema.assessment.$inferSelect)[];
   resultados: (typeof schema.assessmentResult.$inferSelect)[];
@@ -571,32 +574,27 @@ function buildCourse(
   const clases = data.sesiones.filter((s) => s.cohortId === cohort?.id);
   const misMarcas = data.asistencias.filter((a) => a.enrollmentId === enrollment.id);
 
-  const elegibles = clases.filter(
-    (c) => !c.canceledAt && (!enrollment.enrolledAt || c.date >= enrollment.enrolledAt)
-  );
-
   /**
-   * 015 — **Solo las clases que YA PASARON.**
-   *
-   * `attendancePercentage` (009) mete en el denominador todas las clases
-   * elegibles, incluidas las que todavía no ocurrieron. Para decidir la
-   * aprobación al FINAL del curso da igual —ahí ya pasaron todas—, pero acá
-   * dice "cómo voy", y en la segunda semana de un curso de doce el alumno leía
-   * **8% de asistencia** y un cartel de "estás en riesgo" habiendo ido a todas.
-   *
-   * Se encontró recorriendo la cohorte de demostración: el panel decía "0 de 5
-   * clases" mientras la lista de abajo mostraba "Viniste, Viniste, Faltaste".
-   * Dos números del mismo dato que no coincidían.
-   *
-   * El criterio de APROBACIÓN no se toca (`attendancePercentage` sigue siendo
-   * la cuenta oficial de 009/010): esto es lo que se MUESTRA mientras la
-   * cursada está en marcha.
+   * 015 / 2026-10-21 — **Solo las clases que YA PASARON**, y con la MISMA regla
+   * que la planilla del staff, el legajo y la aprobación
+   * (`claseCuentaParaElAlumno`, `src/lib/attendance-percentage.ts`). Antes el
+   * portal filtraba lo dictado por su cuenta y el staff no: el alumno leía 100%
+   * y la planilla 42% sobre la misma persona.
    */
-  const dictadas = elegibles.filter((c) => classHasEnded(c, data.timezone, now));
-  const presentes = dictadas.filter((c) => {
-    const marca = misMarcas.find((a) => a.classSessionId === c.id)?.status;
-    return marca === "presente" || marca === "tarde";
-  }).length;
+  const reloj = { timeZone: data.timezone, now };
+  const paraAsistencia = clases.map((c) => ({
+    sessionDate: c.date,
+    endTime: c.endTime,
+    canceled: Boolean(c.canceledAt),
+    tomada: Boolean(c.tomada),
+    status:
+      (misMarcas.find((a) => a.classSessionId === c.id)?.status as AttendanceStatus | undefined) ??
+      null,
+  }));
+  const dictadas = paraAsistencia.filter((c) =>
+    claseCuentaParaElAlumno(c, enrollment.enrolledAt, reloj)
+  );
+  const presentes = dictadas.filter((c) => cuentaComoPresente(c.status)).length;
 
   /**
    * 015 (SC-004, DV-003) — **0% porque nadie pasó lista NO es 0% porque no
@@ -606,19 +604,9 @@ function buildCourse(
    * cohortes importadas está exactamente en ese estado.
    */
   const attendancePct =
-    misMarcas.length === 0 || dictadas.length === 0
+    misMarcas.length === 0
       ? null
-      : attendancePercentage(
-          dictadas.map((c) => ({
-            sessionDate: c.date,
-            canceled: Boolean(c.canceledAt),
-            status:
-              (misMarcas.find((a) => a.classSessionId === c.id)?.status as
-                | AttendanceStatus
-                | undefined) ?? null,
-          })),
-          enrollment.enrolledAt
-        );
+      : attendancePercentage(paraAsistencia, enrollment.enrolledAt, reloj);
 
   const minAttendancePct = resolveMinAttendance(
     cohort?.minAttendancePct ?? null,
@@ -1071,7 +1059,7 @@ export async function studentCourseDetail(
     await Promise.all([
       cohortIds.length
         ? db
-            .select()
+            .select(columnasDeClaseConLista())
             .from(schema.classSession)
             .where(
               scoped(

@@ -409,6 +409,7 @@ function colaDeCamada(input: {
   if ((input.madres ?? []).length === 0) return;
   selectQueue.push(input.hijas ?? []); // 9 — listarHijasDeVarias
   if ((input.hijas ?? []).length === 0) return;
+  selectQueue.push([]); // 9b — zona de la academia (reloj de asistencia)
   selectQueue.push(input.sesiones ?? []); // 10
   selectQueue.push(input.marcas ?? []); // 11
   selectQueue.push(input.evaluaciones ?? []); // 12

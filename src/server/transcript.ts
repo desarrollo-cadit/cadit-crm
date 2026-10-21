@@ -4,7 +4,11 @@ import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { armarEscolaridad, type CursadaInput, type Escolaridad } from "@/lib/escolaridad";
 import { fullName } from "@/lib/utils";
-import { attendancePercentage, resolveMinAttendance } from "@/server/attendance";
+import {
+  asistenciaTomadaSql,
+  attendancePercentage,
+  resolveMinAttendance,
+} from "@/server/attendance";
 import { getBranding } from "@/server/branding";
 import { dispensaDeInscripcion } from "@/server/grading";
 
@@ -118,7 +122,9 @@ export async function escolaridadDeContacto(
             id: schema.classSession.id,
             cohortId: schema.classSession.cohortId,
             date: schema.classSession.date,
+            endTime: schema.classSession.endTime,
             canceledAt: schema.classSession.canceledAt,
+            tomada: asistenciaTomadaSql(),
           })
           .from(schema.classSession)
           .where(
@@ -166,6 +172,8 @@ export async function escolaridadDeContacto(
       ])
     : [[], [], [], []];
 
+  // Solo las clases ya dictadas cuentan: la zona de la academia y el ahora.
+  const reloj = { timeZone: academia[0]?.timezone ?? "America/Montevideo", now: new Date() };
   const cursadas: CursadaInput[] = inscripciones.map(({ enrollment, cohort, course, waiverAuthor }) => {
     const propias = asistencias.filter((a) => a.enrollmentId === enrollment.id);
     const asistenciaPct =
@@ -176,10 +184,13 @@ export async function escolaridadDeContacto(
               .filter((c) => c.cohortId === cohort.id)
               .map((c) => ({
                 sessionDate: c.date,
+                endTime: c.endTime,
                 canceled: Boolean(c.canceledAt),
+                tomada: Boolean(c.tomada),
                 status: propias.find((a) => a.classSessionId === c.id)?.status ?? null,
               })),
-            enrollment.enrolledAt
+            enrollment.enrolledAt,
+            reloj
           );
 
     return {

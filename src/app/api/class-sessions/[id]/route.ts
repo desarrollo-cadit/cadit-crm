@@ -23,6 +23,11 @@ const patchSchema = z.object({
     )
     .max(200)
     .optional(),
+  /**
+   * 2026-10-21 — "Todos presentes": escribir solo donde no hay marca. Nunca
+   * pisa una marca existente, aunque se haya cargado mientras tanto.
+   */
+  onlyUnmarked: z.boolean().optional(),
   /** Motivo de cancelación: cancelar saca la clase del cálculo de todos. */
   cancelReason: z.string().trim().min(1).max(500).optional(),
 });
@@ -49,7 +54,13 @@ export const PATCH = requireCapability(
   }
 
   if (body.data.attendance) {
-    const marked = await markAttendance(session.organizationId, id, body.data.attendance);
+    const marked = await markAttendance(
+      session.organizationId,
+      id,
+      body.data.attendance,
+      undefined,
+      { soloSinMarca: body.data.onlyUnmarked === true }
+    );
     if (!marked.ok) return apiError(marked.status, marked.code, marked.message);
     return Response.json({ marked: marked.data.marked });
   }

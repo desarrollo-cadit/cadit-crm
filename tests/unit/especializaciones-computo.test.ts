@@ -199,6 +199,8 @@ describe("dispensaVigente gobierna la aprobación (DV-004, FR-023)", () => {
  * ============================================================ */
 
 describe("attendanceByModule — un porcentaje por módulo, nunca uno solo", () => {
+  /** Todas estas clases ya se dieron: el reloj está muy después. */
+  const RELOJ_PASADO = { timeZone: "America/Montevideo", now: new Date("2030-01-01T00:00:00Z") };
   const HIJAS = [
     { enrollmentId: "enr_m1", cohortId: "coh_m1", enrolledAt: null },
     { enrollmentId: "enr_m2", cohortId: "coh_m2", enrolledAt: null },
@@ -224,7 +226,8 @@ describe("attendanceByModule — un porcentaje por módulo, nunca uno solo", () 
       { enrollmentId: "enr_m1", classSessionId: "cls_2", status: "ausente" },
       { enrollmentId: "enr_m2", classSessionId: "cls_3", status: "presente" },
       { enrollmentId: "enr_m2", classSessionId: "cls_4", status: "presente" },
-    ]);
+    ],
+      RELOJ_PASADO);
 
     expect(pct.get("enr_m1")).toBe(50);
     expect(pct.get("enr_m2")).toBe(100);
@@ -252,7 +255,8 @@ describe("attendanceByModule — un porcentaje por módulo, nunca uno solo", () 
         { enrollmentId: "enr_m1", classSessionId: "cls_2", status: "presente" },
         { enrollmentId: "enr_m2", classSessionId: "cls_3", status: "presente" },
         { enrollmentId: "enr_m2", classSessionId: "cls_4", status: "presente" },
-      ]
+      ],
+      RELOJ_PASADO
     );
     // Si la clase del padre entrara al denominador de alguno, bajaría de 100.
     expect(pct.get("enr_m1")).toBe(100);
@@ -267,8 +271,10 @@ describe("attendanceByModule — un porcentaje por módulo, nunca uno solo", () 
     const { attendanceByModule } = await import("@/server/attendance");
     const pct = attendanceByModule(HIJAS, SESIONES, [
       { enrollmentId: "enr_m1", classSessionId: "cls_1", status: "presente" },
-    ]);
-    expect(pct.get("enr_m1")).toBe(50);
+    ],
+      RELOJ_PASADO);
+    // 2026-10-21 — En cls_2 nadie pasó lista: no cuenta (antes daba 50%).
+    expect(pct.get("enr_m1")).toBe(100);
     expect(pct.get("enr_m2")).toBeNull();
   });
 
@@ -277,7 +283,8 @@ describe("attendanceByModule — un porcentaje por módulo, nunca uno solo", () 
     const pct = attendanceByModule(
       [{ enrollmentId: "enr_x", cohortId: null, enrolledAt: null }],
       SESIONES,
-      []
+      [],
+      RELOJ_PASADO
     );
     expect(pct.get("enr_x")).toBeNull();
   });
@@ -520,6 +527,7 @@ function colaDePrograma(
   selectQueue.push([{ id: "enr_madre", cohortId: "coh_padre" }]);
   selectQueue.push(hijas);
   selectQueue.push(modulosDelPrograma);
+  selectQueue.push([]); // zona de la academia (reloj de asistencia)
   for (const r of resto) selectQueue.push(r);
 }
 
@@ -906,6 +914,7 @@ describe("getStudentRecord — la especialización con sus módulos (FR-031)", (
   it("una inscripción simple sigue dando exactamente lo de hoy", async () => {
     selectQueue.push([CONTACTO]);
     selectQueue.push([filaLegajo({})]);
+    selectQueue.push([]); // zona de la academia (reloj de asistencia)
     selectQueue.push([]); // asistencia
     selectQueue.push([]); // clases
     selectQueue.push([]); // resultados
@@ -954,6 +963,7 @@ describe("getStudentRecord — la especialización con sus módulos (FR-031)", (
         course: { name: "Revit Estructura" },
       }),
     ]);
+    selectQueue.push([]); // zona de la academia (reloj de asistencia)
     selectQueue.push([]); // asistencia
     selectQueue.push([]); // clases
     selectQueue.push([]); // resultados
@@ -996,6 +1006,7 @@ describe("getStudentRecord — la especialización con sus módulos (FR-031)", (
         course: { name: "Revit MEP" },
       }),
     ]);
+    selectQueue.push([]); // zona de la academia (reloj de asistencia)
     selectQueue.push([]); // asistencia
     selectQueue.push([]); // clases
     selectQueue.push([]); // resultados
@@ -1056,7 +1067,7 @@ describe("getStudentRecord — la especialización con sus módulos (FR-031)", (
         course: { id: "crs_2", name: "Revit Estructura" },
       }),
     ]);
-    for (let i = 0; i < 5; i++) selectQueue.push([]);
+    for (let i = 0; i < 6; i++) selectQueue.push([]); // + zona de la academia
     // Los módulos del programa de la camada madre.
     selectQueue.push([
       { id: "coh_m1", position: 10, courseId: "crs_1", startDate: new Date("2026-04-22"), parentCohortId: "coh_padre" },

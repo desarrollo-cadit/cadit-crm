@@ -3,7 +3,12 @@ import { cursoNoEsTaller } from "@/server/workshop-scope";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { fullName } from "@/lib/utils";
-import { attendancePercentage, resolveMinAttendance } from "@/server/attendance";
+import {
+  attendancePercentage,
+  columnasDeClaseConLista,
+  relojDeAsistencia,
+  resolveMinAttendance,
+} from "@/server/attendance";
 import { approvalState } from "@/server/grading";
 import { csvField } from "@/server/enrollments";
 
@@ -80,6 +85,7 @@ export async function companyReport(
     .map((i) => i.cohort?.id)
     .filter((id): id is string => Boolean(id));
 
+  const reloj = await relojDeAsistencia(organizationId);
   const [asistencias, clases, resultados, evaluaciones, certificados] =
     await Promise.all([
       db
@@ -94,7 +100,7 @@ export async function companyReport(
         ),
       cohortIds.length
         ? db
-            .select()
+            .select(columnasDeClaseConLista())
             .from(schema.classSession)
             .where(
               scoped(
@@ -147,11 +153,14 @@ export async function companyReport(
       const pct = asistenciaDeEste.length === 0 ? null : attendancePercentage(
         clasesDeLaCohorte.map((c) => ({
           sessionDate: c.date,
+          endTime: c.endTime,
           canceled: Boolean(c.canceledAt),
+          tomada: Boolean(c.tomada),
           status:
             asistenciaDeEste.find((a) => a.classSessionId === c.id)?.status ?? null,
         })),
-        enrollment.enrolledAt
+        enrollment.enrolledAt,
+        reloj
       );
 
       const minPct = resolveMinAttendance(
