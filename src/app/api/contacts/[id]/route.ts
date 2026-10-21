@@ -10,6 +10,14 @@ import {
   serializeContact,
 } from "@/server/contacts";
 import { empresaExiste } from "@/server/contact-company";
+import {
+  correoNullable,
+  FALTA_TELEFONO_O_CORREO,
+  planDeTelefono,
+  quedaSinCanal,
+  telefonoOpcional,
+} from "@/lib/contact-identity";
+import { buscarContactoDuplicado, respuestaDeDuplicado } from "@/server/contact-duplicates";
 
 export const dynamic = "force-dynamic";
 
@@ -39,15 +47,21 @@ export const GET = requireCapability(
 /**
  * Iteración 6 (feedback en vivo: "si le da a editar solo se edita nombre...
  * es clave poder editar todo") — antes solo se podía tocar name/notes/
- * archived. `phone`/`waIdentity` quedan AFUERA a propósito: es la identidad
- * estable de WhatsApp ("estable de por vida", ver CLAUDE.md) — cambiarla acá
- * migraría de qué conversación depende un contacto, una feature distinta y
- * más riesgosa que "editar los datos del contacto".
+ * archived.
+ *
+ * 2026-10-21 — El teléfono se puede AGREGAR a quien no lo tiene, nunca
+ * cambiar (`planDeTelefono`, src/lib/contact-identity.ts): si el contacto
+ * tenía identidad provisional (`sinwa:`), pasa a ser el teléfono; un `bsuid:`
+ * o un teléfono real no se pisan (es la identidad estable de WhatsApp:
+ * cambiarla migraría de qué conversación depende el contacto). El correo va
+ * en minúsculas, y teléfono y correo se chequean contra los demás contactos
+ * (409 que nombra al otro, sin fusionar nada).
  */
 const patchSchema = z.object({
   firstName: z.string().trim().min(1).max(120).optional(),
   lastName: z.string().trim().max(120).nullable().optional(),
-  email: z.string().trim().email().max(200).nullable().optional(),
+  email: correoNullable,
+  phone: telefonoOpcional,
   nationalId: z.string().trim().max(60).nullable().optional(),
   source: z.string().trim().max(200).nullable().optional(),
   utmCampaign: z.string().trim().max(200).nullable().optional(),
@@ -71,7 +85,43 @@ export const PATCH = requireCapability(
   const set: Record<string, unknown> = { updatedAt: new Date() };
   if (body.data.firstName !== undefined) set.firstName = body.data.firstName;
   if (body.data.lastName !== undefined) set.lastName = body.data.lastName;
-  if (body.data.email !== undefined) set.email = body.data.email;
+  if (body.data.email !== undefined || body.data.phone !== undefined) {
+    const actual = await getContactById(session.organizationId, id);
+    if (!actual) return apiError(404, "not_found", "Contacto no encontrado");
+    let phone = actual.phone;
+    let email = actual.email;
+    let telefonoNuevo: string | null = null;
+    let correoNuevo: string | null = null;
+
+    if (body.data.phone !== undefined) {
+      const plan = planDeTelefono(actual, body.data.phone);
+      if (plan.tipo === "bloqueado") return apiError(422, "telefono_bloqueado", plan.mensaje);
+      if (plan.tipo === "agregar") {
+        phone = plan.phone;
+        telefonoNuevo = plan.phone;
+        set.phone = plan.phone;
+        set.waIdentity = plan.waIdentity;
+      }
+    }
+    if (body.data.email !== undefined) {
+      email = body.data.email;
+      set.email = body.data.email;
+      if (body.data.email && body.data.email !== actual.email?.toLowerCase()) {
+        correoNuevo = body.data.email;
+      }
+    }
+    if (quedaSinCanal({ phone, email })) {
+      return apiError(422, "sin_canal", FALTA_TELEFONO_O_CORREO);
+    }
+    if (telefonoNuevo || correoNuevo) {
+      const duplicado = await buscarContactoDuplicado(session.organizationId, {
+        phone: telefonoNuevo,
+        email: correoNuevo,
+        excluirId: id,
+      });
+      if (duplicado) return respuestaDeDuplicado(duplicado);
+    }
+  }
   if (body.data.nationalId !== undefined) set.nationalId = body.data.nationalId;
   if (body.data.source !== undefined) set.source = body.data.source;
   if (body.data.utmCampaign !== undefined) set.utmCampaign = body.data.utmCampaign;

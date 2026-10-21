@@ -1,7 +1,9 @@
 import { asc, eq, inArray, isNull } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
+import { alias } from "drizzle-orm/pg-core";
 import { fullName } from "@/lib/utils";
+import { correoDeLicencia } from "@/lib/license-email";
 import {
   armarVistaDeLicencias,
   estadoDeLicencia,
@@ -29,7 +31,14 @@ export type VistaDeLicenciasDto = {
 const nombreDeCohorte = (c: { cohortName: string | null; courseName: string | null }) =>
   c.cohortName ?? c.courseName ?? "Grupo";
 
-export async function vistaDeLicencias(organizationId: string): Promise<VistaDeLicenciasDto> {
+export async function vistaDeLicencias(
+  organizationId: string,
+  /**
+   * 2026-10-21 — `contactos.ver`: el correo de la licencia viaja solo para
+   * quien ya ve el correo del alumno. Sin ella, ni se consulta.
+   */
+  opts: { conCorreo?: boolean } = {}
+): Promise<VistaDeLicenciasDto> {
   const db = getDb();
   const software = await db
     .select({
@@ -79,8 +88,15 @@ export async function vistaDeLicencias(organizationId: string): Promise<VistaDeL
       .where(scoped(schema.cohortGroupSoftware.organizationId, organizationId)),
   ]);
 
+  const correos = opts.conCorreo
+    ? await correosDeLicencia(organizationId, licencias.map((l) => l.licenseId))
+    : null;
+
   const ahora = new Date();
   const filas: FilaDeLicenciaVista[] = licencias.map((l) => ({
+    ...(correos
+      ? { licenseEmail: correos.get(l.licenseId) ?? { email: null, distinto: false } }
+      : {}),
     licenseId: l.licenseId,
     enrollmentId: l.enrollmentId,
     softwareId: l.softwareId,
@@ -157,4 +173,33 @@ export async function vistaDeLicencias(organizationId: string): Promise<VistaDeL
       .map(([id, name]) => ({ id, name }))
       .sort((a, b) => a.name.localeCompare(b.name, "es")),
   };
+}
+
+/**
+ * 2026-10-21 — El correo de cada licencia, resuelto con `correoDeLicencia`:
+ * el de la inscripción, el de su madre (hija de un módulo) o el del alumno.
+ */
+async function correosDeLicencia(
+  organizationId: string,
+  licenseIds: string[]
+): Promise<Map<string, { email: string | null; distinto: boolean }>> {
+  const salida = new Map<string, { email: string | null; distinto: boolean }>();
+  if (licenseIds.length === 0) return salida;
+  const madre = alias(schema.enrollment, "madre");
+  const filas = await getDb()
+    .select({
+      licenseId: schema.license.id,
+      licenseEmail: schema.enrollment.licenseEmail,
+      parentLicenseEmail: madre.licenseEmail,
+      contactEmail: schema.contact.email,
+    })
+    .from(schema.license)
+    .innerJoin(schema.enrollment, eq(schema.license.enrollmentId, schema.enrollment.id))
+    .innerJoin(schema.contact, eq(schema.enrollment.contactId, schema.contact.id))
+    .leftJoin(madre, eq(schema.enrollment.parentEnrollmentId, madre.id))
+    .where(
+      scoped(schema.license.organizationId, organizationId, inArray(schema.license.id, licenseIds))
+    );
+  for (const f of filas) salida.set(f.licenseId, correoDeLicencia(f));
+  return salida;
 }

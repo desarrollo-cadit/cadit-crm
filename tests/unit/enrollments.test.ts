@@ -103,6 +103,87 @@ vi.mock("@/lib/meta/client", () => ({
   normalizeMx: (phone: string) => phone,
 }));
 
+// 2026-10-21 — El chequeo de duplicados tiene su propia consulta; acá se
+// decide qué devuelve sin gastar filas de `selectQueue`.
+const buscarContactoDuplicado = vi.fn(async (): Promise<unknown> => null);
+vi.mock("@/server/contact-duplicates", () => ({ buscarContactoDuplicado }));
+
+describe("createEnrollment — contacto sin teléfono y correo de licencia (2026-10-21)", () => {
+  beforeEach(() => {
+    inserts.length = 0;
+    updates.length = 0;
+    selectQueue.length = 0;
+    insertContactShouldThrowDuplicate = false;
+    buscarContactoDuplicado.mockReset();
+    buscarContactoDuplicado.mockResolvedValue(null);
+  });
+
+  it("contacto nuevo con solo correo: identidad provisional, correo en minúsculas", async () => {
+    selectQueue.push([{ id: "coh_1" }], [{ id: "sel_1", archivedAt: null }], [{ id: "stg_lead" }]);
+
+    const { createEnrollment } = await import("@/server/enrollments");
+    const result = await createEnrollment("org_1", {
+      cohortId: "coh_1",
+      sellerId: "sel_1",
+      contact: { firstName: "Ana", email: "Ana@Mail.COM" },
+    });
+
+    expect(result.ok).toBe(true);
+    const contacto = inserts[0]!.values as {
+      id: string;
+      phone: string | null;
+      email: string;
+      waIdentity: string;
+    };
+    expect(contacto.phone).toBeNull();
+    expect(contacto.email).toBe("ana@mail.com");
+    expect(contacto.waIdentity).toBe(`sinwa:${contacto.id}`);
+  });
+
+  it("correo ya usado: 409 que nombra al contacto y no crea nada", async () => {
+    selectQueue.push([{ id: "coh_1" }], [{ id: "sel_1", archivedAt: null }]);
+    buscarContactoDuplicado.mockResolvedValue({
+      campo: "correo",
+      contacto: { id: "ct_9", name: "Ana Pérez" },
+    });
+
+    const { createEnrollment } = await import("@/server/enrollments");
+    const result = await createEnrollment("org_1", {
+      cohortId: "coh_1",
+      sellerId: "sel_1",
+      contact: { firstName: "Ana", email: "ana@mail.com" },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: 409,
+      message: "Ya existe un contacto con ese correo: Ana Pérez",
+      duplicado: { contacto: { id: "ct_9" } },
+    });
+    expect(inserts).toHaveLength(0);
+  });
+
+  it("guarda el correo de la licencia en minúsculas", async () => {
+    selectQueue.push(
+      [{ id: "coh_1" }],
+      [{ id: "sel_1", archivedAt: null }],
+      [{ id: "ct_1", nationalId: null }],
+      [{ id: "stg_lead" }]
+    );
+
+    const { createEnrollment } = await import("@/server/enrollments");
+    await createEnrollment("org_1", {
+      cohortId: "coh_1",
+      contactId: "ct_1",
+      sellerId: "sel_1",
+      licenseEmail: " Licencias@Empresa.UY ",
+    });
+
+    const inscripcion = inserts[0]!.values as { licenseEmail: string | null };
+    expect(inscripcion.licenseEmail).toBe("licencias@empresa.uy");
+  });
+});
+
 describe("createEnrollment (005 US2)", () => {
   beforeEach(() => {
     inserts.length = 0;
@@ -377,9 +458,9 @@ describe("exportCohortRosterCsv (005 iteración 6)", () => {
 
     expect(result).toBe(
       [
-        "nombre,apellido,correo",
-        "Diego,Pérez,diego@example.com",
-        '"María, José","La ""Jefa""",',
+        "nombre,apellido,correo,correo_licencia",
+        "Diego,Pérez,diego@example.com,diego@example.com",
+        '"María, José","La ""Jefa""",,',
       ].join("\r\n")
     );
   });
@@ -399,8 +480,8 @@ describe("exportCohortRosterCsv (005 iteración 6)", () => {
 
     // Apóstrofo delante de todo lo que empieza con un caracter de fórmula: el
     // nombre puede venir del formulario público sin autenticar.
-    expect(lines[1]).toBe("'=1+1,'+cmd|calc,'-x@example.com");
-    expect(lines[2]).toBe("'@SUM(A1),Normal,");
+    expect(lines[1]).toBe("'=1+1,'+cmd|calc,'-x@example.com,'-x@example.com");
+    expect(lines[2]).toBe("'@SUM(A1),Normal,,");
   });
 
   it("cohorte sin inscripciones → CSV solo con el header", async () => {
@@ -409,6 +490,6 @@ describe("exportCohortRosterCsv (005 iteración 6)", () => {
     const { exportCohortRosterCsv } = await import("@/server/enrollments");
     const result = await exportCohortRosterCsv("org_1", "coh_1");
 
-    expect(result).toBe("nombre,apellido,correo");
+    expect(result).toBe("nombre,apellido,correo,correo_licencia");
   });
 });

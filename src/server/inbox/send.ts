@@ -10,6 +10,7 @@ import {
   type Credentials,
 } from "@/server/whatsapp/credentials";
 import { isWindowOpen } from "@/server/inbox/window";
+import { destinoDeWhatsApp } from "@/lib/contact-identity";
 import type { Topic } from "@/lib/areas";
 import { serializeMessage } from "@/server/inbox/message-dto";
 import {
@@ -27,7 +28,9 @@ export class SendError extends Error {
     | "window_closed"
     | "meta_error"
     | "meta_unavailable"
-    | "upload_failed";
+    | "upload_failed"
+    /** 2026-10-21 — contacto sin WhatsApp (identidad provisional `sinwa:`). */
+    | "sin_whatsapp";
   /** 008: presente cuando el fallo ocurrió TRAS persistir el mensaje (failed). */
   messageId?: string;
 
@@ -107,18 +110,12 @@ async function prepareSend(
   }
 
   // 003: el destinatario es el teléfono normalizado o, si el contacto llegó
-  // por BSUID sin teléfono, su Business-Scoped User ID.
-  const recipient = row.contact.phone
-    ? normalizeRecipient(row.contact.phone)
-    : row.contact.waUserId;
-  if (!recipient) {
-    throw new SendError(
-      "meta_error",
-      "El contacto no tiene teléfono ni identidad de WhatsApp utilizable"
-    );
-  }
+  // por BSUID sin teléfono, su Business-Scoped User ID. 2026-10-21: una
+  // identidad provisional (`sinwa:`, contacto cargado sin teléfono) se niega.
+  const destino = destinoDeWhatsApp(row.contact, normalizeRecipient);
+  if (!destino.ok) throw new SendError(destino.code, destino.mensaje);
 
-  return { conversation: row.conversation, credentials, recipient };
+  return { conversation: row.conversation, credentials, recipient: destino.to };
 }
 
 async function persistOutbound(input: {

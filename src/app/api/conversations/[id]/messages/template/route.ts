@@ -36,7 +36,7 @@ export const POST = requireCapability(
       return apiError(templateErrorStatus(err), err.code, err.message);
     }
     if (err instanceof SendError) {
-      return apiError(403, err.code, err.message);
+      return apiError(err.code === "sin_whatsapp" ? 422 : 403, err.code, err.message);
     }
     throw err;
   }

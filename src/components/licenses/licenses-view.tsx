@@ -25,6 +25,7 @@ import type { SoftwareDto } from "@/lib/types";
 import { ACADEMY_TIME_ZONE, ultimoDiaDelPlazo } from "@/lib/schedule-time";
 import { cn, formatCalendarDay } from "@/lib/utils";
 import { notify } from "@/lib/notify";
+import { LicenseEmailText } from "@/components/enrollments/license-email";
 
 const ORIGEN: Record<LicenseSource, string> = { grupo: "Del grupo", individual: "Individual" };
 
@@ -365,6 +366,12 @@ export function LicensesView({ canEdit }: { canEdit: boolean }) {
                               >
                                 {f.contactName}
                               </Link>
+                              {/* 2026-10-21 — Solo viaja con contactos.ver. */}
+                              {f.licenseEmail && (
+                                <div className="mt-0.5 font-normal">
+                                  <LicenseEmailText value={f.licenseEmail} />
+                                </div>
+                              )}
                             </TableCell>
                             <TableCell className="text-xs">
                               {f.cohortId ? (

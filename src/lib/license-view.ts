@@ -11,7 +11,9 @@ import type { LicenseSource } from "./license-source";
  * asignación (SC-003).
  *
  * Sin teléfono, correo ni nada de plata: la vista se abre con
- * `academico.ver` y lo que ese permiso no debe ver no viaja.
+ * `academico.ver` y lo que ese permiso no debe ver no viaja. La única
+ * excepción es el correo de la LICENCIA (2026-10-21), y solo con
+ * `contactos.ver`: quien ya ve el correo del alumno.
  */
 
 export type EstadoDeLicencia = "en_uso" | "vencida" | "curso_terminado";
@@ -28,6 +30,12 @@ export type FilaDeLicenciaVista = {
   assignedAt: string | null;
   expiresAt: string | null;
   estado: EstadoDeLicencia;
+  /**
+   * 2026-10-21 — El correo de la licencia (`correoDeLicencia`). Solo viaja
+   * si la sesión ve correos de contactos (`contactos.ver`); sin ella, la
+   * propiedad no existe.
+   */
+  licenseEmail?: { email: string | null; distinto: boolean };
 };
 
 /** FR-016 — Alguien del grupo que debería tener el programa y no lo tiene. */

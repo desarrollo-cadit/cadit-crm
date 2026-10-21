@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import type { CohortDto, CompanyDto, ContactDto } from "@/lib/types";
 import { formatCalendarDay } from "@/lib/utils";
 import { cohortesInscribibles, etiquetaDeCohorte } from "@/lib/cohortes-inscribibles";
@@ -77,6 +78,12 @@ export function EnrollForm({
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [nationalId, setNationalId] = useState("");
+  /** 2026-10-21 — Si la licencia va a otro correo que el del alumno. */
+  const [licenseEmail, setLicenseEmail] = useState("");
+  /** 2026-10-21 — 409 del servidor: el teléfono o correo ya es de otro contacto. */
+  const [duplicado, setDuplicado] = useState<{ id: string; name: string; message: string } | null>(
+    null
+  );
 
   const [amount, setAmount] = useState<number | null>(null);
   // 007 — moneda del pago: los alumnos de Paraguay pagan en guaraníes.
@@ -121,6 +128,7 @@ export function EnrollForm({
     phone,
     email,
     nationalId,
+    licenseEmail,
     amount,
     currency,
     installments,
@@ -154,8 +162,22 @@ export function EnrollForm({
     setNewCompanyName("");
   }
 
+  /** "Usar ese contacto": pasa al modo existente con la persona que ya estaba cargada. */
+  async function usarContactoExistente(id: string) {
+    const res = await fetch(`/api/contacts/${id}`).catch(() => null);
+    if (!res?.ok) {
+      notify.error("No pudimos abrir ese contacto. Buscalo en «Contacto existente».");
+      return;
+    }
+    const data = (await res.json()) as { contact: ContactDto };
+    setPickedContact(data.contact);
+    setMode("existing");
+    setDuplicado(null);
+  }
+
   async function submit() {
     setError(null);
+    setDuplicado(null);
     const targetCohortId = cohortId ?? selectedCohortId;
     if (!targetCohortId) {
       setError("Falta elegir el grupo.");
@@ -165,8 +187,13 @@ export function EnrollForm({
       setError("Elegí un contacto existente o cambiá a 'Contacto nuevo'");
       return;
     }
-    if (mode === "new" && (!firstName.trim() || !phone.trim())) {
-      setError("Nombre y celular son obligatorios para un contacto nuevo");
+    if (mode === "new" && !firstName.trim()) {
+      setError("Falta el nombre del contacto nuevo.");
+      return;
+    }
+    // 2026-10-21 — Teléfono O correo: alcanza con uno de los dos.
+    if (mode === "new" && !phone.trim() && !email.trim()) {
+      setError("Cargá al menos un teléfono o un correo.");
       return;
     }
     // 2026-10-06 — Toda inscripción en una cohorte es una venta: el servidor
@@ -185,7 +212,7 @@ export function EnrollForm({
             contact: {
               firstName: firstName.trim(),
               lastName: lastName.trim() || undefined,
-              phone: phone.trim(),
+              phone: phone.trim() || undefined,
               email: email.trim() || undefined,
               nationalId: nationalId.trim() || undefined,
             },
@@ -198,6 +225,7 @@ export function EnrollForm({
       receiptNumber: receiptNumber.trim() || null,
       sellerId: sellerId || null,
       companyId: companyId || null,
+      licenseEmail: licenseEmail.trim() || null,
     };
 
     const res = await fetch("/api/enrollments", {
@@ -208,11 +236,30 @@ export function EnrollForm({
     setSaving(false);
     if (!res?.ok) {
       const body = (await res?.json().catch(() => null)) as
-        | { error?: { message?: string } }
+        | {
+            error?: {
+              message?: string;
+              fields?: { message: string }[];
+              contact?: { id: string; name: string };
+            };
+          }
         | null;
+      // 2026-10-21 — Teléfono o correo de otro contacto: se dice quién es y se
+      // ofrece usarlo, en vez de un toast que obliga a buscarlo a mano.
+      if (res?.status === 409 && body?.error?.contact) {
+        setDuplicado({
+          ...body.error.contact,
+          message: body.error.message ?? "Ese contacto ya existe.",
+        });
+        return;
+      }
       // Las validaciones locales quedan inline junto al botón; el rechazo del
       // servidor es el resultado de la acción y va en toast.
-      notify.error(body?.error?.message ?? "No se pudo inscribir al alumno");
+      notify.error(
+        body?.error?.fields?.[0]?.message ??
+          body?.error?.message ??
+          "No se pudo inscribir al alumno"
+      );
       return;
     }
     const chosen = cohortOptions?.find((c) => c.id === targetCohortId);
@@ -319,12 +366,16 @@ export function EnrollForm({
                     <Label htmlFor="enr-phone">Celular</Label>
                     <Input
                       id="enr-phone"
-                      placeholder="5215512345678"
+                      placeholder="099 123 456"
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
                     />
                   </div>
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  Alcanza con el celular o el correo. Sin celular no se le puede escribir por
+                  WhatsApp hasta que se lo agregues.
+                </p>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label htmlFor="enr-email">Email</Label>
@@ -349,6 +400,47 @@ export function EnrollForm({
             )}
           </>
         )}
+
+        {duplicado && (
+          <div
+            role="alert"
+            className="mt-3 rounded-md border border-warning-border bg-warning-soft p-3 text-xs text-foreground"
+          >
+            <p>{duplicado.message}</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => void usarContactoExistente(duplicado.id)}
+              >
+                Usar ese contacto
+              </Button>
+              <Link
+                href={`/contacts/${duplicado.id}`}
+                target="_blank"
+                rel="noreferrer"
+                className="self-center underline underline-offset-2"
+              >
+                Ver contacto
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {/* 2026-10-21 — La licencia puede ir a otro correo (el de la empresa, por ejemplo). */}
+        <div className="mt-3 space-y-1.5">
+          <Label htmlFor="enr-license-email">Correo para la licencia</Label>
+          <Input
+            id="enr-license-email"
+            type="email"
+            value={licenseEmail}
+            onChange={(e) => setLicenseEmail(e.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            Si la licencia va a otro correo que el del alumno.
+          </p>
+        </div>
 
         <div className="mt-4 space-y-3 border-t pt-3">
           <div className="grid grid-cols-2 gap-3">

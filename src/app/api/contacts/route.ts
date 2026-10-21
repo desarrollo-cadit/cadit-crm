@@ -1,11 +1,16 @@
 import { desc, ilike, isNull, or, sql } from "drizzle-orm";
-import { phoneInputSchema } from "@/lib/phone";
 import { z } from "zod";
+import {
+  contactoNuevoCampos,
+  exigirTelefonoOCorreo,
+  identidadProvisional,
+} from "@/lib/contact-identity";
 import { apiError, parseBody, parseQuery, requireCapability } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { serializeContact } from "@/server/contacts";
+import { buscarContactoDuplicado, respuestaDeDuplicado } from "@/server/contact-duplicates";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +46,9 @@ export const GET = requireCapability(
     ? or(
         ilike(schema.contact.firstName, `%${q}%`),
         ilike(schema.contact.lastName, `%${q}%`),
-        ilike(schema.contact.phone, `%${q}%`)
+        ilike(schema.contact.phone, `%${q}%`),
+        // 2026-10-21 — un contacto sin teléfono se encuentra por su correo.
+        ilike(schema.contact.email, `%${q}%`)
       )
     : undefined;
   const archivedCondition = includeArchived
@@ -71,16 +78,17 @@ export const GET = requireCapability(
   return Response.json({ contacts, total, page, pageSize });
 });
 
-const createSchema = z.object({
-  firstName: z.string().trim().min(1).max(120),
-  lastName: z.string().trim().max(120).optional(),
-  phone: phoneInputSchema,
-  notes: z.string().max(4000).optional(),
-  // 005 (T017, DV-003) — la unicidad la resuelven los índices parciales +
-  // el mapeo 409 de withAuth (ver src/lib/api.ts).
-  email: z.string().trim().email().max(200).optional(),
-  nationalId: z.string().trim().max(60).optional(),
-});
+/**
+ * 2026-10-21 — Teléfono O correo (al menos uno). Sin teléfono, el contacto
+ * recibe una identidad provisional (`sinwa:<id>`, `src/lib/contact-identity.ts`)
+ * que nunca se usa para mandar un WhatsApp.
+ */
+const createSchema = z
+  .object({
+    ...contactoNuevoCampos,
+    notes: z.string().max(4000).optional(),
+  })
+  .superRefine(exigirTelefonoOCorreo);
 
 export const POST = requireCapability(
   "contactos.editar",
@@ -88,22 +96,27 @@ export const POST = requireCapability(
   const body = await parseBody(req, createSchema);
   if (!body.ok) return body.response;
 
+  // 003: la identidad WhatsApp se deriva del teléfono normalizado (ya
+  // normalizado por el schema, igual que el correo, que va en minúsculas).
+  // El duplicado se NOMBRA: 409 con el contacto que ya existe.
+  const phone = body.data.phone ?? null;
+  const email = body.data.email ?? null;
+  const duplicado = await buscarContactoDuplicado(session.organizationId, { phone, email });
+  if (duplicado) return respuestaDeDuplicado(duplicado);
+
   const db = getDb();
-  // 003: la identidad WhatsApp se deriva del teléfono normalizado.
-  // Ya normalizado por `phoneInputSchema` (antes `normalizeMx`, que solo
-  // resuelve México y dejaba "098574165" distinto del "59898574165" de WhatsApp).
-  const phone = body.data.phone;
+  const id = newId("contact");
   const inserted = await db
     .insert(schema.contact)
     .values({
-      id: newId("contact"),
+      id,
       organizationId: session.organizationId,
       firstName: body.data.firstName,
       lastName: body.data.lastName ?? null,
       phone,
-      waIdentity: phone,
+      waIdentity: phone ?? identidadProvisional(id),
       notes: body.data.notes ?? null,
-      email: body.data.email ?? null,
+      email,
       nationalId: body.data.nationalId ?? null,
     })
     .onConflictDoNothing({
@@ -111,6 +124,7 @@ export const POST = requireCapability(
     })
     .returning();
   if (!inserted[0]) {
+    // Carrera: otro pedido lo creó entre el chequeo y el INSERT.
     return apiError(409, "duplicate", "Ya existe un contacto con ese teléfono");
   }
   return Response.json(

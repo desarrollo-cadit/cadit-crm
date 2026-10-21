@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { phoneInputSchema } from "@/lib/phone";
+import { contactoNuevoSchema, correoNullable } from "@/lib/contact-identity";
+import { respuestaDeDuplicado } from "@/server/contact-duplicates";
 import { minorAmount } from "@/lib/money-schema";
 import { CURRENCIES } from "@/lib/db/schema";
 import { apiError, parseBody, requireCapability } from "@/lib/api";
@@ -7,13 +8,8 @@ import { createEnrollment } from "@/server/enrollments";
 
 export const dynamic = "force-dynamic";
 
-const contactSchema = z.object({
-  firstName: z.string().trim().min(1).max(120),
-  lastName: z.string().trim().max(120).optional(),
-  phone: phoneInputSchema,
-  email: z.string().trim().email().max(200).optional(),
-  nationalId: z.string().trim().max(60).optional(),
-});
+// 2026-10-21 — Teléfono O correo, al menos uno (`contactoNuevoSchema`).
+const contactSchema = contactoNuevoSchema;
 
 const createSchema = z.object({
   cohortId: z.string().min(1),
@@ -29,6 +25,8 @@ const createSchema = z.object({
   receiptNumber: z.string().max(60).nullable().optional(),
   sellerId: z.string().min(1).nullable().optional(),
   companyId: z.string().min(1).nullable().optional(),
+  /** 2026-10-21 — Correo para la licencia (en minúsculas), si no es el del alumno. */
+  licenseEmail: correoNullable,
   /**
    * 028 fase 4 (US4, regla 4) — La RECURSADA tras reprobar.
    *
@@ -61,7 +59,11 @@ export const POST = requireCapability(
   if (!body.ok) return body.response;
 
   const result = await createEnrollment(session.organizationId, body.data);
-  if (!result.ok) return apiError(result.status, result.code, result.message);
+  if (!result.ok) {
+    // 2026-10-21 — 409 con el contacto existente: la pantalla ofrece usarlo.
+    if (result.status === 409) return respuestaDeDuplicado(result.duplicado);
+    return apiError(result.status, result.code, result.message);
+  }
 
   return Response.json({ enrollment: result.enrollment }, { status: 201 });
 });

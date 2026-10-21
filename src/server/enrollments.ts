@@ -4,6 +4,13 @@ import type { Currency } from "@/lib/db/schema";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { normalizePhoneOrRaw } from "@/lib/phone";
+import {
+  identidadProvisional,
+  mensajeDeDuplicado,
+  normalizarCorreo,
+} from "@/lib/contact-identity";
+import { correoDeLicencia } from "@/lib/license-email";
+import { buscarContactoDuplicado, type ContactoDuplicado } from "@/server/contact-duplicates";
 import { fullName } from "@/lib/utils";
 import { PORTAL_NO_EMAIL_REASON } from "@/lib/portal-access";
 import type { Capability } from "@/lib/capabilities";
@@ -36,13 +43,19 @@ import { csvField } from "@/lib/csv";
 export type CreateEnrollmentInput = {
   cohortId: string;
   contactId?: string | null;
+  /**
+   * 2026-10-21 — Teléfono O correo (la ruta exige al menos uno). Sin
+   * teléfono, el contacto nace con identidad provisional (`sinwa:<id>`).
+   */
   contact?: {
     firstName: string;
     lastName?: string | null;
-    phone: string;
+    phone?: string | null;
     email?: string | null;
     nationalId?: string | null;
   };
+  /** 2026-10-21 — Correo para la licencia, si no es el del alumno. */
+  licenseEmail?: string | null;
   amount?: number | null;
   /** 007 — de qué moneda es `amount`. Default UYU. */
   currency?: Currency;
@@ -68,7 +81,9 @@ export type CreateEnrollmentInput = {
 
 export type CreateEnrollmentResult =
   | { ok: true; enrollment: EnrollmentCommercialDto }
-  | { ok: false; status: 422; code: "invalid_body" | "seller_required"; message: string };
+  | { ok: false; status: 422; code: "invalid_body" | "seller_required"; message: string }
+  /** 2026-10-21 — Teléfono o correo de otro contacto: se nombra para poder usarlo. */
+  | { ok: false; status: 409; code: "duplicate"; message: string; duplicado: ContactoDuplicado };
 
 /**
  * Crea (o reutiliza) el contacto y la inscripción en una sola llamada
@@ -197,17 +212,31 @@ export async function createEnrollment(
     contactId = contactRows[0].id;
     nationalIdForRecord = contactRows[0].nationalId;
   } else {
-    const phone = normalizePhoneOrRaw(input.contact!.phone);
+    const phone = input.contact!.phone ? normalizePhoneOrRaw(input.contact!.phone) : null;
+    const email = normalizarCorreo(input.contact!.email);
+    // 2026-10-21 — El duplicado se NOMBRA antes de crear nada (la pantalla
+    // ofrece "usar ese contacto"). El índice único sigue cubriendo la carrera.
+    const duplicado = await buscarContactoDuplicado(organizationId, { phone, email });
+    if (duplicado) {
+      return {
+        ok: false,
+        status: 409,
+        code: "duplicate",
+        message: mensajeDeDuplicado(duplicado.campo, duplicado.contacto.name),
+        duplicado,
+      };
+    }
+    const nuevoId = newId("contact");
     const inserted = await db
       .insert(schema.contact)
       .values({
-        id: newId("contact"),
+        id: nuevoId,
         organizationId,
         firstName: input.contact!.firstName,
         lastName: input.contact!.lastName ?? null,
         phone,
-        waIdentity: phone,
-        email: input.contact!.email ?? null,
+        waIdentity: phone ?? identidadProvisional(nuevoId),
+        email,
         nationalId: input.contact!.nationalId ?? null,
       })
       .returning();
@@ -256,6 +285,7 @@ export async function createEnrollment(
       receiptNumber: input.receiptNumber ?? null,
       sellerId: input.sellerId ?? null,
       companyId: input.companyId ?? null,
+      licenseEmail: normalizarCorreo(input.licenseEmail),
     })
     .returning();
   const creada = inserted[0]!;
@@ -396,6 +426,12 @@ export type RosterEntryDto = {
   /** 007 — cuándo se envió la bienvenida + invitación al grupo; null = nunca. */
   welcomeEmailSentAt: string | null;
   /**
+   * 2026-10-21 — El correo de la licencia (`correoDeLicencia`):
+   * `license_email ?? contact.email`, con `distinto` para la marca. Viaja
+   * donde ya viaja el correo del alumno, ni más ni menos.
+   */
+  licenseEmail: { email: string | null; distinto: boolean; propio: string | null };
+  /**
    * 012 (T017/T017d) — Acceso al portal del alumno.
    *
    * `blockedReason` viaja en el DTO para que la pantalla pueda decir POR QUÉ
@@ -489,6 +525,11 @@ export function buildRosterEntry(
       academiaOnlineAccessAt: enrollment.academiaOnlineAccessAt?.toISOString() ?? null,
     },
     welcomeEmailSentAt: enrollment.welcomeEmailSentAt?.toISOString() ?? null,
+    licenseEmail: {
+      ...correoDeLicencia({ licenseEmail: enrollment.licenseEmail, contactEmail: contact.email }),
+      // Lo cargado a mano (para editarlo); null = usa el del alumno.
+      propio: enrollment.licenseEmail,
+    },
   };
   if (!capabilities.includes("cobranza.ver")) return base;
   return {
@@ -841,6 +882,7 @@ export async function exportCohortRosterCsv(
       firstName: schema.contact.firstName,
       lastName: schema.contact.lastName,
       email: schema.contact.email,
+      licenseEmail: schema.enrollment.licenseEmail,
     })
     .from(schema.enrollment)
     .innerJoin(schema.contact, eq(schema.enrollment.contactId, schema.contact.id))
@@ -853,9 +895,19 @@ export async function exportCohortRosterCsv(
     )
     .orderBy(asc(schema.contact.firstName));
 
+  // 2026-10-21 — `correo_licencia` sale de `correoDeLicencia` (license_email ?? correo).
   const lines = [
-    "nombre,apellido,correo",
-    ...rows.map((r) => [csvField(r.firstName), csvField(r.lastName), csvField(r.email)].join(",")),
+    "nombre,apellido,correo,correo_licencia",
+    ...rows.map((r) =>
+      [
+        csvField(r.firstName),
+        csvField(r.lastName),
+        csvField(r.email),
+        csvField(
+          correoDeLicencia({ licenseEmail: r.licenseEmail ?? null, contactEmail: r.email }).email
+        ),
+      ].join(",")
+    ),
   ];
   return lines.join("\r\n");
 }

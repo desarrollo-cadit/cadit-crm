@@ -195,3 +195,35 @@ describe("updateChecklist (T023, FR-013)", () => {
     expect(set.academiaOnlineAccessAt).toBeNull();
   });
 });
+
+/**
+ * 2026-10-21 — El correo de la licencia viaja en el roster, como el correo del
+ * alumno: para cualquier capacidad que abra el roster, sin pedir `cobranza.ver`.
+ */
+describe("buildRosterEntry — correo de la licencia", () => {
+  it("sin correo propio: el del alumno, sin marca", async () => {
+    const { buildRosterEntry } = await import("@/server/enrollments");
+    const entry = buildRosterEntry(
+      capabilitiesFor("soporte"),
+      { ...baseEnrollment, licenseEmail: null } as never,
+      baseContact as never,
+      baseLicense as never
+    );
+    expect(entry.licenseEmail).toEqual({ email: "diego@example.com", distinto: false, propio: null });
+  });
+
+  it("con correo propio distinto: ese, marcado", async () => {
+    const { buildRosterEntry } = await import("@/server/enrollments");
+    const entry = buildRosterEntry(
+      capabilitiesFor("soporte"),
+      { ...baseEnrollment, licenseEmail: "licencias@empresa.uy" } as never,
+      baseContact as never,
+      baseLicense as never
+    );
+    expect(entry.licenseEmail).toEqual({
+      email: "licencias@empresa.uy",
+      distinto: true,
+      propio: "licencias@empresa.uy",
+    });
+  });
+});

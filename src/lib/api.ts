@@ -136,6 +136,8 @@ function isUniqueViolation(err: unknown): boolean {
 
 const UNIQUE_VIOLATION_MESSAGES: Record<string, string> = {
   contact_org_email_uq: "Ya existe un contacto con ese email",
+  // 2026-10-21 (0068) — el mismo correo escrito con otras mayúsculas.
+  contact_org_email_lower_uq: "Ya existe un contacto con ese email",
   contact_org_phone_uq: "Ya existe un contacto con ese celular",
   // wa_identity se deriva del celular normalizado en el alta manual (ventas/
   // enrollments), así que en la práctica esta constraint es la que salta por

@@ -4,6 +4,8 @@ import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { licenciaOcupada, licenciasRepetidasEnRecorrido } from "@/lib/license-rules";
 import { licenciaDelGrupoBloquea, MENSAJE_LICENCIA_DEL_GRUPO } from "@/lib/group-licenses";
+import { normalizarCorreo } from "@/lib/contact-identity";
+import { correoDeLicencia } from "@/lib/license-email";
 
 /**
  * 005 (T028, DV-004, US4) — pool de licencias por software: disponibles =
@@ -476,4 +478,37 @@ export async function countAssignedLicenses(
   softwareId: string
 ): Promise<number> {
   return (await contarOcupadas(organizationId, softwareId)).get(softwareId) ?? 0;
+}
+
+/**
+ * 2026-10-21 — Fija (o borra, con `null`) el correo para la licencia de una
+ * inscripción. Llega ya normalizado (`correoNullable`); se vuelve a
+ * normalizar por las dudas. Devuelve el correo RESUELTO (`correoDeLicencia`)
+ * o `null` si la inscripción no es de la organización (la ruta responde 404).
+ */
+export async function fijarCorreoDeLicencia(
+  organizationId: string,
+  enrollmentId: string,
+  licenseEmail: string | null
+): Promise<{ email: string | null; distinto: boolean; propio: string | null } | null> {
+  const db = getDb();
+  const propio = normalizarCorreo(licenseEmail);
+  const updated = await db
+    .update(schema.enrollment)
+    .set({ licenseEmail: propio, updatedAt: new Date() })
+    .where(
+      scoped(schema.enrollment.organizationId, organizationId, eq(schema.enrollment.id, enrollmentId))
+    )
+    .returning({ contactId: schema.enrollment.contactId });
+  const fila = updated[0];
+  if (!fila) return null;
+  const contacto = await db
+    .select({ email: schema.contact.email })
+    .from(schema.contact)
+    .where(scoped(schema.contact.organizationId, organizationId, eq(schema.contact.id, fila.contactId)))
+    .limit(1);
+  return {
+    ...correoDeLicencia({ licenseEmail: propio, contactEmail: contacto[0]?.email ?? null }),
+    propio,
+  };
 }

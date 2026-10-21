@@ -131,13 +131,36 @@ export function ContactsClient({ canEnroll = false }: { canEnroll?: boolean }) {
     void refetch();
   }
 
-  async function patch(id: string, body: Record<string, unknown>) {
-    await fetch(`/api/contacts/${id}`, {
+  /**
+   * 2026-10-21 — Devuelve el rechazo del servidor (antes se tragaba): un
+   * correo o teléfono de otro contacto vuelve con ese contacto, para enlazarlo.
+   */
+  async function patch(id: string, body: Record<string, unknown>): Promise<EditError | null> {
+    const res = await fetch(`/api/contacts/${id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     }).catch(() => null);
+    if (!res?.ok) {
+      const data = (await res?.json().catch(() => null)) as
+        | {
+            error?: {
+              message?: string;
+              fields?: { message: string }[];
+              contact?: { id: string; name: string };
+            };
+          }
+        | null;
+      return {
+        message:
+          data?.error?.fields?.[0]?.message ??
+          data?.error?.message ??
+          "No se pudo guardar el contacto",
+        contact: data?.error?.contact ?? null,
+      };
+    }
     void refetch();
+    return null;
   }
 
   function toggleSelected(id: string) {
@@ -394,8 +417,9 @@ export function ContactsClient({ canEnroll = false }: { canEnroll?: boolean }) {
           contact={editing}
           onClose={() => setEditing(null)}
           onSave={async (patchBody) => {
-            await patch(editing.id, patchBody);
-            setEditing(null);
+            const error = await patch(editing.id, patchBody);
+            if (!error) setEditing(null);
+            return error;
           }}
         />
       )}
@@ -406,9 +430,12 @@ export function ContactsClient({ canEnroll = false }: { canEnroll?: boolean }) {
 /**
  * Iteración 6 (feedback en vivo: "si le da a editar solo se edita nombre y
  * eso... es clave poder editar todo") — antes solo tocaba nombre/notas.
- * `phone`/identidad de WhatsApp quedan afuera a propósito (ver
- * `src/app/api/contacts/[id]/route.ts`).
+ * 2026-10-21 — El teléfono se puede AGREGAR a quien no lo tiene (pasa a ser
+ * su identidad de WhatsApp si era provisional); uno ya cargado no se cambia
+ * acá (ver `src/app/api/contacts/[id]/route.ts`).
  */
+type EditError = { message: string; contact: { id: string; name: string } | null };
+
 function EditDialog({
   contact,
   onClose,
@@ -425,8 +452,12 @@ function EditDialog({
     utmCampaign: string | null;
     notes: string | null;
     companyId: string | null;
-  }) => Promise<void>;
+    phone?: string;
+  }) => Promise<EditError | null>;
 }) {
+  const [phone, setPhone] = useState("");
+  const [error, setError] = useState<EditError | null>(null);
+  const [saving, setSaving] = useState(false);
   const [firstName, setFirstName] = useState(contact.firstName);
   /**
    * 043 — La empresa de la PERSONA (para "asignar a toda la empresa"). Se
@@ -451,6 +482,7 @@ function EditDialog({
   const dirty = useDirty({
     firstName,
     lastName,
+    phone,
     email,
     nationalId,
     source,
@@ -490,10 +522,28 @@ function EditDialog({
               />
             </div>
           </div>
-          <p className="text-xs text-muted-foreground">
-            Teléfono: {formatPhone(contact.phone)} — no editable acá (es la
-            identidad de WhatsApp del contacto).
-          </p>
+          {contact.phone ? (
+            <p className="text-xs text-muted-foreground">
+              Teléfono: {formatPhone(contact.phone)} — no editable acá (es la
+              identidad de WhatsApp del contacto).
+            </p>
+          ) : (
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium" htmlFor="edit-phone">
+                Teléfono
+              </label>
+              <Input
+                id="edit-phone"
+                placeholder="099 123 456"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Sin teléfono no tiene WhatsApp. Una vez guardado, el teléfono queda como su
+                identidad de WhatsApp y no se cambia desde acá.
+              </p>
+            </div>
+          )}
           <div className="space-y-1.5">
             <label className="text-sm font-medium" htmlFor="edit-email">
               Email
@@ -562,14 +612,32 @@ function EditDialog({
             />
           </div>
         </div>
+        {error && (
+          <p role="alert" className="mt-3 text-xs text-destructive">
+            {error.message}
+            {error.contact && (
+              <>
+                {" "}
+                <Link
+                  href={`/contacts/${error.contact.id}`}
+                  className="underline underline-offset-2"
+                >
+                  Ver a {error.contact.name}
+                </Link>
+              </>
+            )}
+          </p>
+        )}
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
             Cancelar
           </Button>
           <Button
-            disabled={!firstName.trim()}
-            onClick={() =>
-              void onSave({
+            disabled={!firstName.trim() || saving}
+            onClick={async () => {
+              setError(null);
+              setSaving(true);
+              const fallo = await onSave({
                 firstName: firstName.trim(),
                 lastName: lastName.trim() || null,
                 email: email.trim() || null,
@@ -578,10 +646,13 @@ function EditDialog({
                 utmCampaign: utmCampaign.trim() || null,
                 notes: notes.trim() || null,
                 companyId: companyId || null,
-              })
-            }
+                ...(phone.trim() ? { phone: phone.trim() } : {}),
+              });
+              setSaving(false);
+              setError(fallo);
+            }}
           >
-            Guardar
+            {saving ? "Guardando…" : "Guardar"}
           </Button>
         </div>
     </Modal>

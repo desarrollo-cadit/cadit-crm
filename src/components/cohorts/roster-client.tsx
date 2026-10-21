@@ -21,6 +21,7 @@ import { BillingPanel } from "@/components/cohorts/billing-panel";
 import { OfflineCoursesPanel } from "@/components/offline-courses/offline-courses-panel";
 import { EnrollForm } from "@/components/enrollments/enroll-form";
 import { LicenseList } from "@/components/enrollments/license-list";
+import { LicenseEmailField } from "@/components/enrollments/license-email";
 import { EnrollmentCommercialForm } from "@/components/enrollments/enrollment-commercial-form";
 import { CancelEnrollmentAction } from "@/components/enrollments/cancel-enrollment";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -611,6 +612,14 @@ export function RosterClient({
                       onChanged={() => void refetch()}
                     />
                   )}
+                  {/* 2026-10-21 — A qué correo va la licencia (marcado si no es el del alumno). */}
+                  <LicenseEmailField
+                    key={`${e.id}-${e.licenseEmail.propio ?? ""}`}
+                    enrollmentId={e.id}
+                    value={e.licenseEmail}
+                    canEdit={canEditLicenses}
+                    onChanged={() => void refetch()}
+                  />
                   {CHECKLIST_ITEMS.map((item) => (
                     <Fragment key={item.key}>
                     <label className="flex items-center gap-1.5" title={item.hint}>

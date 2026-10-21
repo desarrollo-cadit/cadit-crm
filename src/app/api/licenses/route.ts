@@ -1,4 +1,5 @@
 import { requireCapability } from "@/lib/api";
+import { sessionCapabilities } from "@/lib/capabilities";
 import { vistaDeLicencias } from "@/server/license-view";
 
 export const dynamic = "force-dynamic";
@@ -11,5 +12,7 @@ export const dynamic = "force-dynamic";
  * las del grupo.
  */
 export const GET = requireCapability("academico.ver", async (session) => {
-  return Response.json(await vistaDeLicencias(session.organizationId));
+  // 2026-10-21 — El correo de la licencia, solo para quien ve correos (contactos.ver).
+  const conCorreo = sessionCapabilities(session).includes("contactos.ver");
+  return Response.json(await vistaDeLicencias(session.organizationId, { conCorreo }));
 });

@@ -10,6 +10,7 @@ import {
   markReconnectRequired,
 } from "@/server/whatsapp/credentials";
 import { callGraphSend, SendError } from "@/server/inbox/send";
+import { destinoDeWhatsApp } from "@/lib/contact-identity";
 import { serializeMessage } from "@/server/inbox/ingest";
 import type { WebhookValue } from "@/server/inbox/webhook";
 
@@ -339,15 +340,10 @@ export async function sendTemplate(input: {
   }
 
   // 003: destinatario = teléfono normalizado o BSUID.
-  const templateRecipient = row.contact.phone
-    ? normalizeRecipient(row.contact.phone)
-    : row.contact.waUserId;
-  if (!templateRecipient) {
-    throw new TemplateError(
-      "meta_error",
-      "El contacto no tiene teléfono ni identidad de WhatsApp utilizable"
-    );
-  }
+  // 2026-10-21: una identidad provisional (`sinwa:`) se niega (`destinoDeWhatsApp`).
+  const destino = destinoDeWhatsApp(row.contact, normalizeRecipient);
+  if (!destino.ok) throw new SendError(destino.code, destino.mensaje);
+  const templateRecipient = destino.to;
 
   const waMessageId = await callGraphSend(creds, {
     messaging_product: "whatsapp",

@@ -477,6 +477,13 @@
       "when": 1792606741808,
       "tag": "0067_montos_en_centesimos",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1792613241148,
+      "tag": "0068_correo_de_licencia",
+      "breakpoints": true
     }
   ]
 }

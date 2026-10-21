@@ -926,6 +926,13 @@ export const enrollment = pgTable(
       onDelete: "restrict",
     }),
     /**
+     * 2026-10-21 — Correo para la licencia, si va a otro que el del alumno
+     * (el de su empresa, por ejemplo). En minúsculas y recortado. NULL = el
+     * del contacto: se resuelve SIEMPRE con `correoDeLicencia()`
+     * (`src/lib/license-email.ts`).
+     */
+    licenseEmail: text("license_email"),
+    /**
      * 005 iteración 7 — curso que le interesa al lead, como FK y no como el
      * texto de `contact.source`: el lead general (cohortId NULL) es la unidad
      * de interés comercial, así que el origen tiene que vivir acá y no en el

@@ -4,6 +4,7 @@ import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { normalizePhoneOrRaw, phoneInputSchema } from "@/lib/phone";
+import { normalizarCorreo } from "@/lib/contact-identity";
 import { onLeadActivity } from "@/server/inbox/lead-activity";
 import { avisarInteresadoNuevo } from "@/server/lead-notices-queue";
 import { registrarEnvioDeFormulario } from "@/server/seguimiento";
@@ -233,7 +234,8 @@ export async function findOrCreatePublicContactWithStatus(
       phone,
       waIdentity: phone,
       notes: input.notes ?? null,
-      email: input.email ?? null,
+      // 2026-10-21 — el correo de un contacto se guarda siempre en minúsculas.
+      email: normalizarCorreo(input.email),
       source,
     })
     .onConflictDoNothing({

@@ -152,6 +152,7 @@ describe("partitionRecipients — quién lo recibe y quién no", () => {
           academiaOnlineAccessAt: null,
         },
         welcomeEmailSentAt: null,
+        licenseEmail: { email: "ana@x.com", distinto: false, propio: null },
         portalAccess: {
           granted: true,
           suspended: false,
