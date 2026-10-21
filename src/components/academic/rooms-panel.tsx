@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { notify } from "@/lib/notify";
+import { Modal, useDirty } from "@/components/ui/modal";
 
 /**
  * 023 (US1, US3) — Las aulas virtuales de la academia.
@@ -304,6 +305,7 @@ function RoomForm({
   );
   const [notes, setNotes] = useState(editando ? (state.room.notes ?? "") : "");
   const [saving, setSaving] = useState(false);
+  const dirty = useDirty({ name, url, accountEmail, notes });
 
   async function guardar(e: React.FormEvent) {
     e.preventDefault();
@@ -338,9 +340,14 @@ function RoomForm({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4">
-      <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-pop">
-        <h3 className="text-base font-semibold tracking-tight">
+    <Modal
+      onClose={onClose}
+      dirty={dirty}
+      busy={saving}
+      labelledBy="room-form-title"
+      className="border-border p-6 shadow-pop"
+    >
+        <h3 id="room-form-title" className="text-base font-semibold tracking-tight">
           {editando ? "Editar aula" : "Nueva aula"}
         </h3>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -408,7 +415,6 @@ function RoomForm({
             </Button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   );
 }

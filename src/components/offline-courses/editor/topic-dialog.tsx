@@ -9,6 +9,7 @@ import { Select } from "@/components/ui/select";
 import { videoUrlState } from "@/lib/offline-course-editor";
 import { cn } from "@/lib/utils";
 import { callApi, coursePath } from "./api";
+import { useDirty } from "@/components/ui/modal";
 import { EditorDialog, ErrorText } from "./dialog";
 import type { Lesson, Topic } from "./lessons-editor";
 import { MarkdownField } from "./markdown-field";
@@ -48,6 +49,7 @@ export function TopicDialog({
   const [videoShown, setVideoShown] = useState<"before" | "after">(topic?.videoShown ?? "after");
   const [content, setContent] = useState(topic?.contentMd ?? "");
   const [saving, setSaving] = useState(false);
+  const dirty = useDirty({ title, targetLesson, videoUrl, videoShown, content });
   const [error, setError] = useState<string | null>(null);
   const video = videoUrlState(videoUrl);
 
@@ -86,6 +88,7 @@ export function TopicDialog({
       title={topic ? "Editar tema" : "Nuevo tema"}
       onClose={onClose}
       busy={saving}
+      dirty={dirty}
       wide
       footer={
         <>

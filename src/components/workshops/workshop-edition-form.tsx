@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/ui/money-input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import {
@@ -77,7 +78,7 @@ export function WorkshopEditionFields({
   const [classroom, setClassroom] = useState(initial?.classroom ?? "");
   const [capacity, setCapacity] = useState(initial?.capacity ? String(initial.capacity) : "");
   const [pago, setPago] = useState(Boolean(initial?.cost && initial.cost > 0));
-  const [cost, setCost] = useState(initial?.cost ? String(initial.cost) : "");
+  const [cost, setCost] = useState<number | null>(initial?.cost ? initial.cost : null);
   const [currency, setCurrency] = useState<Currency>(initial?.currency ?? "UYU");
   const [registrationStatus, setRegistrationStatus] = useState<WorkshopRegistrationStatus>(
     initial?.registrationStatus ?? "abierta"
@@ -95,7 +96,7 @@ export function WorkshopEditionFields({
       meetingUrl: modality === "online" ? vacio(meetingUrl) : null,
       classroom: modality === "presencial" ? vacio(classroom) : null,
       capacity: entero(capacity),
-      cost: pago ? entero(cost) : null,
+      cost: pago ? cost : null,
       currency,
       registrationStatus,
     });
@@ -241,16 +242,8 @@ export function WorkshopEditionFields({
           </label>
         </div>
         {pago && (
-          <div className="flex gap-2">
-            <Input
-              aria-label="Monto"
-              type="number"
-              min={1}
-              required
-              inputMode="numeric"
-              value={cost}
-              onChange={(e) => setCost(e.target.value)}
-            />
+          <div className="flex items-start gap-2">
+            <MoneyInput aria-label="Monto" required value={cost} onChange={setCost} />
             <Select
               aria-label="Moneda"
               className="w-28"

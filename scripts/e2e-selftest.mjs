@@ -39,6 +39,7 @@ import { seccionRoles } from "./e2e/roles.mjs";
 import { seccionSeguimiento } from "./e2e/seguimiento.mjs";
 import { seccionGrabacionesZoom, seccionGrabacionesZoomPeriodica } from "./e2e/grabaciones-zoom.mjs";
 import { seccionPortalZonasHorarias } from "./e2e/portal-zonas-horarias.mjs";
+import { seccionDialogosYMontos } from "./e2e/dialogos-y-montos.mjs";
 import {
   alEntrar,
   claveVigente,
@@ -234,6 +235,7 @@ async function main() {
       "grabaciones-zoom-periodica": seccionGrabacionesZoomPeriodica,
       "portal-zonas-horarias": seccionPortalZonasHorarias,
       seguimiento: seccionSeguimiento,
+      "dialogos-y-montos": seccionDialogosYMontos,
     };
     for (const nombre of soloSecciones) {
       const seccion = SECCIONES[nombre];
@@ -5212,6 +5214,9 @@ async function main() {
 
   // El portal del alumno en tres zonas: la hora local y el botón de la clase en el mismo instante.
   await seccionPortalZonasHorarias({ api, ok, BASE });
+
+  // Diálogos: cambios sin guardar, buscador de contacto existente y montos con miles.
+  await seccionDialogosYMontos({ api, ok, BASE, getCookie: () => cookie });
 
   console.log(`\n===== ${checks - failures}/${checks} checks OK, ${failures} fallos =====`);
   process.exit(failures > 0 ? 1 : 0);

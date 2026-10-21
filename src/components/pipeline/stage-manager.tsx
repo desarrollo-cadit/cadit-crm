@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { notify } from "@/lib/notify";
+import { Modal } from "@/components/ui/modal";
 
 /** Gestión de etapas: renombrar, reordenar, agregar, eliminar (con reasignación). */
 export function StageManager({
@@ -88,16 +89,13 @@ export function StageManager({
 
   const sorted = [...stages].sort((a, b) => a.position - b.position);
 
+  // Renombrar y reordenar se guardan al momento; lo único que se puede
+  // perder es una etapa nueva a medio escribir o un borrado a medio decidir.
+  const dirty = newName.trim() !== "" || deleting !== null;
+
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-lg rounded-lg border bg-card p-5 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="mb-4 font-semibold">Etapas del pipeline</h3>
+    <Modal onClose={onClose} dirty={dirty} labelledBy="stages-title" className="max-w-lg">
+        <h3 id="stages-title" className="mb-4 font-semibold">Etapas del pipeline</h3>
         <ul className="space-y-2">
           {sorted.map((s, i) => (
             <li key={s.id} className="flex items-center gap-2">
@@ -193,7 +191,6 @@ export function StageManager({
             Cerrar
           </Button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

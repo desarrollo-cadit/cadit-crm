@@ -9,6 +9,7 @@ import { Markdown } from "@/components/offline-courses/markdown";
 import { TopicVideoLink } from "@/components/offline-courses/topic-video-link";
 import type { OfflineCourseDetail } from "@/server/offline-courses/library";
 import { callApi, coursePath } from "./api";
+import { useDirty } from "@/components/ui/modal";
 import { ConfirmDeleteDialog, EditorDialog, ErrorText, IconButton } from "./dialog";
 import { MarkdownField } from "./markdown-field";
 import { SortableList } from "./sortable-list";
@@ -206,6 +207,7 @@ function LessonDialog({
   const [title, setTitle] = useState(lesson?.title ?? "");
   const [content, setContent] = useState(lesson?.contentMd ?? "");
   const [saving, setSaving] = useState(false);
+  const dirty = useDirty({ title, content });
   const [error, setError] = useState<string | null>(null);
 
   async function save() {
@@ -231,6 +233,7 @@ function LessonDialog({
       title={lesson ? "Editar lección" : "Nueva lección"}
       onClose={onClose}
       busy={saving}
+      dirty={dirty}
       wide
       footer={
         <>

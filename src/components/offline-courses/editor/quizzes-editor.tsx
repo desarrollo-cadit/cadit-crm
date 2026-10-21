@@ -12,6 +12,7 @@ import { MAX_RETRIES, parseRetries } from "@/lib/offline-course-editor";
 import type { OfflineCourseDetail } from "@/server/offline-courses/library";
 import { cn } from "@/lib/utils";
 import { callApi, coursePath } from "./api";
+import { useDirty } from "@/components/ui/modal";
 import { ConfirmDeleteDialog, EditorDialog, ErrorText, IconButton } from "./dialog";
 import { MarkdownField } from "./markdown-field";
 import { QuestionDialog } from "./question-dialog";
@@ -249,6 +250,7 @@ function QuizDialog({
   const [retries, setRetries] = useState(String(quiz?.retriesAllowed ?? 1));
   const [lesson, setLesson] = useState(quiz?.lessonId ?? "");
   const [saving, setSaving] = useState(false);
+  const dirty = useDirty({ title, description, passing, unlimited, retries, lesson });
   const [error, setError] = useState<string | null>(null);
 
   async function save() {
@@ -290,6 +292,7 @@ function QuizDialog({
       title={quiz ? "Editar cuestionario" : "Nuevo cuestionario"}
       onClose={onClose}
       busy={saving}
+      dirty={dirty}
       wide
       footer={
         <>

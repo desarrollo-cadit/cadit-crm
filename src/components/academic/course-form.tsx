@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { notify } from "@/lib/notify";
+import { Modal, useDirty } from "@/components/ui/modal";
 
 /**
  * `key` sintética y estable: los módulos se borran del medio de la lista, y con
@@ -145,6 +146,17 @@ export function CourseForm({
     initial?.minAttendancePct?.toString() ?? ""
   );
   const [saving, setSaving] = useState(false);
+  // El temario llega por fetch: la foto de "sin cambios" se toma cuando vuelve.
+  const dirty = useDirty(
+    {
+      name, kind, slug, tagline, description, categoryId, level, modality,
+      durationWeeks, hoursPerWeek, imageUrl, imageFile, syllabusUrl, objectives,
+      targetAudience, newCategory, published, grantsCertificate,
+      certificateDescription, minAttendancePct,
+      modules: modules.map((m) => ({ title: m.title, topics: m.topics })),
+    },
+    modulesLoaded || modulesError
+  );
 
   // El temario no viene en el listado de cursos: se pide al abrir el editor.
   useEffect(() => {
@@ -302,15 +314,14 @@ export function CourseForm({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
-      onClick={onClose}
+    <Modal
+      onClose={onClose}
+      dirty={dirty}
+      busy={saving || borrando}
+      labelledBy="course-form-title"
+      className="max-h-[90vh] max-w-2xl overflow-y-auto"
     >
-      <div
-        className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg border bg-card p-5 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="mb-4 font-semibold">{initial ? "Editar curso" : "Nuevo curso"}</h3>
+        <h3 id="course-form-title" className="mb-4 font-semibold">{initial ? "Editar curso" : "Nuevo curso"}</h3>
 
         <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2">
@@ -764,7 +775,6 @@ export function CourseForm({
             </Button>
           </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

@@ -17,6 +17,7 @@ import { CohortForm } from "@/components/academic/cohort-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/ui/money-input";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RecorridoGrid } from "@/components/cohorts/recorrido-grid";
@@ -170,7 +171,7 @@ export function ProgramClient({
     via: Via;
   } | null>(null);
   const [destino, setDestino] = useState("");
-  const [monto, setMonto] = useState("");
+  const [monto, setMonto] = useState<number | null>(null);
   /** US6/FR-023 — el motivo de la dispensa: sin él no hay dispensa. */
   const [motivo, setMotivo] = useState("");
   const [guardando, setGuardando] = useState(false);
@@ -292,7 +293,7 @@ export function ProgramClient({
   function abrir(alumno: Alumno, modulo: ModuloDelAlumno, via: Via) {
     setAccion({ alumno, modulo, via });
     setDestino("");
-    setMonto("");
+    setMonto(null);
     setMotivo("");
   }
 
@@ -388,7 +389,7 @@ export function ProgramClient({
               cohortId: destino,
               contactId: accion.alumno.contact.id,
               parentEnrollmentId: accion.alumno.enrollmentId,
-              amount: monto.trim() === "" ? null : Number(monto),
+              amount: monto,
             }),
           }).catch(() => null);
 
@@ -787,12 +788,7 @@ export function ProgramClient({
             {accion.via === "recursada" ? (
               <label className="flex flex-col gap-1 text-xs text-muted-foreground">
                 Monto del módulo
-                <Input
-                  inputMode="numeric"
-                  value={monto}
-                  onChange={(e) => setMonto(e.target.value)}
-                  placeholder="Sin monto"
-                />
+                <MoneyInput value={monto} onChange={setMonto} placeholder="Sin monto" />
               </label>
             ) : null}
 

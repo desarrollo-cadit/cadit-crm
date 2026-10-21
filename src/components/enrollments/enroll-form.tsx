@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { CohortDto, CompanyDto, ContactDto } from "@/lib/types";
-import { formatCalendarDay, fullName } from "@/lib/utils";
+import { formatCalendarDay } from "@/lib/utils";
 import { cohortesInscribibles, etiquetaDeCohorte } from "@/lib/cohortes-inscribibles";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { SellerField } from "@/components/enrollments/seller-field";
 import type { SellerOption } from "@/lib/vendedores";
 import { notify } from "@/lib/notify";
+import { Modal, useDirty } from "@/components/ui/modal";
+import { MoneyInput } from "@/components/ui/money-input";
+import { ContactPicker } from "@/components/contacts/contact-picker";
 
 /** Lo que el formulario le cuenta a quien lo abrió cuando la inscripción se creó. */
 export type EnrollSavedResult = {
@@ -62,11 +65,8 @@ export function EnrollForm({
   const [mode, setMode] = useState<"existing" | "new">(
     initialContact ? "existing" : "new"
   );
-  const [contactQuery, setContactQuery] = useState("");
-  const [contactResults, setContactResults] = useState<ContactDto[]>([]);
-  const [contactId, setContactId] = useState<string | null>(
-    initialContact?.id ?? null
-  );
+  const [pickedContact, setPickedContact] = useState<ContactDto | null>(null);
+  const contactId = initialContact?.id ?? pickedContact?.id ?? null;
 
   const [cohortOptions, setCohortOptions] = useState<CohortDto[] | null>(null);
   const [cohortLoadFailed, setCohortLoadFailed] = useState(false);
@@ -78,7 +78,7 @@ export function EnrollForm({
   const [email, setEmail] = useState("");
   const [nationalId, setNationalId] = useState("");
 
-  const [amount, setAmount] = useState("");
+  const [amount, setAmount] = useState<number | null>(null);
   // 007 — moneda del pago: los alumnos de Paraguay pagan en guaraníes.
   const [currency, setCurrency] = useState<"UYU" | "PYG" | "USD">("UYU");
   const [installments, setInstallments] = useState("");
@@ -112,23 +112,25 @@ export function EnrollForm({
     };
   }, [cohortId]);
 
-  const contactLocked = Boolean(initialContact);
-
-  useEffect(() => {
-    if (contactLocked || mode !== "existing" || !contactQuery.trim()) {
-      setContactResults([]);
-      return;
-    }
-    const t = setTimeout(async () => {
-      const res = await fetch(
-        `/api/contacts?q=${encodeURIComponent(contactQuery.trim())}`
-      ).catch(() => null);
-      if (!res?.ok) return;
-      const data = (await res.json()) as { contacts: ContactDto[] };
-      setContactResults(data.contacts);
-    }, 250);
-    return () => clearTimeout(t);
-  }, [contactLocked, mode, contactQuery]);
+  // Lo que el usuario cargó; el modo y la lista de grupos no cuentan.
+  const dirty = useDirty({
+    selectedCohortId,
+    pickedContact: pickedContact?.id ?? null,
+    firstName,
+    lastName,
+    phone,
+    email,
+    nationalId,
+    amount,
+    currency,
+    installments,
+    paymentNotes,
+    invoiceNumber,
+    receiptNumber,
+    sellerId,
+    companyId,
+    newCompanyName,
+  });
 
   async function addCompany() {
     const legalName = newCompanyName.trim();
@@ -188,7 +190,7 @@ export function EnrollForm({
               nationalId: nationalId.trim() || undefined,
             },
           }),
-      amount: amount.trim() ? Number(amount) : null,
+      amount,
       currency,
       installments: installments.trim() ? Number(installments) : null,
       paymentNotes: paymentNotes.trim() || null,
@@ -221,15 +223,14 @@ export function EnrollForm({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
-      onClick={onClose}
+    <Modal
+      onClose={onClose}
+      dirty={dirty}
+      busy={saving}
+      labelledBy="enr-title"
+      className="max-h-[90vh] max-w-lg overflow-y-auto"
     >
-      <div
-        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg border bg-card p-5 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="mb-4 font-semibold">Inscribir alumno</h3>
+        <h3 id="enr-title" className="mb-4 font-semibold">Inscribir alumno</h3>
 
         {!cohortId && (
           <div className="mb-4 space-y-1.5">
@@ -340,33 +341,11 @@ export function EnrollForm({
                 </div>
               </div>
             ) : (
-              <div className="space-y-1.5">
-                <Label htmlFor="enr-contact-search">Buscar contacto</Label>
-                <Input
-                  id="enr-contact-search"
-                  placeholder="Nombre o teléfono…"
-                  value={contactQuery}
-                  onChange={(e) => {
-                    setContactQuery(e.target.value);
-                    setContactId(null);
-                  }}
-                />
-                {contactResults.length > 0 && (
-                  <ul className="max-h-40 overflow-y-auto rounded-md border">
-                    {contactResults.map((c) => (
-                      <li key={c.id}>
-                        <button
-                          type="button"
-                          className={`block w-full px-3 py-1.5 text-left text-sm hover:bg-accent ${contactId === c.id ? "bg-accent" : ""}`}
-                          onClick={() => setContactId(c.id)}
-                        >
-                          {fullName(c)} · {c.phone}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
+              <ContactPicker
+                id="enr-contact-search"
+                value={pickedContact}
+                onChange={setPickedContact}
+              />
             )}
           </>
         )}
@@ -375,14 +354,8 @@ export function EnrollForm({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="enr-amount">Monto</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="enr-amount"
-                  type="number"
-                  min={0}
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                />
+              <div className="flex items-start gap-2">
+                <MoneyInput id="enr-amount" value={amount} onChange={setAmount} />
                 <Select
                   aria-label="Moneda"
                   className="w-auto px-2"
@@ -492,7 +465,6 @@ export function EnrollForm({
             {saving ? "Inscribiendo…" : "Inscribir"}
           </Button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

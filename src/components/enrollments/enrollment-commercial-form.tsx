@@ -10,6 +10,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { SellerField } from "@/components/enrollments/seller-field";
 import type { SellerOption } from "@/lib/vendedores";
 import { notify } from "@/lib/notify";
+import { Modal, useDirty } from "@/components/ui/modal";
+import { MoneyInput } from "@/components/ui/money-input";
 
 /**
  * 005 iteración 2 — edita los datos comerciales de una inscripción YA
@@ -35,7 +37,7 @@ export function EnrollmentCommercialForm({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [amount, setAmount] = useState(entry.amount?.toString() ?? "");
+  const [amount, setAmount] = useState<number | null>(entry.amount ?? null);
   const [installments, setInstallments] = useState(entry.installments?.toString() ?? "");
   const [paymentNotes, setPaymentNotes] = useState(entry.paymentNotes ?? "");
   const [nationalId, setNationalId] = useState(entry.nationalId ?? "");
@@ -51,6 +53,16 @@ export function EnrollmentCommercialForm({
   const sellerRequired = entry.sellerRequired ?? true;
   const permiteVacio = !sellerRequired || !entry.sellerId;
   const [saving, setSaving] = useState(false);
+  const dirty = useDirty({
+    amount,
+    installments,
+    paymentNotes,
+    nationalId,
+    invoiceNumber,
+    receiptNumber,
+    sellerId,
+    companyId,
+  });
 
   async function submit() {
     setSaving(true);
@@ -58,7 +70,7 @@ export function EnrollmentCommercialForm({
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        amount: amount.trim() ? Number(amount) : null,
+        amount,
         installments: installments.trim() ? Number(installments) : null,
         paymentNotes: paymentNotes.trim() || null,
         nationalId: nationalId.trim() || null,
@@ -81,28 +93,21 @@ export function EnrollmentCommercialForm({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
-      onClick={onClose}
+    <Modal
+      onClose={onClose}
+      dirty={dirty}
+      busy={saving}
+      labelledBy="ec-title"
+      className="max-h-[90vh] max-w-lg overflow-y-auto"
     >
-      <div
-        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg border bg-card p-5 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="mb-1 font-semibold">Editar datos comerciales</h3>
+        <h3 id="ec-title" className="mb-1 font-semibold">Editar datos comerciales</h3>
         <p className="mb-4 text-xs text-muted-foreground">{entry.contact.name}</p>
 
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="ec-amount">Monto</Label>
-              <Input
-                id="ec-amount"
-                type="number"
-                min={0}
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-              />
+              <MoneyInput id="ec-amount" value={amount} onChange={setAmount} />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="ec-installments">Cuotas</Label>
@@ -191,7 +196,6 @@ export function EnrollmentCommercialForm({
             {saving ? "Guardando…" : "Guardar"}
           </Button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

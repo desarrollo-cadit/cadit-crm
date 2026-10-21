@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { notify } from "@/lib/notify";
+import { Modal, useDirty } from "@/components/ui/modal";
 
 /**
  * 005 iteración 2 — alta/edición del catálogo de software. Desde 2026-10-16
@@ -34,6 +35,7 @@ export function SoftwareForm({
   );
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
+  const dirty = useDirty({ name, totalLicenses, photoFile });
 
   async function uploadPhoto(id: string) {
     if (!photoFile) return;
@@ -69,15 +71,8 @@ export function SoftwareForm({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-md rounded-lg border bg-card p-5 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="mb-4 font-semibold">
+    <Modal onClose={onClose} dirty={dirty} busy={saving} labelledBy="software-form-title">
+        <h3 id="software-form-title" className="mb-4 font-semibold">
           {initial ? "Editar programa" : "Nuevo programa"}
         </h3>
         <div className="space-y-3">
@@ -123,7 +118,6 @@ export function SoftwareForm({
             {saving ? "Guardando…" : "Guardar"}
           </Button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

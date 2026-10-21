@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { notify } from "@/lib/notify";
+import { Modal, useDirty } from "@/components/ui/modal";
+import { MoneyInput } from "@/components/ui/money-input";
 import { COURSE_KIND_LABEL, MODULE_NAME_MAX, cursosParaSelector } from "@/lib/course-kind";
 
 /** 023 — Lo mínimo del aula para poder elegirla: nombre e id. */
@@ -100,7 +102,7 @@ export function CohortForm({
     toDateInput(initial?.endDate ?? moduloDe?.endDate ?? null)
   );
   const [teacherId, setTeacherId] = useState(initial?.teacher?.id ?? "");
-  const [cost, setCost] = useState(initial?.cost?.toString() ?? "");
+  const [cost, setCost] = useState<number | null>(initial?.cost ?? null);
   const [frequency, setFrequency] = useState(initial?.frequency ?? "");
   const [startTime, setStartTime] = useState(initial?.startTime ?? "");
   const [endTime, setEndTime] = useState(initial?.endTime ?? "");
@@ -190,6 +192,14 @@ export function CohortForm({
   // la API tras guardar (licencias insuficientes / choque de horario del
   // profesor). La cohorte ya quedó guardada; esto solo informa.
   const [warnings, setWarnings] = useState<string[] | null>(null);
+  const changed = useDirty({
+    origenDelModulo, nombreDelModulo, incluirModulos, courseId, name, startDate,
+    endDate, teacherId, cost, frequency, startTime, endTime, daysOfWeek,
+    classroom, virtualRoomId, meetingUrl, capacity, minAttendancePct,
+    whatsappGroupLink, softwareIds, tipo, newTeacherName,
+  });
+  // Con las advertencias a la vista el grupo ya quedó guardado.
+  const dirty = changed && !warnings;
 
   // 005 iteración 2 — filtra el selector de profesor por el curso elegido
   // (teacher_course, feedback en vivo del dueño). Si ninguno dicta ESE curso
@@ -293,7 +303,7 @@ export function CohortForm({
       name: moduloNuevo ? null : name.trim() || null,
       startDate,
       endDate: endDate || null,
-      cost: cost.trim() ? Number(cost) : null,
+      cost,
       capacity: capacity.trim() ? Number(capacity) : null,
       whatsappGroupLink: whatsappGroupLink.trim() || null,
       minAttendancePct: minAttendancePct.trim() ? Number(minAttendancePct) : null,
@@ -340,15 +350,14 @@ export function CohortForm({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
-      onClick={onClose}
+    <Modal
+      onClose={onClose}
+      dirty={dirty}
+      busy={saving}
+      labelledBy="cohort-form-title"
+      className="max-h-[90vh] max-w-lg overflow-y-auto"
     >
-      <div
-        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg border bg-card p-5 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="mb-4 font-semibold">
+        <h3 id="cohort-form-title" className="mb-4 font-semibold">
           {moduloDe
             ? `Nuevo módulo de ${moduloDe.name}`
             : esModulo
@@ -587,13 +596,7 @@ export function CohortForm({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="cohort-cost">Costo</Label>
-              <Input
-                id="cohort-cost"
-                type="number"
-                min={0}
-                value={cost}
-                onChange={(e) => setCost(e.target.value)}
-              />
+              <MoneyInput id="cohort-cost" value={cost} onChange={setCost} />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="cohort-capacity">Cupo</Label>
@@ -811,7 +814,6 @@ export function CohortForm({
             </>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

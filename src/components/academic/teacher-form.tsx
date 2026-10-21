@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { notify } from "@/lib/notify";
+import { Modal, useDirty } from "@/components/ui/modal";
+import { MoneyInput } from "@/components/ui/money-input";
 
 /**
  * 005 iteración 2 — alta/edición de un profesor desde la pestaña
@@ -30,10 +32,11 @@ export function TeacherForm({
   const [email, setEmail] = useState(initial?.email ?? "");
   /** 023 — Título profesional: sale al catálogo público con la foto. */
   const [title, setTitle] = useState(initial?.title ?? "");
-  const [hourlyRate, setHourlyRate] = useState(initial?.hourlyRate?.toString() ?? "");
+  const [hourlyRate, setHourlyRate] = useState<number | null>(initial?.hourlyRate ?? null);
   const [courseIds, setCourseIds] = useState<string[]>(initial?.courseIds ?? []);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
+  const dirty = useDirty({ name, email, title, hourlyRate, courseIds, photoFile });
 
   function toggleCourse(id: string) {
     setCourseIds((prev) => (prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]));
@@ -52,7 +55,7 @@ export function TeacherForm({
 
     const patchBody = {
       name: name.trim(),
-      hourlyRate: hourlyRate.trim() ? Number(hourlyRate) : null,
+      hourlyRate,
       email: email.trim() || null,
       title: title.trim() || null,
       courseIds,
@@ -85,7 +88,7 @@ export function TeacherForm({
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            hourlyRate: hourlyRate.trim() ? Number(hourlyRate) : null,
+            hourlyRate,
             courseIds,
           }),
         }).catch(() => null);
@@ -107,15 +110,14 @@ export function TeacherForm({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
-      onClick={onClose}
+    <Modal
+      onClose={onClose}
+      dirty={dirty}
+      busy={saving}
+      labelledBy="teacher-form-title"
+      className="max-h-[90vh] overflow-y-auto"
     >
-      <div
-        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg border bg-card p-5 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="mb-4 font-semibold">
+        <h3 id="teacher-form-title" className="mb-4 font-semibold">
           {initial ? "Editar profesor" : "Nuevo profesor"}
         </h3>
         <div className="space-y-3">
@@ -149,13 +151,7 @@ export function TeacherForm({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="teacher-rate">Costo por hora</Label>
-            <Input
-              id="teacher-rate"
-              type="number"
-              min={0}
-              value={hourlyRate}
-              onChange={(e) => setHourlyRate(e.target.value)}
-            />
+            <MoneyInput id="teacher-rate" value={hourlyRate} onChange={setHourlyRate} />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="teacher-photo">Foto (opcional)</Label>
@@ -204,7 +200,6 @@ export function TeacherForm({
             {saving ? "Guardando…" : "Guardar"}
           </Button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { answerSetProblem, MAX_ANSWERS, type EditorAnswerType } from "@/lib/offline-course-editor";
 import { callApi, coursePath } from "./api";
+import { useDirty } from "@/components/ui/modal";
 import { EditorDialog, ErrorText } from "./dialog";
 import { MarkdownField } from "./markdown-field";
 import type { Question } from "./quizzes-editor";
@@ -53,6 +54,12 @@ export function QuestionDialog({
       : [blank(), blank()]
   );
   const [tried, setTried] = useState(false);
+  const dirty = useDirty({
+    text,
+    answerType,
+    points,
+    answers: answers.map((a) => ({ text: a.text, isCorrect: a.isCorrect })),
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -106,6 +113,7 @@ export function QuestionDialog({
       title={question ? "Editar pregunta" : "Nueva pregunta"}
       onClose={onClose}
       busy={saving}
+      dirty={dirty}
       wide
       footer={
         <>

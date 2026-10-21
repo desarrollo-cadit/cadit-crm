@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { callApi } from "./api";
 import { StatusToggle } from "./course-editor";
+import { useDirty } from "@/components/ui/modal";
 import { EditorDialog, ErrorText } from "./dialog";
 import { notify } from "@/lib/notify";
 
@@ -25,6 +26,7 @@ export function NewCourseButton() {
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState<"draft" | "published">("draft");
   const [saving, setSaving] = useState(false);
+  const dirty = useDirty({ title, description, status });
   const [error, setError] = useState<string | null>(null);
 
   async function create() {
@@ -59,6 +61,7 @@ export function NewCourseButton() {
           title="Nuevo curso"
           onClose={() => setOpen(false)}
           busy={saving}
+          dirty={dirty}
           footer={
             <>
               <Button variant="ghost" onClick={() => setOpen(false)} disabled={saving}>

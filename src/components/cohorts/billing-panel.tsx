@@ -8,6 +8,8 @@ import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { notify } from "@/lib/notify";
 import { formatCalendarDay } from "@/lib/utils";
+import { Modal, useDirty } from "@/components/ui/modal";
+import { MoneyInput } from "@/components/ui/money-input";
 
 type Currency = "UYU" | "PYG" | "USD";
 type Status = "pagada" | "parcial" | "vencida" | "pendiente";
@@ -283,15 +285,11 @@ export function BillingPanel({
       )}
 
       {refinancing && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
-          onClick={() => setRefinancing(false)}
+        <RefinanceDialog
+          dirtyValues={{ count, firstDueDate }}
+          onClose={() => setRefinancing(false)}
         >
-          <div
-            className="w-full max-w-sm rounded-lg border bg-card p-5 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="mb-1 font-semibold">Refinanciar el plan</h3>
+            <h3 id="refi-title" className="mb-1 font-semibold">Refinanciar el plan</h3>
             <p className="mb-4 text-xs text-muted-foreground">
               Las cuotas actuales quedan <strong>anuladas</strong> —no se borran,
               siguen visibles en el estado de cuenta— y se crean unas nuevas por
@@ -327,8 +325,7 @@ export function BillingPanel({
                 Rearmar plan
               </Button>
             </div>
-          </div>
-        </div>
+        </RefinanceDialog>
       )}
 
       {paying && (
@@ -343,6 +340,24 @@ export function BillingPanel({
         />
       )}
     </div>
+  );
+}
+
+/** El diálogo de refinanciar: su foto de "sin cambios" es la del momento de abrirlo. */
+function RefinanceDialog({
+  dirtyValues,
+  onClose,
+  children,
+}: {
+  dirtyValues: { count: string; firstDueDate: string };
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const dirty = useDirty(dirtyValues);
+  return (
+    <Modal onClose={onClose} dirty={dirty} labelledBy="refi-title" className="max-w-sm">
+      {children}
+    </Modal>
   );
 }
 
@@ -361,12 +376,13 @@ function PaymentForm({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [amount, setAmount] = useState(String(installment.balance));
+  const [amount, setAmount] = useState<number | null>(installment.balance);
   const [paidAt, setPaidAt] = useState(new Date().toISOString().slice(0, 10));
   const [method, setMethod] = useState("transferencia");
   const [receiptNumber, setReceiptNumber] = useState("");
   const [saving, setSaving] = useState(false);
   const [idempotencyKey] = useState(() => crypto.randomUUID());
+  const dirty = useDirty({ amount, paidAt, method, receiptNumber });
 
   async function submit() {
     setSaving(true);
@@ -375,7 +391,7 @@ function PaymentForm({
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         installmentId: installment.id,
-        amount: Number(amount),
+        amount,
         paidAt,
         method,
         receiptNumber: receiptNumber.trim() || null,
@@ -395,15 +411,14 @@ function PaymentForm({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
-      onClick={onClose}
+    <Modal
+      onClose={onClose}
+      dirty={dirty}
+      busy={saving}
+      labelledBy="pay-title"
+      className="max-w-sm"
     >
-      <div
-        className="w-full max-w-sm rounded-lg border bg-card p-5 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="mb-1 font-semibold">Registrar pago</h3>
+        <h3 id="pay-title" className="mb-1 font-semibold">Registrar pago</h3>
         <p className="mb-4 text-xs text-muted-foreground">
           Cuota #{installment.number} · vence {day(installment.dueDate)} · falta{" "}
           {money(installment.balance, installment.currency)}. Se admite el pago
@@ -413,13 +428,7 @@ function PaymentForm({
         <div className="space-y-3">
           <div className="space-y-1.5">
             <Label htmlFor="pay-amount">Monto</Label>
-            <Input
-              id="pay-amount"
-              type="number"
-              min={1}
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-            />
+            <MoneyInput id="pay-amount" value={amount} onChange={setAmount} />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="pay-date">Fecha del pago</Label>
@@ -461,7 +470,6 @@ function PaymentForm({
             {saving ? "Registrando…" : "Registrar"}
           </Button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

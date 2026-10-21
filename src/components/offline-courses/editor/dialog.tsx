@@ -1,19 +1,23 @@
 "use client";
 
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { Modal } from "@/components/ui/modal";
 import type { ApiResult } from "./api";
 import { notify } from "@/lib/notify";
 
 /**
  * cursos-offline T11b — The editor's modal, same shell as the rest of the
- * panel (`bg-overlay` + card). Escape and a click outside close it, unless an
- * action is running: closing mid-request would hide its error.
+ * panel: it is `Modal` (`src/components/ui/modal.tsx`). Escape, a click
+ * outside and the X close it, unless an action is running (closing
+ * mid-request would hide its error) or the form passes `dirty` (then it asks
+ * before losing the changes).
  */
 export function EditorDialog({
   title,
   onClose,
   busy = false,
+  dirty = false,
   wide = false,
   children,
   footer,
@@ -21,38 +25,27 @@ export function EditorDialog({
   title: string;
   onClose: () => void;
   busy?: boolean;
+  dirty?: boolean;
   wide?: boolean;
   children: ReactNode;
   footer: ReactNode;
 }) {
   const titleId = useId();
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !busy) onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [busy, onClose]);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
-      onClick={() => !busy && onClose()}
+    <Modal
+      onClose={onClose}
+      busy={busy}
+      dirty={dirty}
+      labelledBy={titleId}
+      className={`flex max-h-[90vh] flex-col p-0 ${wide ? "max-w-2xl" : "max-w-md"}`}
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        className={`flex max-h-[90vh] w-full flex-col rounded-lg border bg-card shadow-xl ${wide ? "max-w-2xl" : "max-w-md"}`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 id={titleId} className="border-b px-5 py-3 font-semibold">
-          {title}
-        </h3>
-        <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">{children}</div>
-        <div className="flex flex-wrap items-center justify-end gap-2 border-t px-5 py-3">{footer}</div>
-      </div>
-    </div>
+      <h3 id={titleId} className="border-b px-5 py-3 pr-12 font-semibold">
+        {title}
+      </h3>
+      <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">{children}</div>
+      <div className="flex flex-wrap items-center justify-end gap-2 border-t px-5 py-3">{footer}</div>
+    </Modal>
   );
 }
 

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/ui/money-input";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { notify } from "@/lib/notify";
@@ -173,20 +174,20 @@ export function CargaRapidaClient() {
                     ` · ${c.cohortesConPrecioPropio} con precio propio`}
                 </span>
               </span>
-              <Input
-                type="number"
-                min={0}
+              <div className="w-32">
+              <MoneyInput
+                aria-label={`Precio de ${c.name}`}
                 placeholder="sin precio"
-                className="h-9 w-32 text-right"
-                value={c.listPrice ?? ""}
-                onChange={(e) => {
-                  const v = e.target.value === "" ? null : Number(e.target.value);
+                className="h-9 text-right"
+                value={c.listPrice}
+                onChange={(v) => {
                   setCursos((prev) =>
                     prev!.map((x, j) => (j === i ? { ...x, listPrice: v } : x))
                   );
                   setSucio(true);
                 }}
               />
+              </div>
               <Select
                 aria-label={`Moneda de ${c.name}`}
                 className="h-9 w-24"

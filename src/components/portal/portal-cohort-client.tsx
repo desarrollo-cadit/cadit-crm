@@ -17,6 +17,7 @@ import { ZoomRecordingPlayer, isZoomRecording } from "@/components/portal/zoom-r
 import { CorrectionPanel } from "@/components/grading/correction-panel";
 import { admiteAtajo, plantillaDe, type Template } from "@/lib/grading-template";
 import { notify } from "@/lib/notify";
+import { Modal, useDirty } from "@/components/ui/modal";
 import { conZona } from "@/lib/schedule-time";
 
 type Cohort = {
@@ -755,6 +756,7 @@ function DialogoGrabacion({
 }) {
   const [url, setUrl] = useState(actual ?? "");
   const [guardando, setGuardando] = useState(false);
+  const dirty = useDirty({ url });
 
   async function guardar(e: React.FormEvent) {
     e.preventDefault();
@@ -778,9 +780,15 @@ function DialogoGrabacion({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-overlay p-4 sm:items-center">
-      <div className="w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-pop">
-        <h3 className="text-base font-semibold tracking-tight">Grabación de la clase</h3>
+    <Modal
+      onClose={onClose}
+      dirty={dirty}
+      busy={guardando}
+      labelledBy="grabacion-title"
+      overlayClassName="items-end sm:items-center"
+      className="border-border shadow-pop"
+    >
+        <h3 id="grabacion-title" className="text-base font-semibold tracking-tight">Grabación de la clase</h3>
         <p className="mt-1 text-sm text-muted-foreground">
           El enlace a la grabación. Guardamos solo el enlace, no el video.
         </p>
@@ -813,8 +821,7 @@ function DialogoGrabacion({
             </Button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -838,6 +845,7 @@ function DialogoMaterial({
   const [url, setUrl] = useState("");
   const [kind, setKind] = useState("guia");
   const [guardando, setGuardando] = useState(false);
+  const dirty = useDirty({ title, url, kind });
 
   async function guardar(e: React.FormEvent) {
     e.preventDefault();
@@ -861,9 +869,15 @@ function DialogoMaterial({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-overlay p-4 sm:items-center">
-      <div className="w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-pop">
-        <h3 className="text-base font-semibold tracking-tight">Publicar material</h3>
+    <Modal
+      onClose={onClose}
+      dirty={dirty}
+      busy={guardando}
+      labelledBy="material-title-h"
+      overlayClassName="items-end sm:items-center"
+      className="border-border shadow-pop"
+    >
+        <h3 id="material-title-h" className="text-base font-semibold tracking-tight">Publicar material</h3>
         <p className="mt-1 text-sm text-muted-foreground">
           Lo van a ver los alumnos de este grupo. Funciona con enlaces de
           Drive, WeTransfer o Autodesk Docs; no guardamos archivos.
@@ -920,8 +934,7 @@ function DialogoMaterial({
             </Button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   );
 }
 

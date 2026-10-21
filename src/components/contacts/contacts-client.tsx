@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { Modal, useDirty } from "@/components/ui/modal";
 import {
   Table,
   TableBody,
@@ -437,17 +438,25 @@ function EditDialog({
   const [source, setSource] = useState(contact.source ?? "");
   const [utmCampaign, setUtmCampaign] = useState(contact.utmCampaign ?? "");
   const [notes, setNotes] = useState(contact.notes ?? "");
+  const dirty = useDirty({
+    firstName,
+    lastName,
+    email,
+    nationalId,
+    source,
+    utmCampaign,
+    notes,
+    companyId,
+  });
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
-      onClick={onClose}
+    <Modal
+      onClose={onClose}
+      dirty={dirty}
+      labelledBy="edit-contact-title"
+      className="max-h-[90vh] overflow-y-auto"
     >
-      <div
-        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg border bg-card p-5 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="mb-4 font-semibold">Editar contacto</h3>
+        <h3 id="edit-contact-title" className="mb-4 font-semibold">Editar contacto</h3>
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
@@ -565,7 +574,6 @@ function EditDialog({
             Guardar
           </Button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
