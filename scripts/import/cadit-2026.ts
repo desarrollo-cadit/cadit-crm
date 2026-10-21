@@ -27,6 +27,7 @@ import * as schema from "@/lib/db/schema";
 import { newId } from "@/lib/db/ids";
 import { slugify } from "@/lib/utils";
 import { normalizePhoneInput } from "@/lib/phone";
+import { parseMoney } from "./parse-money";
 
 /* ============================================================
  * Parser CSV (RFC 4180) — sin dependencias nuevas
@@ -114,31 +115,8 @@ export function splitName(full: string): { firstName: string; lastName: string |
   return { firstName: parts[0]!, lastName: parts.slice(1).join(" ") };
 }
 
-/**
- * "$13,680.00" -> 13680 UYU · "10.000.000" -> 10000000 PYG · "$0.00" -> 0 UYU.
- * El `$` marca pesos uruguayos; un número suelto con miles en punto y del
- * orden del millón es guaraníes (los alumnos de Paraguay). Se redondea a
- * entero porque la columna no guarda centavos (DV-008).
- */
-export function parseMoney(raw: string): { amount: number; currency: "UYU" | "PYG" } | null {
-  const s = (raw || "").trim();
-  if (!s) return null;
-  const hasDollar = s.includes("$");
-  const digits = s.replace(/[^\d.,]/g, "");
-  if (!digits) return null;
-  // Formato "13,680.00": coma de miles y punto decimal. Formato "10.000.000":
-  // punto de miles y sin decimales.
-  let normalized: string;
-  if (/,\d{3}/.test(digits) || /\.\d{2}$/.test(digits)) {
-    normalized = digits.replace(/,/g, "");
-  } else {
-    normalized = digits.replace(/[.,]/g, "");
-  }
-  const value = Math.round(Number(normalized));
-  if (!Number.isFinite(value)) return null;
-  const currency = !hasDollar && value >= 1_000_000 ? "PYG" : "UYU";
-  return { amount: value, currency };
-}
+// `parseMoney` vive en ./parse-money.ts (puro, con test): devuelve CENTÉSIMOS.
+export { parseMoney };
 
 /**
  * La celda de correo a veces trae VARIOS: "a@x.com, b@y.com o c@z.com" o

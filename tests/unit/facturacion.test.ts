@@ -103,7 +103,7 @@ const base: InscripcionParaFacturar = {
   email: null,
   nationalId: null,
   invoiceNumber: null,
-  amount: 1000,
+  amount: 100000,
   currency: "UYU",
   empresa: null,
   deBaja: false,
@@ -174,7 +174,7 @@ const fila = (over: Partial<FilaFacturacion>): FilaFacturacion => ({
   inicio: "2026-10-20",
   confirmada: true,
   vendedor: "Valeria",
-  amount: 1000,
+  amount: 100000,
   currency: "UYU",
   invoiceNumber: null,
   invoiceRecordedAt: null,
@@ -238,14 +238,14 @@ describe("filtrarFacturacion", () => {
 describe("totalesPorMoneda — nunca se suman monedas distintas", () => {
   it("un total por moneda, en orden fijo, y las filas sin monto aparte", () => {
     const t = totalesPorMoneda([
-      fila({ amount: 1000, currency: "UYU" }),
-      fila({ amount: 250, currency: "USD" }),
-      fila({ amount: 500, currency: "UYU" }),
+      fila({ amount: 100000, currency: "UYU" }),
+      fila({ amount: 25000, currency: "USD" }),
+      fila({ amount: 50000, currency: "UYU" }),
       fila({ amount: null, currency: "UYU" }),
     ]);
     expect(t.totales).toEqual([
-      { currency: "UYU", total: 1500, cantidad: 2 },
-      { currency: "USD", total: 250, cantidad: 1 },
+      { currency: "UYU", total: 150000, cantidad: 2 },
+      { currency: "USD", total: 25000, cantidad: 1 },
     ]);
     expect(t.sinMonto).toBe(1);
   });
@@ -308,7 +308,22 @@ describe("facturacionCsv", () => {
     expect(encabezado).toBe(
       "Alumno,Curso,Grupo,Inicio,Grupo confirmado,Vendedor,Monto,Moneda,Factura,Razón social,RUT,Correo de facturación,Condición de pago"
     );
-    expect(linea).toBe('Ana Pérez,Revit,Octubre,2026-10-20,Sí,Valeria,1000,UYU,,"ACME, SA",2100,f@acme.uy,Contado');
+    expect(linea).toBe('Ana Pérez,Revit,Octubre,2026-10-20,Sí,Valeria,1000.00,UYU,,"ACME, SA",2100,f@acme.uy,Contado');
+  });
+
+  /**
+   * El separador de columnas es la COMA: el monto sale en unidades MAYORES con
+   * PUNTO decimal (sin miles) para que nunca parta el campo. Guaraníes, sin
+   * decimales.
+   */
+  it("monto en unidades mayores con punto decimal; guaraníes sin decimales", () => {
+    const SALTO = "\r\n";
+    const linea = (amount: number | null, currency: "UYU" | "USD" | "PYG") =>
+      facturacionCsv([fila({ amount, currency })]).split(SALTO)[1]!.split(",");
+    expect(linea(524532, "UYU")[6]).toBe("5245.32");
+    expect(linea(500000, "USD")[6]).toBe("5000.00");
+    expect(linea(1000000000, "PYG")[6]).toBe("10000000");
+    expect(linea(null, "UYU")[6]).toBe("");
   });
 
   it("neutraliza fórmulas (un nombre puede venir de un formulario público)", () => {

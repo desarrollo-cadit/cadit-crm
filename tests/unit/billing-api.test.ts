@@ -85,7 +85,7 @@ describe("cobranza — gate de rol (FR-016, DV-005)", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          amount: 1000,
+          amount: 100000,
           paidAt: "2026-08-24",
           method: "efectivo",
         }),

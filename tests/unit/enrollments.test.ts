@@ -124,7 +124,7 @@ describe("createEnrollment (005 US2)", () => {
       cohortId: "coh_1",
       sellerId: "sel_1",
       contact: { firstName: "Diego", phone: "59899123456", email: "diego@example.com" },
-      amount: 76000,
+      amount: 7600000,
       installments: 12,
     });
 
@@ -139,7 +139,7 @@ describe("createEnrollment (005 US2)", () => {
       installments: number;
     };
     expect(enrollmentValues.cohortId).toBe("coh_1");
-    expect(enrollmentValues.amount).toBe(76000);
+    expect(enrollmentValues.amount).toBe(7600000);
     expect(enrollmentValues.installments).toBe(12);
   });
 
@@ -275,12 +275,12 @@ describe("updateEnrollmentCommercial (005 iteración 2)", () => {
 
   it("solo actualiza los campos presentes en el input", async () => {
     const { updateEnrollmentCommercial } = await import("@/server/enrollments");
-    const result = await updateEnrollmentCommercial("org_1", "enr_1", { amount: 90000 });
+    const result = await updateEnrollmentCommercial("org_1", "enr_1", { amount: 9000000 });
 
     expect(result.ok).toBe(true);
     expect(updates).toHaveLength(1);
     const set = updates[0]!.set as Record<string, unknown>;
-    expect(set.amount).toBe(90000);
+    expect(set.amount).toBe(9000000);
     expect("installments" in set).toBe(false);
     expect("nationalId" in set).toBe(false);
   });
@@ -332,7 +332,7 @@ describe("updateEnrollmentCommercial (005 iteración 2)", () => {
     updateReturningEmpty = true;
 
     const { updateEnrollmentCommercial } = await import("@/server/enrollments");
-    const result = await updateEnrollmentCommercial("org_1", "enr_x", { amount: 1000 });
+    const result = await updateEnrollmentCommercial("org_1", "enr_x", { amount: 100000 });
 
     expect(result).toEqual({
       ok: false,

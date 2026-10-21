@@ -323,7 +323,7 @@ const pago = (p: Partial<PagoDelPeriodo> & { id: string }): PagoDelPeriodo => ({
   paidAt: new Date("2026-08-10T14:00:00Z"),
   voidedAt: null,
   voidReason: null,
-  amount: 1000,
+  amount: 100000,
   currency: "UYU",
   method: "efectivo",
   receiptNumber: null,
@@ -336,10 +336,10 @@ const pago = (p: Partial<PagoDelPeriodo> & { id: string }): PagoDelPeriodo => ({
 describe("FR-010 — Caja lista lo que ENTRÓ, y nada más", () => {
   it("un pago anulado no aparece ni suma", () => {
     const bloques = armarCaja([
-      pago({ id: "pay_ok", amount: 1000 }),
+      pago({ id: "pay_ok", amount: 100000 }),
       pago({
         id: "pay_anulado",
-        amount: 9_999_999,
+        amount: 999999900,
         voidedAt: new Date("2026-08-20T10:00:00Z"),
         voidReason: "cargado dos veces",
       }),
@@ -347,7 +347,7 @@ describe("FR-010 — Caja lista lo que ENTRÓ, y nada más", () => {
 
     expect(bloques).toHaveLength(1);
     expect(bloques[0]!.filas.map((f) => f.id)).toEqual(["pay_ok"]);
-    expect(bloques[0]!.total).toBe(1000);
+    expect(bloques[0]!.total).toBe(100000);
   });
 
   /**
@@ -376,7 +376,7 @@ describe("FR-010 — Caja lista lo que ENTRÓ, y nada más", () => {
       cohorte: "Camada Marzo",
       curso: "Revit",
       metodo: "transferencia",
-      importe: 1000,
+      importe: 100000,
       currency: "UYU",
       recibo: "A-42",
     });
@@ -435,7 +435,7 @@ const cuota = (c: Partial<CuotaDelPeriodo> & { id: string }): CuotaDelPeriodo =>
   numero: 1,
   dueDate: new Date("2026-08-10T00:00:00Z"),
   canceledAt: null,
-  amount: 1000,
+  amount: 100000,
   pagado: 0,
   currency: "UYU",
   alumno: "Ana Pérez",
@@ -451,12 +451,12 @@ describe("FR-013/FR-014/FR-015 — Devengado usa `due_date` y el vocabulario que
     const bloques = armarDevengado(
       [
         cuota({ id: "ins_ok" }),
-        cuota({ id: "ins_anulada", amount: 500_000, canceledAt: new Date("2026-08-15") }),
+        cuota({ id: "ins_anulada", amount: 50000000, canceledAt: new Date("2026-08-15") }),
       ],
       AHORA
     );
     expect(bloques[0]!.filas.map((f) => f.id)).toEqual(["ins_ok"]);
-    expect(bloques[0]!.totalEmitido).toBe(1000);
+    expect(bloques[0]!.totalEmitido).toBe(100000);
   });
 
   it("el módulo mira `due_date`, no `paid_at`", () => {
@@ -473,17 +473,17 @@ describe("FR-013/FR-014/FR-015 — Devengado usa `due_date` y el vocabulario que
   it("los estados son los de `installmentStatus`, incluido `parcial`", () => {
     const [bloque] = armarDevengado(
       [
-        cuota({ id: "ins_pagada", amount: 1000, pagado: 1000 }),
+        cuota({ id: "ins_pagada", amount: 100000, pagado: 100000 }),
         cuota({
           id: "ins_parcial",
-          amount: 1000,
-          pagado: 400,
+          amount: 100000,
+          pagado: 40000,
           dueDate: new Date("2026-12-10T00:00:00Z"),
         }),
-        cuota({ id: "ins_vencida", amount: 1000, pagado: 0 }),
+        cuota({ id: "ins_vencida", amount: 100000, pagado: 0 }),
         cuota({
           id: "ins_pendiente",
-          amount: 1000,
+          amount: 100000,
           pagado: 0,
           dueDate: new Date("2026-12-10T00:00:00Z"),
         }),
@@ -509,13 +509,13 @@ describe("FR-013/FR-014/FR-015 — Devengado usa `due_date` y el vocabulario que
 
   it("cada fila trae importe, pagado y saldo con su moneda (FR-015)", () => {
     const [bloque] = armarDevengado(
-      [cuota({ id: "ins_1", amount: 1000, pagado: 400, currency: "PYG" })],
+      [cuota({ id: "ins_1", amount: 100000, pagado: 40000, currency: "PYG" })],
       AHORA
     );
     expect(bloque!.filas[0]).toMatchObject({
-      importe: 1000,
-      pagado: 400,
-      saldo: 600,
+      importe: 100000,
+      pagado: 40000,
+      saldo: 60000,
       currency: "PYG",
     });
   });
@@ -553,17 +553,17 @@ describe("FR-013/FR-014/FR-015 — Devengado usa `due_date` y el vocabulario que
 
 describe("FR-016/FR-022 — ningún total mezcla monedas, y no existe un total general", () => {
   const TRES_MONEDAS = [
-    pago({ id: "p_uyu", amount: 150_000, currency: "UYU" }),
-    pago({ id: "p_pyg", amount: 4_000_000, currency: "PYG" }),
-    pago({ id: "p_usd", amount: 1_200, currency: "USD" }),
+    pago({ id: "p_uyu", amount: 15000000, currency: "UYU" }),
+    pago({ id: "p_pyg", amount: 400000000, currency: "PYG" }),
+    pago({ id: "p_usd", amount: 120000, currency: "USD" }),
   ];
 
   it("tres monedas → tres bloques, tres totales, ninguno cruzado", () => {
     const bloques = armarCaja(TRES_MONEDAS);
     expect(bloques.map((b) => b.currency)).toEqual(["UYU", "PYG", "USD"]);
-    expect(bloques.map((b) => b.total)).toEqual([150_000, 4_000_000, 1_200]);
+    expect(bloques.map((b) => b.total)).toEqual([15000000, 400000000, 120000]);
 
-    const cruzado = 150_000 + 4_000_000 + 1_200;
+    const cruzado = 15000000 + 400000000 + 120000;
     expect(bloques.some((b) => b.total === cruzado)).toBe(false);
   });
 
@@ -581,8 +581,8 @@ describe("FR-016/FR-022 — ningún total mezcla monedas, y no existe un total g
   it("lo mismo en devengado: cada fila de un bloque es de su moneda", () => {
     const bloques = armarDevengado(
       [
-        cuota({ id: "i_uyu", amount: 19_000, pagado: 19_000, currency: "UYU" }),
-        cuota({ id: "i_usd", amount: 300, pagado: 100, currency: "USD" }),
+        cuota({ id: "i_uyu", amount: 1900000, pagado: 1900000, currency: "UYU" }),
+        cuota({ id: "i_usd", amount: 30000, pagado: 10000, currency: "USD" }),
       ],
       AHORA
     );
@@ -662,10 +662,10 @@ describe("FR-017 — caja y devengado nunca se suman ni se restan entre sí", ()
 
 describe("DV-004 — las anulaciones del período van en un tercer listado, aparte", () => {
   const CON_ANULADO = [
-    pago({ id: "p_vivo", amount: 1000 }),
+    pago({ id: "p_vivo", amount: 100000 }),
     pago({
       id: "p_muerto",
-      amount: 7000,
+      amount: 700000,
       voidedAt: new Date("2026-08-25T09:00:00Z"),
       voidReason: "el alumno pidió el reintegro",
     }),
@@ -679,7 +679,7 @@ describe("DV-004 — las anulaciones del período van en un tercer listado, apar
     const anulados = armarAnulados(CON_ANULADO);
     expect(anulados.map((a) => a.id)).toEqual(["p_muerto"]);
     expect(anulados[0]!.motivo).toBe("el alumno pidió el reintegro");
-    expect(anulados[0]!.importe).toBe(7000);
+    expect(anulados[0]!.importe).toBe(700000);
     expect(anulados[0]!.currency).toBe("UYU");
   });
 

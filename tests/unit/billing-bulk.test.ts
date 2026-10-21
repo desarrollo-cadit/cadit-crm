@@ -45,14 +45,14 @@ describe("decidirCobranza — correr el lote dos veces no duplica", () => {
    * cohorte, alguien va a dudar de si quedó, y la va a correr otra vez.
    */
   it("una inscripción que ya tiene plan se saltea", () => {
-    expect(decidirCobranza({ amount: 15000, yaTienePlan: true })).toEqual({
+    expect(decidirCobranza({ amount: 1500000, yaTienePlan: true })).toEqual({
       aplica: false,
       motivo: "ya_tiene_plan",
     });
   });
 
   it("con monto y sin plan, se aplica", () => {
-    expect(decidirCobranza({ amount: 15000, yaTienePlan: false })).toEqual({
+    expect(decidirCobranza({ amount: 1500000, yaTienePlan: false })).toEqual({
       aplica: true,
     });
   });

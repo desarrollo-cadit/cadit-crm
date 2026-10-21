@@ -46,7 +46,7 @@ vi.mock("@/lib/db", () => ({
 
 const baseEnrollment = {
   id: "enr_1",
-  amount: 76000,
+  amount: 7600000,
   installments: 12,
   paymentNotes: "pagó $20.000, resto en cuotas",
   nationalId: "1.234.567-8",
@@ -119,7 +119,7 @@ describe("buildRosterEntry — DTO por capacidad (FR-016)", () => {
         baseLicense as never
       );
 
-      expect(entry.amount).toBe(76000);
+      expect(entry.amount).toBe(7600000);
       expect(entry.installments).toBe(12);
       expect(entry.nationalId).toBe("1.234.567-8");
       expect(entry.invoiceNumber).toBe("819");

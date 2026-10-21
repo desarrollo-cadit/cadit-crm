@@ -2,6 +2,7 @@ import { asc, eq, gte, isNull, lt, sum } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { CURRENCIES, type Currency } from "@/lib/db/schema";
 import { newId } from "@/lib/db/ids";
+import { minorFromDb, splitMinor } from "@/lib/money";
 import { scoped } from "@/lib/db/tenant";
 import { avisarAAdministracion } from "@/server/billing-notices-queue";
 
@@ -47,10 +48,12 @@ export type PaymentDto = {
  * ============================================================ */
 
 /**
- * Reparte `amount` en `count` cuotas mensuales desde `firstDueDate`.
+ * Reparte `amount` (CENTÉSIMOS, DV-008) en `count` cuotas mensuales desde
+ * `firstDueDate`.
  *
  * El resto de la división entera va a la PRIMERA cuota, no a la última: si
- * 100.000 se divide en 3, el alumno paga 33.334 + 33.333 + 33.333. Cargar el
+ * $10.000 (1000000 centésimos) se divide en 3, el alumno paga $3.333,34 +
+ * $3.333,33 + $3.333,33. Cargar el
  * resto al final haría que la última cuota —la que más se demora— sea la
  * distinta, y es la que peor se explica por teléfono.
  *
@@ -65,16 +68,16 @@ export function buildInstallmentPlan(
 ): { number: number; amount: number; dueDate: Date }[] {
   if (count < 1) throw new Error("El plan necesita al menos una cuota");
   if (amount < 0) throw new Error("El monto no puede ser negativo");
+  if (!Number.isInteger(amount)) throw new Error("El monto va en centésimos enteros");
 
-  const base = Math.floor(amount / count);
-  const remainder = amount - base * count;
+  const partes = splitMinor(amount, count);
 
   return Array.from({ length: count }, (_, i) => {
     const dueDate = new Date(firstDueDate);
     dueDate.setMonth(dueDate.getMonth() + i);
     return {
       number: i + 1,
-      amount: i === 0 ? base + remainder : base,
+      amount: partes[i]!,
       dueDate,
     };
   });
@@ -724,7 +727,7 @@ export async function collectedByCurrency(
     )
     .groupBy(schema.payment.currency);
 
-  const byCurrency = new Map(rows.map((r) => [r.currency, Number(r.total ?? 0)]));
+  const byCurrency = new Map(rows.map((r) => [r.currency, minorFromDb(r.total)]));
   return CURRENCIES.map((currency) => ({
     currency,
     total: byCurrency.get(currency) ?? 0,

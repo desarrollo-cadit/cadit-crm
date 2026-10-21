@@ -3,12 +3,12 @@
  */
 
 import type { WorkshopModality, WorkshopRegistrationStatus } from "@/lib/workshop-states";
+import { formatAmount } from "@/lib/money";
 
 export type Currency = "UYU" | "PYG" | "USD";
 
-const SYMBOL: Record<Currency, string> = { UYU: "$", PYG: "Gs. ", USD: "US$" };
-
-export const money = (n: number, c: Currency) => `${SYMBOL[c]}${n.toLocaleString("es-UY")}`;
+/** Centésimos → "$5.245,32". El formato y los símbolos viven en `src/lib/money.ts`. */
+export const money = (n: number, c: Currency) => formatAmount(n, c);
 
 /**
  * El día del taller tal como se cargó. Se guarda a medianoche UTC: leerlo en

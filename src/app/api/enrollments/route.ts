@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { minorAmount } from "@/lib/money-schema";
 import { CURRENCIES } from "@/lib/db/schema";
 import { apiError, parseBody, requireCapability } from "@/lib/api";
 import { createEnrollment } from "@/server/enrollments";
@@ -20,7 +21,8 @@ const createSchema = z.object({
   cohortId: z.string().min(1),
   contactId: z.string().min(1).optional(),
   contact: contactSchema.optional(),
-  amount: z.number().int().nullable().optional(),
+  /** En centésimos (DV-008, `src/lib/money.ts`). */
+  amount: minorAmount.nullable().optional(),
   // 007 — moneda del importe (UYU por defecto; PYG para los alumnos de Paraguay).
   currency: z.enum(CURRENCIES).optional(),
   installments: z.number().int().nullable().optional(),

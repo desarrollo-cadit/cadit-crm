@@ -36,6 +36,24 @@ describe("buildInstallmentPlan", () => {
     expect(plan.map((p) => p.amount)).toEqual([33_334, 33_333, 33_333]);
   });
 
+  /**
+   * DV-008 (revisada el 2026-10-21): los montos son CENTÉSIMOS. El reparto
+   * es en centésimos enteros; el centésimo que sobra va a la primera cuota.
+   */
+  it("reparte en centésimos: $10.000 en 3 y $5.245,32 en 4", () => {
+    const tres = buildInstallmentPlan(1_000_000, 3, new Date("2026-09-01"));
+    expect(tres.map((p) => p.amount)).toEqual([333_334, 333_333, 333_333]);
+    expect(tres.reduce((s, p) => s + p.amount, 0)).toBe(1_000_000);
+
+    const cuatro = buildInstallmentPlan(524_532, 4, new Date("2026-09-01"));
+    expect(cuatro.map((p) => p.amount)).toEqual([131_133, 131_133, 131_133, 131_133]);
+    expect(cuatro.reduce((s, p) => s + p.amount, 0)).toBe(524_532);
+
+    const conResto = buildInstallmentPlan(524_535, 4, new Date("2026-09-01"));
+    expect(conResto.map((p) => p.amount)).toEqual([131_136, 131_133, 131_133, 131_133]);
+    expect(conResto.every((p) => Number.isInteger(p.amount))).toBe(true);
+  });
+
   it("vence una vez por mes desde la primera fecha", () => {
     const plan = buildInstallmentPlan(30_000, 3, new Date("2026-09-10"));
     expect(plan.map((p) => p.dueDate.toISOString().slice(0, 10))).toEqual([

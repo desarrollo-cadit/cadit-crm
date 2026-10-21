@@ -1,5 +1,6 @@
 import { asc, desc, eq, inArray, like, ne } from "drizzle-orm";
 import { z } from "zod";
+import { minorAmount } from "@/lib/money-schema";
 import { httpUrl } from "@/lib/url-schema";
 import { getDb, schema, type DbOrTx } from "@/lib/db";
 import { CURRENCIES, type Currency } from "@/lib/db/schema";
@@ -361,7 +362,7 @@ export type CohortInput = {
   endDate?: Date | null;
   /** 005 (DV-005) — reemplaza el `professor` texto libre de 004. */
   teacherId?: string | null;
-  /** 005 — moneda entera (DV-008). */
+  /** 005 — en centésimos (DV-008, `src/lib/money.ts`). */
   cost?: number | null;
   /** 007 — de qué moneda es `cost`. */
   currency?: Currency;
@@ -445,7 +446,7 @@ export const cohortInputSchema = {
   name: z.string().trim().max(200).nullable().optional(),
   endDate: z.coerce.date().nullable().optional(),
   teacherId: z.string().min(1).nullable().optional(),
-  cost: z.number().int().min(0).nullable().optional(),
+  cost: minorAmount.nullable().optional(),
   currency: z.enum(CURRENCIES).optional(),
   minAttendancePct: z.number().int().min(0).max(100).nullable().optional(),
   frequency: z.string().max(200).nullable().optional(),

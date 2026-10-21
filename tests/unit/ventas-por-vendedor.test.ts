@@ -31,7 +31,7 @@ function venta(over: Partial<Fila> = {}): Fila {
     cohortId: "coh_1",
     parentEnrollmentId: null,
     fecha: new Date("2026-08-10T15:00:00Z"),
-    importe: 1000,
+    importe: 100000,
     currency: "UYU",
     alumno: "Lucía Gómez",
     alumnoDeBaja: false,
@@ -47,9 +47,9 @@ describe("armarVentasPorVendedor", () => {
     const { armarVentasPorVendedor } = await import("@/server/ventas-por-vendedor");
     const r = armarVentasPorVendedor(
       [
-        venta({ enrollmentId: "enr_1", importe: 1000, currency: "UYU" }),
-        venta({ enrollmentId: "enr_2", importe: 500, currency: "UYU" }),
-        venta({ enrollmentId: "enr_3", importe: 300, currency: "USD" }),
+        venta({ enrollmentId: "enr_1", importe: 100000, currency: "UYU" }),
+        venta({ enrollmentId: "enr_2", importe: 50000, currency: "UYU" }),
+        venta({ enrollmentId: "enr_3", importe: 30000, currency: "USD" }),
       ],
       AGOSTO
     );
@@ -57,8 +57,8 @@ describe("armarVentasPorVendedor", () => {
     const g = r.grupos[0]!;
     expect(g.vendedor).toEqual(ana);
     expect(g.totales).toEqual([
-      { currency: "UYU", total: 1500, ventas: 2 },
-      { currency: "USD", total: 300, ventas: 1 },
+      { currency: "UYU", total: 150000, ventas: 2 },
+      { currency: "USD", total: 30000, ventas: 1 },
     ]);
     expect(JSON.stringify(r)).not.toMatch(/totalGeneral|granTotal/);
     expect("total" in g).toBe(false);
@@ -68,13 +68,13 @@ describe("armarVentasPorVendedor", () => {
     const { armarVentasPorVendedor } = await import("@/server/ventas-por-vendedor");
     const r = armarVentasPorVendedor(
       [
-        venta({ enrollmentId: "enr_madre", importe: 9000 }),
+        venta({ enrollmentId: "enr_madre", importe: 900000 }),
         venta({ enrollmentId: "enr_hija", parentEnrollmentId: "enr_madre", importe: 0 }),
       ],
       AGOSTO
     );
     expect(r.grupos[0]!.filas.map((f) => f.enrollmentId)).toEqual(["enr_madre"]);
-    expect(r.grupos[0]!.totales).toEqual([{ currency: "UYU", total: 9000, ventas: 1 }]);
+    expect(r.grupos[0]!.totales).toEqual([{ currency: "UYU", total: 900000, ventas: 1 }]);
   });
 
   it("un lead sin cohorte no es una venta", async () => {
@@ -119,7 +119,7 @@ describe("armarVentasPorVendedor", () => {
     const g = r.grupos[0]!;
     expect(g.filas).toHaveLength(2);
     expect(g.sinMonto).toBe(1);
-    expect(g.totales).toEqual([{ currency: "UYU", total: 1000, ventas: 2 }]);
+    expect(g.totales).toEqual([{ currency: "UYU", total: 100000, ventas: 2 }]);
   });
 
   it("límites del período en hora de Montevideo", async () => {

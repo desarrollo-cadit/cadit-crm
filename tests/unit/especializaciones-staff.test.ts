@@ -761,7 +761,7 @@ describe("la recursada tras reprobar — una hija NUEVA con su propio monto", ()
       cohortId: "coh_m2_ebim14",
       contactId: "ct_1",
       parentEnrollmentId: "enr_madre",
-      amount: 9000,
+      amount: 900000,
       currency: "UYU",
       installments: 3,
     });
@@ -771,7 +771,7 @@ describe("la recursada tras reprobar — una hija NUEVA con su propio monto", ()
     expect(fila.parentEnrollmentId).toBe("enr_madre");
     expect(fila.cohortId).toBe("coh_m2_ebim14");
     // Su propia plata (regla 4): la madre lleva el paquete, la recursada lo suyo.
-    expect(fila.amount).toBe(9000);
+    expect(fila.amount).toBe(900000);
     expect(fila.installments).toBe(3);
     // FR-021 — el intento reprobado se conserva.
     expect(deletes).toHaveLength(0);
@@ -814,7 +814,7 @@ describe("SC-006 — el pago de una recursada es un cobro como cualquier otro", 
         ...base,
         id: "pay_normal",
         paidAt: new Date("2026-09-02T10:00:00.000Z"),
-        amount: 12000,
+        amount: 1200000,
         alumno: "Marta",
         cohorte: "Revit Full",
         curso: "Revit",
@@ -823,7 +823,7 @@ describe("SC-006 — el pago de una recursada es un cobro como cualquier otro", 
         ...base,
         id: "pay_recursada",
         paidAt: new Date("2026-09-03T10:00:00.000Z"),
-        amount: 9000,
+        amount: 900000,
         alumno: "Lucía",
         cohorte: "Revit Estructura (EBIM 14)",
         curso: "Revit Estructura",
@@ -831,7 +831,7 @@ describe("SC-006 — el pago de una recursada es un cobro como cualquier otro", 
     ]);
 
     expect(bloques).toHaveLength(1);
-    expect(bloques[0]!.total).toBe(21000);
+    expect(bloques[0]!.total).toBe(2100000);
     expect(bloques[0]!.filas.map((f) => f.id)).toEqual(["pay_normal", "pay_recursada"]);
     for (const fila of bloques[0]!.filas) {
       expect(Object.keys(fila)).not.toContain("categoria");

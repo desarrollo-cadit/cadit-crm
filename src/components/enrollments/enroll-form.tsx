@@ -355,7 +355,12 @@ export function EnrollForm({
             <div className="space-y-1.5">
               <Label htmlFor="enr-amount">Monto</Label>
               <div className="flex items-start gap-2">
-                <MoneyInput id="enr-amount" value={amount} onChange={setAmount} />
+                <MoneyInput
+                  id="enr-amount"
+                  value={amount}
+                  onChange={setAmount}
+                  currency={currency}
+                />
                 <Select
                   aria-label="Moneda"
                   className="w-auto px-2"

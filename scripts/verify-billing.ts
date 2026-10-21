@@ -22,6 +22,11 @@ import {
   voidPayment,
 } from "@/server/billing";
 import { getDb, getSql, schema } from "@/lib/db";
+import { scoped } from "@/lib/db/tenant";
+import { formatAmount } from "@/lib/money";
+
+// Montos en CENTÉSIMOS (DV-008 revisada el 2026-10-21): $57.000 = 5700000.
+const $ = (minor: number) => formatAmount(minor, "UYU");
 
 const db = getDb();
 const orgs = await db.select().from(schema.organization).limit(1);
@@ -34,7 +39,7 @@ if (!org) {
 const rows = await db
   .select({ id: schema.enrollment.id, amount: schema.enrollment.amount })
   .from(schema.enrollment)
-  .where(eq(schema.enrollment.amount, 57000))
+  .where(scoped(schema.enrollment.organizationId, org.id, eq(schema.enrollment.amount, 5700000)))
   .limit(1);
 const enrollment = rows[0];
 if (!enrollment) {
@@ -42,7 +47,7 @@ if (!enrollment) {
   process.exit(1);
 }
 
-console.log(`\nInscripción ${enrollment.id} — total $${enrollment.amount}\n`);
+console.log(`\nInscripción ${enrollment.id} — total ${$(enrollment.amount ?? 0)}\n`);
 
 // 1. Plan de 3 cuotas con el primer vencimiento en el PASADO: nace vencida.
 const plan = await generateInstallmentPlan(org.id, enrollment.id, {
@@ -56,15 +61,15 @@ if (!plan.ok) {
 }
 console.log("Plan generado:");
 for (const i of plan.data) {
-  console.log(`  #${i.number}  $${i.amount}  vence ${i.dueDate.slice(0, 10)}  ${i.status}`);
+  console.log(`  #${i.number}  ${$(i.amount)}  vence ${i.dueDate.slice(0, 10)}  ${i.status}`);
 }
-console.log(`  suma = $${plan.data.reduce((s, i) => s + i.amount, 0)} (debe ser 57000)\n`);
+console.log(`  suma = ${$(plan.data.reduce((s, i) => s + i.amount, 0))} (debe ser $57.000)\n`);
 
 // 2. Pago PARCIAL sobre la primera cuota.
 const primera = plan.data[0]!;
 const pago = await recordPayment(org.id, enrollment.id, {
   installmentId: primera.id,
-  amount: 12000,
+  amount: 1200000,
   paidAt: new Date(),
   method: "transferencia",
   idempotencyKey: "verify-billing-1",
@@ -74,7 +79,7 @@ console.log("Pago parcial de $12.000:", pago.ok ? "registrado" : pago.message);
 // 3. Idempotencia: el MISMO intento no debe crear un segundo pago.
 const repetido = await recordPayment(org.id, enrollment.id, {
   installmentId: primera.id,
-  amount: 12000,
+  amount: 1200000,
   paidAt: new Date(),
   method: "transferencia",
   idempotencyKey: "verify-billing-1",
@@ -89,7 +94,7 @@ console.log(
 const conPago = await listInstallments(org.id, enrollment.id);
 console.log("\nEstado tras el pago parcial:");
 for (const i of conPago) {
-  console.log(`  #${i.number}  pagado $${i.paid}  saldo $${i.balance}  ${i.status}`);
+  console.log(`  #${i.number}  pagado ${$(i.paid)}  saldo ${$(i.balance)}  ${i.status}`);
 }
 
 // 4. Morosidad.
@@ -98,12 +103,12 @@ const fila = overdue.rows.find((r) => r.enrollmentId === enrollment.id);
 console.log("\nMorosidad:");
 console.log(
   fila
-    ? `  ${fila.contact.name} — ${fila.overdueCount} cuotas, $${fila.overdueAmount}, ${fila.daysOverdue} días de atraso`
+    ? `  ${fila.contact.name} — ${fila.overdueCount} cuotas, ${$(fila.overdueAmount)}, ${fila.daysOverdue} días de atraso`
     : "  (la inscripción no aparece)"
 );
 console.log(
   "  totales por moneda:",
-  overdue.byCurrency.filter((c) => c.enrollments > 0).map((c) => `${c.currency} $${c.overdueTotal} (${c.enrollments})`).join(" · ") || "sin morosidad"
+  overdue.byCurrency.filter((c) => c.enrollments > 0).map((c) => `${formatAmount(c.overdueTotal, c.currency)} (${c.enrollments})`).join(" · ") || "sin morosidad"
 );
 
 // 5. Caja cobrada del mes.
@@ -113,7 +118,7 @@ const hasta = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 1);
 const cobrado = await collectedByCurrency(org.id, desde, hasta);
 console.log(
   "\nCobrado este mes:",
-  cobrado.filter((c) => c.total > 0).map((c) => `${c.currency} $${c.total}`).join(" · ") || "nada"
+  cobrado.filter((c) => c.total > 0).map((c) => `${formatAmount(c.total, c.currency)}`).join(" · ") || "nada"
 );
 
 // 6. Anulación: el pago no se borra y el saldo vuelve.
@@ -122,11 +127,11 @@ if (pago.ok) {
   const tras = await listInstallments(org.id, enrollment.id);
   const cobradoTras = await collectedByCurrency(org.id, desde, hasta);
   console.log(
-    `\nTras anular: saldo cuota 1 = $${tras[0]!.balance} (debe volver a ${primera.amount})`
+    `\nTras anular: saldo cuota 1 = ${$(tras[0]!.balance)} (debe volver a ${$(primera.amount)})`
   );
   console.log(
     "  cobrado del mes:",
-    cobradoTras.filter((c) => c.total > 0).map((c) => `${c.currency} $${c.total}`).join(" · ") ||
+    cobradoTras.filter((c) => c.total > 0).map((c) => `${formatAmount(c.total, c.currency)}`).join(" · ") ||
       "nada (el pago anulado no cuenta)"
   );
 }
@@ -135,7 +140,7 @@ if (pago.ok) {
 // pago quedaría colgado de una cuota que dejó de existir.
 const pagoVivo = await recordPayment(org.id, enrollment.id, {
   installmentId: primera.id,
-  amount: 5000,
+  amount: 500000,
   paidAt: new Date(),
   method: "efectivo",
 });
@@ -160,7 +165,7 @@ if (refi.ok) {
   const vig = refi.data.filter((i) => !i.canceledAt);
   const anu = refi.data.filter((i) => i.canceledAt);
   console.log(
-    `Refinanciado: ${anu.length} cuotas anuladas (siguen visibles) + ${vig.length} nuevas, suma ${vig.reduce((s, i) => s + i.amount, 0)}`
+    `Refinanciado: ${anu.length} cuotas anuladas (siguen visibles) + ${vig.length} nuevas, suma ${$(vig.reduce((s, i) => s + i.amount, 0))}`
   );
   console.log("  numeración:", refi.data.map((i) => i.number).join(", "));
 } else {
@@ -168,8 +173,12 @@ if (refi.ok) {
 }
 
 // Limpieza.
-await db.delete(schema.payment).where(eq(schema.payment.enrollmentId, enrollment.id));
-await db.delete(schema.installment).where(eq(schema.installment.enrollmentId, enrollment.id));
+await db
+  .delete(schema.payment)
+  .where(scoped(schema.payment.organizationId, org.id, eq(schema.payment.enrollmentId, enrollment.id)));
+await db
+  .delete(schema.installment)
+  .where(scoped(schema.installment.organizationId, org.id, eq(schema.installment.enrollmentId, enrollment.id)));
 console.log("\nDatos de prueba borrados.\n");
 
 await getSql().end();

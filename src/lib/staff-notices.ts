@@ -1,4 +1,5 @@
 import { escapeHtml } from "@/lib/utils";
+import { formatAmountWithCode } from "@/lib/money";
 import { pendienteDeFacturar } from "@/lib/facturacion-regla";
 import { classInstant, conZona, formatInZone, wallClockInZone } from "@/lib/schedule-time";
 
@@ -424,11 +425,12 @@ export function fechaDeInicio(startDate: Date, startTime: string | null, timeZon
   return `${dia}, ${conZona(formatInZone(instante, timeZone), timeZone)}`;
 }
 
-const miles = new Intl.NumberFormat("es-UY", { maximumFractionDigits: 0 });
-
-/** "UYU 12.000"; sin monto lo dice. Una moneda por vez: nunca se suman. */
+/**
+ * "UYU 12.000" / "UYU 5.245,32" a partir de CENTÉSIMOS; sin monto lo dice.
+ * Una moneda por vez: nunca se suman. El formato vive en `src/lib/money.ts`.
+ */
 export function monto(amount: number | null, currency: string): string {
-  return amount === null ? "sin monto" : `${currency} ${miles.format(amount)}`;
+  return formatAmountWithCode(amount, currency);
 }
 
 /** Escapa para HTML; `null` → vacío. */

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { minorAmount } from "@/lib/money-schema";
 import { parseBody, requireCapability } from "@/lib/api";
 import {
   cursosParaPrecio,
@@ -34,7 +35,7 @@ const guardarSchema = z.object({
         courseId: z.string().min(1),
         // `null` BORRA el precio. Si alguien limpia el campo es porque quiere
         // sacarlo, y tragarse esa intención en silencio es peor que aplicarla.
-        listPrice: z.number().int().min(0).nullable(),
+        listPrice: minorAmount.nullable(),
         listCurrency: z.enum(["UYU", "PYG", "USD"]).nullable(),
       })
     )

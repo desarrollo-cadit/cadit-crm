@@ -21,7 +21,7 @@ import type {
   SoftwareDto,
   TeacherDto,
 } from "@/lib/types";
-import { formatCalendarDay, WEEKDAY_LABELS } from "@/lib/utils";
+import { formatAmount, formatCalendarDay, WEEKDAY_LABELS } from "@/lib/utils";
 import {
   TODOS_LOS_ANIOS,
   alternarTipo,
@@ -63,9 +63,9 @@ function formatDate(iso: string | null) {
   );
 }
 
-function formatCost(cost: number | null) {
-  if (cost === null) return "—";
-  return `$${cost.toLocaleString("es-MX")}`;
+/** Centésimos → "$5.245,32" en la moneda dada (`src/lib/money.ts`). */
+function formatCost(cost: number | null, currency?: string) {
+  return formatAmount(cost, currency);
 }
 
 function formatDaysOfWeek(daysOfWeek: string | null) {
@@ -588,7 +588,7 @@ export function AcademicClient({
             {cohort.classroom && (
               <Dato icono={<MapPin className="h-3.5 w-3.5" />}>{cohort.classroom}</Dato>
             )}
-            <Dato icono={<Wallet className="h-3.5 w-3.5" />}>{formatCost(cohort.cost)}</Dato>
+            <Dato icono={<Wallet className="h-3.5 w-3.5" />}>{formatCost(cohort.cost, cohort.currency)}</Dato>
           </div>
 
           {cohort.software.length > 0 && (

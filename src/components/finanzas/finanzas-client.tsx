@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/table";
 import { VentasPorVendedor } from "@/components/finanzas/ventas-por-vendedor";
 import { formatCalendarDay } from "@/lib/utils";
+import { formatMinorNumber } from "@/lib/money";
 
 /**
  * 026 — Administración y finanzas: el cierre de un mes, para transcribir.
@@ -134,7 +135,8 @@ const ESTADO: Record<Estado, { texto: string; variante: "success" | "warning" | 
  * de un número en un bloque de guaraníes es exactamente el tipo de detalle que
  * se transcribe mal.
  */
-const miles = new Intl.NumberFormat("es-UY", { maximumFractionDigits: 0 });
+/** Centésimos → "5.245,32", sin símbolo (`src/lib/money.ts`). */
+const miles = (minor: number, currency: string) => formatMinorNumber(minor, currency);
 
 /**
  * 2026-10-20 — Fecha de cobro y vencimiento: DÍAS de calendario guardados a
@@ -366,7 +368,7 @@ export function FinanzasClient() {
                       <span className="text-sm">
                         <span className="text-text-3">Total {bloque.currency}: </span>
                         <span className="font-semibold tabular-nums">
-                          {miles.format(bloque.total)}
+                          {miles(bloque.total, bloque.currency)}
                         </span>
                       </span>
                     </div>
@@ -394,7 +396,7 @@ export function FinanzasClient() {
                             <TableCell>{METODO[f.metodo]}</TableCell>
                             <TableCell className="text-text-3">{f.recibo ?? "—"}</TableCell>
                             <TableCell className="text-right tabular-nums">
-                              {miles.format(f.importe)}
+                              {miles(f.importe, bloque.currency)}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -423,19 +425,19 @@ export function FinanzasClient() {
                         <span>
                           <span className="text-text-3">Emitido {bloque.currency}: </span>
                           <span className="font-semibold tabular-nums">
-                            {miles.format(bloque.totalEmitido)}
+                            {miles(bloque.totalEmitido, bloque.currency)}
                           </span>
                         </span>
                         <span>
                           <span className="text-text-3">Cobrado {bloque.currency}: </span>
                           <span className="font-semibold tabular-nums">
-                            {miles.format(bloque.totalPagado)}
+                            {miles(bloque.totalPagado, bloque.currency)}
                           </span>
                         </span>
                         <span>
                           <span className="text-text-3">Saldo {bloque.currency}: </span>
                           <span className="font-semibold tabular-nums">
-                            {miles.format(bloque.totalSaldo)}
+                            {miles(bloque.totalSaldo, bloque.currency)}
                           </span>
                         </span>
                       </span>
@@ -470,13 +472,13 @@ export function FinanzasClient() {
                               </Badge>
                             </TableCell>
                             <TableCell className="text-right tabular-nums">
-                              {miles.format(f.importe)}
+                              {miles(f.importe, bloque.currency)}
                             </TableCell>
                             <TableCell className="text-right tabular-nums">
-                              {miles.format(f.pagado)}
+                              {miles(f.pagado, bloque.currency)}
                             </TableCell>
                             <TableCell className="text-right tabular-nums">
-                              {miles.format(f.saldo)}
+                              {miles(f.saldo, bloque.currency)}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -532,7 +534,7 @@ export function FinanzasClient() {
                       </TableCell>
                       <TableCell className="text-text-3">{a.motivo ?? "—"}</TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {miles.format(a.importe)} {a.currency}
+                        {miles(a.importe, a.currency)} {a.currency}
                       </TableCell>
                     </TableRow>
                   ))}

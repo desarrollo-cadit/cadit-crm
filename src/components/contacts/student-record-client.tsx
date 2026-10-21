@@ -5,6 +5,7 @@ import { Award, FileText, GraduationCap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCalendarDay } from "@/lib/utils";
+import { formatMinorNumber } from "@/lib/money";
 import { EnrollLauncher } from "@/components/enrollments/enroll-launcher";
 import { CancelEnrollmentAction } from "@/components/enrollments/cancel-enrollment";
 import { AccessUntilLine, type EstadoDeAccesoDto } from "@/components/access/content-access";
@@ -320,10 +321,10 @@ export function StudentRecordClient({
               {data.account.map((a) => (
                 <li key={a.currency} className="flex flex-wrap gap-x-6">
                   <span className="font-medium">{a.currency}</span>
-                  <span>Total: {a.total.toLocaleString("es-UY")}</span>
-                  <span>Pagado: {a.paid.toLocaleString("es-UY")}</span>
+                  <span>Total: {formatMinorNumber(a.total, a.currency)}</span>
+                  <span>Pagado: {formatMinorNumber(a.paid, a.currency)}</span>
                   <span className={a.balance > 0 ? "font-medium" : ""}>
-                    Saldo: {a.balance.toLocaleString("es-UY")}
+                    Saldo: {formatMinorNumber(a.balance, a.currency)}
                   </span>
                   {a.overdueCount > 0 && (
                     <Badge variant="outline">

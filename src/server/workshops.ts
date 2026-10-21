@@ -1,5 +1,6 @@
 import { and, asc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
+import { minorAmount } from "@/lib/money-schema";
 import { getDb, schema } from "@/lib/db";
 import { CURRENCIES, type Currency } from "@/lib/db/schema";
 import { newId } from "@/lib/db/ids";
@@ -85,7 +86,7 @@ export const workshopEditionSchema = z.object({
   meetingUrl: httpUrl.nullable().optional(),
   classroom: z.string().trim().max(300).nullable().optional(),
   capacity: z.number().int().min(1).max(100000).nullable().optional(),
-  cost: z.number().int().min(0).max(1_000_000_000).nullable().optional(),
+  cost: minorAmount.nullable().optional(),
   currency: z.enum(CURRENCIES).default("UYU"),
   registrationStatus: z.enum(WORKSHOP_REGISTRATION_STATUSES).default("abierta"),
 });

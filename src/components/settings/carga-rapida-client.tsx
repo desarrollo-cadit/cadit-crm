@@ -180,6 +180,7 @@ export function CargaRapidaClient() {
                 placeholder="sin precio"
                 className="h-9 text-right"
                 value={c.listPrice}
+                currency={c.listCurrency}
                 onChange={(v) => {
                   setCursos((prev) =>
                     prev!.map((x, j) => (j === i ? { ...x, listPrice: v } : x))

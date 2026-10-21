@@ -133,7 +133,7 @@ describe("040 — la plata no viaja al rol Ventas", () => {
       ventas!.capabilities,
       {
         id: "enr_1",
-        amount: 76000,
+        amount: 7600000,
         currency: "UYU",
         installments: 12,
         paymentNotes: "pagó la mitad",
@@ -294,7 +294,7 @@ describe("040 — el costo por hora del profesor", () => {
   const fila = {
     id: "tch_1",
     name: "Ana",
-    hourlyRate: 1200,
+    hourlyRate: 120000,
     email: "ana@academia.uy",
     title: "Arq.",
     photoMimeType: null,
@@ -310,7 +310,7 @@ describe("040 — el costo por hora del profesor", () => {
   it.each([["academico.editar"], ["cobranza.ver"]] as const)("con `%s` viaja", async (cap) => {
     const { serializeTeacher, puedeVerCostoDocente } = await import("@/server/teachers");
     const dto = serializeTeacher(fila as never, [], puedeVerCostoDocente(["academico.ver", cap]));
-    expect(dto.hourlyRate).toBe(1200);
+    expect(dto.hourlyRate).toBe(120000);
   });
 
   it("los cuatro roles que ya lo veían lo siguen viendo", async () => {

@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { notify } from "@/lib/notify";
-import { formatCalendarDay } from "@/lib/utils";
+import { formatAmount, formatCalendarDay } from "@/lib/utils";
 import { Modal, useDirty } from "@/components/ui/modal";
 import { MoneyInput } from "@/components/ui/money-input";
 
@@ -38,8 +38,8 @@ type Payment = {
   voidReason: string | null;
 };
 
-const SYMBOL: Record<Currency, string> = { UYU: "$", PYG: "Gs. ", USD: "US$" };
-const money = (n: number, c: Currency) => `${SYMBOL[c]}${n.toLocaleString("es-UY")}`;
+/** Centésimos → "$5.245,32" (`src/lib/money.ts`). */
+const money = (n: number, c: Currency) => formatAmount(n, c);
 /** Vencimiento de cuota y fecha de pago: DÍAS (medianoche UTC), no instantes. */
 const day = (iso: string) =>
   formatCalendarDay(iso, { day: "2-digit", month: "2-digit", year: "2-digit" });
@@ -428,7 +428,12 @@ function PaymentForm({
         <div className="space-y-3">
           <div className="space-y-1.5">
             <Label htmlFor="pay-amount">Monto</Label>
-            <MoneyInput id="pay-amount" value={amount} onChange={setAmount} />
+            <MoneyInput
+              id="pay-amount"
+              value={amount}
+              onChange={setAmount}
+              currency={installment.currency}
+            />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="pay-date">Fecha del pago</Label>

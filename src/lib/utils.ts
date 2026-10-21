@@ -68,26 +68,11 @@ export function slugify(value: string): string {
 }
 
 /**
- * 007 — Símbolo por moneda (los alumnos de Paraguay pagan en guaraníes). Vive
- * acá por el mismo motivo que `WEEKDAY_LABELS`: el roster, el panel de
- * facturación y el formulario de inscripción muestran los mismos importes, y
- * con una copia por pantalla la que se olvide de una moneda nueva la imprime
- * con el símbolo de otra.
+ * 007 — Importe con el símbolo de SU moneda. Vive en `@/lib/money` (montos en
+ * centésimos, DV-008 revisada el 2026-10-21) junto al único mapa de símbolos;
+ * se re-exporta acá para los llamadores de siempre.
  */
-const CURRENCY_SYMBOL: Record<string, string> = {
-  UYU: "$",
-  PYG: "Gs. ",
-  USD: "US$",
-};
-
-/** Importe con el símbolo de SU moneda; nunca asume pesos. */
-export function formatAmount(
-  amount: number | null | undefined,
-  currency: string | undefined
-): string {
-  if (amount === null || amount === undefined) return "—";
-  return `${CURRENCY_SYMBOL[currency ?? "UYU"] ?? "$"}${amount.toLocaleString("es-UY")}`;
-}
+export { formatAmount } from "@/lib/money";
 
 /**
  * Días de la semana en el ORDEN que define el contrato de

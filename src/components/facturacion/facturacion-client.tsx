@@ -17,6 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { formatAmount } from "@/lib/money";
 import { notify } from "@/lib/notify";
 import {
   MAX_NUMERO,
@@ -45,8 +46,8 @@ import {
 
 type Respuesta = { estado: EstadoFacturacion; filas: FilaFacturacion[] };
 
-const SIMBOLO: Record<string, string> = { UYU: "$", PYG: "Gs. ", USD: "US$" };
-const dinero = (n: number, c: string) => `${SIMBOLO[c] ?? `${c} `}${n.toLocaleString("es-UY")}`;
+/** Centésimos → "$5.245,32" (`src/lib/money.ts`). */
+const dinero = (n: number, c: string) => formatAmount(n, c);
 const dia = (iso: string) =>
   new Date(`${iso}T12:00:00Z`).toLocaleDateString("es-UY", {
     day: "2-digit",

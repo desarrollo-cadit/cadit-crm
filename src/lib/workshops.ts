@@ -9,6 +9,7 @@
  */
 
 import type { Currency } from "@/lib/db/schema";
+import { toMajor } from "@/lib/money";
 import { classEndsAt, classInstant, conZona, wallClockInZone } from "@/lib/schedule-time";
 import {
   WORKSHOP_ATTENDEE_STATUSES,
@@ -286,6 +287,7 @@ export type PublicWorkshopDto = {
   /** El lugar de un presencial; `null` en un online (la web muestra "Online"). */
   location: string | null;
   isFree: boolean;
+  /** En unidades MAYORES (5245.32), no en centésimos: lo lee el sitio público. */
   price: number | null;
   currency: Currency | null;
   /** `null` = sin cupo definido. */
@@ -320,7 +322,9 @@ export function toPublicWorkshop(e: EdicionPublicable, timeZone: string): Public
     modality: e.modality,
     location: e.modality === "presencial" ? e.classroom : null,
     isFree: gratuito,
-    price: gratuito ? null : e.cost,
+    // DV-008: la base y la API interna van en centésimos, pero el sitio de la
+    // academia muestra `price` tal cual → sale en unidades MAYORES (5245.32).
+    price: gratuito || e.cost === null ? null : toMajor(e.cost),
     currency: gratuito ? null : e.currency,
     seatsLeft: libres,
     hasSeats: libres === null || libres > 0,

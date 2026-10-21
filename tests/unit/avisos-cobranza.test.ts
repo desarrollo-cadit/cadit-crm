@@ -261,25 +261,26 @@ describe("reintentoDeEventoQueToca — la periódica recupera inscripciones y pa
   });
 });
 
+// Montos en CENTÉSIMOS (DV-008 revisada el 2026-10-21): 1000000 = $10.000.
 describe("saldoPorMoneda — lo que le queda por pagar a una inscripción", () => {
   it("cuotas vigentes, por moneda, sin sumar monedas", () => {
     expect(
       saldoPorMoneda([
-        { amount: 10000, paid: 10000, currency: "UYU", canceledAt: null },
-        { amount: 10000, paid: 4000, currency: "UYU", canceledAt: null },
-        { amount: 300, paid: 0, currency: "USD", canceledAt: null },
+        { amount: 1000000, paid: 1000000, currency: "UYU", canceledAt: null },
+        { amount: 1000000, paid: 400000, currency: "UYU", canceledAt: null },
+        { amount: 30000, paid: 0, currency: "USD", canceledAt: null },
       ])
     ).toEqual([
-      { currency: "UYU", saldo: 6000 },
-      { currency: "USD", saldo: 300 },
+      { currency: "UYU", saldo: 600000 },
+      { currency: "USD", saldo: 30000 },
     ]);
   });
 
   it("una cuota anulada no debe nada y un sobrepago no da saldo negativo", () => {
     expect(
       saldoPorMoneda([
-        { amount: 10000, paid: 0, currency: "UYU", canceledAt: "2026-10-01T00:00:00.000Z" },
-        { amount: 5000, paid: 6000, currency: "UYU", canceledAt: null },
+        { amount: 1000000, paid: 0, currency: "UYU", canceledAt: "2026-10-01T00:00:00.000Z" },
+        { amount: 500000, paid: 600000, currency: "UYU", canceledAt: null },
       ])
     ).toEqual([{ currency: "UYU", saldo: 0 }]);
   });
@@ -298,24 +299,24 @@ describe("resumirMorosidad — la misma definición que el panel de cobranza", (
   };
   const cuotas: CuotaParaMorosidad[] = [
     // Ana, Revit: dos vencidas, una pagada a medias.
-    { ...base, installmentId: "in_1", enrollmentId: "en_a", amount: 10000, dueDate: dia("2026-09-10"), alumno: "Ana Pérez", cohortId: "co_r", cohorte: "Revit — Octubre" },
-    { ...base, installmentId: "in_2", enrollmentId: "en_a", amount: 10000, dueDate: dia("2026-10-10"), alumno: "Ana Pérez", cohortId: "co_r", cohorte: "Revit — Octubre" },
+    { ...base, installmentId: "in_1", enrollmentId: "en_a", amount: 1000000, dueDate: dia("2026-09-10"), alumno: "Ana Pérez", cohortId: "co_r", cohorte: "Revit — Octubre" },
+    { ...base, installmentId: "in_2", enrollmentId: "en_a", amount: 1000000, dueDate: dia("2026-10-10"), alumno: "Ana Pérez", cohortId: "co_r", cohorte: "Revit — Octubre" },
     // Ana: una que todavía no vence.
-    { ...base, installmentId: "in_3", enrollmentId: "en_a", amount: 10000, dueDate: dia("2026-11-10"), alumno: "Ana Pérez", cohortId: "co_r", cohorte: "Revit — Octubre" },
+    { ...base, installmentId: "in_3", enrollmentId: "en_a", amount: 1000000, dueDate: dia("2026-11-10"), alumno: "Ana Pérez", cohortId: "co_r", cohorte: "Revit — Octubre" },
     // Beto, Revit: vencida pero saldada.
-    { ...base, installmentId: "in_4", enrollmentId: "en_b", amount: 8000, dueDate: dia("2026-10-01"), alumno: "Beto Gómez", cohortId: "co_r", cohorte: "Revit — Octubre" },
+    { ...base, installmentId: "in_4", enrollmentId: "en_b", amount: 800000, dueDate: dia("2026-10-01"), alumno: "Beto Gómez", cohortId: "co_r", cohorte: "Revit — Octubre" },
     // Caro, AutoCAD, en dólares y de baja.
-    { ...base, installmentId: "in_5", enrollmentId: "en_c", amount: 300, currency: "USD", dueDate: dia("2026-10-05"), alumno: "Caro Ruiz", alumnoDeBaja: true, cohortId: "co_a", cohorte: "AutoCAD" },
+    { ...base, installmentId: "in_5", enrollmentId: "en_c", amount: 30000, currency: "USD", dueDate: dia("2026-10-05"), alumno: "Caro Ruiz", alumnoDeBaja: true, cohortId: "co_a", cohorte: "AutoCAD" },
     // Dani: anulada (refinanciación), no cuenta.
-    { ...base, installmentId: "in_6", enrollmentId: "en_d", amount: 9000, dueDate: dia("2026-08-01"), alumno: "Dani Sosa", cohortId: "co_a", cohorte: "AutoCAD", canceledAt: dia("2026-08-15") },
+    { ...base, installmentId: "in_6", enrollmentId: "en_d", amount: 900000, dueDate: dia("2026-08-01"), alumno: "Dani Sosa", cohortId: "co_a", cohorte: "AutoCAD", canceledAt: dia("2026-08-15") },
   ];
   const pagos = [
-    { installmentId: "in_1", amount: 4000, voidedAt: null },
-    { installmentId: "in_4", amount: 8000, voidedAt: null },
+    { installmentId: "in_1", amount: 400000, voidedAt: null },
+    { installmentId: "in_4", amount: 800000, voidedAt: null },
     // Un pago anulado no descuenta.
-    { installmentId: "in_2", amount: 10000, voidedAt: dia("2026-10-12") },
+    { installmentId: "in_2", amount: 1000000, voidedAt: dia("2026-10-12") },
     // Un pago a cuenta (sin cuota) no se imputa a ninguna.
-    { installmentId: null, amount: 99999, voidedAt: null },
+    { installmentId: null, amount: 9999900, voidedAt: null },
   ];
 
   it("agrupa por cohorte y alumno, sin anuladas, sin saldadas, sin las que no vencieron", () => {
@@ -328,7 +329,7 @@ describe("resumirMorosidad — la misma definición que el panel de cobranza", (
       alumno: "Ana Pérez",
       currency: "UYU",
       cuotasVencidas: 2,
-      adeudado: 16000,
+      adeudado: 1600000,
     });
   });
 
@@ -342,8 +343,8 @@ describe("resumirMorosidad — la misma definición que el panel de cobranza", (
   it("totales por moneda, en el orden fijo, nunca sumados entre sí", () => {
     const r = resumirMorosidad(cuotas, pagos, now);
     expect(r.totales).toEqual([
-      { currency: "UYU", adeudado: 16000, inscripciones: 1 },
-      { currency: "USD", adeudado: 300, inscripciones: 1 },
+      { currency: "UYU", adeudado: 1600000, inscripciones: 1 },
+      { currency: "USD", adeudado: 30000, inscripciones: 1 },
     ]);
   });
 
@@ -354,13 +355,13 @@ describe("resumirMorosidad — la misma definición que el panel de cobranza", (
 
   it("una inscripción con cuotas en dos monedas da dos filas, no una suma", () => {
     const mixtas: CuotaParaMorosidad[] = [
-      { ...base, installmentId: "x1", enrollmentId: "en_x", amount: 100, dueDate: dia("2026-10-01"), alumno: "Equis", cohortId: "co_r", cohorte: "Revit" },
-      { ...base, installmentId: "x2", enrollmentId: "en_x", amount: 50, currency: "USD", dueDate: dia("2026-10-01"), alumno: "Equis", cohortId: "co_r", cohorte: "Revit" },
+      { ...base, installmentId: "x1", enrollmentId: "en_x", amount: 10000, dueDate: dia("2026-10-01"), alumno: "Equis", cohortId: "co_r", cohorte: "Revit" },
+      { ...base, installmentId: "x2", enrollmentId: "en_x", amount: 5000, currency: "USD", dueDate: dia("2026-10-01"), alumno: "Equis", cohortId: "co_r", cohorte: "Revit" },
     ];
     const r = resumirMorosidad(mixtas, [], now);
     expect(r.cohortes[0]!.filas.map((f) => [f.currency, f.adeudado])).toEqual([
-      ["UYU", 100],
-      ["USD", 50],
+      ["UYU", 10000],
+      ["USD", 5000],
     ]);
   });
 
@@ -380,7 +381,7 @@ describe("armarAvisoInscripcion", () => {
     startTime: "18:30",
     timeZone: MVD,
     vendedor: "Valeria Díaz",
-    amount: 24000,
+    amount: 2400000,
     currency: "UYU",
     installments: 4,
     invoiceNumber: null,
@@ -467,14 +468,14 @@ describe("armarAvisoPago", () => {
     curso: "Revit Arquitectura",
     cohorte: "Octubre",
     esTaller: false,
-    amount: 6000,
+    amount: 600000,
     currency: "UYU",
     method: "transferencia",
     paidAt: dia("2026-10-19"),
     receiptNumber: "R-<77>",
     cuota: 2,
     saldos: [
-      { currency: "UYU", saldo: 12000 },
+      { currency: "UYU", saldo: 1200000 },
       { currency: "USD", saldo: 0 },
     ],
   };
@@ -507,8 +508,8 @@ describe("armarResumenMorosidad", () => {
     const now = mvd("2026-10-19", "08:30");
     const resumen = resumirMorosidad(
       [
-        { installmentId: "i1", enrollmentId: "en_a", amount: 10000, currency: "UYU", dueDate: dia("2026-10-01"), canceledAt: null, alumno: "Ana <P>", alumnoDeBaja: false, cohortId: "co_r", cohorte: "Revit" },
-        { installmentId: "i2", enrollmentId: "en_c", amount: 300, currency: "USD", dueDate: dia("2026-10-05"), canceledAt: null, alumno: "Caro", alumnoDeBaja: true, cohortId: "co_a", cohorte: "AutoCAD" },
+        { installmentId: "i1", enrollmentId: "en_a", amount: 1000000, currency: "UYU", dueDate: dia("2026-10-01"), canceledAt: null, alumno: "Ana <P>", alumnoDeBaja: false, cohortId: "co_r", cohorte: "Revit" },
+        { installmentId: "i2", enrollmentId: "en_c", amount: 30000, currency: "USD", dueDate: dia("2026-10-05"), canceledAt: null, alumno: "Caro", alumnoDeBaja: true, cohortId: "co_a", cohorte: "AutoCAD" },
       ],
       [],
       now

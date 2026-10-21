@@ -85,12 +85,12 @@ describe("recordPayment", () => {
   it("el pago toma la moneda de la cuota, no la de la inscripción", async () => {
     selectQueue.push(
       [{ id: "enr_1", currency: "UYU" }], // inscripción en pesos
-      [{ id: "inst_1", enrollmentId: "enr_1", currency: "PYG", amount: 1_000_000 }]
+      [{ id: "inst_1", enrollmentId: "enr_1", currency: "PYG", amount: 100000000 }]
     );
     const { recordPayment } = await import("@/server/billing");
     const r = await recordPayment("org_1", "enr_1", {
       installmentId: "inst_1",
-      amount: 500_000,
+      amount: 50000000,
       paidAt: new Date(),
       method: "transferencia",
     });
@@ -101,12 +101,12 @@ describe("recordPayment", () => {
   it("rechaza una cuota que no pertenece a la inscripción", async () => {
     selectQueue.push(
       [{ id: "enr_1", currency: "UYU" }],
-      [{ id: "inst_x", enrollmentId: "enr_OTRA", currency: "UYU", amount: 1000 }]
+      [{ id: "inst_x", enrollmentId: "enr_OTRA", currency: "UYU", amount: 100000 }]
     );
     const { recordPayment } = await import("@/server/billing");
     const r = await recordPayment("org_1", "enr_1", {
       installmentId: "inst_x",
-      amount: 500,
+      amount: 50000,
       paidAt: new Date(),
       method: "efectivo",
     });
@@ -123,7 +123,7 @@ describe("recordPayment", () => {
       {
         id: "pay_existente",
         installmentId: "inst_1",
-        amount: 12000,
+        amount: 1200000,
         currency: "UYU",
         paidAt: new Date(),
         method: "transferencia",
@@ -135,7 +135,7 @@ describe("recordPayment", () => {
     ]);
     const { recordPayment } = await import("@/server/billing");
     const r = await recordPayment("org_1", "enr_1", {
-      amount: 12000,
+      amount: 1200000,
       paidAt: new Date(),
       method: "transferencia",
       idempotencyKey: "misma-clave",
@@ -157,18 +157,18 @@ describe("listInstallments — saldos derivados", () => {
     const dueDate = new Date("2026-12-01");
     selectQueue.push(
       [
-        { id: "inst_1", number: 1, dueDate, amount: 19000, currency: "UYU", canceledAt: null, notes: null },
+        { id: "inst_1", number: 1, dueDate, amount: 1900000, currency: "UYU", canceledAt: null, notes: null },
       ],
       [
-        { id: "p1", installmentId: "inst_1", amount: 12000, voidedAt: null },
+        { id: "p1", installmentId: "inst_1", amount: 1200000, voidedAt: null },
         // Este está anulado: no debe descontar del saldo.
-        { id: "p2", installmentId: "inst_1", amount: 7000, voidedAt: new Date() },
+        { id: "p2", installmentId: "inst_1", amount: 700000, voidedAt: new Date() },
       ]
     );
     const { listInstallments } = await import("@/server/billing");
     const rows = await listInstallments("org_1", "enr_1", new Date("2026-11-01"));
-    expect(rows[0]!.paid).toBe(12000);
-    expect(rows[0]!.balance).toBe(7000);
+    expect(rows[0]!.paid).toBe(1200000);
+    expect(rows[0]!.balance).toBe(700000);
     expect(rows[0]!.status).toBe("parcial");
   });
 });

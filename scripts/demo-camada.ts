@@ -203,7 +203,7 @@ async function crear() {
     classroom: "Aula demo",
     minAttendancePct: 75,
     capacity: 10,
-    cost: 24000,
+    cost: 2400000, // centésimos (DV-008): $24.000
     currency: "UYU",
     virtualRoomId: aula.data.id,
   });
@@ -226,7 +226,7 @@ async function crear() {
       phone: TEL_ALUMNO,
       email: CORREO_ALUMNO,
     },
-    amount: 24000,
+    amount: 2400000, // centésimos (DV-008): $24.000
     currency: "UYU",
     installments: 4,
   }, { avisoInterno: false });

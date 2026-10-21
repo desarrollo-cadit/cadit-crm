@@ -1,4 +1,5 @@
 import { CURRENCIES, type Currency } from "@/lib/db/schema";
+import { minorToCsv } from "@/lib/money";
 import type { CourseKind } from "@/lib/course-kind";
 import { esVentaParaAviso } from "@/lib/billing-notices";
 import { csvField } from "@/lib/csv";
@@ -202,6 +203,11 @@ const ENCABEZADO = [
  * El CSV de la lista FILTRADA, tal como se ve. Monto y moneda en columnas
  * separadas y sin fila de totales: un total mezclaría monedas.
  *
+ * El separador de columnas es la COMA, así que el monto sale en unidades
+ * MAYORES con PUNTO decimal y sin separador de miles ("5245.32"): una coma
+ * decimal partiría el campo. Pesos y dólares con dos decimales; guaraníes sin
+ * decimales (`minorToCsv`, `src/lib/money.ts`).
+ *
  * Se arma en el navegador con los datos que ya viajaron con `cobranza.ver`:
  * no hay una ruta `text/csv` nueva que pueda traer más que la pantalla.
  */
@@ -214,7 +220,7 @@ export function facturacionCsv(filas: readonly FilaFacturacion[]): string {
       r.inicio,
       r.confirmada ? "Sí" : "No",
       r.vendedor,
-      r.amount === null ? null : String(r.amount),
+      r.amount === null ? null : minorToCsv(r.amount, r.currency),
       r.currency,
       r.invoiceNumber,
       r.empresa?.razonSocial ?? null,

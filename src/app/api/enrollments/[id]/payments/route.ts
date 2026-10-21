@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { positiveMinorAmount } from "@/lib/money-schema";
 import { apiError, parseBody, requireCapability } from "@/lib/api";
 import { recordPayment } from "@/server/billing";
 
@@ -9,7 +10,8 @@ type Params = { params: Promise<{ id: string }> };
 const createSchema = z.object({
   /** NULL/omitido = pago a cuenta, sin imputar a una cuota puntual. */
   installmentId: z.string().min(1).nullable().optional(),
-  amount: z.number().int().min(1),
+  /** En centésimos: al menos uno (DV-008). */
+  amount: positiveMinorAmount,
   paidAt: z.coerce.date(),
   method: z.enum(["efectivo", "transferencia", "tarjeta", "otro"]),
   receiptNumber: z.string().max(60).nullable().optional(),

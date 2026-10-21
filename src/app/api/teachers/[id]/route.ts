@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { minorAmount } from "@/lib/money-schema";
 import { apiError, parseBody, requireCapability } from "@/lib/api";
 import { sessionCapabilities } from "@/lib/capabilities";
 import { getTeacher, updateTeacher } from "@/server/teachers";
@@ -20,7 +21,7 @@ export const GET = requireCapability(
 
 const patchSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
-  hourlyRate: z.number().int().min(0).nullable().optional(),
+  hourlyRate: minorAmount.nullable().optional(),
   email: z.string().trim().email().max(200).nullable().optional(),
   // 023 — Texto libre: los títulos varían por país y por carrera, y una
   // lista cerrada siempre le queda corta a alguien.

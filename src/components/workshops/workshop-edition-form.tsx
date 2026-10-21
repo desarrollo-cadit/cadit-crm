@@ -243,7 +243,13 @@ export function WorkshopEditionFields({
         </div>
         {pago && (
           <div className="flex items-start gap-2">
-            <MoneyInput aria-label="Monto" required value={cost} onChange={setCost} />
+            <MoneyInput
+              aria-label="Monto"
+              required
+              value={cost}
+              onChange={setCost}
+              currency={currency}
+            />
             <Select
               aria-label="Moneda"
               className="w-28"

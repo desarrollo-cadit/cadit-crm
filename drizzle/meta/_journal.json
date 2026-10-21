@@ -470,6 +470,13 @@
       "when": 1792589442597,
       "tag": "0066_seguimiento_de_leads",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1792606741808,
+      "tag": "0067_montos_en_centesimos",
+      "breakpoints": true
     }
   ]
 }

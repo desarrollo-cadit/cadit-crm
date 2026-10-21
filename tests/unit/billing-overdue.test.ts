@@ -38,17 +38,17 @@ describe("estados derivados en los bordes", () => {
 describe("outstandingBalance", () => {
   it("un plan entero sin pagar debe el total", () => {
     const plan = [
-      { amount: 19000, paid: 0, canceledAt: null },
-      { amount: 19000, paid: 0, canceledAt: null },
-      { amount: 19000, paid: 0, canceledAt: null },
+      { amount: 1900000, paid: 0, canceledAt: null },
+      { amount: 1900000, paid: 0, canceledAt: null },
+      { amount: 1900000, paid: 0, canceledAt: null },
     ];
-    expect(outstandingBalance(plan)).toBe(57000);
+    expect(outstandingBalance(plan)).toBe(5700000);
   });
 
   it("un plan entero pago no debe nada", () => {
     const plan = [
-      { amount: 19000, paid: 19000, canceledAt: null },
-      { amount: 19000, paid: 19000, canceledAt: null },
+      { amount: 1900000, paid: 1900000, canceledAt: null },
+      { amount: 1900000, paid: 1900000, canceledAt: null },
     ];
     expect(outstandingBalance(plan)).toBe(0);
   });
@@ -56,10 +56,10 @@ describe("outstandingBalance", () => {
   it("mezcla de parciales y completas", () => {
     expect(
       outstandingBalance([
-        { amount: 19000, paid: 12000, canceledAt: null },
-        { amount: 19000, paid: 19000, canceledAt: null },
-        { amount: 19000, paid: 0, canceledAt: null },
+        { amount: 1900000, paid: 1200000, canceledAt: null },
+        { amount: 1900000, paid: 1900000, canceledAt: null },
+        { amount: 1900000, paid: 0, canceledAt: null },
       ])
-    ).toBe(26000);
+    ).toBe(2600000);
   });
 });

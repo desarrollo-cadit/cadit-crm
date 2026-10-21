@@ -128,12 +128,12 @@ describe("getStudentRecord — el estado de cuenta y las capacidades", () => {
     colaBase();
     selectQueue.push([
       // Vencida (fecha pasada) y con pago parcial: cuenta como morosa.
-      { id: "inst_1", currency: "UYU", amount: 57000, dueDate: new Date("2020-01-01"), canceledAt: null },
+      { id: "inst_1", currency: "UYU", amount: 5700000, dueDate: new Date("2020-01-01"), canceledAt: null },
       // A vencer: no cuenta, aunque no esté paga.
-      { id: "inst_2", currency: "USD", amount: 1200, dueDate: new Date("2099-01-01"), canceledAt: null },
+      { id: "inst_2", currency: "USD", amount: 120000, dueDate: new Date("2099-01-01"), canceledAt: null },
     ]);
     selectQueue.push([
-      { installmentId: "inst_1", amount: 20000, voidedAt: null },
+      { installmentId: "inst_1", amount: 2000000, voidedAt: null },
     ]);
 
     const { getStudentRecord } = await import("@/server/student-record");
@@ -143,12 +143,12 @@ describe("getStudentRecord — el estado de cuenta y las capacidades", () => {
     const usd = r!.account!.find((a) => a.currency === "USD");
     expect(uyu).toEqual({
       currency: "UYU",
-      total: 57000,
-      paid: 20000,
-      balance: 37000,
+      total: 5700000,
+      paid: 2000000,
+      balance: 3700000,
       overdueCount: 1,
     });
-    expect(usd?.balance).toBe(1200);
+    expect(usd?.balance).toBe(120000);
     // La de USD no venció: deber no es lo mismo que estar en mora.
     expect(usd?.overdueCount).toBe(0);
     expect(r!.account).toHaveLength(2);
@@ -158,7 +158,7 @@ describe("getStudentRecord — el estado de cuenta y las capacidades", () => {
   it("las cuotas anuladas no entran en el saldo", async () => {
     colaBase();
     selectQueue.push([
-      { id: "inst_1", currency: "UYU", amount: 57000, dueDate: null, canceledAt: new Date() },
+      { id: "inst_1", currency: "UYU", amount: 5700000, dueDate: null, canceledAt: new Date() },
     ]);
 
     const { getStudentRecord } = await import("@/server/student-record");
@@ -171,17 +171,17 @@ describe("getStudentRecord — el estado de cuenta y las capacidades", () => {
   it("los pagos anulados no descuentan", async () => {
     colaBase();
     selectQueue.push([
-      { id: "inst_1", currency: "UYU", amount: 57000, dueDate: null, canceledAt: null },
+      { id: "inst_1", currency: "UYU", amount: 5700000, dueDate: null, canceledAt: null },
     ]);
     selectQueue.push([
-      { installmentId: "inst_1", amount: 20000, voidedAt: new Date() },
+      { installmentId: "inst_1", amount: 2000000, voidedAt: new Date() },
     ]);
 
     const { getStudentRecord } = await import("@/server/student-record");
     const r = await getStudentRecord("org_1", "ct_1", CAPABILITIES);
 
     expect(r!.account![0]!.paid).toBe(0);
-    expect(r!.account![0]!.balance).toBe(57000);
+    expect(r!.account![0]!.balance).toBe(5700000);
   });
 
   /**
@@ -316,7 +316,7 @@ describe("getStudentRecord — el estado de cuenta y las capacidades", () => {
     selectQueue.push([]); // zona de la academia (reloj de asistencia)
     for (let i = 0; i < 3; i++) selectQueue.push([]);
     selectQueue.push([
-      { id: "ins_1", enrollmentId: "enr_lead", currency: "UYU", amount: 5000, dueDate: new Date("2026-11-01"), canceledAt: null },
+      { id: "ins_1", enrollmentId: "enr_lead", currency: "UYU", amount: 500000, dueDate: new Date("2026-11-01"), canceledAt: null },
     ]); // cuotas
     selectQueue.push([]); // pagos
 
@@ -325,7 +325,7 @@ describe("getStudentRecord — el estado de cuenta y las capacidades", () => {
 
     expect(r!.courses).toEqual([]);
     expect(r!.account).toEqual([
-      expect.objectContaining({ currency: "UYU", total: 5000, paid: 0, balance: 5000 }),
+      expect.objectContaining({ currency: "UYU", total: 500000, paid: 0, balance: 500000 }),
     ]);
   });
 });

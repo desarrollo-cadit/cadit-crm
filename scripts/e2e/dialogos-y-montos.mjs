@@ -7,8 +7,9 @@
  *    un diálogo sin cambios cierra como siempre.
  * 2. El buscador de contacto existente al inscribir CIERRA la lista al elegir
  *    y muestra a la persona elegida (con mouse y con teclado).
- * 3. El monto se ve con separador de miles ("5.000"), la coma no entra (sin
- *    centésimos, DV-008) y lo guardado es el entero 5000.
+ * 3. El monto se ve con separador de miles y coma decimal ("5.000,32"), un
+ *    tercer decimal no entra y se avisa, y lo guardado son CENTÉSIMOS
+ *    (500032; DV-008 revisada el 2026-10-21).
  *
  * Con `E2E_CAPTURAS=<carpeta>` guarda capturas de cada paso.
  */
@@ -143,19 +144,22 @@ export async function seccionDialogosYMontos({ api, ok, BASE, getCookie }) {
       (await elegido.isVisible()) && (await dialogo.getByRole("listbox").count()) === 0
     );
 
-    // ---- Monto: 5000 se ve 5.000; la coma no entra y se avisa.
+    // ---- Monto: 5000 se ve 5.000; ",32" suma centésimos; un tercer decimal no entra.
     const monto = dialogo.locator("#enr-amount");
     await monto.click();
     await monto.pressSequentially("5000");
     const visto = await monto.inputValue();
     ok("tipear 5000 en el monto muestra 5.000", visto === "5.000", visto);
-    await monto.pressSequentially(",");
+    await monto.pressSequentially(",32");
     const conComa = await monto.inputValue();
-    const pista = await dialogo.getByText("Los montos se cargan sin centésimos.").isVisible();
+    ok("tipear ,32 muestra 5.000,32", conComa === "5.000,32", conComa);
+    await monto.pressSequentially("1");
+    const conTres = await monto.inputValue();
+    const pista = await dialogo.getByText("Los montos llevan como máximo dos decimales.").isVisible();
     ok(
-      "una coma no entra: el monto queda 5.000 y se avisa que va sin centésimos",
-      pista && conComa === "5.000",
-      `${conComa} pista=${pista}`
+      "un tercer decimal no entra: el monto queda 5.000,32 y se avisa",
+      pista && conTres === "5.000,32",
+      `${conTres} pista=${pista}`
     );
     await captura("dialogos-2-contacto-y-monto");
 
@@ -177,7 +181,7 @@ export async function seccionDialogosYMontos({ api, ok, BASE, getCookie }) {
       "«Seguir editando» deja el diálogo abierto con el contacto y el monto",
       (await dialogo.isVisible()) &&
         (await elegido.isVisible()) &&
-        (await monto.inputValue()) === "5.000"
+        (await monto.inputValue()) === "5.000,32"
     );
 
     // ---- Escape con cambios también pregunta (Escape en el aviso = seguir editando).
@@ -186,7 +190,7 @@ export async function seccionDialogosYMontos({ api, ok, BASE, getCookie }) {
     ok("con cambios, Escape también pregunta", await aviso.isVisible());
     await pagina.keyboard.press("Escape");
     await aviso.waitFor({ state: "hidden", timeout: 10000 });
-    ok("Escape en el aviso vuelve al formulario", (await dialogo.isVisible()) && (await monto.inputValue()) === "5.000");
+    ok("Escape en el aviso vuelve al formulario", (await dialogo.isVisible()) && (await monto.inputValue()) === "5.000,32");
 
     // ---- La X con cambios también pregunta.
     await dialogo.getByRole("button", { name: "Cerrar", exact: true }).click();
@@ -194,7 +198,7 @@ export async function seccionDialogosYMontos({ api, ok, BASE, getCookie }) {
     ok("con cambios, la X también pregunta", await aviso.isVisible());
     await aviso.getByRole("button", { name: "Seguir editando" }).click();
 
-    // ---- Guardar: cierra SIN preguntar y lo guardado es el entero 5000.
+    // ---- Guardar: cierra SIN preguntar y lo guardado son 500032 centésimos.
     await dialogo.locator("#enr-seller").selectOption(sellerId);
     await dialogo.getByRole("button", { name: "Inscribir", exact: true }).click();
     await dialogo.waitFor({ state: "hidden", timeout: 30000 }).catch(() => {});
@@ -205,8 +209,8 @@ export async function seccionDialogosYMontos({ api, ok, BASE, getCookie }) {
     const roster = await api(`/api/cohorts/${cohortId}/roster`);
     const fila = (roster.json?.enrollments ?? []).find((e) => e.contact?.id === contacto.id);
     ok(
-      "la inscripción quedó del contacto existente, con monto 5000 (entero)",
-      fila?.amount === 5000,
+      "la inscripción quedó del contacto existente, con monto 500032 (centésimos)",
+      fila?.amount === 500032,
       JSON.stringify(fila ? { amount: fila.amount, contact: fila.contact?.id } : roster.json).slice(0, 300)
     );
     await captura("dialogos-4-inscripto");

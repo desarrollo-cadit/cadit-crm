@@ -21,16 +21,16 @@ describe("la cohorte pisa al curso", () => {
   it("usa el precio de la cohorte cuando lo tiene", () => {
     expect(
       resolveListPrice(
-        { cost: 90000, currency: "UYU" },
-        { listPrice: 120000, listCurrency: "UYU" }
+        { cost: 9000000, currency: "UYU" },
+        { listPrice: 12000000, listCurrency: "UYU" }
       )
-    ).toEqual({ price: 90000, currency: "UYU" });
+    ).toEqual({ price: 9000000, currency: "UYU" });
   });
 
   it("hereda el del curso cuando la cohorte no tiene", () => {
     expect(
-      resolveListPrice(SIN_COHORTE, { listPrice: 120000, listCurrency: "UYU" })
-    ).toEqual({ price: 120000, currency: "UYU" });
+      resolveListPrice(SIN_COHORTE, { listPrice: 12000000, listCurrency: "UYU" })
+    ).toEqual({ price: 12000000, currency: "UYU" });
   });
 
   /**
@@ -45,8 +45,8 @@ describe("la cohorte pisa al curso", () => {
   it("un precio en cero se trata como ausente", () => {
     expect(resolveListPrice({ cost: 0, currency: "UYU" }, SIN_CURSO)).toBeNull();
     expect(
-      resolveListPrice({ cost: 0, currency: "UYU" }, { listPrice: 500, listCurrency: "UYU" })
-    ).toEqual({ price: 500, currency: "UYU" });
+      resolveListPrice({ cost: 0, currency: "UYU" }, { listPrice: 50000, listCurrency: "UYU" })
+    ).toEqual({ price: 50000, currency: "UYU" });
   });
 });
 
@@ -58,8 +58,8 @@ describe("el precio y su moneda viajan juntos", () => {
    */
   it("hereda la moneda del mismo lugar que el precio", () => {
     expect(
-      resolveListPrice(SIN_COHORTE, { listPrice: 6000000, listCurrency: "PYG" })
-    ).toEqual({ price: 6000000, currency: "PYG" });
+      resolveListPrice(SIN_COHORTE, { listPrice: 600000000, listCurrency: "PYG" })
+    ).toEqual({ price: 600000000, currency: "PYG" });
   });
 
   it("la cohorte no toma prestada la moneda del curso", () => {
@@ -67,15 +67,15 @@ describe("el precio y su moneda viajan juntos", () => {
     // sería informar guaraníes con un número de pesos.
     expect(
       resolveListPrice(
-        { cost: 15000, currency: "UYU" },
-        { listPrice: 6000000, listCurrency: "PYG" }
+        { cost: 1500000, currency: "UYU" },
+        { listPrice: 600000000, listCurrency: "PYG" }
       )
-    ).toEqual({ price: 15000, currency: "UYU" });
+    ).toEqual({ price: 1500000, currency: "UYU" });
   });
 
   it("sin moneda declarada cae a UYU, que es la de la casa", () => {
-    expect(resolveListPrice({ cost: 15000, currency: null }, SIN_CURSO)).toEqual({
-      price: 15000,
+    expect(resolveListPrice({ cost: 1500000, currency: null }, SIN_CURSO)).toEqual({
+      price: 1500000,
       currency: "UYU",
     });
   });

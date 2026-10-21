@@ -2,6 +2,7 @@ import { sql, sum } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { CURRENCIES, type Currency } from "@/lib/db/schema";
 import { scoped } from "@/lib/db/tenant";
+import { minorFromDb } from "@/lib/money";
 import { collectedByCurrency } from "@/server/billing";
 
 /** Total facturado en UNA moneda. Nunca se suma con el de otra. */
@@ -35,7 +36,8 @@ function toCurrencyTotals(rows: { currency: string | null; total: unknown }[]): 
   const byCurrency = new Map<string, number>();
   for (const row of rows) {
     if (!row.currency) continue;
-    byCurrency.set(row.currency, Number(row.total ?? 0));
+    // postgres-js devuelve `sum()` de un bigint como TEXTO (numeric).
+    byCurrency.set(row.currency, minorFromDb(row.total));
   }
   return CURRENCIES.map((currency) => ({
     currency,

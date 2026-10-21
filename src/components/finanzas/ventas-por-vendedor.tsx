@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { formatMinorNumber } from "@/lib/money";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -39,7 +40,8 @@ type Reporte = {
   sinVendedor: number;
 };
 
-const miles = new Intl.NumberFormat("es-UY", { maximumFractionDigits: 0 });
+/** Centésimos → "5.245,32", sin símbolo (`src/lib/money.ts`). */
+const miles = (minor: number, currency: string) => formatMinorNumber(minor, currency);
 
 function fecha(iso: string, timeZone: string): string {
   try {
@@ -157,7 +159,7 @@ export function VentasPorVendedor({
                     <span className="text-text-3">
                       {t.ventas === 1 ? "1 venta" : `${t.ventas} ventas`} · Total {t.currency}:{" "}
                     </span>
-                    <span className="font-semibold tabular-nums">{miles.format(t.total)}</span>
+                    <span className="font-semibold tabular-nums">{miles(t.total, t.currency)}</span>
                   </span>
                 ))}
               </span>
@@ -206,7 +208,7 @@ export function VentasPorVendedor({
                       {f.importe === null ? (
                         <span className="text-text-3">Sin monto</span>
                       ) : (
-                        miles.format(f.importe)
+                        miles(f.importe, f.currency)
                       )}
                     </TableCell>
                     <TableCell className="text-text-3">{f.currency}</TableCell>

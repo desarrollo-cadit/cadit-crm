@@ -148,7 +148,7 @@ describe("courses: createCourse / createCohort (004)", () => {
       courseId: "crs_revit",
       startDate: new Date("2026-08-04"),
       teacherId: "tch_1",
-      cost: 76000,
+      cost: 7600000,
       frequency: "lunes y miércoles 18:30-20:30",
       classroom: "Aula 3",
     });
@@ -161,7 +161,7 @@ describe("courses: createCourse / createCohort (004)", () => {
       classroom: string;
     };
     expect(values.teacherId).toBe("tch_1");
-    expect(values.cost).toBe(76000);
+    expect(values.cost).toBe(7600000);
     expect(values.frequency).toBe("lunes y miércoles 18:30-20:30");
     expect(values.classroom).toBe("Aula 3");
     // 006 — `syllabusUrl` ya no es un campo de la cohorte; ver el test de
@@ -229,12 +229,12 @@ describe("courses: createCourse / createCohort (004)", () => {
 
   it("updateCohort (005 T008) solo actualiza los campos presentes en el input", async () => {
     const { updateCohort } = await import("@/server/courses");
-    const result = await updateCohort("org_1", "coh_1", { cost: 90000 });
+    const result = await updateCohort("org_1", "coh_1", { cost: 9000000 });
 
     expect(result.ok).toBe(true);
     expect(updates).toHaveLength(1);
     const set = updates[0]!.set as Record<string, unknown>;
-    expect(set.cost).toBe(90000);
+    expect(set.cost).toBe(9000000);
     expect("frequency" in set).toBe(false);
     expect("teacherId" in set).toBe(false);
   });
@@ -335,7 +335,7 @@ describe("courses: createCourse / createCohort (004)", () => {
       selectQueue.push([{ virtualRoomId: "vr_a" }]); // la que tiene hoy: la misma
       const { updateCohort } = await import("@/server/courses");
       const result = await updateCohort("org_1", "coh_1", {
-        cost: 90000,
+        cost: 9000000,
         virtualRoomId: "vr_a",
       });
 
@@ -373,7 +373,7 @@ describe("courses: createCourse / createCohort (004)", () => {
             courseId: "crs_revit",
             startDate: new Date("2026-08-04"),
             endDate: null,
-            cost: 76000,
+            cost: 7600000,
             frequency: null,
             classroom: null,
             capacity: 20,

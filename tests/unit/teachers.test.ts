@@ -172,12 +172,12 @@ describe("updateTeacher / listTeachers / getTeacher (iteración 2)", () => {
 
   it("updateTeacher solo actualiza los campos presentes en el input", async () => {
     const { updateTeacher } = await import("@/server/teachers");
-    const result = await updateTeacher("org_1", "tch_1", { hourlyRate: 500 });
+    const result = await updateTeacher("org_1", "tch_1", { hourlyRate: 50000 });
 
     expect(result.ok).toBe(true);
     expect(updates).toHaveLength(1);
     const set = updates[0]!.set as Record<string, unknown>;
-    expect(set.hourlyRate).toBe(500);
+    expect(set.hourlyRate).toBe(50000);
     expect("name" in set).toBe(false);
   });
 
@@ -227,7 +227,7 @@ describe("updateTeacher / listTeachers / getTeacher (iteración 2)", () => {
 
   it("listTeachers resuelve courseIds por profesor en una sola query extra", async () => {
     selectQueue.push(
-      [{ id: "tch_1", name: "Ing. Paola Suárez", hourlyRate: 400, photoMimeType: null }],
+      [{ id: "tch_1", name: "Ing. Paola Suárez", hourlyRate: 40000, photoMimeType: null }],
       [{ teacherId: "tch_1", courseId: "crs_1" }]
     );
 
@@ -238,7 +238,7 @@ describe("updateTeacher / listTeachers / getTeacher (iteración 2)", () => {
       {
         id: "tch_1",
         name: "Ing. Paola Suárez",
-        hourlyRate: 400,
+        hourlyRate: 40000,
         courseIds: ["crs_1"],
         hasPhoto: false,
       },

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { minorAmount } from "@/lib/money-schema";
 import { CURRENCIES } from "@/lib/db/schema";
 import { apiError, parseBody, requireCapability } from "@/lib/api";
 import { updateEnrollmentCommercial } from "@/server/enrollments";
@@ -9,7 +10,8 @@ export const dynamic = "force-dynamic";
 type Params = { params: Promise<{ id: string }> };
 
 const patchSchema = z.object({
-  amount: z.number().int().nullable().optional(),
+  /** En centésimos (DV-008, `src/lib/money.ts`). */
+  amount: minorAmount.nullable().optional(),
   // 007 — moneda del importe (UYU por defecto; PYG para los alumnos de Paraguay).
   currency: z.enum(CURRENCIES).optional(),
   installments: z.number().int().min(0).nullable().optional(),

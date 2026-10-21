@@ -34,9 +34,14 @@ import { PAYMENT_TERMS } from "../company-terms";
  * 007 — Monedas admitidas en los importes. Hasta 006 los montos eran un
  * entero suelto que asumía UNA sola moneda; con alumnos de Uruguay y de
  * Paraguay en la misma cohorte, sumar $57.000 (UYU) con 10.000.000 (PYG) en
- * la misma columna daba totales de facturación sin sentido. El importe
- * sigue siendo entero (sin centavos, DV-008): lo que se agrega es de QUÉ
- * moneda es ese entero.
+ * la misma columna daba totales de facturación sin sentido. Lo que se agrega
+ * es de QUÉ moneda es el importe.
+ *
+ * DV-008 (revisada el 2026-10-21, migración 0067): todo importe es un
+ * `bigint` en CENTÉSIMOS (unidades menores), con la MISMA escala ×100 para
+ * todas las monedas — PYG incluido, aunque nunca se muestre con decimales.
+ * La API interna también viaja en centésimos; mostrar, exportar y convertir
+ * pasa por `src/lib/money.ts`.
  */
 export const CURRENCIES = ["UYU", "PYG", "USD"] as const;
 export type Currency = (typeof CURRENCIES)[number];
@@ -253,8 +258,8 @@ export const teacher = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    /** 005 iteración 2 — costo por hora opcional (moneda entera, DV-008). */
-    hourlyRate: integer("hourly_rate"),
+    /** 005 iteración 2 — costo por hora opcional, en centésimos (DV-008, `src/lib/money.ts`). */
+    hourlyRate: bigint("hourly_rate", { mode: "number" }),
     /**
      * 005 iteración 5 (feedback en vivo: "que los profesores sean usuarios")
      * — email de contacto, identidad mínima. NO crea cuenta/login: eso queda
@@ -487,7 +492,7 @@ export const course = pgTable(
      * vez por producto y cambia poco; la cohorte lo pisa cuando hay una
      * promoción puntual, igual que ya hace con `min_attendance_pct`.
      */
-    listPrice: integer("list_price"),
+    listPrice: bigint("list_price", { mode: "number" }),
     /** La moneda del precio de lista. Hay UYU y PYG conviviendo (007). */
     listCurrency: text("list_currency", { enum: CURRENCIES }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -656,8 +661,8 @@ export const cohort = pgTable(
     teacherId: text("teacher_id").references(() => teacher.id, {
       onDelete: "set null",
     }),
-    /** 005 — moneda entera, mismo criterio que enrollment.amount (DV-008). */
-    cost: integer("cost"),
+    /** 005 — en centésimos, mismo criterio que enrollment.amount (DV-008). */
+    cost: bigint("cost", { mode: "number" }),
     /** 007 — de qué moneda es `cost`. Ver CURRENCIES. */
     currency: text("currency", { enum: CURRENCIES }).notNull().default("UYU"),
     /**
@@ -877,8 +882,8 @@ export const enrollment = pgTable(
     position: integer("position").notNull().default(0),
     enrolledAt: timestamp("enrolled_at"),
     lastActivityAt: timestamp("last_activity_at"),
-    /** 005 — datos comerciales (DV-008, FR-009). */
-    amount: integer("amount"),
+    /** 005 — datos comerciales (FR-009). En centésimos (DV-008, `src/lib/money.ts`). */
+    amount: bigint("amount", { mode: "number" }),
     /**
      * 007 — de qué moneda es `amount`. Dos alumnos de la MISMA cohorte
      * pueden pagar en monedas distintas (Uruguay/Paraguay), así que la
@@ -1066,7 +1071,7 @@ export const workshopRegistration = pgTable(
       .notNull()
       .default("anotado"),
     source: text("source", { enum: WORKSHOP_SOURCES }).notNull(),
-    amount: integer("amount"),
+    amount: bigint("amount", { mode: "number" }),
     currency: text("currency", { enum: CURRENCIES }),
     /** 033 (FR-019) — cuándo salió la confirmación por WhatsApp. */
     confirmationSentAt: timestamp("confirmation_sent_at"),
@@ -1638,8 +1643,8 @@ export const installment = pgTable(
     /** Orden dentro del plan, 1..N. */
     number: integer("number").notNull(),
     dueDate: timestamp("due_date").notNull(),
-    /** Entero sin centavos, mismo criterio que `enrollment.amount` (DV-008 de 005). */
-    amount: integer("amount").notNull(),
+    /** En centésimos, mismo criterio que `enrollment.amount` (DV-008). */
+    amount: bigint("amount", { mode: "number" }).notNull(),
     /** Hereda de `enrollment.currency` al generar el plan. */
     currency: text("currency", { enum: CURRENCIES }).notNull().default("UYU"),
     /**
@@ -1685,7 +1690,7 @@ export const payment = pgTable(
     installmentId: text("installment_id").references(() => installment.id, {
       onDelete: "set null",
     }),
-    amount: integer("amount").notNull(),
+    amount: bigint("amount", { mode: "number" }).notNull(),
     /** DEBE coincidir con la moneda de su cuota (FR-004). */
     currency: text("currency", { enum: CURRENCIES }).notNull().default("UYU"),
     /** Fecha REAL del pago, no la de carga: la caja del mes depende de esto. */

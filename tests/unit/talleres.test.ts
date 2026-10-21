@@ -165,15 +165,15 @@ describe("033 (FR-015/FR-017) — la cuota única", () => {
   it("con costo: una cuota por el costo vigente, en la moneda del taller, que vence el día del taller", () => {
     const signup = new Date("2026-10-20T15:00:00Z");
     expect(
-      cuotaDeTaller({ cost: 1500, currency: "UYU", signupAt: signup, workshopDay: DIA })
-    ).toEqual({ amount: 1500, currency: "UYU", dueDate: DIA });
+      cuotaDeTaller({ cost: 150000, currency: "UYU", signupAt: signup, workshopDay: DIA })
+    ).toEqual({ amount: 150000, currency: "UYU", dueDate: DIA });
   });
 
   it("si se anota después del día del taller (carga manual tardía), vence al anotarse", () => {
     const tarde = new Date("2026-11-09T12:00:00Z");
     expect(
-      cuotaDeTaller({ cost: 900, currency: "USD", signupAt: tarde, workshopDay: DIA })
-    ).toEqual({ amount: 900, currency: "USD", dueDate: tarde });
+      cuotaDeTaller({ cost: 90050, currency: "USD", signupAt: tarde, workshopDay: DIA })
+    ).toEqual({ amount: 90050, currency: "USD", dueDate: tarde });
   });
 });
 
@@ -207,7 +207,8 @@ const edicion: EdicionPublicable = {
   modality: "online",
   classroom: "Sede Centro",
   meetingUrl: "https://zoom.us/j/123456789?pwd=secreto",
-  cost: 1500,
+  // En centésimos (DV-008): $ 5.245,32.
+  cost: 524532,
   currency: "UYU",
   capacity: 20,
   registrationStatus: "abierta",
@@ -232,7 +233,8 @@ describe("033 (FR-005) — lo que ve la web", () => {
       modality: "online",
       location: null,
       isFree: false,
-      price: 1500,
+      // El sitio público recibe unidades MAYORES, no centésimos.
+      price: 5245.32,
       currency: "UYU",
       seatsLeft: 16,
       hasSeats: true,
@@ -376,16 +378,16 @@ describe("033 (FR-011/FR-018) — si pagó, y qué pasa al cancelar", () => {
 
   it("con costo: pagado cuando lo pagado cubre lo adeudado, pendiente si no", async () => {
     const { estadoDePago } = await import("@/lib/workshops");
-    expect(estadoDePago({ pactado: 1500, adeudado: 1500, pagado: 1500 })).toBe("pagado");
-    expect(estadoDePago({ pactado: 1500, adeudado: 1500, pagado: 500 })).toBe("pendiente");
+    expect(estadoDePago({ pactado: 150000, adeudado: 150000, pagado: 150000 })).toBe("pagado");
+    expect(estadoDePago({ pactado: 150000, adeudado: 150000, pagado: 50000 })).toBe("pendiente");
     // La cuota se anuló al cancelar sin pagos: no queda nada pendiente.
-    expect(estadoDePago({ pactado: 1500, adeudado: 0, pagado: 0 })).toBe("sin_saldo");
+    expect(estadoDePago({ pactado: 150000, adeudado: 0, pagado: 0 })).toBe("sin_saldo");
   });
 
   it("al cancelar se anula la cuota solo si no tiene pagos: un pago nunca se borra", async () => {
     const { cuotaSeAnulaAlCancelar } = await import("@/lib/workshops");
     expect(cuotaSeAnulaAlCancelar({ pagado: 0 })).toBe(true);
-    expect(cuotaSeAnulaAlCancelar({ pagado: 100 })).toBe(false);
+    expect(cuotaSeAnulaAlCancelar({ pagado: 10000 })).toBe(false);
   });
 });
 
@@ -422,5 +424,19 @@ describe("033 (FR-019, US4) — por dónde sale un aviso", () => {
     expect(v).toContain("https://zoom.us/j/123456789?pwd=secreto");
     expect(v).toContain("10:00 (hora de Uruguay)");
     expect(variableDelAviso("confirmacion", edicion, TZ)).not.toContain("zoom.us");
+  });
+});
+
+/**
+ * El catálogo PÚBLICO (`/api/public/talleres`) lo lee el sitio de la academia,
+ * que muestra `price` tal cual: viaja en unidades MAYORES aunque la base y la
+ * API interna hablen en centésimos (DV-008 revisada el 2026-10-21). Si viajaran
+ * centésimos, la web mostraría precios ×100.
+ */
+describe("DV-008 — el precio público sale en unidades mayores", () => {
+  it("centésimos en la base → unidades con decimales en la web", () => {
+    expect(toPublicWorkshop({ ...edicion, cost: 524532 }, TZ).price).toBe(5245.32);
+    expect(toPublicWorkshop({ ...edicion, cost: 150000 }, TZ).price).toBe(1500);
+    expect(toPublicWorkshop({ ...edicion, cost: 1, currency: "USD" }, TZ).price).toBe(0.01);
   });
 });

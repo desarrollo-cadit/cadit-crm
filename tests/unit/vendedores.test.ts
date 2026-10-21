@@ -287,7 +287,7 @@ describe("updateEnrollmentCommercial — editar una venta existente", () => {
     selectQueue.push([{ cohortId: "coh_1", parentEnrollmentId: null, sellerId: null }]);
     const { updateEnrollmentCommercial } = await import("@/server/enrollments");
     const r = await updateEnrollmentCommercial("org_1", "enr_1", {
-      amount: 1000,
+      amount: 100000,
       sellerId: null,
     });
     expect(r.ok).toBe(true);
@@ -307,7 +307,7 @@ describe("updateEnrollmentCommercial — editar una venta existente", () => {
     const { updateEnrollmentCommercial } = await import("@/server/enrollments");
     const r = await updateEnrollmentCommercial("org_1", "enr_1", {
       sellerId: "sel_viejo",
-      amount: 5,
+      amount: 500,
     });
     expect(r.ok).toBe(true);
   });
@@ -429,7 +429,7 @@ describe("buildRosterEntry — el vendedor viaja con los datos comerciales", () 
     contactId: "ct_1",
     cohortId: "coh_1",
     parentEnrollmentId: null,
-    amount: 1000,
+    amount: 100000,
     currency: "UYU",
     installments: 2,
     paymentNotes: null,
