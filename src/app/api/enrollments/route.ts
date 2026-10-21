@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { phoneInputSchema } from "@/lib/phone";
 import { minorAmount } from "@/lib/money-schema";
 import { CURRENCIES } from "@/lib/db/schema";
 import { apiError, parseBody, requireCapability } from "@/lib/api";
@@ -9,10 +10,7 @@ export const dynamic = "force-dynamic";
 const contactSchema = z.object({
   firstName: z.string().trim().min(1).max(120),
   lastName: z.string().trim().max(120).optional(),
-  phone: z
-    .string()
-    .trim()
-    .regex(/^\d{7,15}$/, "Teléfono en dígitos, con código de país (ej. 5215512345678)"),
+  phone: phoneInputSchema,
   email: z.string().trim().email().max(200).optional(),
   nationalId: z.string().trim().max(60).optional(),
 });

@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 /**
  * 007 — Normalización del teléfono ESCRITO A MANO (formulario público del
  * sitio, alta manual de una inscripción, importación de planillas) a la
@@ -55,3 +57,24 @@ export function normalizePhoneInput(raw: string): string | null {
 export function normalizePhoneOrRaw(raw: string): string {
   return normalizePhoneInput(raw) ?? raw.replace(/\D/g, "");
 }
+
+export const PHONE_INPUT_MESSAGE =
+  "Revisá el teléfono: escribilo con código de país (ej. +598 99 123 456) o como celular uruguayo (099 123 456).";
+
+/**
+ * El teléfono de un formulario: se NORMALIZA y después se valida. Validar lo
+ * tipeado rechazaba "+59892021 730" por el "+" y el espacio, cuando
+ * `normalizePhoneInput` lo deja en "59892021730". Lo que sale es lo que se
+ * guarda: la misma forma con la que llega el contacto por WhatsApp.
+ */
+export const phoneInputSchema = z
+  .string()
+  .trim()
+  .transform((raw, ctx) => {
+    const phone = normalizePhoneInput(raw);
+    if (!phone || !/^\d{7,15}$/.test(phone)) {
+      ctx.addIssue({ code: "custom", message: PHONE_INPUT_MESSAGE });
+      return z.NEVER;
+    }
+    return phone;
+  });

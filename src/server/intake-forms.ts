@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
-import { normalizePhoneOrRaw } from "@/lib/phone";
+import { normalizePhoneOrRaw, phoneInputSchema } from "@/lib/phone";
 import { onLeadActivity } from "@/server/inbox/lead-activity";
 import { avisarInteresadoNuevo } from "@/server/lead-notices-queue";
 import { registrarEnvioDeFormulario } from "@/server/seguimiento";
@@ -101,10 +101,7 @@ export const publicLeadSchema = z.object({
   // externos que ya tienen el snippet viejo embebido siguen funcionando y el
   // contacto queda como antes (todo en `name`).
   lastName: z.string().trim().max(120).optional(),
-  phone: z
-    .string()
-    .trim()
-    .regex(/^\d{7,15}$/, "Teléfono en dígitos, con código de país (ej. 5215512345678)"),
+  phone: phoneInputSchema,
   email: z.string().trim().email().max(200).optional(),
   // 005 iteración 4 (feedback en vivo: "el campo mensaje que llena el
   // usuario en mi web") — nombre de cara al formulario externo; se guarda

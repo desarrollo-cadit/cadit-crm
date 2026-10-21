@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizePhoneInput, normalizePhoneOrRaw } from "@/lib/phone";
+import { normalizePhoneInput, normalizePhoneOrRaw, phoneInputSchema } from "@/lib/phone";
 
 /**
  * 007 — El teléfono escrito a mano (formulario público, alta manual,
@@ -51,5 +51,29 @@ describe("normalizePhoneInput", () => {
   it("normalizePhoneOrRaw nunca pierde el número", () => {
     expect(normalizePhoneOrRaw("098 574 165")).toBe("59898574165");
     expect(normalizePhoneOrRaw("1234567")).toBe("1234567");
+  });
+});
+
+/**
+ * 2026-10-21 — El esquema de los formularios normaliza ANTES de validar. Antes
+ * se exigía `^\d{7,15}$` sobre lo tipeado, y "+59892021 730" (un celular
+ * válido, escrito como lo escribe cualquiera) era rechazado.
+ */
+describe("phoneInputSchema", () => {
+  it("acepta lo que la gente escribe y lo deja como llega por WhatsApp", () => {
+    expect(phoneInputSchema.parse("+59892021 730")).toBe("59892021730");
+    expect(phoneInputSchema.parse("098 574 165")).toBe("59898574165");
+    expect(phoneInputSchema.parse("099-123-456")).toBe("59899123456");
+    expect(phoneInputSchema.parse("(+595) 981 123 456")).toBe("595981123456");
+    expect(phoneInputSchema.parse("  59899123456 ")).toBe("59899123456");
+  });
+
+  it("rechaza lo que no es un teléfono, con un mensaje que dice cómo escribirlo", () => {
+    const r = phoneInputSchema.safeParse("12");
+    expect(r.success).toBe(false);
+    expect(r.error?.issues[0]?.message).toMatch(/código de país/);
+    expect(phoneInputSchema.safeParse("").success).toBe(false);
+    expect(phoneInputSchema.safeParse("hola").success).toBe(false);
+    expect(phoneInputSchema.safeParse("1234567890123456789").success).toBe(false);
   });
 });

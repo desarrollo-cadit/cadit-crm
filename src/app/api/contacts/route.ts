@@ -1,10 +1,10 @@
 import { desc, ilike, isNull, or, sql } from "drizzle-orm";
+import { phoneInputSchema } from "@/lib/phone";
 import { z } from "zod";
 import { apiError, parseBody, parseQuery, requireCapability } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
-import { normalizeMx } from "@/lib/meta/client";
 import { serializeContact } from "@/server/contacts";
 
 export const dynamic = "force-dynamic";
@@ -74,10 +74,7 @@ export const GET = requireCapability(
 const createSchema = z.object({
   firstName: z.string().trim().min(1).max(120),
   lastName: z.string().trim().max(120).optional(),
-  phone: z
-    .string()
-    .trim()
-    .regex(/^\d{7,15}$/, "Teléfono en dígitos, con código de país (ej. 5215512345678)"),
+  phone: phoneInputSchema,
   notes: z.string().max(4000).optional(),
   // 005 (T017, DV-003) — la unicidad la resuelven los índices parciales +
   // el mapeo 409 de withAuth (ver src/lib/api.ts).
@@ -93,7 +90,9 @@ export const POST = requireCapability(
 
   const db = getDb();
   // 003: la identidad WhatsApp se deriva del teléfono normalizado.
-  const phone = normalizeMx(body.data.phone);
+  // Ya normalizado por `phoneInputSchema` (antes `normalizeMx`, que solo
+  // resuelve México y dejaba "098574165" distinto del "59898574165" de WhatsApp).
+  const phone = body.data.phone;
   const inserted = await db
     .insert(schema.contact)
     .values({

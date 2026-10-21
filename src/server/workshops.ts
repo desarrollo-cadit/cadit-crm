@@ -1,4 +1,5 @@
 import { and, asc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { phoneInputSchema } from "@/lib/phone";
 import { z } from "zod";
 import { minorAmount } from "@/lib/money-schema";
 import { getDb, schema } from "@/lib/db";
@@ -106,10 +107,7 @@ export const manualAttendeeSchema = z.union([
     contact: z.object({
       firstName: z.string().trim().min(1, "Falta el nombre.").max(120),
       lastName: z.string().trim().max(120).nullable().optional(),
-      phone: z
-        .string()
-        .trim()
-        .regex(/^\d{7,15}$/, "Teléfono en dígitos, con código de país (ej. 59899123456)."),
+      phone: phoneInputSchema,
       email: z.string().trim().email("El correo no es válido.").max(200).nullable().optional(),
     }),
   }),
