@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LicenseList } from "@/components/enrollments/license-list";
+import { LicenseEmailField } from "@/components/enrollments/license-email";
 import { GroupLicensesPanel } from "@/components/cohorts/group-licenses-panel";
 import { notify } from "@/lib/notify";
 
@@ -19,6 +20,8 @@ type Alumno = {
   reasons: string[];
   otherProgramName: string | null;
   licenseSoftwareIds: string[];
+  /** Solo llega con `contactos.ver`. */
+  licenseEmail?: { email: string | null; distinto: boolean; propio: string | null };
 };
 
 type Roster = {
@@ -165,6 +168,16 @@ export function ModuleRosterClient({
                   onChanged={() => void refetch()}
                 />
               </span>
+              {a.licenseEmail ? (
+                <span className="text-xs">
+                  <LicenseEmailField
+                    enrollmentId={a.enrollmentId}
+                    value={a.licenseEmail}
+                    canEdit={canEditLicenses}
+                    onChanged={() => void refetch()}
+                  />
+                </span>
+              ) : null}
               {canEditEnrollments ? (
                 <Button
                   variant="ghost"

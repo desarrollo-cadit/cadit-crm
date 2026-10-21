@@ -1,4 +1,5 @@
 import { asc, eq, inArray, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
@@ -511,4 +512,36 @@ export async function fijarCorreoDeLicencia(
     ...correoDeLicencia({ licenseEmail: propio, contactEmail: contacto[0]?.email ?? null }),
     propio,
   };
+}
+
+export type CorreoDeLicenciaDto = { email: string | null; distinto: boolean; propio: string | null };
+
+/**
+ * 2026-10-21 — El correo de la licencia de varias inscripciones: el suyo, el
+ * de su madre (la venta, si es hija de un módulo) o el del alumno. `propio` es
+ * lo cargado en la inscripción, para el campo de edición.
+ *
+ * Vive acá y no en `module-roster.ts`: esa lectura no nombra columnas de
+ * contacto (FR-017). Quien la llame decide si la sesión puede ver correos.
+ */
+export async function correosDeLicenciaPorInscripcion(
+  organizationId: string,
+  enrollmentIds: string[]
+): Promise<Map<string, CorreoDeLicenciaDto>> {
+  if (enrollmentIds.length === 0) return new Map();
+  const madre = alias(schema.enrollment, "madre");
+  const filas = await getDb()
+    .select({
+      enrollmentId: schema.enrollment.id,
+      licenseEmail: schema.enrollment.licenseEmail,
+      parentLicenseEmail: madre.licenseEmail,
+      contactEmail: schema.contact.email,
+    })
+    .from(schema.enrollment)
+    .innerJoin(schema.contact, eq(schema.enrollment.contactId, schema.contact.id))
+    .leftJoin(madre, eq(schema.enrollment.parentEnrollmentId, madre.id))
+    .where(
+      scoped(schema.enrollment.organizationId, organizationId, inArray(schema.enrollment.id, enrollmentIds))
+    );
+  return new Map(filas.map((f) => [f.enrollmentId, { ...correoDeLicencia(f), propio: f.licenseEmail }]));
 }
