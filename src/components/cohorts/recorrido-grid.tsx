@@ -180,10 +180,11 @@ export function RecorridoGrid<I extends IntentoDelRecorrido>({
                         <span id={idMotivo} className="sr-only">
                           {[celda.title, motivos].filter(Boolean).join(" · ")}
                         </span>
+                        {/* En la misma línea: la fila no crece con las acciones. */}
+                        {acciones && vigente ? (
+                          <span className="ml-auto flex items-center gap-1">{acciones(a, vigente)}</span>
+                        ) : null}
                       </div>
-                      {acciones && vigente ? (
-                        <div className="mt-0.5 flex flex-wrap gap-1 pb-1">{acciones(a, vigente)}</div>
-                      ) : null}
                     </td>
                   );
                 })}

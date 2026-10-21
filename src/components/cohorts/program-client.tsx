@@ -6,6 +6,7 @@ import {
   ArrowUp,
   CalendarDays,
   GraduationCap,
+  MoreHorizontal,
   MoveRight,
   Plus,
   RotateCcw,
@@ -16,6 +17,7 @@ import type { CourseDto, SoftwareDto, TeacherDto } from "@/lib/types";
 import { CohortForm } from "@/components/academic/cohort-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ItemDeMenu, MenuFlotante } from "@/components/ui/floating-menu";
 import { Input } from "@/components/ui/input";
 import { MoneyInput } from "@/components/ui/money-input";
 import { Select } from "@/components/ui/select";
@@ -632,45 +634,46 @@ export function ProgramClient({
           acciones={
             canEditEnrollments || canEditGrading
               ? (a, celda) => (
-                  <>
-                    {canEditEnrollments ? (
+                  // Un solo botón por celda: con la grilla compacta, cuatro
+                  // botones sueltos apilaban cada fila a cuatro renglones.
+                  <AccionesDeCelda etiqueta={`Acciones de ${a.contact.name}`}>
+                    {(cerrar) => (
                       <>
-                        <Button variant="ghost" size="sm" onClick={() => abrir(a, celda, "baja")}>
-                          <MoveRight className="mr-1 h-3 w-3" aria-hidden />
-                          Mudar
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => abrir(a, celda, "recursada")}
-                        >
-                          <RotateCcw className="mr-1 h-3 w-3" aria-hidden />
-                          Recursar
-                        </Button>
-                        {/* 034 (FR-004) — no va a cursar este módulo. */}
-                        <Button variant="ghost" size="sm" onClick={() => abrir(a, celda, "sacar")}>
-                          <UserMinus className="mr-1 h-3 w-3" aria-hidden />
-                          Sacar del módulo
-                        </Button>
+                        {canEditEnrollments ? (
+                          <>
+                            <ItemDeMenu onSelect={() => { cerrar(); abrir(a, celda, "baja"); }}>
+                              <MoveRight className="h-3.5 w-3.5" aria-hidden />
+                              Mudar
+                            </ItemDeMenu>
+                            <ItemDeMenu onSelect={() => { cerrar(); abrir(a, celda, "recursada"); }}>
+                              <RotateCcw className="h-3.5 w-3.5" aria-hidden />
+                              Recursar
+                            </ItemDeMenu>
+                            {/* 034 (FR-004) — no va a cursar este módulo. */}
+                            <ItemDeMenu onSelect={() => { cerrar(); abrir(a, celda, "sacar"); }}>
+                              <UserMinus className="h-3.5 w-3.5" aria-hidden />
+                              Sacar del módulo
+                            </ItemDeMenu>
+                          </>
+                        ) : null}
+                        {/*
+                          US6 — el ítem dice cuál de los dos actos ofrece, nunca
+                          "dispensa" a secas (FR-025).
+                        */}
+                        {canEditGrading ? (
+                          <ItemDeMenu
+                            onSelect={() => {
+                              cerrar();
+                              abrir(a, celda, celda.dispensada ? "revocar-dispensa" : "dispensar");
+                            }}
+                          >
+                            <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
+                            {celda.dispensada ? "Quitar dispensa" : "Dispensar"}
+                          </ItemDeMenu>
+                        ) : null}
                       </>
-                    ) : null}
-                    {/*
-                      US6 — el botón dice cuál de los dos actos ofrece, nunca
-                      "dispensa" a secas (FR-025).
-                    */}
-                    {canEditGrading ? (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() =>
-                          abrir(a, celda, celda.dispensada ? "revocar-dispensa" : "dispensar")
-                        }
-                      >
-                        <ShieldCheck className="mr-1 h-3 w-3" aria-hidden />
-                        {celda.dispensada ? "Quitar dispensa" : "Dispensar"}
-                      </Button>
-                    ) : null}
-                  </>
+                    )}
+                  </AccionesDeCelda>
                 )
               : undefined
           }
@@ -811,5 +814,40 @@ export function ProgramClient({
 
       {altaDeModulo}
     </div>
+  );
+}
+
+/** El "⋯" de una celda del Recorrido: abre las acciones en un menú flotante. */
+function AccionesDeCelda({
+  etiqueta,
+  children,
+}: {
+  etiqueta: string;
+  children: (cerrar: () => void) => React.ReactNode;
+}) {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const cerrar = () => setPos(null);
+  return (
+    <>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-6 w-6 p-0"
+        aria-label={etiqueta}
+        aria-haspopup="menu"
+        aria-expanded={pos !== null}
+        onClick={(e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          setPos((p) => (p ? null : { x: r.left, y: r.bottom + 4 }));
+        }}
+      >
+        <MoreHorizontal className="h-4 w-4" aria-hidden />
+      </Button>
+      {pos ? (
+        <MenuFlotante x={pos.x} y={pos.y} onClose={cerrar}>
+          {children(cerrar)}
+        </MenuFlotante>
+      ) : null}
+    </>
   );
 }
