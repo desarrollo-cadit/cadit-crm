@@ -8,6 +8,7 @@ import { onLeadActivity } from "@/server/inbox/lead-activity";
 import { avisarInteresadoNuevo } from "@/server/lead-notices-queue";
 import { registrarEnvioDeFormulario } from "@/server/seguimiento";
 import { condicionDeCatalogo, resolveSoleOrganizationId } from "@/server/public-catalog";
+import { FORM_ARRIVAL_WINDOW_MS, FORM_SOURCE_PREFIX } from "@/lib/form-arrivals";
 
 /**
  * 005 iteración 3 (formularios de captación) — CRUD autenticado de
@@ -366,7 +367,7 @@ export async function submitCourseInterest(
   );
 }
 
-const FORM_ARRIVAL_WINDOW_MS = 48 * 60 * 60 * 1000;
+// La ventana y el prefijo son los mismos que resaltan la tabla (`src/lib/form-arrivals.ts`).
 
 /**
  * 005 iteración 3 — conteo de contactos que llegaron por formulario
@@ -387,7 +388,7 @@ export async function countRecentFormArrivals(
         schema.contact.organizationId,
         organizationId,
         gte(schema.contact.createdAt, since),
-        like(schema.contact.source, "formulario:%")
+        like(schema.contact.source, `${FORM_SOURCE_PREFIX}%`)
       )
     );
   return Number(rows[0]?.n ?? 0);

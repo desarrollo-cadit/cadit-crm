@@ -12,7 +12,8 @@ import {
   Trash2,
 } from "lucide-react";
 import type { ContactDto } from "@/lib/types";
-import { formatPhone, fullName } from "@/lib/utils";
+import { cn, formatPhone, fullName } from "@/lib/utils";
+import { esLlegadaReciente } from "@/lib/form-arrivals";
 import { ContactAvatar } from "@/components/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -248,8 +249,11 @@ export function ContactsClient({ canEnroll = false }: { canEnroll?: boolean }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {contacts.map((c) => (
-                  <TableRow key={c.id}>
+                {contacts.map((c) => {
+                  // Los mismos que cuenta el número de "Alumnos" en el menú.
+                  const nuevo = esLlegadaReciente(c);
+                  return (
+                  <TableRow key={c.id} className={cn(nuevo && "bg-brand-tint")}>
                     <TableCell>
                       <input
                         type="checkbox"
@@ -274,6 +278,11 @@ export function ContactsClient({ canEnroll = false }: { canEnroll?: boolean }) {
                             >
                               {fullName(c)}
                             </Link>
+                            {nuevo && (
+                              <Badge variant="default" title="Llegó por un formulario en las últimas 48 horas">
+                                Nuevo
+                              </Badge>
+                            )}
                             {c.archivedAt && (
                               <Badge variant="secondary">Archivado</Badge>
                             )}
@@ -346,7 +355,8 @@ export function ContactsClient({ canEnroll = false }: { canEnroll?: boolean }) {
                       </div>
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
 
