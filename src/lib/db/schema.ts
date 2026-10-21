@@ -3628,3 +3628,88 @@ export const zoomSyncRun = pgTable(
     ),
   ]
 );
+
+/* ============================================================
+ * 0066 — Seguimiento de leads (pestaña «Seguimiento» del contacto)
+ * ============================================================ */
+
+/**
+ * Cada envío de un formulario PÚBLICO, tal como llegó. Append-only: hasta acá
+ * el mensaje se guardaba en `contact.notes` solo al CREAR el contacto, y el de
+ * quien volvía a escribir se perdía (el aviso de `staff_notice` se deduplica
+ * por persona + interés + día, así que tampoco es un historial).
+ *
+ * Lo escriben SOLO `registerPublicLead` (`src/server/intake-forms.ts`) y
+ * `submitPublicWorkshopRegistration` (`src/server/workshops.ts`), en un
+ * savepoint de la transacción del envío: si falla, el lead entra igual.
+ */
+export const contactFormSubmission = pgTable(
+  "contact_form_submission",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    contactId: text("contact_id")
+      .notNull()
+      .references(() => contact.id, { onDelete: "cascade" }),
+    /** El `source` de la captación ("formulario:<nombre>"). */
+    source: text("source").notNull(),
+    /** `curso:<id>`, `form:<id>` o `taller:<cohortId>` (la misma de los avisos). */
+    ref: text("ref").notNull(),
+    interestKind: text("interest_kind", { enum: ["curso", "taller", "general"] }).notNull(),
+    interestName: text("interest_name"),
+    cohortName: text("cohort_name"),
+    firstName: text("first_name").notNull(),
+    lastName: text("last_name"),
+    phone: text("phone"),
+    email: text("email"),
+    message: text("message"),
+    /** Solo talleres: la empresa que escribió. */
+    company: text("company"),
+    /** Solo talleres: "anotado", "ya estaba anotado" o el motivo del rechazo. */
+    result: text("result"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("contact_form_submission_org_contact_idx").on(t.organizationId, t.contactId, t.createdAt.desc()),
+    check(
+      "contact_form_submission_interest_kind_valid",
+      sql`${t.interestKind} IN ('curso','taller','general')`
+    ),
+  ]
+);
+
+/**
+ * Lo que el equipo hizo con un contacto: una nota, o «le escribí por correo /
+ * por WhatsApp» (se registra solo al tocar el botón). Append-only.
+ */
+export const contactActivity = pgTable(
+  "contact_activity",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    contactId: text("contact_id")
+      .notNull()
+      .references(() => contact.id, { onDelete: "cascade" }),
+    /** Quién. `set null`: dar de baja una cuenta no borra la historia. */
+    authorUserId: text("author_user_id").references(() => user.id, { onDelete: "set null" }),
+    kind: text("kind", { enum: ["nota", "contacto_email", "contacto_whatsapp"] }).notNull(),
+    /** El texto de la nota; NULL en los contactos. */
+    body: text("body"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("contact_activity_org_contact_idx").on(t.organizationId, t.contactId, t.createdAt.desc()),
+    check(
+      "contact_activity_kind_valid",
+      sql`${t.kind} IN ('nota','contacto_email','contacto_whatsapp')`
+    ),
+    check(
+      "contact_activity_note_has_body",
+      sql`${t.kind} <> 'nota' OR (${t.body} IS NOT NULL AND length(trim(${t.body})) > 0)`
+    ),
+  ]
+);

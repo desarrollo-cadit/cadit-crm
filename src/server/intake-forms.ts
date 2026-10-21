@@ -6,6 +6,7 @@ import { scoped } from "@/lib/db/tenant";
 import { normalizePhoneOrRaw } from "@/lib/phone";
 import { onLeadActivity } from "@/server/inbox/lead-activity";
 import { avisarInteresadoNuevo } from "@/server/lead-notices-queue";
+import { registrarEnvioDeFormulario } from "@/server/seguimiento";
 import { condicionDeCatalogo, resolveSoleOrganizationId } from "@/server/public-catalog";
 
 /**
@@ -155,12 +156,26 @@ async function registerPublicLead(
       .limit(1);
     courseName = rows[0]?.name ?? null;
   }
+  // El MISMO instante para el envío y el aviso: el backfill de la 0066 los
+  // reconoce como el mismo hecho y no lo copia dos veces.
+  const now = new Date();
+  // La pestaña «Seguimiento»: el envío tal como llegó (savepoint, no lanza).
+  await registrarEnvioDeFormulario(organizationId, {
+    contactId,
+    source,
+    ref: aviso.ref,
+    interestKind: interestCourseId ? "curso" : "general",
+    interestName: courseName,
+    datos: input,
+    now,
+  });
   await avisarInteresadoNuevo(organizationId, {
     contactId,
     contactoNuevo: contacto.created,
     ref: aviso.ref,
     datos: input,
     origen: source,
+    now,
     interes: {
       tipo: interestCourseId ? "curso" : "general",
       nombre: courseName,

@@ -4,6 +4,7 @@ import { withTenantTransaction } from "@/lib/db/with-tenant";
 import { studentHeader } from "@/server/student-header";
 import { StudentHeader } from "@/components/contacts/student-header";
 import { StudentTabs } from "@/components/contacts/student-tabs";
+import { pestanaInicialDelContacto } from "@/lib/seguimiento";
 
 export const dynamic = "force-dynamic";
 
@@ -29,16 +30,20 @@ export const dynamic = "force-dynamic";
  *   legajo: sin ella no se consulta nada y queda el error de siempre.
  * - «Administración» se dibuja con `alumnos.auditoria`; sus datos vienen de
  *   su propia ruta, nunca del legajo.
+ * - «Seguimiento» abre primero cuando la persona es un lead (ninguna cursada
+ *   con grupo, sin contar talleres: `cohortEnrollments` del encabezado).
+ *   `?tab=seguimiento|legajo|administracion` elige a mano.
  */
 export default async function LegajoPage({
   params,
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ cohort?: string | string[] }>;
+  searchParams: Promise<{ cohort?: string | string[]; tab?: string | string[] }>;
 }) {
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const cohortParam = typeof query.cohort === "string" ? query.cohort : null;
+  const tabParam = typeof query.tab === "string" ? query.tab : null;
   const session = await getSessionOrNull();
   const caps = session ? sessionCapabilities(session) : [];
 
@@ -48,6 +53,14 @@ export default async function LegajoPage({
           studentHeader(session.organizationId, id, cohortParam)
         )
       : null;
+
+  const initialTab = pestanaInicialDelContacto({
+    // Sin encabezado (sin `contactos.ver` o contacto ajeno) queda el Legajo,
+    // que muestra el error de siempre.
+    tieneCursos: header ? header.cohortEnrollments > 0 : true,
+    pedida: tabParam,
+    puedeAuditar: caps.includes("alumnos.auditoria"),
+  });
 
   return (
     <div className="flex h-full flex-col">
@@ -61,6 +74,8 @@ export default async function LegajoPage({
           canViewAccess={caps.includes("academico.ver")}
           canEditAccess={caps.includes("academico.editar")}
           canManagePortal={caps.includes("accesos.gestionar")}
+          initialTab={initialTab}
+          canFollowUp={caps.includes("inscripciones.seguimiento")}
         />
       </div>
     </div>

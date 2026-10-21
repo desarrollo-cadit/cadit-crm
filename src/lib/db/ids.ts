@@ -94,6 +94,9 @@ const prefixes = {
   cohortGroupSoftware: "cgs",
   /** 039 — cada aviso interno por correo de una cohorte (Soporte, Administración). */
   staffNotice: "stn",
+  /** 0066 — cada envío de un formulario público y cada nota o contacto del equipo. */
+  contactFormSubmission: "cfs",
+  contactActivity: "cact",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

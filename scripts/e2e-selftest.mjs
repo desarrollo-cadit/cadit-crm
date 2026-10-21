@@ -36,6 +36,7 @@ import { seccionEnviosMasivos } from "./e2e/envios-masivos.mjs";
 import { seccionVendedores } from "./e2e/vendedores.mjs";
 import { seccionAgentePorAreas } from "./e2e/agente-por-areas.mjs";
 import { seccionRoles } from "./e2e/roles.mjs";
+import { seccionSeguimiento } from "./e2e/seguimiento.mjs";
 import { seccionGrabacionesZoom, seccionGrabacionesZoomPeriodica } from "./e2e/grabaciones-zoom.mjs";
 import { seccionPortalZonasHorarias } from "./e2e/portal-zonas-horarias.mjs";
 import {
@@ -232,6 +233,7 @@ async function main() {
       // 030 US5 (check 19): solo con la app en ZOOM_SYNC_INTERVAL_MIN=1; si no, se salta con aviso.
       "grabaciones-zoom-periodica": seccionGrabacionesZoomPeriodica,
       "portal-zonas-horarias": seccionPortalZonasHorarias,
+      seguimiento: seccionSeguimiento,
     };
     for (const nombre of soloSecciones) {
       const seccion = SECCIONES[nombre];
@@ -5195,6 +5197,9 @@ async function main() {
 
   // Crear-roles — Un rol propio, asignado a una cuenta, rige de punta a punta.
   await seccionRoles({ api, ok, BASE });
+
+  // Seguimiento de leads — formularios públicos, notas y contactos en la pestaña del contacto.
+  await seccionSeguimiento({ api, ok, BASE, getCookie: () => cookie });
 
   // 029 — Agente por áreas: derivación por correo (m365-mock) y tema del turno.
   // Va al final: enciende el agente y el ruteo, y los deja como estaban.

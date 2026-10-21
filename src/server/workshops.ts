@@ -43,6 +43,7 @@ import {
   type PublicLeadInput,
 } from "@/server/intake-forms";
 import { avisarInteresadoNuevo } from "@/server/lead-notices-queue";
+import { registrarEnvioDeFormulario } from "@/server/seguimiento";
 
 /**
  * 033 — Talleres: lectura y escritura.
@@ -1130,6 +1131,19 @@ export async function submitPublicWorkshopRegistration(
   // entró (lleno, cerrado), que igual es alguien interesado. Un reenvío de
   // quien ya estaba anotado no avisa de nuevo.
   const resultado = result.ok ? (result.data.created ? "anotado" : null) : result.status === 409 ? result.message : null;
+  // La pestaña «Seguimiento» guarda TODO envío, también el reenvío de quien
+  // ya estaba anotado (savepoint, no lanza).
+  await registrarEnvioDeFormulario(organizationId, {
+    contactId: contacto.contactId,
+    source,
+    ref: `taller:${cohortId}`,
+    interestKind: "taller",
+    interestName: edicion.courseName,
+    cohortName: edicion.cohortName,
+    datos: input,
+    result: resultado ?? (result.ok ? "ya estaba anotado" : result.message),
+    now,
+  });
   if (resultado) {
     await avisarInteresadoNuevo(organizationId, {
       contactId: contacto.contactId,

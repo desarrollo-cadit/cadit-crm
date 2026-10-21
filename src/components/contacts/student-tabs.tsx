@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { StudentRecordClient } from "@/components/contacts/student-record-client";
 import { StudentAdminActivityClient } from "@/components/contacts/student-admin-activity-client";
+import { SeguimientoClient } from "@/components/contacts/seguimiento-client";
+import type { PestanaDelContacto } from "@/lib/seguimiento";
 
 /**
  * 2026-10-07 — Las pestañas del legajo, con la misma forma que las de la
@@ -11,6 +13,9 @@ import { StudentAdminActivityClient } from "@/components/contacts/student-admin-
  * «Administración» se dibuja SOLO con `alumnos.auditoria`, resuelta en el
  * servidor y bajada como booleano. Esto decide lo que la persona VE; la
  * barrera real es el `requireCapability` de `/api/contacts/[id]/admin-activity`.
+ *
+ * «Seguimiento» (formularios, notas y contactos) se dibuja con `contactos.ver`
+ * y abre primero cuando la persona es un lead (`pestanaInicialDelContacto`).
  */
 export function StudentTabs({
   contactId,
@@ -20,6 +25,8 @@ export function StudentTabs({
   canViewAccess = false,
   canEditAccess = false,
   canManagePortal = false,
+  initialTab = "record",
+  canFollowUp = false,
 }: {
   contactId: string;
   /** `inscripciones.editar`: el botón «Inscribir en una cohorte». */
@@ -34,11 +41,16 @@ export function StudentTabs({
   canEditAccess?: boolean;
   /** 043 — `accesos.gestionar`: portal para quien no tiene inscripción. */
   canManagePortal?: boolean;
+  /** Qué pestaña abre (`pestanaInicialDelContacto`, decidida en el servidor). */
+  initialTab?: PestanaDelContacto;
+  /** `inscripciones.seguimiento`: escribir notas y registrar contactos. */
+  canFollowUp?: boolean;
 }) {
-  const [tab, setTab] = useState<"record" | "admin">("record");
+  const [tab, setTab] = useState<PestanaDelContacto>(initialTab);
 
   const tabs = [
     { key: "record", label: "Legajo" },
+    { key: "seguimiento", label: "Seguimiento" },
     ...(canAudit ? ([{ key: "admin", label: "Administración" }] as const) : []),
   ] as const;
 
@@ -66,6 +78,8 @@ export function StudentTabs({
       <div className="min-h-0 flex-1 overflow-y-auto">
         {tab === "admin" && canAudit ? (
           <StudentAdminActivityClient contactId={contactId} />
+        ) : tab === "seguimiento" ? (
+          <SeguimientoClient contactId={contactId} canWrite={canFollowUp} />
         ) : (
           <StudentRecordClient
             contactId={contactId}
