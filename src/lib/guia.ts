@@ -149,7 +149,7 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
   },
   "cobranza.editar": {
     que: "armar el plan de cuotas de una cursada, registrar un pago (le llega un aviso por correo a Administración) y anular uno mal cargado",
-    donde: "Alumnos → el alumno → Estado de cuenta",
+    donde: "Contactos → el alumno → Estado de cuenta",
   },
   /** 040 (DV-003) — Ventas y Administración cargan los datos de facturación. */
   "empresas.editar": {
@@ -186,7 +186,7 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
   },
   "alumnos.auditoria": {
     que: "ver cuándo y desde qué dispositivo entró un alumno al portal, cómo avanza en los cursos offline y sus últimas interacciones con la academia",
-    donde: "Alumnos → el alumno → Administración",
+    donde: "Contactos → el alumno → Administración",
   },
   // ── Agente de IA ───────────────────────────────────────────────────────
   "areas.configurar": {

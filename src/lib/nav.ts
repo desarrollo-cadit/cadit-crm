@@ -71,7 +71,7 @@ export const NAV_GROUPS = [
       { href: "/pipeline", label: "Pipeline", icon: Kanban, capability: "inscripciones.ver" },
       {
         href: "/contacts",
-        label: "Alumnos",
+        label: "Contactos",
         icon: Users,
         badge: "formArrivals",
         capability: "contactos.ver",
