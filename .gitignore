@@ -74,3 +74,9 @@ dev-e2e.log
 
 # Agent worktrees (local checkouts, never committed)
 .claude/worktrees/
+
+# --- Videos de demostración (scripts/demos/): salida regenerable ---
+demos-output/
+.next-demo/
+demos-build.log
+demos-server.log

@@ -16,6 +16,9 @@ const config = [
       // máquina que siga la guía. Sin esto, `pnpm lint` levanta 17 mil
       // problemas de código GENERADO y tapa los propios.
       ".next-build/**",
+      // Build de producción que levantan los videos de capacitación
+      // (scripts/demos/README.md).
+      ".next-demo/**",
       "dist/**",
       "drizzle/**",
       "scripts/**",
