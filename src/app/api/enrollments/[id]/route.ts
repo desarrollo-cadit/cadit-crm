@@ -2,6 +2,7 @@ import { z } from "zod";
 import { CURRENCIES } from "@/lib/db/schema";
 import { apiError, parseBody, requireCapability } from "@/lib/api";
 import { updateEnrollmentCommercial } from "@/server/enrollments";
+import { cancelarInscripcion } from "@/server/enrollment-cancel";
 
 export const dynamic = "force-dynamic";
 
@@ -45,3 +46,26 @@ export const PATCH = requireCapability(
 
   return Response.json({ enrollment: result.enrollment });
 });
+
+/**
+ * Cancelar (borrar) una inscripción hecha por error. Misma capacidad que el
+ * alta (`POST /api/enrollments`): quien puede inscribir puede deshacer su
+ * error de carga. La barrera es `cancelarInscripcion`, que decide de nuevo
+ * dentro de la transacción con las filas bloqueadas: con historial (pagos,
+ * asistencia, notas, entregas, correcciones, certificados) responde 409
+ * `inscripcion_con_historial` y no toca nada.
+ */
+export const DELETE = requireCapability(
+  "inscripciones.editar",
+  async (session, _req: Request, ctx: Params) => {
+    const { id } = await ctx.params;
+    const result = await cancelarInscripcion(session.organizationId, id);
+    if (!result.ok) {
+      return Response.json(
+        { error: { code: result.code, message: result.message }, detalle: result.detalle ?? null },
+        { status: result.status }
+      );
+    }
+    return Response.json({ ok: true, motivo: result.motivo, leadCreado: result.leadCreado });
+  }
+);

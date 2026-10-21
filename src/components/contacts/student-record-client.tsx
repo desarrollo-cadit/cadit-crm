@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCalendarDay } from "@/lib/utils";
 import { EnrollLauncher } from "@/components/enrollments/enroll-launcher";
+import { CancelEnrollmentAction } from "@/components/enrollments/cancel-enrollment";
 import { AccessUntilLine, type EstadoDeAccesoDto } from "@/components/access/content-access";
 import {
   ContactPortalAccess,
@@ -265,6 +266,19 @@ export function StudentRecordClient({
                   estado={acceso.enrollments.get(c.enrollmentId)}
                   canEdit={canEditAccess}
                   onChanged={() => void refetchAcceso()}
+                />
+              </div>
+            )}
+
+            {/* Cancelar una inscripción hecha por error (`inscripciones.editar`). */}
+            {canEnroll && c.cohortId && (
+              <div className="mt-3 flex justify-end border-t pt-3">
+                <CancelEnrollmentAction
+                  enrollmentId={c.enrollmentId}
+                  onCancelled={() => {
+                    void refetch();
+                    void refetchAcceso();
+                  }}
                 />
               </div>
             )}

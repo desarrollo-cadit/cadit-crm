@@ -22,6 +22,7 @@ import { OfflineCoursesPanel } from "@/components/offline-courses/offline-course
 import { EnrollForm } from "@/components/enrollments/enroll-form";
 import { LicenseList } from "@/components/enrollments/license-list";
 import { EnrollmentCommercialForm } from "@/components/enrollments/enrollment-commercial-form";
+import { CancelEnrollmentAction } from "@/components/enrollments/cancel-enrollment";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BulkSendsPanel } from "@/components/cohorts/bulk-sends-panel";
 import { ConfirmSendDialog } from "@/components/cohorts/confirm-send-dialog";
@@ -882,6 +883,20 @@ export function RosterClient({
                                   <div className="mt-3 border-t pt-3">
                                     <BillingPanel enrollmentId={e.id} puedeAnotarRecibo={canInvoice} />
                                   </div>
+                                </div>
+                              )}
+
+                              {/* Cancelar una inscripción hecha por error:
+                                  `inscripciones.editar`, la misma del alta. */}
+                              {canEnroll && (
+                                <div className="mt-3 flex justify-end border-t pt-3">
+                                  <CancelEnrollmentAction
+                                    enrollmentId={e.id}
+                                    onCancelled={() => {
+                                      setExpanded(null);
+                                      void refetch();
+                                    }}
+                                  />
                                 </div>
                               )}
                             </TableCell>
