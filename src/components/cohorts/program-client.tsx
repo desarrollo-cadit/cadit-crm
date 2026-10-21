@@ -504,7 +504,7 @@ export function ProgramClient({
             Esta especialización todavía no tiene módulos
           </p>
           <p className="mx-auto mt-1 max-w-md text-xs text-muted-foreground">
-            Cada módulo es un grupo propia, con su curso, su profesor y su
+            Cada módulo es un grupo propio, con su curso, su profesor y su
             horario. Se cursan en el orden en que los agregues, y ese orden se
             puede cambiar después.
           </p>
