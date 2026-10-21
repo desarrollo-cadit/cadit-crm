@@ -474,6 +474,10 @@ export async function getStudentRecord(
     // Ausente o NULL significan lo mismo: inscripción normal, sin recorrido
     // arriba. Es el estado de las 384 filas de hoy (FR-006).
     .filter((e) => !e.enrollment.parentEnrollmentId)
+    // 2026-10-21 — Sin grupo es la tarjeta del embudo de un lead, no una
+    // cursada. Sale de la lista pero NO de `enrollmentIds`: una venta cerrada
+    // antes de asignar grupo tiene cuotas y entra al estado de cuenta.
+    .filter((e) => e.cohort !== null)
     .map((fila) => {
       const cursada = armarCursada(fila);
       const hijas = hijasPorMadre.get(fila.enrollment.id) ?? [];

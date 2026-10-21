@@ -179,17 +179,13 @@ export function StudentRecordClient({
         )}
       </div>
 
+      {/* Sin cursadas no hay sección: un lead todavía no cursó nada. */}
+      {data.courses.length > 0 && (
       <section className="space-y-3">
         <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           <GraduationCap className="h-4 w-4" />
           Cursadas ({data.courses.length})
         </h2>
-
-        {data.courses.length === 0 && (
-          <p className="text-sm text-muted-foreground">
-            Esta persona todavía no tiene ninguna inscripción.
-          </p>
-        )}
 
         {data.courses.map((c) => (
           <article key={c.enrollmentId} className="rounded-lg border bg-card p-4">
@@ -275,6 +271,7 @@ export function StudentRecordClient({
           </article>
         ))}
       </section>
+      )}
 
       {/* 043 — Accesos directos a cursos offline (sin inscripción). */}
       {acceso && (

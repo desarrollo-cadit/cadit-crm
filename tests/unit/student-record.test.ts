@@ -291,11 +291,37 @@ describe("getStudentRecord — el estado de cuenta y las capacidades", () => {
     const { getStudentRecord } = await import("@/server/student-record");
     const r = await getStudentRecord("org_1", "ct_1", capabilitiesFor("soporte"));
 
-    expect(r!.courses).toHaveLength(3);
-    expect(r!.courses.map((c) => c.cohortName)).toEqual([
-      "Revit MEP 2",
-      "AutoCAD 2D",
-      "Lead sin grupo",
+    expect(r!.courses.map((c) => c.cohortName)).toEqual(["Revit MEP 2", "AutoCAD 2D"]);
+  });
+
+  /**
+   * 2026-10-21 — La tarjeta del embudo NO es una cursada. Un lead recién
+   * llegado tiene una inscripción sin grupo (la tarjeta de Ventas), y el
+   * legajo la mostraba como «Lead sin grupo» con estado «sin datos»: una
+   * cursada inventada sobre alguien que todavía no se inscribió a nada.
+   *
+   * La tarjeta sí sigue contando para el estado de cuenta: una venta cerrada
+   * antes de asignar grupo tiene cuotas reales.
+   */
+  it("un lead con solo la tarjeta del embudo no tiene cursadas, pero su cuenta sí cuenta", async () => {
+    selectQueue.push([CONTACTO]);
+    selectQueue.push([
+      { enrollment: { id: "enr_lead", enrolledAt: null, createdAt: new Date("2026-10-20") }, cohort: null, course: null },
+    ]);
+    // Sin grupos no hay asistencia, clases, evaluaciones ni camadas que pedir;
+    // las consultas por inscripción (asistencia, resultados, certificados) sí corren.
+    for (let i = 0; i < 3; i++) selectQueue.push([]);
+    selectQueue.push([
+      { id: "ins_1", enrollmentId: "enr_lead", currency: "UYU", amount: 5000, dueDate: new Date("2026-11-01"), canceledAt: null },
+    ]); // cuotas
+    selectQueue.push([]); // pagos
+
+    const { getStudentRecord } = await import("@/server/student-record");
+    const r = await getStudentRecord("org_1", "ct_1", CAPABILITIES);
+
+    expect(r!.courses).toEqual([]);
+    expect(r!.account).toEqual([
+      expect.objectContaining({ currency: "UYU", total: 5000, paid: 0, balance: 5000 }),
     ]);
   });
 });
