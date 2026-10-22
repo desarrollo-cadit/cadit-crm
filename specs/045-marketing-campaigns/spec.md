@@ -4,9 +4,8 @@
 
 **Created**: 2026-10-22
 
-**Status**: Draft — en pausa por decisión del dueño (2026-10-22). Spec y enmienda
-de la constitución aprobadas; no se inicia el plan ni la implementación hasta
-que el dueño lo indique.
+**Status**: Aprobada — retomada por el dueño el 2026-10-22; constitución
+enmendada a 1.8.0.
 
 **Input**: User description: "Sección de Marketing: campañas por correo a audiencias construidas con filtros (origen, etapa del pipeline, grupo o curso, curso de interés, empresa, fecha de alta), editor con vista previa y envío de prueba, bajas que toda campaña futura respeta, página de campañas con destinatarios y métricas (enviados, fallidos, bajas, clics). Envío por Microsoft 365 desde un buzón de marketing separado, de a uno, cientos de destinatarios por campaña. WhatsApp, HTML libre y aperturas quedan fuera de esta etapa."
 
@@ -349,8 +348,8 @@ falta.
 
 ## Dependencies
 
-- **Enmienda de la constitución (requisito previo; APROBADA por el dueño el
-  2026-10-22, pendiente de redactar en `constitution.md` al retomar)**: hoy el Principio II
+- **Enmienda de la constitución (requisito previo; APROBADA el 2026-10-22 y
+  redactada como 1.8.0)**: antes de 1.8.0 el Principio II
   permite usar Microsoft 365 solo para correo transaccional a alumnos y
   profesores y para avisos internos, y el Principio VIII declara que el producto
   "no es plataforma de marketing masivo". Esta funcionalidad requiere una

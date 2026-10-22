@@ -110,7 +110,10 @@ Ver [.specify/memory/constitution.md](.specify/memory/constitution.md).
 
 - **Soberanía (II, endurecida)**: dependencias de runtime SOLO WhatsApp Cloud
   API, proveedor LLM OpenRouter-compatible opcional, Microsoft Graph para el
-  correo transaccional a alumnos (constitución 1.3.0, tras `src/lib/m365`) y el
+  correo transaccional a alumnos (constitución 1.3.0, tras `src/lib/m365`) y,
+  desde 1.8.0, para campañas de marketing a contactos PROPIOS (buzón de
+  marketing separado, baja obligatoria que no corta el correo operativo, tope
+  de 500 por campaña; spec 045) y el
   reproductor embebido de Vimeo para los videos de cursos offline (constitución
   1.4.0: solo el navegador carga el iframe de `player.vimeo.com`; el servidor no
   llama a Vimeo, sin tokens, sin almacenar video, tras un único componente) y
