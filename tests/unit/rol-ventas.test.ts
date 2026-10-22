@@ -250,9 +250,21 @@ describe("040 — lo que el rol Ventas puede llamar", () => {
     }
   });
 
+  /**
+   * 045 — Con `marketing.ver` hay POST que no escriben: la vista previa de una
+   * audiencia (y, después, la de un correo) manda filtros en el cuerpo y solo
+   * lee. Son las únicas.
+   */
+  it("045 — con `marketing.ver`, los únicos POST son vistas previas", () => {
+    const posts = suyas
+      .filter((p) => p.capacidad === "marketing.ver" && p.metodo !== "GET")
+      .map((p) => p.ruta);
+    for (const ruta of posts) expect(ruta, ruta).toMatch(/^marketing\/.*preview\/route\.ts$/);
+  });
+
   it("no escribe en ningún lado salvo en empresas (y en marketing)", () => {
     const escrituras = suyas
-      .filter((p) => p.metodo !== "GET" && p.capacidad !== "marketing.enviar")
+      .filter((p) => p.metodo !== "GET" && !p.ruta.startsWith("marketing/"))
       .map((p) => `${p.metodo} ${p.ruta} (${p.capacidad})`);
     expect(escrituras.sort()).toEqual(
       ["PATCH companies/[id]/route.ts (empresas.editar)", "POST companies/route.ts (empresas.editar)"].sort()
