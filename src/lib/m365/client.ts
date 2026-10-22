@@ -125,7 +125,22 @@ const recipients = (addresses: string[]) =>
 
 export type SendMailResult =
   | { ok: true }
-  | { ok: false; code: "not_configured" | "send_failed"; message: string };
+  | { ok: false; code: "not_configured" | "send_failed"; message: string }
+  /**
+   * 045 (DV-004) — El límite del buzón (429/503). Graph NO aceptó el correo:
+   * se puede reintentar después de `retryAfterMs` sin riesgo de duplicarlo.
+   */
+  | { ok: false; code: "throttled"; message: string; retryAfterMs: number }
+  /** 045 — 401/403: la app no puede enviar desde ese buzón (ApplicationAccessPolicy). */
+  | { ok: false; code: "mailbox_denied"; message: string };
+
+/** Pausa cuando el proveedor limita sin decir cuánto esperar. */
+const PAUSA_POR_DEFECTO_MS = 60_000;
+
+function retryAfterMs(res: Response): number {
+  const s = Number(res.headers.get("retry-after"));
+  return Number.isFinite(s) && s > 0 ? Math.min(s, 3600) * 1000 : PAUSA_POR_DEFECTO_MS;
+}
 
 /**
  * Envía un correo HTML como el buzón configurado.
@@ -193,13 +208,16 @@ export async function sendMail(input: SendMailInput): Promise<SendMailResult> {
   const body = (await res?.json().catch(() => null)) as
     | { error?: { message?: string } }
     | null;
-  return {
-    ok: false,
-    code: "send_failed",
-    message:
-      body?.error?.message ??
-      `M365 rechazó el envío${res ? ` (${res.status})` : " (sin respuesta)"}`,
-  };
+  const message =
+    body?.error?.message ?? `M365 rechazó el envío${res ? ` (${res.status})` : " (sin respuesta)"}`;
+  // 045 (DV-004) — Los callers operativos tratan todo `!ok` igual: no cambian.
+  if (res && (res.status === 429 || res.status === 503)) {
+    return { ok: false, code: "throttled", message, retryAfterMs: retryAfterMs(res) };
+  }
+  if (res && (res.status === 401 || res.status === 403)) {
+    return { ok: false, code: "mailbox_denied", message };
+  }
+  return { ok: false, code: "send_failed", message };
 }
 
 /** Solo para tests: limpia el token cacheado entre casos. */

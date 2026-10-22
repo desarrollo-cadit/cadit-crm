@@ -1,13 +1,16 @@
-import { count, desc, eq, sql } from "drizzle-orm";
+import { count, countDistinct, desc, eq, exists, ilike, inArray, isNotNull, ne, or, sql } from "drizzle-orm";
+import { z } from "zod";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
+import { onAfterCommit } from "@/lib/db/tenant-context";
 import { getEnv } from "@/lib/env";
 import { checkRateLimit } from "@/lib/rate-limit";
-import type { AudienceFilters } from "@/lib/marketing/audience";
+import { nombreCompleto, type AudienceFilters } from "@/lib/marketing/audience";
 import {
   CampaignBodySchema,
   CUERPO_VACIO,
+  extraerEnlaces,
   validarCuerpo,
   type CampaignBody,
   type ErrorDeCuerpo,
@@ -16,6 +19,7 @@ import { renderCampaignEmail, type RenderContext } from "@/lib/marketing/render-
 import { getBranding } from "@/server/branding";
 import { destinatariosDeAudiencia, leerFiltros, type DestinatarioConVariables } from "./audiences";
 import { urlPublicaDeImagen, borrarImagenesDeCampana } from "./images";
+import { runCampaign } from "./runner";
 import { enviarCorreoDeMarketing } from "./send";
 import {
   getMarketingSettings,
@@ -58,8 +62,8 @@ export type CampaignDto = CampaignSummaryDto & {
   images: { id: string; url: string; sizeBytes: number }[];
   readOnly: boolean;
   readiness: { ok: boolean; missing: FaltanteDeCampana[]; settingsHref: "/settings/marketing" };
-  /** Se completa con el envío (US3); `null` en borrador. */
-  metrics: null;
+  /** `null` en borrador. */
+  metrics: CampaignMetricsDto | null;
 };
 
 const NO_EXISTE = "Esa campaña no existe.";
@@ -185,7 +189,7 @@ export async function obtenerCampana(orgId: string, id: string): Promise<Campaig
     images: imagenes.map((i) => ({ id: i.id, url: urlPublicaDeImagen(i.publicToken), sizeBytes: i.sizeBytes })),
     readOnly: fila.status !== "borrador",
     readiness: { ok: missing.length === 0, missing, settingsHref: "/settings/marketing" },
-    metrics: null,
+    metrics: fila.status === "borrador" ? null : await metricasDeCampana(orgId, id),
   };
 }
 
@@ -472,4 +476,416 @@ export async function enviarPrueba(
   });
   if (!enviado.ok) return { ok: false, code: "envio_fallido", message: enviado.message };
   return { ok: true, sentTo: usuario.email };
+}
+
+/* ============================================================
+ * Enviar y cancelar (contracts/send-and-cancel.md)
+ * ============================================================ */
+
+type FallaDeEnvio =
+  | {
+      ok: false;
+      code:
+        | "not_found"
+        | "campana_no_editable"
+        | "buzon_no_listo"
+        | "contenido_incompleto"
+        | "audiencia_vacia"
+        | "tope_superado"
+        | "conteo_cambio"
+        | "otra_campana_enviando";
+      message: string;
+      fields?: { path: string; message: string }[];
+    }
+  | ErrorDeCuerpo;
+
+const QUE_FALTA: Record<FaltanteDeCampana, string> = {
+  buzon: "Falta el buzón de marketing, el remitente o el pie.",
+  buzon_sin_verificar: "El buzón de marketing todavía no pasó la prueba.",
+  m365: "Microsoft 365 no está configurado en el servidor.",
+  audiencia: "Elegí una audiencia.",
+  asunto: "Escribí el asunto.",
+  cuerpo: "El correo está vacío.",
+};
+
+/**
+ * Confirma el envío (FR-019). Todo o nada, en la transacción del pedido:
+ * congela filtros, remitente y pie; inserta la foto de destinatarios (con sus
+ * variables) y los destinos de los clics; pasa a `enviando`. El ejecutor se
+ * agenda con `onAfterCommit`: una tarea suelta no ve filas sin confirmar.
+ */
+export async function confirmarEnvio(
+  session: { organizationId: string; userId: string },
+  campaignId: string,
+  expectedCount: number
+): Promise<{ ok: true; campaignId: string; recipientCount: number } | FallaDeEnvio> {
+  const orgId = session.organizationId;
+  const fila = await filaDeCampana(orgId, campaignId);
+  if (!fila) return { ok: false, code: "not_found", message: NO_EXISTE };
+  if (fila.status !== "borrador") return { ok: false, code: "campana_no_editable", message: NO_EDITABLE };
+
+  const settings = await getMarketingSettings(orgId);
+  const listo = preparacionParaEnviar(settings, m365Configurado());
+  if (
+    !listo.ok ||
+    !settings.senderEmail ||
+    !settings.senderName ||
+    !settings.footerAddress ||
+    !settings.footerContact
+  ) {
+    return {
+      ok: false,
+      code: "buzon_no_listo",
+      message: "Falta configurar o probar el buzón de marketing en Ajustes › Marketing.",
+      fields: listo.missing.map((m) => ({ path: m, message: QUE_FALTA[m] })),
+    };
+  }
+
+  const body = leerCuerpo(fila.body);
+  const incompleto = faltantesDeCampana(settings, true, { subject: fila.subject, body, filters: fila.filters });
+  if (incompleto.length > 0) {
+    return {
+      ok: false,
+      code: "contenido_incompleto",
+      message: incompleto.map((m) => QUE_FALTA[m]).join(" "),
+      fields: incompleto.map((m) => ({ path: m, message: QUE_FALTA[m] })),
+    };
+  }
+
+  const imagenes = await imagenesDeCampana(orgId, campaignId);
+  const valido = validarCuerpo(body, fila.subject, imagenes.map((i) => i.id));
+  if (!valido.ok) return valido;
+
+  // La ÚNICA fuente de destinatarios: la misma evaluación que vio la persona.
+  const filters = leerFiltros(fila.filters);
+  const audiencia = await destinatariosDeAudiencia(orgId, filters);
+  if (audiencia.count === 0) {
+    return { ok: false, code: "audiencia_vacia", message: "La audiencia no tiene a nadie a quien enviarle." };
+  }
+  if (audiencia.overCap) {
+    return {
+      ok: false,
+      code: "tope_superado",
+      message: `La audiencia tiene ${audiencia.count} personas y el tope es 500 por campaña. Acotá los filtros.`,
+    };
+  }
+  if (audiencia.count !== expectedCount) {
+    return {
+      ok: false,
+      code: "conteo_cambio",
+      message: `La audiencia cambió: ahora son ${audiencia.count} personas. Confirmá otra vez.`,
+      fields: [{ path: "count", message: String(audiencia.count) }],
+    };
+  }
+
+  const c = schema.marketingCampaign;
+  const [otra] = await getDb()
+    .select({ id: c.id })
+    .from(c)
+    .where(scoped(c.organizationId, orgId, eq(c.status, "enviando"), ne(c.id, campaignId)))
+    .limit(1);
+  if (otra) {
+    return {
+      ok: false,
+      code: "otra_campana_enviando",
+      message: "Ya hay otra campaña enviándose. Esperá a que termine o cancelala.",
+    };
+  }
+
+  // El índice único parcial (una `enviando` por organización) cubre la carrera.
+  await getDb()
+    .update(c)
+    .set({
+      status: "enviando",
+      filters,
+      senderEmail: settings.senderEmail,
+      senderName: settings.senderName,
+      footer: { address: settings.footerAddress, contact: settings.footerContact },
+      sentBy: session.userId,
+      sendConfirmedAt: new Date(),
+      recipientCount: audiencia.count,
+      lastError: null,
+      pausedUntil: null,
+      leaseUntil: null,
+      updatedAt: new Date(),
+    })
+    .where(scoped(c.organizationId, orgId, eq(c.id, campaignId), eq(c.status, "borrador")));
+
+  await getDb()
+    .insert(schema.marketingCampaignRecipient)
+    .values(
+      audiencia.recipients.map((r, position) => ({
+        id: newId("marketingCampaignRecipient"),
+        organizationId: orgId,
+        campaignId,
+        contactId: r.contactId,
+        email: r.email,
+        firstName: r.firstName,
+        lastName: r.lastName,
+        vars: r.vars,
+        position,
+        status: "pendiente" as const,
+      }))
+    );
+
+  const enlaces = extraerEnlaces(body);
+  if (enlaces.length > 0) {
+    await getDb()
+      .insert(schema.marketingCampaignLink)
+      .values(
+        enlaces.map((url, position) => ({
+          id: newId("marketingCampaignLink"),
+          organizationId: orgId,
+          campaignId,
+          position,
+          url,
+        }))
+      );
+  }
+
+  onAfterCommit(() => {
+    void runCampaign(orgId, campaignId).catch((err) =>
+      console.error("[marketing] no arrancó el envío:", err instanceof Error ? err.message : "error")
+    );
+  });
+  return { ok: true, campaignId, recipientCount: audiencia.count };
+}
+
+/**
+ * Cancela un envío en curso (FR-020): `cancelada` y las `pendiente` a
+ * `cancelado`, en la misma transacción. Una fila que ya está `enviando`
+ * termina su intento (Graph ya la tiene) y queda con su resultado.
+ */
+export async function cancelarCampana(
+  session: { organizationId: string; userId: string },
+  campaignId: string
+): Promise<
+  { ok: true; cancelled: number } | { ok: false; code: "not_found" | "no_esta_enviando"; message: string }
+> {
+  const orgId = session.organizationId;
+  const c = schema.marketingCampaign;
+  const [fila] = await getDb()
+    .select({ status: c.status })
+    .from(c)
+    .where(scoped(c.organizationId, orgId, eq(c.id, campaignId)))
+    .limit(1);
+  if (!fila) return { ok: false, code: "not_found", message: NO_EXISTE };
+  if (fila.status !== "enviando") {
+    return { ok: false, code: "no_esta_enviando", message: "La campaña no se está enviando." };
+  }
+  await getDb()
+    .update(c)
+    .set({ status: "cancelada", finishedAt: new Date(), cancelledBy: session.userId, updatedAt: new Date() })
+    .where(scoped(c.organizationId, orgId, eq(c.id, campaignId), eq(c.status, "enviando")));
+  const r = schema.marketingCampaignRecipient;
+  const canceladas = await getDb()
+    .update(r)
+    .set({ status: "cancelado" })
+    .where(scoped(r.organizationId, orgId, eq(r.campaignId, campaignId), eq(r.status, "pendiente")))
+    .returning({ id: r.id });
+  return { ok: true, cancelled: canceladas.length };
+}
+
+/* ============================================================
+ * Resultados (contracts/recipients-and-metrics.md)
+ * ============================================================ */
+
+export type CampaignMetricsDto = {
+  status: CampaignStatus;
+  total: number;
+  pending: number;
+  sent: number;
+  failed: number;
+  skipped: number;
+  cancelled: number;
+  unsubscribes: number;
+  clicks: { total: number; uniqueRecipients: number };
+  pausedUntil: string | null;
+  lastError: string | null;
+};
+
+export async function metricasDeCampana(orgId: string, campaignId: string): Promise<CampaignMetricsDto | null> {
+  const c = schema.marketingCampaign;
+  const [campana] = await getDb()
+    .select({ status: c.status, recipientCount: c.recipientCount, pausedUntil: c.pausedUntil, lastError: c.lastError })
+    .from(c)
+    .where(scoped(c.organizationId, orgId, eq(c.id, campaignId)))
+    .limit(1);
+  if (!campana) return null;
+
+  const r = schema.marketingCampaignRecipient;
+  const porEstado = await getDb()
+    .select({ status: r.status, n: count() })
+    .from(r)
+    .where(scoped(r.organizationId, orgId, eq(r.campaignId, campaignId)))
+    .groupBy(r.status);
+  const n = (s: string) => Number(porEstado.find((x) => x.status === s)?.n ?? 0);
+  const [bajas] = await getDb()
+    .select({ n: count() })
+    .from(r)
+    .where(scoped(r.organizationId, orgId, eq(r.campaignId, campaignId), isNotNull(r.unsubscribedAt)));
+  const k = schema.marketingClick;
+  const [clics] = await getDb()
+    .select({ total: count(), unicos: countDistinct(k.recipientId) })
+    .from(k)
+    .where(scoped(k.organizationId, orgId, eq(k.campaignId, campaignId)));
+
+  return {
+    status: campana.status,
+    total: campana.recipientCount ?? 0,
+    pending: n("pendiente") + n("enviando"),
+    sent: n("enviado"),
+    failed: n("fallido"),
+    skipped: n("omitido"),
+    cancelled: n("cancelado"),
+    unsubscribes: Number(bajas?.n ?? 0),
+    clicks: { total: Number(clics?.total ?? 0), uniqueRecipients: Number(clics?.unicos ?? 0) },
+    pausedUntil: campana.pausedUntil?.toISOString() ?? null,
+    lastError: campana.lastError,
+  };
+}
+
+export const ESTADOS_VISIBLES = ["pendiente", "enviado", "fallido", "omitido", "cancelado"] as const;
+export type EstadoVisible = (typeof ESTADOS_VISIBLES)[number];
+
+export const RecipientsQuerySchema = z
+  .object({
+    status: z.enum(ESTADOS_VISIBLES).optional(),
+    clicked: z.literal("true").optional(),
+    q: z.string().trim().max(100).optional(),
+    page: z.coerce.number().int().min(1).optional(),
+    pageSize: z.enum(["50", "100", "500"]).optional(),
+  })
+  .strict();
+
+export type CampaignRecipientDto = {
+  id: string;
+  name: string;
+  email: string;
+  contactId: string | null;
+  status: EstadoVisible;
+  reason: string | null;
+  sentAt: string | null;
+  unsubscribedHere: boolean;
+  clicked: boolean;
+  clickCount: number;
+};
+
+const MOTIVOS: Record<string, string> = {
+  baja: "Se había dado de baja",
+  interrumpido: "Se interrumpió el envío (puede haberle llegado); no se reintenta",
+};
+
+export async function destinatariosDeCampana(
+  orgId: string,
+  campaignId: string,
+  opts: { status?: EstadoVisible; clicked?: boolean; q?: string; page: number; pageSize: number }
+): Promise<{ recipients: CampaignRecipientDto[]; total: number; page: number; pageSize: number }> {
+  const vacio = { recipients: [], total: 0, page: opts.page, pageSize: opts.pageSize };
+  const c = schema.marketingCampaign;
+  const [campana] = await getDb()
+    .select({ status: c.status })
+    .from(c)
+    .where(scoped(c.organizationId, orgId, eq(c.id, campaignId)))
+    .limit(1);
+  if (!campana || campana.status === "borrador") return vacio;
+
+  const r = schema.marketingCampaignRecipient;
+  const k = schema.marketingClick;
+  const clicDe = exists(
+    getDb()
+      .select({ uno: sql`1` })
+      .from(k)
+      .where(scoped(k.organizationId, orgId, eq(k.recipientId, r.id)))
+  );
+  const q = opts.q?.trim();
+  const porEstado =
+    opts.status === "pendiente"
+      ? inArray(r.status, ["pendiente", "enviando"])
+      : opts.status
+        ? eq(r.status, opts.status)
+        : undefined;
+  const porTexto = q
+    ? or(ilike(r.email, `%${q}%`), ilike(sql`${r.firstName} || ' ' || coalesce(${r.lastName}, '')`, `%${q}%`))
+    : undefined;
+  const donde = scoped(
+    r.organizationId,
+    orgId,
+    eq(r.campaignId, campaignId),
+    porEstado,
+    opts.clicked ? clicDe : undefined,
+    porTexto
+  );
+
+  const filas = await getDb()
+    .select({
+      id: r.id,
+      firstName: r.firstName,
+      lastName: r.lastName,
+      email: r.email,
+      contactId: r.contactId,
+      status: r.status,
+      reason: r.reason,
+      sentAt: r.sentAt,
+      unsubscribedAt: r.unsubscribedAt,
+      clickCount: sql<number>`(select count(*) from ${k} where ${k.recipientId} = ${r.id})`,
+    })
+    .from(r)
+    .where(donde)
+    .orderBy(r.position)
+    .limit(opts.pageSize)
+    .offset((opts.page - 1) * opts.pageSize);
+  const [{ total } = { total: 0 }] = await getDb().select({ total: count() }).from(r).where(donde);
+
+  return {
+    recipients: filas.map((f) => {
+      const clickCount = Number(f.clickCount ?? 0);
+      return {
+        id: f.id,
+        name: nombreCompleto(f.firstName, f.lastName),
+        email: f.email,
+        contactId: f.contactId,
+        status: (f.status === "enviando" ? "pendiente" : f.status) as EstadoVisible,
+        reason: f.reason ? (MOTIVOS[f.reason] ?? f.reason) : null,
+        sentAt: f.sentAt?.toISOString() ?? null,
+        unsubscribedHere: f.unsubscribedAt !== null,
+        clicked: clickCount > 0,
+        clickCount,
+      };
+    }),
+    total: Number(total),
+    page: opts.page,
+    pageSize: opts.pageSize,
+  };
+}
+
+export async function enlacesDeCampana(
+  orgId: string,
+  campaignId: string
+): Promise<{ id: string; url: string; clicks: number; uniqueRecipients: number }[] | null> {
+  const c = schema.marketingCampaign;
+  const [campana] = await getDb()
+    .select({ status: c.status })
+    .from(c)
+    .where(scoped(c.organizationId, orgId, eq(c.id, campaignId)))
+    .limit(1);
+  if (!campana) return null;
+  const l = schema.marketingCampaignLink;
+  const k = schema.marketingClick;
+  const filas = await getDb()
+    .select({
+      id: l.id,
+      url: l.url,
+      clicks: sql<number>`(select count(*) from ${k} where ${k.linkId} = ${l.id})`,
+      uniqueRecipients: sql<number>`(select count(distinct ${k.recipientId}) from ${k} where ${k.linkId} = ${l.id})`,
+    })
+    .from(l)
+    .where(scoped(l.organizationId, orgId, eq(l.campaignId, campaignId)))
+    .orderBy(l.position);
+  return filas.map((f) => ({
+    id: f.id,
+    url: f.url,
+    clicks: Number(f.clicks),
+    uniqueRecipients: Number(f.uniqueRecipients),
+  }));
 }

@@ -93,6 +93,10 @@ vi.mock("@/server/marketing/images", () => ({
   },
 }));
 
+// El ejecutor no corre en el borrador; sin esto el primer import arrastra el
+// grafo del envío por grupo y se pasa del tiempo con la suite en paralelo.
+vi.mock("@/server/marketing/runner", () => ({ runCampaign: async () => {} }));
+
 vi.mock("@/server/branding", () => ({
   getBranding: async () => ({ name: "Academia Test", accent: "#3f5972" }),
 }));

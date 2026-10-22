@@ -7,10 +7,18 @@ import { withTenantTransaction } from "@/lib/db/with-tenant";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { listarAudiencias } from "@/server/marketing/audiences";
+import { listarCampanas, type CampaignStatus } from "@/server/marketing/campaigns";
 
 export const dynamic = "force-dynamic";
 
 type Props = { searchParams: Promise<{ tab?: string }> };
+
+const ESTADO: Record<CampaignStatus, string> = {
+  borrador: "Borrador",
+  enviando: "Enviándose",
+  enviada: "Enviada",
+  cancelada: "Cancelada",
+};
 
 const PESTANAS = [
   { key: "campanas", label: "Campañas" },
@@ -31,12 +39,14 @@ export default async function MarketingPage({ searchParams }: Props) {
   const { tab } = await searchParams;
   const activa = tab === "audiencias" ? "audiencias" : "campanas";
 
+  const scope = { organizationId: session.organizationId, userId: session.userId };
+  const campanas =
+    activa === "campanas"
+      ? await withTenantTransaction(scope, () => listarCampanas(session.organizationId))
+      : { campaigns: [], total: 0 };
   const audiencias =
     activa === "audiencias"
-      ? await withTenantTransaction(
-          { organizationId: session.organizationId, userId: session.userId },
-          () => listarAudiencias(session.organizationId)
-        )
+      ? await withTenantTransaction(scope, () => listarAudiencias(session.organizationId))
       : [];
 
   return (
@@ -74,7 +84,40 @@ export default async function MarketingPage({ searchParams }: Props) {
               Nueva campaña
             </Link>
           )}
-          <p className="text-sm text-muted-foreground">Todavía no hay campañas.</p>
+          {campanas.campaigns.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Todavía no hay campañas.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-md border">
+              <table className="w-full text-sm">
+                <thead className="bg-muted text-left text-xs text-muted-foreground">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">Campaña</th>
+                    <th className="px-3 py-2 font-medium">Estado</th>
+                    <th className="px-3 py-2 font-medium">Fecha</th>
+                    <th className="px-3 py-2 font-medium">Audiencia</th>
+                    <th className="px-3 py-2 font-medium">Destinatarios</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {campanas.campaigns.map((c) => (
+                    <tr key={c.id} className="border-t hover:bg-accent">
+                      <td className="px-3 py-2">
+                        <Link href={`/marketing/campanas/${c.id}`} className="font-medium underline-offset-2 hover:underline">
+                          {c.name}
+                        </Link>
+                      </td>
+                      <td className="px-3 py-2">{ESTADO[c.status]}</td>
+                      <td className="px-3 py-2 text-muted-foreground">
+                        {new Date(c.sentAt ?? c.createdAt).toLocaleDateString("es-UY")}
+                      </td>
+                      <td className="px-3 py-2 text-muted-foreground">{c.audienceName ?? "—"}</td>
+                      <td className="px-3 py-2">{c.recipientCount ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
       ) : (
         <section className="space-y-3">

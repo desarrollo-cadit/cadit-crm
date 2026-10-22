@@ -4,6 +4,7 @@ import { sessionCapabilities } from "@/lib/capabilities";
 import { withTenantTransaction } from "@/lib/db/with-tenant";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { CampaignEditor } from "@/components/marketing/campaign-editor";
+import { CampaignResults } from "@/components/marketing/campaign-results";
 import { listarAudiencias } from "@/server/marketing/audiences";
 import { obtenerCampana } from "@/server/marketing/campaigns";
 
@@ -45,6 +46,9 @@ export default async function CampanaPage({ params }: Props) {
         ]}
       />
       <h1 className="text-xl font-semibold">{campaign?.name ?? "Nueva campaña"}</h1>
+      {campaign?.metrics && (
+        <CampaignResults campaignId={campaign.id} initialMetrics={campaign.metrics} canCancel={canEdit} />
+      )}
       <CampaignEditor initial={campaign} audiences={audiences} canEdit={canEdit} />
     </div>
   );

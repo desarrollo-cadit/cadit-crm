@@ -187,3 +187,49 @@ describe("sendMail — 045 remitente de marketing", () => {
     expect((sentMessage().message as Record<string, unknown>).from).toBeUndefined();
   });
 });
+
+/**
+ * 045 (T055, DV-004) — Graph distingue el límite (429/503 + `Retry-After`) y
+ * el buzón sin permiso (401/403) de un rechazo cualquiera: el ejecutor de
+ * campañas pausa en el primero y se detiene en el segundo.
+ */
+describe("sendMail — 045 códigos de error", () => {
+  function fetchCon(status: number, headers: Record<string, string> = {}) {
+    return vi.fn(async (url: string, init: RequestInit) => {
+      calls.push({ url, init });
+      if (url.includes("/oauth2/v2.0/token")) {
+        return new Response(JSON.stringify({ access_token: "tok", expires_in: 3600 }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: { message: "rechazado" } }), { status, headers });
+    });
+  }
+
+  it.each([429, 503])("%s → `throttled` con `retryAfterMs` de `Retry-After` (segundos)", async (status) => {
+    vi.stubGlobal("fetch", fetchCon(status, { "retry-after": "30" }));
+    const { sendMail } = await import("@/lib/m365/client");
+    const r = await sendMail({ to: "a@x.test", subject: "S", html: "<p>x</p>" });
+    expect(r).toMatchObject({ ok: false, code: "throttled", retryAfterMs: 30_000 });
+  });
+
+  it("429 sin `Retry-After` → `throttled` con una pausa por defecto", async () => {
+    vi.stubGlobal("fetch", fetchCon(429));
+    const { sendMail } = await import("@/lib/m365/client");
+    const r = await sendMail({ to: "a@x.test", subject: "S", html: "<p>x</p>" });
+    expect(r).toMatchObject({ ok: false, code: "throttled" });
+    expect((r as { retryAfterMs: number }).retryAfterMs).toBeGreaterThan(0);
+  });
+
+  it.each([401, 403])("%s → `mailbox_denied`", async (status) => {
+    vi.stubGlobal("fetch", fetchCon(status));
+    const { sendMail } = await import("@/lib/m365/client");
+    const r = await sendMail({ to: "a@x.test", subject: "S", html: "<p>x</p>" });
+    expect(r).toMatchObject({ ok: false, code: "mailbox_denied" });
+  });
+
+  it("otro estado sigue siendo `send_failed`", async () => {
+    vi.stubGlobal("fetch", fetchCon(400));
+    const { sendMail } = await import("@/lib/m365/client");
+    const r = await sendMail({ to: "a@x.test", subject: "S", html: "<p>x</p>" });
+    expect(r).toMatchObject({ ok: false, code: "send_failed", message: "rechazado" });
+  });
+});

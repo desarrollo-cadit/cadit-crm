@@ -73,3 +73,30 @@ describe("(c) un solo camino arma destinatarios desde `contact` (II.b, II.d; FR-
     expect(conRaw).toEqual([]);
   });
 });
+
+describe("(b) solo el buzón de marketing elige remitente (II.a; FR-016)", () => {
+  it("en todo `src/`, solo `src/server/marketing/send.ts` pasa `sender` a `sendMail`", () => {
+    const conRemitente = archivos("src")
+      .filter((f) => f !== "src/lib/m365/client.ts")
+      .filter((f) => {
+        const src = leer(f);
+        // Dentro de la MISMA llamada (sin cruzar un `;`): `sender:` o `sender,`.
+        return /sendMail\(\s*\{[^;]*?\bsender\s*[:,}]/.test(src);
+      });
+    expect(conRemitente).toEqual(["src/server/marketing/send.ts"]);
+  });
+
+  it("el ejecutor no arma destinatarios: solo lee los congelados al confirmar", () => {
+    const src = leer("src/server/marketing/runner.ts");
+    for (const prohibido of ["evaluarAudiencia", "destinatariosDeAudiencia", "candidatosDeAudiencia", "@/server/marketing/audiences", "./audiences"]) {
+      expect(src, `el ejecutor usa ${prohibido}`).not.toContain(prohibido);
+    }
+    expect(src).not.toMatch(/schema\.contact(?![A-Za-z])/);
+    expect(src).toContain("schema.marketingCampaignRecipient");
+  });
+
+  it("`confirmarEnvio` congela la lista con `destinatariosDeAudiencia` (única fuente)", () => {
+    const cuerpo = cuerpoDe(leer("src/server/marketing/campaigns.ts"), "confirmarEnvio");
+    expect(cuerpo).toContain("destinatariosDeAudiencia(");
+  });
+});

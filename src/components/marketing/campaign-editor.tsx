@@ -13,6 +13,7 @@ import type { CampaignBody } from "@/lib/marketing/body";
 import type { CampaignDto, FaltanteDeCampana } from "@/server/marketing/campaigns";
 import { BlockEditor, type ErrorDeCampo, type ImagenDeCampana } from "./block-editor";
 import { EmailPreview } from "./email-preview";
+import { SendDialog } from "./send-dialog";
 
 /**
  * 045 (US2; FR-007…FR-010) — Redactar una campaña: nombre, asunto,
@@ -59,6 +60,7 @@ export function CampaignEditor({
   const [errors, setErrors] = useState<ErrorDeCampo[]>([]);
   const [guardando, setGuardando] = useState(false);
   const [probando, setProbando] = useState(false);
+  const [enviar, setEnviar] = useState(false);
 
   async function guardar(): Promise<boolean> {
     if (!name.trim()) {
@@ -213,6 +215,16 @@ export function CampaignEditor({
                 <Send className="h-4 w-4" aria-hidden />
                 Enviar prueba a mi correo
               </Button>
+              <Button
+                onClick={async () => {
+                  if (await guardar()) setEnviar(true);
+                }}
+                disabled={!initial.readiness.ok}
+                title={initial.readiness.ok ? undefined : "Completá lo que falta para poder enviarla"}
+              >
+                <Send className="h-4 w-4" aria-hidden />
+                Enviar campaña
+              </Button>
               <Button variant="outline" onClick={() => void borrar()}>
                 <Trash2 className="h-4 w-4" aria-hidden />
                 Borrar
@@ -220,6 +232,19 @@ export function CampaignEditor({
             </>
           )}
         </div>
+      )}
+
+      {enviar && initial?.filters && (
+        <SendDialog
+          campaignId={initial.id}
+          filters={initial.filters}
+          onClose={() => setEnviar(false)}
+          onSent={() => {
+            setEnviar(false);
+            notify.success("Envío confirmado: los correos salen de a uno.");
+            router.refresh();
+          }}
+        />
       )}
     </div>
   );

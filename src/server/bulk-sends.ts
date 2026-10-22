@@ -220,13 +220,32 @@ export function outcomeOfAccess(
  * La corrida — de a uno, con pausa, sin cortarse
  * ============================================================ */
 
-export type RecipientRef = { id: string; enrollmentId: string };
+/**
+ * 045 (DV-001) — La referencia es genérica: el envío por grupo la usa con
+ * `enrollmentId` y las campañas de marketing con lo suyo. El bucle solo
+ * necesita el `id` para registrar.
+ */
+export type RecipientRef = { id: string };
+export type BulkRecipientRef = RecipientRef & { enrollmentId: string };
 
-export type ProcessDeps = {
-  send: (enrollmentId: string) => Promise<RecipientOutcome>;
-  record: (recipientId: string, outcome: RecipientOutcome) => Promise<void>;
+export type ProcessDeps<R extends RecipientRef, O extends { attempted: boolean }> = {
+  send: (ref: R) => Promise<O>;
+  record: (recipientId: string, outcome: O) => Promise<void>;
   pause: () => Promise<void>;
+  /**
+   * El resultado de un envío que REVENTÓ. Quien usa otro tipo de resultado
+   * tiene que darlo; el envío por grupo usa el de siempre.
+   */
+  alFallar?: (err: unknown) => O;
+  /** 045 — Corte entre destinatarios (cancelación, buzón sin permiso). */
+  cortar?: () => boolean;
 };
+
+const falloDelEnvioMasivo = (): RecipientOutcome => ({
+  outcome: "failed",
+  message: FALLO_INESPERADO,
+  attempted: true,
+});
 
 /**
  * Secuencial a propósito: uno por vez, y el resultado de cada uno se registra
@@ -234,19 +253,21 @@ export type ProcessDeps = {
  * anotado y la corrida sigue: un correo mal cargado no puede dejar sin
  * bienvenida al resto de la cohorte.
  */
-export async function processRecipients(
-  recipients: readonly RecipientRef[],
-  deps: ProcessDeps
-): Promise<void> {
+export async function processRecipients<
+  R extends RecipientRef = BulkRecipientRef,
+  O extends { attempted: boolean } = RecipientOutcome,
+>(recipients: readonly R[], deps: ProcessDeps<R, O>): Promise<void> {
   let pausar = false;
   for (const r of recipients) {
+    if (deps.cortar?.()) return;
     if (pausar) await deps.pause();
-    let resultado: RecipientOutcome;
+    if (deps.cortar?.()) return;
+    let resultado: O;
     try {
-      resultado = await deps.send(r.enrollmentId);
+      resultado = await deps.send(r);
     } catch (err) {
       console.error("[envio-masivo] falló un envío:", err instanceof Error ? err.message : err);
-      resultado = { outcome: "failed", message: FALLO_INESPERADO, attempted: true };
+      resultado = deps.alFallar ? deps.alFallar(err) : (falloDelEnvioMasivo() as unknown as O);
     }
     try {
       await deps.record(r.id, resultado);
@@ -512,7 +533,7 @@ async function processRun(
     const pendientes = await enAlcance(() => pendingRecipients(organizationId, runId));
     const pausaMs = getEnv().BULK_SEND_PAUSE_MS;
     await processRecipients(pendientes, {
-      send: (enrollmentId) =>
+      send: ({ enrollmentId }) =>
         enAlcance(async () =>
           kind === "portal_access"
             ? outcomeOfAccess(
@@ -532,7 +553,7 @@ async function processRun(
   }
 }
 
-async function pendingRecipients(organizationId: string, runId: string): Promise<RecipientRef[]> {
+async function pendingRecipients(organizationId: string, runId: string): Promise<BulkRecipientRef[]> {
   return getDb()
     .select({ id: schema.bulkSendRecipient.id, enrollmentId: schema.bulkSendRecipient.enrollmentId })
     .from(schema.bulkSendRecipient)

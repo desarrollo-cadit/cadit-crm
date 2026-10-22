@@ -277,7 +277,7 @@ describe("processRecipients — de a uno, con pausa, sin cortarse", () => {
     let enVuelo = 0;
     let maxEnVuelo = 0;
     await processRecipients(pendientes, {
-      send: async (enrollmentId) => {
+      send: async ({ enrollmentId }) => {
         enVuelo++;
         maxEnVuelo = Math.max(maxEnVuelo, enVuelo);
         eventos.push(`send:${enrollmentId}`);
@@ -320,7 +320,7 @@ describe("processRecipients — de a uno, con pausa, sin cortarse", () => {
     const { processRecipients } = await import("@/server/bulk-sends");
     const registros: [string, string][] = [];
     await processRecipients(pendientes, {
-      send: async (enrollmentId) => {
+      send: async ({ enrollmentId }) => {
         if (enrollmentId === "enr_2") throw new Error("boom");
         return { outcome: "sent", message: null, attempted: true };
       },
@@ -347,6 +347,31 @@ describe("processRecipients — de a uno, con pausa, sin cortarse", () => {
       pause: async () => {},
     });
     expect(send).toHaveBeenCalledTimes(3);
+  });
+
+  /**
+   * 045 (T056, DV-001) — El mismo bucle sirve a las campañas de marketing:
+   * referencias genéricas `{ id }`, su propio tipo de resultado (con su
+   * `alFallar`) y un corte entre destinatarios (cancelación, buzón sin permiso).
+   */
+  it("045 — acepta `{ id }` genérico, otro tipo de resultado y un corte", async () => {
+    const { processRecipients } = await import("@/server/bulk-sends");
+    const refs = [{ id: "a" }, { id: "b" }, { id: "c" }];
+    const enviados: string[] = [];
+    let cortar = false;
+    await processRecipients<{ id: string }, { estado: string; attempted: boolean }>(refs, {
+      send: async (ref) => {
+        enviados.push(ref.id);
+        if (ref.id === "b") cortar = true;
+        if (ref.id === "a") throw new Error("boom");
+        return { estado: "ok", attempted: true };
+      },
+      record: async () => {},
+      pause: async () => {},
+      alFallar: () => ({ estado: "fallo", attempted: true }),
+      cortar: () => cortar,
+    });
+    expect(enviados).toEqual(["a", "b"]);
   });
 });
 

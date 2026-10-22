@@ -47,6 +47,7 @@ const SIN_CAPACIDAD: Record<string, string> = {
   "public/talleres/[id]/submit/route.ts": "033 — inscripción pública a un taller",
   "public/certificates/[code]/route.ts": "verificación pública de certificado",
   "public/marketing/images/[token]/route.ts": "imagen de campaña pública por token (045)",
+  "public/marketing/click/[token]/[linkId]/route.ts": "redirección de clic firmada (045)",
   // 023 — El GET es público a propósito: el login tiene que pintar la marca
   // ANTES de que exista sesión. El PUT sí pide `configuracion.editar`, y por
   // eso el archivo pasaba el chequeo de abajo sin que nadie mirara el GET.
