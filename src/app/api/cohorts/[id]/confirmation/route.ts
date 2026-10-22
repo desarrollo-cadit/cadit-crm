@@ -1,4 +1,5 @@
-import { apiError, requireCapability } from "@/lib/api";
+import { z } from "zod";
+import { apiError, parseBody, requireCapability } from "@/lib/api";
 import {
   confirmarCohorte,
   estadoDeConfirmacion,
@@ -8,6 +9,8 @@ import {
 export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ id: string }> };
+
+const confirmarSchema = z.object({ avisar: z.boolean().optional() }).strict();
 
 /**
  * 039 — El estado de confirmación de la cohorte y de sus avisos internos.
@@ -30,9 +33,14 @@ export const GET = requireCapability(
  */
 export const POST = requireCapability(
   "cohortes.confirmar",
-  async (session, _req: Request, ctx: Params) => {
+  async (session, req: Request, ctx: Params) => {
     const { id } = await ctx.params;
-    const r = await confirmarCohorte(session.organizationId, id, session.userId);
+    // 2026-10-22 — Sin cuerpo (clientes viejos) se avisa, como antes.
+    const body = await parseBody(req, confirmarSchema, { emptyAs: {} });
+    if (!body.ok) return body.response;
+    const r = await confirmarCohorte(session.organizationId, id, session.userId, {
+      avisar: body.data.avisar,
+    });
     if (!r.ok) return apiError(r.status, r.code, r.message);
     return Response.json({ confirmation: r.data, changed: r.cambio });
   }

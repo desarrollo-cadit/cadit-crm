@@ -5,7 +5,13 @@ import { onAfterCommit } from "@/lib/db/tenant-context";
 import { STAFF_NOTICE_KINDS, type AvisoDto, type ConfirmacionDto } from "@/lib/staff-notices";
 import { marcaDeConfirmacion } from "@/lib/marca-de-confirmacion";
 import { organizationTimezone } from "@/server/finanzas-periodo";
-import { cancelarAvisosDeFacturacion, enviarAviso } from "@/server/staff-notices";
+import {
+  cancelarAvisosDeFacturacion,
+  cerrarAviso,
+  enviarAviso,
+  leerRegistroDeAviso,
+  reclamarAviso,
+} from "@/server/staff-notices";
 
 /**
  * 039 — Confirmar una cohorte ("esta cohorte sale") y quitar la confirmación.
@@ -103,7 +109,12 @@ export async function estadoDeConfirmacion(
 export async function confirmarCohorte(
   organizationId: string,
   cohortId: string,
-  userId: string
+  userId: string,
+  /**
+   * 2026-10-22 — `avisar: false` confirma sin el correo a Soporte: para los
+   * grupos que ya empezaron y se confirman tarde.
+   */
+  opts: { avisar?: boolean } = {}
 ): Promise<ResultadoConfirmacion> {
   const now = new Date();
   const confirmadas = await getDb()
@@ -124,7 +135,17 @@ export async function confirmarCohorte(
   const data = await estadoDeConfirmacion(organizationId, cohortId);
   if (!data) return NO_ENCONTRADA;
 
-  if (cambio) {
+  if (cambio && opts.avisar === false) {
+    // Queda registrado como OMITIDO: la periódica no insiste con un `skipped`
+    // (`puedeReclamar`), así que el correo no sale "solo" más tarde.
+    const sujeto = { kind: "cohorte_confirmada" as const, cohortId };
+    const previo = await leerRegistroDeAviso(organizationId, sujeto);
+    if (previo?.status !== "sent") {
+      const id = await reclamarAviso(organizationId, sujeto, previo, now);
+      if (id) await cerrarAviso(organizationId, id, now, { status: "skipped", detail: "sin_aviso_por_eleccion" });
+    }
+  }
+  if (cambio && opts.avisar !== false) {
     onAfterCommit(() => {
       void enviarAviso(organizationId, cohortId, "cohorte_confirmada", "confirmacion").catch(() => {});
     });
