@@ -110,6 +110,14 @@ export type SendMailInput = {
   replyTo?: string;
   subject: string;
   html: string;
+  /**
+   * 045 (DV-004) — Buzón desde el que sale el correo. Solo lo pasa
+   * `src/server/marketing/send.ts` (el buzón de marketing, separado del
+   * operativo: constitución 1.8.0 II.a). Sin él, `M365_SENDER` como siempre.
+   */
+  sender?: string;
+  /** 045 — Nombre visible del remitente (Exchange puede mostrar el del buzón). */
+  fromName?: string;
 };
 
 const recipients = (addresses: string[]) =>
@@ -148,7 +156,7 @@ export async function sendMail(input: SendMailInput): Promise<SendMailResult> {
   }
 
   const res = await fetch(
-    `${graphBase()}/users/${encodeURIComponent(config.sender)}/sendMail`,
+    `${graphBase()}/users/${encodeURIComponent(input.sender ?? config.sender)}/sendMail`,
     {
       method: "POST",
       headers: {
@@ -158,6 +166,16 @@ export async function sendMail(input: SendMailInput): Promise<SendMailResult> {
       body: JSON.stringify({
         message: {
           subject: input.subject,
+          ...(input.sender
+            ? {
+                from: {
+                  emailAddress: {
+                    address: input.sender,
+                    ...(input.fromName ? { name: input.fromName } : {}),
+                  },
+                },
+              }
+            : {}),
           body: { contentType: "HTML", content: input.html },
           toRecipients: recipients(Array.isArray(input.to) ? input.to : [input.to]),
           ...(input.cc && input.cc.length > 0 ? { ccRecipients: recipients(input.cc) } : {}),

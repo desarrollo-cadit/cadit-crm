@@ -1,0 +1,44 @@
+<!--
+  045 — Armazón de las campañas de marketing (constitución 1.8.0, II.b).
+
+  - `{{{cuerpo}}}` lo arma `src/lib/marketing/render-email.ts` con los bloques
+    de la campaña, YA escapado. No se escribe HTML a mano en una campaña.
+  - El pie es FIJO: remitente, dirección, contacto y el enlace de baja. Una
+    campaña no puede salir sin él.
+  - Tablas de 600 px con estilos en línea: es lo que respetan Outlook y Gmail.
+    Sin `<style>` ni clases.
+-->
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{academia}}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f5f7;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f5f7;">
+  <tr>
+    <td align="center" style="padding:24px 12px;">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background-color:#ffffff;border-radius:8px;">
+        <tr>
+          <td style="padding:24px 32px 8px 32px;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:bold;color:#6b7280;">{{academia}}</td>
+        </tr>
+        <tr>
+          <td style="padding:8px 32px 24px 32px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.5;color:#1f2937;">{{{cuerpo}}}</td>
+        </tr>
+        <tr>
+          <td style="padding:16px 32px 24px 32px;border-top:1px solid #e5e7eb;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.5;color:#6b7280;">
+            {{remitente}}<br>
+            {{direccion}}<br>
+            {{contacto}}<br><br>
+            Recibís este correo porque estás en contacto con nosotros.
+            <a href="{{urlBaja}}" style="color:#4b5563;text-decoration:underline;">No quiero recibir más correos</a>.
+            Los correos de tus cursos te van a seguir llegando.
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>

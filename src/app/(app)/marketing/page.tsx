@@ -67,7 +67,15 @@ export default async function MarketingPage({ searchParams }: Props) {
       </nav>
 
       {activa === "campanas" ? (
-        <p className="text-sm text-muted-foreground">Todavía no hay campañas.</p>
+        <section className="space-y-3">
+          {canEdit && (
+            <Link href="/marketing/campanas/nueva" className={buttonVariants({ size: "sm" })}>
+              <Plus className="h-4 w-4" aria-hidden />
+              Nueva campaña
+            </Link>
+          )}
+          <p className="text-sm text-muted-foreground">Todavía no hay campañas.</p>
+        </section>
       ) : (
         <section className="space-y-3">
           {canEdit && (

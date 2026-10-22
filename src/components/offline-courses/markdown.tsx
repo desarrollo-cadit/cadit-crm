@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { hrefPermitido, parseInline, type InlineNode } from "@/lib/markdown-inline";
 
 /**
  * cursos-offline — A tiny, SAFE markdown renderer for the imported library.
@@ -83,105 +84,49 @@ function parseBlocks(source: string): Block[] {
  * paths and anything the URL parser rejects stay as text.
  */
 export function safeHref(raw: string): string | null {
-  try {
-    const url = new URL(raw);
-    return url.protocol === "http:" || url.protocol === "https:" ? url.href : null;
-  } catch {
-    return null;
-  }
+  return hrefPermitido(raw, WEB);
 }
 
-/**
- * One regex, alternatives in priority order. `exec` returns the LEFTMOST
- * match, and at one position tries the alternatives left to right — so code
- * wins over bold, and a markdown link wins over the bare URL inside it.
- *
- * The link target allows one level of balanced parentheses so that
- * `[x](javascript:alert(1))` is consumed WHOLE and then refused, instead of
- * leaving a stray `)` behind.
- */
-const INLINE =
-  /(`[^`\n]+`)|\[([^\]\n]+)\]\(([^()\s]*(?:\([^()\s]*\)[^()\s]*)*)\)|\*\*([^*\n]+?)\*\*|\*([^*\s][^*\n]*?)\*|(https?:\/\/[^\s<>]+)/;
+const WEB = ["http:", "https:"] as const;
 
 const LINK_CLASS = "text-brand-text underline underline-offset-2 hover:text-foreground";
 
-/** A bare URL does not own its trailing punctuation: "ver https://x.com." */
-function trimUrl(url: string): { url: string; rest: string } {
-  let end = url.length;
-  while (end > 0) {
-    const ch = url[end - 1]!;
-    if (".,;:!?'\"".includes(ch)) {
-      end -= 1;
-      continue;
+/**
+ * 045 (DV-007) — The inline grammar lives in `src/lib/markdown-inline.ts`
+ * (shared with the marketing campaigns). This only turns its nodes into React
+ * elements; whatever is not a node stays text, and React escapes it.
+ */
+function renderNodes(nodes: InlineNode[], keyPrefix: string): ReactNode[] {
+  return nodes.map((n, i) => {
+    const key = `${keyPrefix}-${i}`;
+    switch (n.type) {
+      case "text":
+        return <Fragment key={key}>{n.text}</Fragment>;
+      case "code":
+        return (
+          <code key={key} className="rounded bg-muted px-1 py-0.5 font-mono text-[0.9em]">
+            {n.text}
+          </code>
+        );
+      case "bold":
+        return <strong key={key}>{renderNodes(n.children, key)}</strong>;
+      case "italic":
+        return <em key={key}>{renderNodes(n.children, key)}</em>;
+      case "link":
+        return (
+          <a key={key} href={n.href} target="_blank" rel="noopener noreferrer" className={LINK_CLASS}>
+            {renderNodes(n.children, key)}
+          </a>
+        );
+      case "var":
+        // Variables are off for this grammar user: never produced.
+        return null;
     }
-    if (ch === ")") {
-      const body = url.slice(0, end);
-      const opens = body.split("(").length - 1;
-      const closes = body.split(")").length - 1;
-      if (closes > opens) {
-        end -= 1;
-        continue;
-      }
-    }
-    break;
-  }
-  return { url: url.slice(0, end), rest: url.slice(end) };
+  });
 }
 
-function renderInline(text: string, allowLinks = true, keyPrefix = "i"): ReactNode[] {
-  const out: ReactNode[] = [];
-  let rest = text;
-  let n = 0;
-
-  while (rest) {
-    const m = INLINE.exec(rest);
-    if (!m) {
-      out.push(rest);
-      break;
-    }
-    if (m.index > 0) out.push(rest.slice(0, m.index));
-    const key = `${keyPrefix}-${n++}`;
-    const [whole, code, linkText, linkUrl, bold, italic, bareUrl] = m;
-
-    if (code !== undefined) {
-      out.push(
-        <code key={key} className="rounded bg-muted px-1 py-0.5 font-mono text-[0.9em]">
-          {code.slice(1, -1)}
-        </code>
-      );
-    } else if (linkText !== undefined) {
-      const href = allowLinks ? safeHref(linkUrl ?? "") : null;
-      const label = renderInline(linkText, false, key);
-      out.push(
-        href ? (
-          <a key={key} href={href} target="_blank" rel="noopener noreferrer" className={LINK_CLASS}>
-            {label}
-          </a>
-        ) : (
-          <Fragment key={key}>{label}</Fragment>
-        )
-      );
-    } else if (bold !== undefined) {
-      out.push(<strong key={key}>{renderInline(bold, allowLinks, key)}</strong>);
-    } else if (italic !== undefined) {
-      out.push(<em key={key}>{renderInline(italic, allowLinks, key)}</em>);
-    } else if (bareUrl !== undefined) {
-      const { url, rest: tail } = trimUrl(bareUrl);
-      const href = allowLinks ? safeHref(url) : null;
-      out.push(
-        href ? (
-          <a key={key} href={href} target="_blank" rel="noopener noreferrer" className={LINK_CLASS}>
-            {url}
-          </a>
-        ) : (
-          url
-        )
-      );
-      if (tail) out.push(tail);
-    }
-    rest = rest.slice(m.index + whole.length);
-  }
-  return out;
+function renderInline(text: string, keyPrefix = "i"): ReactNode[] {
+  return renderNodes(parseInline(text, { esquemas: WEB }), keyPrefix);
 }
 
 const HEADING_CLASS = {
@@ -204,7 +149,7 @@ export function Markdown({ source, className }: { source: string; className?: st
             const Tag = (["h3", "h4", "h5"] as const)[block.level - 1]!;
             return (
               <Tag key={key} className={HEADING_CLASS[block.level]}>
-                {renderInline(block.text, true, key)}
+                {renderInline(block.text, key)}
               </Tag>
             );
           }
@@ -217,7 +162,7 @@ export function Markdown({ source, className }: { source: string; className?: st
                 className={cn("space-y-1 pl-5", block.kind === "ul" ? "list-disc" : "list-decimal")}
               >
                 {block.items.map((item, j) => (
-                  <li key={`${key}-${j}`}>{renderInline(item, true, `${key}-${j}`)}</li>
+                  <li key={`${key}-${j}`}>{renderInline(item, `${key}-${j}`)}</li>
                 ))}
               </Tag>
             );
@@ -228,7 +173,7 @@ export function Markdown({ source, className }: { source: string; className?: st
                 {block.lines.map((line, j) => (
                   <Fragment key={`${key}-${j}`}>
                     {j > 0 ? <br /> : null}
-                    {renderInline(line, true, `${key}-${j}`)}
+                    {renderInline(line, `${key}-${j}`)}
                   </Fragment>
                 ))}
               </p>

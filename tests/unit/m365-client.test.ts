@@ -153,3 +153,37 @@ describe("sendMail — errores", () => {
     expect(r).toMatchObject({ ok: false, code: "not_configured" });
   });
 });
+
+/**
+ * 045 (T034, DV-004; FR-016) — Las campañas salen del buzón de MARKETING:
+ * `sender` y `fromName` opcionales. Sin `sender`, todo sigue igual que antes
+ * (los correos operativos no cambian).
+ */
+describe("sendMail — 045 remitente de marketing", () => {
+  it("con `sender` y `fromName` envía desde ese buzón y con ese nombre", async () => {
+    vi.stubGlobal("fetch", fakeFetch());
+    const { sendMail } = await import("@/lib/m365/client");
+    await sendMail({
+      to: "a@x.test",
+      subject: "S",
+      html: "<p>x</p>",
+      sender: "novedades@academia.test",
+      fromName: "Academia Novedades",
+    });
+    const send = calls.find((c) => c.url.endsWith("/sendMail"))!;
+    expect(send.url).toContain(`/users/${encodeURIComponent("novedades@academia.test")}/sendMail`);
+    const message = sentMessage().message as Record<string, unknown>;
+    expect(message.from).toEqual({
+      emailAddress: { address: "novedades@academia.test", name: "Academia Novedades" },
+    });
+  });
+
+  it("sin `sender` usa `M365_SENDER` y no manda `from`, exactamente como antes", async () => {
+    vi.stubGlobal("fetch", fakeFetch());
+    const { sendMail } = await import("@/lib/m365/client");
+    await sendMail({ to: "a@x.test", subject: "S", html: "<p>x</p>" });
+    const send = calls.find((c) => c.url.endsWith("/sendMail"))!;
+    expect(send.url).toContain(`/users/${encodeURIComponent("cursos@academia.test")}/sendMail`);
+    expect((sentMessage().message as Record<string, unknown>).from).toBeUndefined();
+  });
+});
