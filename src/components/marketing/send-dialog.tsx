@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { ConfirmSendDialog } from "@/components/cohorts/confirm-send-dialog";
 import type { AudienceFilters } from "@/lib/marketing/audience";
 
@@ -25,6 +26,7 @@ export function SendDialog({
   const [aviso, setAviso] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
+  const [faltaBuzon, setFaltaBuzon] = useState<string[]>([]);
 
   useEffect(() => {
     fetch("/api/marketing/audiences/preview", {
@@ -65,6 +67,13 @@ export function SendDialog({
         setAviso("La audiencia cambió mientras confirmabas. Revisá la cantidad nueva y confirmá otra vez.");
         return;
       }
+      if (code === "buzon_no_listo") {
+        // US5-1 — qué falta, en palabras, y dónde se arregla.
+        const fields = (data?.error?.fields ?? []) as { path: string; message: string }[];
+        setFaltaBuzon(fields.map((f) => f.message));
+        setError(data?.error?.message ?? "Falta configurar el buzón de marketing.");
+        return;
+      }
       if (code === "tope_superado") {
         setError(data?.error?.message ?? "Supera el tope de 500 personas. Acotá los filtros de la audiencia.");
         return;
@@ -91,6 +100,18 @@ export function SendDialog({
       <p>Salen de a uno desde el buzón de marketing. Un envío confirmado no se puede deshacer; sí se puede cancelar lo que falte.</p>
       {aviso && <p className="text-warning">{aviso}</p>}
       {error && <p className="text-danger">{error}</p>}
+      {faltaBuzon.length > 0 && (
+        <>
+          <ul className="list-disc pl-5 text-danger">
+            {faltaBuzon.map((m) => (
+              <li key={m}>{m}</li>
+            ))}
+          </ul>
+          <Link href="/settings/marketing" className="underline">
+            Ir a Ajustes › Marketing
+          </Link>
+        </>
+      )}
     </ConfirmSendDialog>
   );
 }

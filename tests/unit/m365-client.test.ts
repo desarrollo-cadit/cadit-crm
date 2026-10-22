@@ -226,6 +226,13 @@ describe("sendMail — 045 códigos de error", () => {
     expect(r).toMatchObject({ ok: false, code: "mailbox_denied" });
   });
 
+  it("404 → `mailbox_not_found` (el buzón no existe)", async () => {
+    vi.stubGlobal("fetch", fetchCon(404));
+    const { sendMail } = await import("@/lib/m365/client");
+    const r = await sendMail({ to: "a@x.test", subject: "S", html: "<p>x</p>" });
+    expect(r).toMatchObject({ ok: false, code: "mailbox_not_found" });
+  });
+
   it("otro estado sigue siendo `send_failed`", async () => {
     vi.stubGlobal("fetch", fetchCon(400));
     const { sendMail } = await import("@/lib/m365/client");

@@ -132,7 +132,9 @@ export type SendMailResult =
    */
   | { ok: false; code: "throttled"; message: string; retryAfterMs: number }
   /** 045 — 401/403: la app no puede enviar desde ese buzón (ApplicationAccessPolicy). */
-  | { ok: false; code: "mailbox_denied"; message: string };
+  | { ok: false; code: "mailbox_denied"; message: string }
+  /** 045 — 404: el buzón no existe en el tenant. */
+  | { ok: false; code: "mailbox_not_found"; message: string };
 
 /** Pausa cuando el proveedor limita sin decir cuánto esperar. */
 const PAUSA_POR_DEFECTO_MS = 60_000;
@@ -217,6 +219,7 @@ export async function sendMail(input: SendMailInput): Promise<SendMailResult> {
   if (res && (res.status === 401 || res.status === 403)) {
     return { ok: false, code: "mailbox_denied", message };
   }
+  if (res && res.status === 404) return { ok: false, code: "mailbox_not_found", message };
   return { ok: false, code: "send_failed", message };
 }
 
