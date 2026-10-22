@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, gte, inArray } from "drizzle-orm";
+import { inscripcionesNoDictadas } from "@/server/cursadas-no-dictadas";
 import { cursoNoEsTaller } from "@/server/workshop-scope";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
@@ -138,7 +139,20 @@ async function scopedEnrollments(
     )
     .orderBy(desc(schema.cohort.startDate));
 
-  return rows.map((r) => ({
+  // 2026-10-22 — Los grupos que nunca salieron no son cursadas del alumno.
+  const noDictadas = await inscripcionesNoDictadas(
+    organizationId,
+    rows.map((r) => ({
+      id: r.enrollment.id,
+      parentEnrollmentId: r.enrollment.parentEnrollmentId,
+      cohort: r.cohort,
+      courseKind: r.course?.kind ?? null,
+    }))
+  );
+
+  return rows
+    .filter((r) => !noDictadas.has(r.enrollment.id))
+    .map((r) => ({
     enrollment: r.enrollment,
     cohort: r.cohort,
     course: r.course,
@@ -1610,6 +1624,11 @@ export async function studentNavCourses(
       courseName: schema.course.name,
       status: schema.cohort.status,
       startDate: schema.cohort.startDate,
+      // 2026-10-22 — Para dejar afuera los grupos que nunca salieron.
+      endDate: schema.cohort.endDate,
+      confirmedAt: schema.cohort.confirmedAt,
+      parentCohortId: schema.cohort.parentCohortId,
+      courseKind: schema.course.kind,
     })
     .from(schema.enrollment)
     .leftJoin(schema.cohort, eq(schema.enrollment.cohortId, schema.cohort.id))
@@ -1652,8 +1671,26 @@ export async function studentNavCourses(
     );
   }
 
+  // 2026-10-22 — Los grupos que nunca salieron tampoco van al menú.
+  const noDictadas = await inscripcionesNoDictadas(
+    organizationId,
+    rows.map((r) => ({
+      id: r.enrollmentId,
+      parentEnrollmentId: r.parentEnrollmentId,
+      cohort: r.startDate
+        ? {
+            confirmedAt: r.confirmedAt,
+            startDate: r.startDate,
+            endDate: r.endDate,
+            parentCohortId: r.parentCohortId,
+          }
+        : null,
+      courseKind: r.courseKind,
+    }))
+  );
+
   return rows
-    .filter((r) => r.parentEnrollmentId === null)
+    .filter((r) => r.parentEnrollmentId === null && !noDictadas.has(r.enrollmentId))
     .map((r) => ({
       enrollmentId: r.enrollmentId,
       label: r.courseName ?? r.cohortName ?? "Mi curso",
