@@ -75,7 +75,7 @@ export function RecorridoGrid<I extends IntentoDelRecorrido>({
   acciones?: (alumno: AlumnoDelRecorrido<I>, intento: I) => ReactNode;
 }) {
   return (
-    <div className="max-h-[calc(100vh-14rem)] max-w-full overflow-auto rounded-lg border">
+    <div className="relative max-h-[calc(100vh-14rem)] max-w-full overflow-auto rounded-lg border">
       <table className="border-separate border-spacing-0 text-xs" aria-label="Recorrido por módulo">
         <thead>
           <tr>

@@ -279,7 +279,7 @@ export function AttendanceClient({
           : `mínimo para aprobar: ${sheet.minAttendancePct}%`}
       </p>
 
-      <div className="max-h-[calc(100vh-16rem)] max-w-full overflow-auto rounded-lg border">
+      <div className="relative max-h-[calc(100vh-16rem)] max-w-full overflow-auto rounded-lg border">
         <table
           ref={gridRef}
           className="border-separate border-spacing-0 text-xs"
