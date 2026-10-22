@@ -247,3 +247,16 @@ Sin violaciones de la constitución: no aplica.
 - E2E: `E2E_SECCIONES=marketing` según quickstart §5.
 - Pendiente de verificación humana: aspecto del correo en Outlook/Gmail/móvil
   y la `ApplicationAccessPolicy` real (quickstart §6).
+
+## Decisiones del dueño (2026-10-22)
+
+- **P-01 — Baja en dos pasos**: el enlace abre una página y la baja se confirma
+  con un botón; los escáneres de correo que abren enlaces no dan de baja a
+  nadie.
+- **P-02 — Envío sin aprobación previa**: quien tiene `marketing.enviar`
+  (Dirección, Coordinación, Ventas) envía directamente, con vista previa, envío
+  de prueba y confirmación con la cantidad exacta.
+- **P-03 — Caída a mitad de un envío**: el destinatario en vuelo se marca
+  "falló" y no se reintenta; se prefiere perder un envío a duplicarlo.
+- **P-04 — Nombre del remitente**: se configura en el buzón compartido de
+  Microsoft 365 (Exchange suele mostrar ese nombre).
