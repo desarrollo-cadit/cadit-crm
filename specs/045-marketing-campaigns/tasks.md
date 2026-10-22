@@ -58,9 +58,9 @@ US5 es P2.
 
 **Purpose**: variables de entorno del ejecutor de campañas.
 
-- [ ] T001 Escribir el test en rojo `tests/unit/marketing-env.test.ts`: `MARKETING_SEND_PAUSE_MS` vale 2000 por defecto y acepta 0; `MARKETING_TICK_SEC` vale 60 por defecto y acepta 0 (= solo al arrancar); un valor negativo o no numérico se rechaza (data-model §10, SC-002)
-- [ ] T002 Agregar `MARKETING_SEND_PAUSE_MS` (default 2000) y `MARKETING_TICK_SEC` (default 60) al esquema Zod de `src/lib/env.ts`, junto a `BULK_SEND_PAUSE_MS`, hasta poner verde T001
-- [ ] T003 [P] Documentar `MARKETING_SEND_PAUSE_MS` y `MARKETING_TICK_SEC` con guía inline `#` en `.env.example` (2000 en producción ≈ 30 correos/min, el límite de Exchange por buzón; 0 solo en pruebas), sin secretos nuevos (la firma de enlaces deriva de `ENCRYPTION_KEY`)
+- [x] T001 Escribir el test en rojo `tests/unit/marketing-env.test.ts`: `MARKETING_SEND_PAUSE_MS` vale 2000 por defecto y acepta 0; `MARKETING_TICK_SEC` vale 60 por defecto y acepta 0 (= solo al arrancar); un valor negativo o no numérico se rechaza (data-model §10, SC-002)
+- [x] T002 Agregar `MARKETING_SEND_PAUSE_MS` (default 2000) y `MARKETING_TICK_SEC` (default 60) al esquema Zod de `src/lib/env.ts`, junto a `BULK_SEND_PAUSE_MS`, hasta poner verde T001
+- [ ] T003 [P] **(PENDIENTE: quien implementó no tiene acceso a `.env*`; queda para el dueño. Texto sugerido: `# 045 — Pausa entre correos de una campaña (2000 ≈ 30/min, límite de Exchange por buzón; 0 solo en pruebas)` + `MARKETING_SEND_PAUSE_MS=2000`, y `# 045 — Segundos entre pasadas que retoman campañas (0 = solo al arrancar)` + `MARKETING_TICK_SEC=60`. Los defaults del esquema ya cubren su ausencia.)** Documentar `MARKETING_SEND_PAUSE_MS` y `MARKETING_TICK_SEC` con guía inline `#` en `.env.example` (2000 en producción ≈ 30 correos/min, el límite de Exchange por buzón; 0 solo en pruebas), sin secretos nuevos (la firma de enlaces deriva de `ENCRYPTION_KEY`)
 
 ---
 
