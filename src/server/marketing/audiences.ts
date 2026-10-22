@@ -1,8 +1,9 @@
-import { asc, desc, eq, exists, gte, inArray, isNull, lt, ne, or, sql, type SQL } from "drizzle-orm";
+import { asc, desc, eq, exists, gte, inArray, lt, ne, or, sql, type SQL } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { etiquetaDeCohorte } from "@/lib/cohortes-inscribibles";
+import { whereDeBajaActiva } from "./bajas";
 import {
   AudienceFiltersSchema,
   ORIGEN_WHATSAPP,
@@ -303,21 +304,17 @@ export async function candidatosDeAudiencia(
         )
       )
   );
-  // 1.8.0 II.b — baja activa por contacto O por correo normalizado (DV-011).
+  // 1.8.0 II.b — baja activa por contacto O por correo normalizado (DV-011):
+  // la MISMA regla que consulta el ejecutor antes de cada envío.
   const tieneBaja = exists(
     db
       .select({ uno: sql`1` })
       .from(schema.marketingUnsubscribe)
       .where(
-        scoped(
-          schema.marketingUnsubscribe.organizationId,
-          orgId,
-          isNull(schema.marketingUnsubscribe.revertedAt),
-          or(
-            eq(schema.marketingUnsubscribe.contactId, schema.contact.id),
-            eq(schema.marketingUnsubscribe.email, sql`lower(trim(${schema.contact.email}))`)
-          )
-        )
+        whereDeBajaActiva(orgId, {
+          contactId: schema.contact.id,
+          email: sql`lower(trim(${schema.contact.email}))`,
+        })!
       )
   );
 

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   armarLineaDeTiempo,
+  entradasDeMarketing,
+  estadoDeMarketing,
   enlaceDeCorreo,
   enlaceDeWhatsApp,
   origenDelFormulario,
@@ -169,5 +171,58 @@ describe("seguimientoBodySchema", () => {
 
   it("un tipo inventado no pasa", () => {
     expect(seguimientoBodySchema.safeParse({ kind: "llamada" }).success).toBe(false);
+  });
+});
+
+/**
+ * 045 (T080; FR-013, FR-015; research R10) — La baja de marketing en la ficha:
+ * el estado (con fecha y campaña) y su historia en la línea de tiempo.
+ * `revertible` solo con `marketing.configurar` (deshace una oposición expresa).
+ */
+describe("045 — marketing en el Seguimiento", () => {
+  const baja = (over: Record<string, unknown> = {}) => ({
+    id: "mku_1",
+    at: "2026-10-10T12:00:00.000Z",
+    campaignName: "Octubre",
+    revertedAt: null as string | null,
+    revertedByName: null as string | null,
+    ...over,
+  });
+
+  it("sin bajas → suscripto", () => {
+    expect(estadoDeMarketing([], true)).toEqual({ estado: "suscripto" });
+  });
+
+  it("con una baja activa → baja, desde, campaña y revertible según la capacidad", () => {
+    expect(estadoDeMarketing([baja()], true)).toEqual({
+      estado: "baja",
+      desde: "2026-10-10T12:00:00.000Z",
+      campana: "Octubre",
+      revertible: true,
+    });
+    expect(estadoDeMarketing([baja()], false)).toMatchObject({ estado: "baja", revertible: false });
+  });
+
+  it("una baja revertida ya no cuenta", () => {
+    expect(
+      estadoDeMarketing([baja({ revertedAt: "2026-10-12T12:00:00.000Z", revertedByName: "Dir" })], true)
+    ).toEqual({ estado: "suscripto" });
+  });
+
+  it("la línea de tiempo suma la baja (con campaña) y la reactivación (con autor)", () => {
+    const entradas = entradasDeMarketing([
+      baja({ revertedAt: "2026-10-12T12:00:00.000Z", revertedByName: "Dirección" }),
+    ]);
+    expect(entradas).toEqual([
+      { tipo: "baja_marketing", id: "mku_1", at: "2026-10-10T12:00:00.000Z", campaignName: "Octubre" },
+      {
+        tipo: "baja_marketing_revertida",
+        id: "mku_1:revertida",
+        at: "2026-10-12T12:00:00.000Z",
+        authorName: "Dirección",
+      },
+    ]);
+    const linea = armarLineaDeTiempo([], [], entradas);
+    expect(linea.map((e) => e.tipo)).toEqual(["baja_marketing_revertida", "baja_marketing"]);
   });
 });

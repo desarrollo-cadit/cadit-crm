@@ -91,9 +91,60 @@ export type ActividadDto = {
   authorName: string | null;
 };
 
+/**
+ * 045 (FR-013, FR-015) — La baja de marketing en la ficha: cuándo, desde qué
+ * campaña y quién la reactivó.
+ */
+export type EntradaDeMarketing =
+  | { tipo: "baja_marketing"; id: string; at: string; campaignName: string | null }
+  | { tipo: "baja_marketing_revertida"; id: string; at: string; authorName: string | null };
+
 export type EntradaDeSeguimiento =
   | ({ tipo: "formulario" } & EnvioDeFormularioDto)
-  | ({ tipo: TipoDeActividad } & ActividadDto);
+  | ({ tipo: TipoDeActividad } & ActividadDto)
+  | EntradaDeMarketing;
+
+/** Una baja de marketing de la persona, tal como la lee el servidor. */
+export type BajaDeMarketingDto = {
+  id: string;
+  at: string;
+  campaignName: string | null;
+  revertedAt: string | null;
+  revertedByName: string | null;
+};
+
+export type EstadoDeMarketingDto =
+  | { estado: "suscripto" }
+  | { estado: "baja"; desde: string; campana: string | null; revertible: boolean };
+
+/**
+ * ¿Recibe campañas? La baja activa más reciente manda. `revertible` solo con
+ * `marketing.configurar`: reactivar deshace una oposición expresa.
+ */
+export function estadoDeMarketing(bajas: readonly BajaDeMarketingDto[], revertible: boolean): EstadoDeMarketingDto {
+  const activa = [...bajas]
+    .filter((b) => b.revertedAt === null)
+    .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))[0];
+  if (!activa) return { estado: "suscripto" };
+  return { estado: "baja", desde: activa.at, campana: activa.campaignName, revertible };
+}
+
+/** Las bajas y reactivaciones como entradas de la línea de tiempo. */
+export function entradasDeMarketing(bajas: readonly BajaDeMarketingDto[]): EntradaDeMarketing[] {
+  return bajas.flatMap((b): EntradaDeMarketing[] => [
+    { tipo: "baja_marketing", id: b.id, at: b.at, campaignName: b.campaignName },
+    ...(b.revertedAt
+      ? [
+          {
+            tipo: "baja_marketing_revertida" as const,
+            id: `${b.id}:revertida`,
+            at: b.revertedAt,
+            authorName: b.revertedByName,
+          },
+        ]
+      : []),
+  ]);
+}
 
 /**
  * Una sola línea, lo más nuevo arriba. A igual instante la actividad va
@@ -101,10 +152,12 @@ export type EntradaDeSeguimiento =
  */
 export function armarLineaDeTiempo(
   envios: EnvioDeFormularioDto[],
-  actividades: ActividadDto[]
+  actividades: ActividadDto[],
+  marketing: EntradaDeMarketing[] = []
 ): EntradaDeSeguimiento[] {
   const todas: { orden: number; entrada: EntradaDeSeguimiento }[] = [
     ...actividades.map((a) => ({ orden: 0, entrada: { tipo: a.kind, ...a } as EntradaDeSeguimiento })),
+    ...marketing.map((m) => ({ orden: 0, entrada: m as EntradaDeSeguimiento })),
     ...envios.map((e) => ({ orden: 1, entrada: { tipo: "formulario" as const, ...e } })),
   ];
   return todas

@@ -39,6 +39,8 @@ describe("(c) un solo camino arma destinatarios desde `contact` (II.b, II.d; FR-
   it("ningún otro módulo de `src/server/marketing` lee la tabla `contact`", () => {
     const otros = archivos("src/server/marketing")
       .filter((f) => f !== AUDIENCIAS)
+      // La baja lee el correo de UN contacto por su id (regla (a), abajo).
+      .filter((f) => f !== "src/server/marketing/unsubscribe.ts")
       .filter((f) => /schema\.contact(?![A-Za-z])/.test(leer(f)));
     expect(otros, `leen contactos por su cuenta: ${otros.join(", ")}`).toEqual([]);
   });
@@ -56,10 +58,13 @@ describe("(c) un solo camino arma destinatarios desde `contact` (II.b, II.d; FR-
     expect(cuerpo).toContain(".from(schema.contact)");
     expect(cuerpo, "falta la condición de prueba (is_test)").toContain("schema.conversation.isTest");
     expect(cuerpo, "falta la consulta a las bajas").toContain("schema.marketingUnsubscribe");
-    expect(cuerpo, "la baja tiene que mirar también el correo").toContain(
-      "schema.marketingUnsubscribe.email"
-    );
-    expect(cuerpo).toContain("schema.marketingUnsubscribe.revertedAt");
+    // 045 (T084) — la regla de baja es UNA, compartida con el ejecutor.
+    expect(cuerpo).toContain("whereDeBajaActiva(");
+    const regla = cuerpoDe(leer("src/server/marketing/bajas.ts"), "whereDeBajaActiva");
+    expect(regla, "la baja tiene que mirar también el correo").toContain("schema.marketingUnsubscribe.email");
+    expect(regla).toContain("schema.marketingUnsubscribe.contactId");
+    expect(regla).toContain("schema.marketingUnsubscribe.revertedAt");
+    expect(leer("src/server/marketing/runner.ts"), "el ejecutor usa la misma regla").toMatch(/\bbajaActiva\(/);
     // La otra lectura admitida es la de las OPCIONES del filtro de origen
     // (valores y cantidades), que no arma destinatarios.
     const sinOpciones = src.replace(cuerpoDe(src, "opcionesDeFiltros"), "");
@@ -98,5 +103,47 @@ describe("(b) solo el buzón de marketing elige remitente (II.a; FR-016)", () =>
   it("`confirmarEnvio` congela la lista con `destinatariosDeAudiencia` (única fuente)", () => {
     const cuerpo = cuerpoDe(leer("src/server/marketing/campaigns.ts"), "confirmarEnvio");
     expect(cuerpo).toContain("destinatariosDeAudiencia(");
+  });
+});
+
+describe("(a) la baja de marketing no toca el correo operativo (II.b; FR-014, SC-005)", () => {
+  const OPERATIVOS = [
+    ...archivos("src/server/email"),
+    "src/server/bulk-sends.ts",
+    "src/server/staff-notices.ts",
+    ...archivos("src/server").filter((f) => /\/(billing-notices|lead-notices)[^/]*\.ts$/.test(f)),
+    "src/server/workshop-notices.ts",
+  ];
+
+  it("encuentra los módulos del correo operativo", () => {
+    expect(OPERATIVOS.length).toBeGreaterThan(5);
+  });
+
+  it.each(OPERATIVOS)("%s no importa marketing ni nombra sus bajas", (f) => {
+    const src = leer(f);
+    expect(src).not.toContain("@/server/marketing");
+    expect(src).not.toContain("marketing_unsubscribe");
+    expect(src).not.toContain("marketingUnsubscribe");
+  });
+
+  it("la página pública de baja solo LEE: el GET nunca da de baja", () => {
+    const src = leer("src/app/baja/[token]/page.tsx");
+    expect(src).not.toContain("registrarBaja");
+    expect(src).toContain("estadoDeEnlaceDeBaja");
+  });
+
+  it("la página pública de baja no muestra el correo ni el nombre del destinatario", () => {
+    const src = leer("src/app/baja/[token]/page.tsx") + leer("src/components/marketing/unsubscribe-confirm.tsx");
+    for (const dato of [".email", "firstName", "lastName", "contactId"]) {
+      expect(src, `la baja muestra ${dato}`).not.toContain(dato);
+    }
+  });
+
+  it("`unsubscribe.ts` solo lee un contacto por su id (para su correo), nunca listas", () => {
+    const src = leer("src/server/marketing/unsubscribe.ts");
+    const lecturas = (src.match(/\.from\(schema\.contact\)/g) ?? []).length;
+    const porId = (src.match(/eq\(schema\.contact\.id, contactId\)/g) ?? []).length;
+    expect(lecturas).toBeGreaterThan(0);
+    expect(lecturas).toBe(porId);
   });
 });

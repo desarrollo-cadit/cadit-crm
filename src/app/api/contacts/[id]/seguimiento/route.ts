@@ -1,4 +1,5 @@
 import { apiError, parseBody, requireCapability } from "@/lib/api";
+import { sessionCapabilities } from "@/lib/capabilities";
 import { seguimientoBodySchema } from "@/lib/seguimiento";
 import { registrarActividad, seguimientoDelContacto } from "@/server/seguimiento";
 
@@ -19,7 +20,10 @@ export const GET = requireCapability(
   "contactos.ver",
   async (session, _req: Request, ctx: Params) => {
     const { id } = await ctx.params;
-    const data = await seguimientoDelContacto(session.organizationId, id);
+    const data = await seguimientoDelContacto(session.organizationId, id, {
+      // 045 — reactivar los correos de marketing es de quien configura marketing.
+      puedeReactivarMarketing: sessionCapabilities(session).includes("marketing.configurar"),
+    });
     if (!data) return apiError(404, "not_found", "Contacto no encontrado");
     return Response.json(data);
   }

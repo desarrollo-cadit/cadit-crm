@@ -1,9 +1,9 @@
-import { and, eq, gt, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { normalizarCorreo } from "@/lib/contact-identity";
-import { verificarClic } from "@/lib/marketing/link-token";
+import { verificarBaja, verificarClic } from "@/lib/marketing/link-token";
 import { claveDeEnlaces } from "./send";
 
 /**
@@ -15,27 +15,148 @@ import { claveDeEnlaces } from "./send";
  * el correo operativo no se entera (FR-014).
  */
 
-/**
- * ¿Tiene esta persona una baja de marketing activa? Por contacto O por correo
- * normalizado: la baja sobrevive al borrado del contacto (DV-011).
- */
-export async function bajaActiva(
-  orgId: string,
-  persona: { contactId: string | null; email: string | null }
-): Promise<boolean> {
-  const u = schema.marketingUnsubscribe;
-  const correo = normalizarCorreo(persona.email);
-  const porQuien = [
-    persona.contactId ? eq(u.contactId, persona.contactId) : undefined,
-    correo ? eq(u.email, correo) : undefined,
-  ].filter((c) => c !== undefined);
-  if (porQuien.length === 0) return false;
+export { bajaActiva } from "./bajas";
+import { bajaActiva } from "./bajas";
+
+/* ============================================================
+ * El enlace de baja (dos pasos: la página LEE, el botón REGISTRA)
+ * ============================================================ */
+
+export type EstadoDeEnlaceDeBaja = "valido" | "ya_dado_de_baja" | "prueba" | "invalido";
+
+/** El token de los correos de PRUEBA: lleva a una página que no da de baja a nadie. */
+export const TOKEN_DE_PRUEBA = "prueba";
+
+async function destinatarioDelToken(orgId: string, token: string) {
+  const recipientId = verificarBaja(claveDeEnlaces(), token);
+  if (!recipientId) return null;
+  const r = schema.marketingCampaignRecipient;
   const [fila] = await getDb()
+    .select({ id: r.id, email: r.email, contactId: r.contactId, campaignId: r.campaignId })
+    .from(r)
+    .where(scoped(r.organizationId, orgId, eq(r.id, recipientId)))
+    .limit(1);
+  return fila ?? null;
+}
+
+/**
+ * Qué mostrar en `/baja/[token]`. Devuelve SOLO un estado: nunca el correo ni
+ * el nombre. Firma alterada, destinatario inexistente y otra organización son
+ * el MISMO `invalido` (no revela de quién es el enlace, US4-2).
+ */
+export async function estadoDeEnlaceDeBaja(orgId: string, token: string): Promise<EstadoDeEnlaceDeBaja> {
+  if (token === TOKEN_DE_PRUEBA) return "prueba";
+  const d = await destinatarioDelToken(orgId, token);
+  if (!d) return "invalido";
+  return (await bajaActiva(orgId, { contactId: d.contactId, email: d.email })) ? "ya_dado_de_baja" : "valido";
+}
+
+/**
+ * Registra la baja (el POST del botón). Idempotente: con una baja activa para
+ * ese correo, el índice único parcial la absorbe (`on conflict do nothing`) y
+ * la respuesta es la misma. Una campaña en curso la respeta desde el
+ * siguiente turno: el ejecutor consulta `bajaActiva` antes de cada envío.
+ */
+export async function registrarBaja(orgId: string, token: string): Promise<{ ok: boolean }> {
+  if (token === TOKEN_DE_PRUEBA) return { ok: false };
+  const d = await destinatarioDelToken(orgId, token);
+  if (!d) return { ok: false };
+  const email = normalizarCorreo(d.email) ?? d.email;
+  await getDb()
+    .insert(schema.marketingUnsubscribe)
+    .values({
+      id: newId("marketingUnsubscribe"),
+      organizationId: orgId,
+      contactId: d.contactId,
+      email,
+      campaignId: d.campaignId,
+      recipientId: d.id,
+    })
+    .onConflictDoNothing();
+  const r = schema.marketingCampaignRecipient;
+  await getDb()
+    .update(r)
+    .set({ unsubscribedAt: new Date() })
+    .where(scoped(r.organizationId, orgId, eq(r.id, d.id), isNull(r.unsubscribedAt)));
+  return { ok: true };
+}
+
+/** El correo de UN contacto (para buscar sus bajas también por dirección). */
+async function correoDelContacto(orgId: string, contactId: string): Promise<{ email: string | null } | null> {
+  const [fila] = await getDb()
+    .select({ email: schema.contact.email })
+    .from(schema.contact)
+    .where(scoped(schema.contact.organizationId, orgId, eq(schema.contact.id, contactId)))
+    .limit(1);
+  return fila ?? null;
+}
+
+function deLaPersona(contactId: string, email: string | null) {
+  const u = schema.marketingUnsubscribe;
+  const correo = normalizarCorreo(email);
+  return or(eq(u.contactId, contactId), correo ? eq(u.email, correo) : undefined);
+}
+
+/**
+ * Reactiva los correos de marketing de un contacto (`marketing.configurar`:
+ * deshace una oposición expresa, Ley 18.331). Marca, nunca borra: la ficha
+ * conserva la historia.
+ */
+export async function revertirBaja(
+  session: { organizationId: string; userId: string },
+  contactId: string
+): Promise<{ ok: true } | { ok: false; code: "not_found" }> {
+  const orgId = session.organizationId;
+  const contacto = await correoDelContacto(orgId, contactId);
+  if (!contacto) return { ok: false, code: "not_found" };
+  const u = schema.marketingUnsubscribe;
+  const activas = await getDb()
     .select({ id: u.id })
     .from(u)
-    .where(scoped(u.organizationId, orgId, isNull(u.revertedAt), or(...porQuien)))
-    .limit(1);
-  return Boolean(fila);
+    .where(scoped(u.organizationId, orgId, isNull(u.revertedAt), deLaPersona(contactId, contacto.email)));
+  if (activas.length === 0) return { ok: false, code: "not_found" };
+  await getDb()
+    .update(u)
+    .set({ revertedAt: new Date(), revertedBy: session.userId })
+    .where(
+      scoped(u.organizationId, orgId, isNull(u.revertedAt), inArray(u.id, activas.map((a) => a.id)))
+    );
+  return { ok: true };
+}
+
+export type BajaDelContacto = {
+  id: string;
+  at: string;
+  campaignName: string | null;
+  revertedAt: string | null;
+  revertedByName: string | null;
+};
+
+/** Las bajas de un contacto (por contacto o por su correo), la más nueva primero. */
+export async function estadoDeMarketingDelContacto(orgId: string, contactId: string): Promise<BajaDelContacto[]> {
+  const contacto = await correoDelContacto(orgId, contactId);
+  if (!contacto) return [];
+  const u = schema.marketingUnsubscribe;
+  const filas = await getDb()
+    .select({
+      id: u.id,
+      createdAt: u.createdAt,
+      revertedAt: u.revertedAt,
+      campaignName: schema.marketingCampaign.name,
+      revertedByName: schema.user.name,
+    })
+    .from(u)
+    .leftJoin(schema.marketingCampaign, eq(schema.marketingCampaign.id, u.campaignId))
+    .leftJoin(schema.user, eq(schema.user.id, u.revertedBy))
+    .where(scoped(u.organizationId, orgId, deLaPersona(contactId, contacto.email)))
+    .orderBy(desc(u.createdAt));
+  return filas.map((f) => ({
+    id: f.id,
+    at: f.createdAt.toISOString(),
+    campaignName: f.campaignName ?? null,
+    revertedAt: f.revertedAt?.toISOString() ?? null,
+    revertedByName: f.revertedByName ?? null,
+  }));
 }
 
 /** Un segundo clic igual dentro de esta ventana no suma (escáneres de correo). */
