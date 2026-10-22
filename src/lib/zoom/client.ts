@@ -380,8 +380,12 @@ function fileTypesOf(files: { file_type?: string | null }[] | null | undefined):
 const isoDay = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 const dayMs = (d: string) => Date.parse(`${d}T00:00:00Z`);
 
-/** Parte [from, to] (inclusive) en tramos contiguos de ≤ 30 días. */
-function chunks(from: string, to: string): { from: string; to: string }[] {
+/**
+ * Parte [from, to] (inclusive) en tramos contiguos de ≤ 30 días: Zoom rechaza
+ * rangos de más de un mes. Pura; la verificación diaria pide 180 días y el
+ * adaptador los parte acá.
+ */
+export function recordingRangeChunks(from: string, to: string): { from: string; to: string }[] {
   const out: { from: string; to: string }[] = [];
   const end = dayMs(to);
   for (let start = dayMs(from); start <= end; start += CHUNK_DAYS * DAY_MS) {
@@ -400,7 +404,7 @@ export async function* listUserRecordings(
   zoomUserId: string,
   range: { from: string; to: string }
 ): AsyncGenerator<ZoomRecordingMeeting[]> {
-  for (const tramo of chunks(range.from, range.to)) {
+  for (const tramo of recordingRangeChunks(range.from, range.to)) {
     let next = "";
     do {
       const page = await request(

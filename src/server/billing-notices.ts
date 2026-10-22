@@ -433,8 +433,13 @@ export async function runInternalNoticesForOrg(organizationId: string, now = new
       n += await runBillingNoticesForOrg(organizationId, now);
     }
   } finally {
-    // Ni los de interesados.
-    n += await runLeadNoticesForOrg(organizationId, now);
+    try {
+      // Ni los de interesados.
+      n += await runLeadNoticesForOrg(organizationId, now);
+    } finally {
+      // Ni los de grupos sin confirmar (import dinámico: ese módulo importa `staff-notices`).
+      n += await (await import("@/server/avisos-sin-confirmar")).runUnconfirmedNoticesForOrg(organizationId, now);
+    }
   }
   return n;
 }

@@ -14,6 +14,7 @@ import { applyMatch } from "./assignment";
 import { loadZoomCredentials, sealPasscode, type SealedPasscode } from "./connections";
 import { loadMatchContext } from "./matching";
 import { dbLeaseStore, LEASE_MS, leaseOwner, type LeaseStore } from "./lease";
+import { reconcileMissing } from "./missing";
 import { inOrgScope } from "./scope";
 
 export type { LeaseStore } from "./lease";
@@ -144,6 +145,12 @@ export type SyncDeps = {
    * aula o generó un cronograma.
    */
   rematch?: (orgId: string, connectionId: string, seenBefore: Date) => Promise<PageCounts>;
+  /**
+   * Faltantes en Zoom (`missing.ts`): suelta de su clase las que faltan y
+   * restaura las que volvieron. Corre después de marcar y antes de
+   * re-adjudicar, para que el matcher no vuelva a mirar una faltante.
+   */
+  reconcile?: (orgId: string, connectionId: string) => Promise<unknown>;
 };
 
 /* ============================================================
@@ -324,6 +331,16 @@ async function runConnection(
   } catch (err) {
     // Credenciales que no abren o la base que no responde: la conexión entera falla.
     errores.push(err instanceof Error && !(err instanceof ZoomError) ? err.message : motivo(err));
+  }
+
+  // Faltantes: soltar su clase / restaurar las que volvieron. Por estado: no
+  // depende de que esta corrida haya terminado bien, solo de lo marcado.
+  if (deps.reconcile) {
+    try {
+      await deps.reconcile(orgId, run.connectionId);
+    } catch (err) {
+      console.error("[zoom-sync] desvincular faltantes falló:", err instanceof Error ? err.message : "error");
+    }
   }
 
   // Lo que quedó fuera de la ventana y sigue sin clase: re-adjudicar. Un fallo
@@ -646,6 +663,8 @@ export async function rematchUntouched(orgId: string, connectionId: string, seen
             eq(t.assignmentMode, "auto"),
             sql`${t.assignmentState} <> 'asignada'`,
             lt(t.lastSeenAt, seenBefore),
+            // Una grabación borrada de Zoom no se adjudica: su enlace no abre.
+            isNull(t.missingInZoomAt),
             corte
               ? or(gt(t.startTime, corte.startTime), and(eq(t.startTime, corte.startTime), gt(t.id, corte.id)))
               : undefined
@@ -770,6 +789,7 @@ function defaultDeps(): SyncDeps {
     config: { backfillDays: env.ZOOM_SYNC_BACKFILL_DAYS, overlapDays: env.ZOOM_SYNC_OVERLAP_DAYS },
     afterPage: adjudicatePage,
     rematch: rematchUntouched,
+    reconcile: reconcileMissing,
   };
 }
 

@@ -4,6 +4,7 @@ import { getDb, getRootDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { inOrgScope } from "./scope";
 import { runSync } from "./sync";
+import { runVerify, verifyDue } from "./verify";
 
 /**
  * 030 US5 (DV-004) — La sincronización periódica, in-process.
@@ -25,6 +26,10 @@ import { runSync } from "./sync";
  *  - **`ZOOM_SYNC_INTERVAL_MIN=0` la apaga** (default), y no arranca nunca en
  *    los tests ni durante `next build`.
  *  - Los temporizadores van con `unref()`: no retienen el proceso al apagarse.
+ *  - **La verificación diaria** (grabaciones borradas de Zoom, `verify.ts`)
+ *    corre en el mismo tick, después de las sincronizaciones, una vez por
+ *    día y organización según `zoom_connection.last_verify_at`. Solo existe
+ *    con la periódica encendida.
  */
 
 export type SchedulerDeps = {
@@ -33,6 +38,14 @@ export type SchedulerDeps = {
   bootDelayMs: number;
   dueOrganizations: (intervalMin: number) => Promise<string[]>;
   runOrg: (orgId: string) => Promise<unknown>;
+  /**
+   * Verificación diaria (`verify.ts`): las organizaciones con alguna conexión
+   * cuya última verificación tiene un día o más (`last_verify_at`, en la
+   * base: un reinicio no la repite). Corre después de las sincronizaciones
+   * del tick, con el mismo lease.
+   */
+  dueVerifyOrganizations?: () => Promise<string[]>;
+  verifyOrg?: (orgId: string) => Promise<unknown>;
   log: (msg: string) => void;
 };
 
@@ -84,18 +97,37 @@ export function startZoomScheduler(deps: SchedulerDeps = defaultSchedulerDeps())
   if (!(deps.intervalMin > 0)) return false;
   if (globalForScheduler.__caditZoomScheduler) return false;
 
+  /** La verificación diaria: nunca lanza ni frena a la sincronización. */
+  const verificar = async () => {
+    if (!deps.dueVerifyOrganizations || !deps.verifyOrg) return;
+    let orgs: string[];
+    try {
+      orgs = await deps.dueVerifyOrganizations();
+    } catch (err) {
+      deps.log(`[zoom-sync] verificación: no se pudo leer qué verificar (${err instanceof Error ? err.name : "error"})`);
+      return;
+    }
+    for (const orgId of orgs) {
+      try {
+        const r = await deps.verifyOrg(orgId);
+        deps.log(`[zoom-sync] verificación: ${orgId} → ${describir(r)}`);
+      } catch (err) {
+        deps.log(`[zoom-sync] verificación: ${orgId} falló (${err instanceof Error ? err.name : "error"})`);
+      }
+    }
+  };
+
   let busy = false;
   const tick = async () => {
     // Una corrida larga no se solapa con el tick siguiente del mismo proceso.
     if (busy) return;
     busy = true;
     try {
-      let orgs: string[];
+      let orgs: string[] = [];
       try {
         orgs = await deps.dueOrganizations(deps.intervalMin);
       } catch (err) {
         deps.log(`[zoom-sync] periódica: no se pudo leer qué sincronizar (${err instanceof Error ? err.name : "error"})`);
-        return;
       }
       for (const orgId of orgs) {
         try {
@@ -105,6 +137,7 @@ export function startZoomScheduler(deps: SchedulerDeps = defaultSchedulerDeps())
           deps.log(`[zoom-sync] periódica: ${orgId} falló (${err instanceof Error ? err.name : "error"})`);
         }
       }
+      await verificar();
     } finally {
       busy = false;
     }
@@ -174,12 +207,52 @@ export async function dueOrganizationsFromDb(intervalMin: number, now = new Date
   return vencidas;
 }
 
+/**
+ * Las organizaciones con alguna conexión activa con aulas vinculadas a la que
+ * le toca la verificación diaria (`verifyDue` sobre `last_verify_at`).
+ */
+export async function dueVerifyOrganizationsFromDb(now = new Date()): Promise<string[]> {
+  const orgs = await getRootDb().select({ id: schema.organization.id }).from(schema.organization);
+  const c = schema.zoomConnection;
+  const v = schema.virtualRoom;
+  const vencidas: string[] = [];
+  for (const { id } of orgs) {
+    const filas = await inOrgScope(id, () =>
+      getDb()
+        .select({ lastVerifyAt: c.lastVerifyAt })
+        .from(c)
+        .where(
+          scoped(
+            c.organizationId,
+            id,
+            isNull(c.archivedAt),
+            sql`exists (${getDb()
+              .select({ x: sql`1` })
+              .from(v)
+              .where(
+                and(
+                  eq(v.organizationId, id),
+                  eq(v.zoomConnectionId, c.id),
+                  isNull(v.archivedAt),
+                  isNotNull(v.zoomUserId)
+                )
+              )})`
+          )
+        )
+    );
+    if (filas.some((f) => verifyDue(f.lastVerifyAt, now))) vencidas.push(id);
+  }
+  return vencidas;
+}
+
 export function defaultSchedulerDeps(): SchedulerDeps {
   return {
     intervalMin: getEnv().ZOOM_SYNC_INTERVAL_MIN,
     bootDelayMs: 30_000,
     dueOrganizations: (intervalMin) => dueOrganizationsFromDb(intervalMin),
     runOrg: (orgId) => runSync(orgId, "periodica", { userId: null }),
+    dueVerifyOrganizations: () => dueVerifyOrganizationsFromDb(),
+    verifyOrg: (orgId) => runVerify(orgId, {}),
     log: (m) => console.log(m),
   };
 }

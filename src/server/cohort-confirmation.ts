@@ -2,7 +2,9 @@ import { asc, eq, isNotNull, isNull } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { onAfterCommit } from "@/lib/db/tenant-context";
-import { STAFF_NOTICE_KINDS, type ConfirmacionDto } from "@/lib/staff-notices";
+import { STAFF_NOTICE_KINDS, type AvisoDto, type ConfirmacionDto } from "@/lib/staff-notices";
+import { marcaDeConfirmacion } from "@/lib/marca-de-confirmacion";
+import { organizationTimezone } from "@/server/finanzas-periodo";
 import { cancelarAvisosDeFacturacion, enviarAviso } from "@/server/staff-notices";
 
 /**
@@ -37,10 +39,15 @@ export async function estadoDeConfirmacion(
   const rows = await db
     .select({
       confirmedAt: schema.cohort.confirmedAt,
+      startDate: schema.cohort.startDate,
+      endDate: schema.cohort.endDate,
+      parentCohortId: schema.cohort.parentCohortId,
+      courseKind: schema.course.kind,
       byId: schema.user.id,
       byName: schema.user.name,
     })
     .from(schema.cohort)
+    .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
     .leftJoin(schema.user, eq(schema.cohort.confirmedBy, schema.user.id))
     .where(scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, cohortId)))
     .limit(1);
@@ -62,19 +69,28 @@ export async function estadoDeConfirmacion(
     )
     .orderBy(asc(schema.staffNotice.createdAt));
 
+  // Uno por tipo: los avisos de grupo sin confirmar llevan la fecha de inicio
+  // en la llave, y un grupo reprogramado puede tener dos del mismo tipo. Gana
+  // el más reciente (vienen ordenados por creación).
+  const porTipo = new Map<AvisoDto["kind"], AvisoDto>();
+  for (const a of avisos) {
+    porTipo.set(a.kind, {
+      kind: a.kind,
+      status: a.status,
+      detail: a.detail,
+      error: a.error,
+      sentAt: a.sentAt?.toISOString() ?? null,
+      updatedAt: a.updatedAt.toISOString(),
+    });
+  }
+
   return {
     confirmedAt: row.confirmedAt?.toISOString() ?? null,
     confirmedBy: row.confirmedAt && row.byId && row.byName ? { id: row.byId, name: row.byName } : null,
-    avisos: avisos
-      .map((a) => ({
-        kind: a.kind,
-        status: a.status,
-        detail: a.detail,
-        error: a.error,
-        sentAt: a.sentAt?.toISOString() ?? null,
-        updatedAt: a.updatedAt.toISOString(),
-      }))
-      .sort((a, b) => STAFF_NOTICE_KINDS.indexOf(a.kind) - STAFF_NOTICE_KINDS.indexOf(b.kind)),
+    marca: marcaDeConfirmacion(row, new Date(), await organizationTimezone(organizationId)),
+    avisos: [...porTipo.values()].sort(
+      (a, b) => STAFF_NOTICE_KINDS.indexOf(a.kind) - STAFF_NOTICE_KINDS.indexOf(b.kind)
+    ),
   };
 }
 

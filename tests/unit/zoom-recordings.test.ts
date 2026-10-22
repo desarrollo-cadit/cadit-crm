@@ -108,6 +108,7 @@ describe("RecordingRowDto", () => {
       passcodeEmbedded: false,
       autoDeleteDate: "2026-12-30",
       missingInZoom: false,
+      purgeOn: null,
       fileTypes: ["MP4", "TRANSCRIPT"],
       hasTranscript: true,
       assignment: {
@@ -120,6 +121,17 @@ describe("RecordingRowDto", () => {
         assignedAt: null,
       },
     });
+  });
+
+  it("faltante en Zoom: dice desde cuándo se borra (marca + ZOOM_MISSING_PURGE_DAYS)", async () => {
+    const { toRecordingRowDto } = await import("@/server/zoom/recordings");
+    const dto = toRecordingRowDto(await fila({ missingInZoomAt: new Date("2026-10-01T10:00:00Z") }), {
+      classes: new Map(),
+      users: new Map(),
+      purgeDays: 30,
+    });
+    expect(dto.missingInZoom).toBe(true);
+    expect(dto.purgeOn).toBe("2026-10-31T10:00:00.000Z");
   });
 
   it("con el código embebido en el enlace, el código no viaja aparte", async () => {
@@ -220,6 +232,8 @@ describe("estado de la sincronización", () => {
           lastSyncAt: null,
           syncedThrough: "2026-10-08",
           lastError: null,
+          lastVerifyAt: null,
+          lastVerifyError: null,
           lastRun: {
             status: "corriendo",
             startedAt: "2026-10-09T10:42:00.000Z",

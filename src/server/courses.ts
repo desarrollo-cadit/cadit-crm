@@ -8,6 +8,10 @@ import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { slugify } from "@/lib/utils";
 import { computeCohortStatus } from "@/lib/cohort-status";
+import { ACADEMY_TIME_ZONE } from "@/lib/schedule-time";
+import { decidirBorradoDeClases } from "@/lib/recess";
+import { marcaDeConfirmacion } from "@/lib/marca-de-confirmacion";
+import { organizationTimezone } from "@/server/finanzas-periodo";
 import { availableLicenses } from "@/server/licenses";
 import { inscribirEnModulos } from "@/server/module-enrollment";
 import {
@@ -738,8 +742,13 @@ export async function createCohort(
     ? await findScheduleConflicts(
         organizationId,
         input.teacherId,
-        input.startDate,
-        input.endDate ?? null,
+        {
+          startDate: input.startDate,
+          endDate: input.endDate ?? null,
+          daysOfWeek: input.daysOfWeek ?? null,
+          startTime: input.startTime ?? null,
+          endTime: input.endTime ?? null,
+        },
         id
       )
     : [];
@@ -959,8 +968,13 @@ export async function updateCohort(
     ? await findScheduleConflicts(
         organizationId,
         cohort.teacherId,
-        cohort.startDate,
-        cohort.endDate,
+        {
+          startDate: cohort.startDate,
+          endDate: cohort.endDate,
+          daysOfWeek: cohort.daysOfWeek,
+          startTime: cohort.startTime,
+          endTime: cohort.endTime,
+        },
         cohortId
       )
     : [];
@@ -1078,7 +1092,10 @@ function serializeCohort(
   cohort: CohortRow,
   course: CourseRow,
   teacher: TeacherRow | null,
-  software: SoftwareRef[]
+  software: SoftwareRef[],
+  /** Zona de la academia: decide si el día de inicio ya llegó (marca de confirmación). */
+  timeZone: string = ACADEMY_TIME_ZONE,
+  now: Date = new Date()
 ) {
   return {
     id: cohort.id,
@@ -1140,6 +1157,21 @@ function serializeCohort(
      * Quién la confirmó lo trae `/api/cohorts/[id]/confirmation`.
      */
     confirmedAt: cohort.confirmedAt?.toISOString() ?? null,
+    /**
+     * Lo que se DIBUJA de la confirmación (`marcaDeConfirmacion`): en rojo
+     * cuando llegó el día de inicio y nadie confirmó. `status` no cambia.
+     */
+    confirmationFlag: marcaDeConfirmacion(
+      {
+        startDate: cohort.startDate,
+        endDate: cohort.endDate,
+        confirmedAt: cohort.confirmedAt,
+        courseKind: course.kind,
+        parentCohortId: cohort.parentCohortId,
+      },
+      now,
+      timeZone
+    ),
     software,
   };
 }
@@ -1199,8 +1231,15 @@ export async function listCohorts(
     rows.map((r) => r.cohort.id)
   );
 
+  const timeZone = rows.length > 0 ? await organizationTimezone(organizationId) : ACADEMY_TIME_ZONE;
   return rows.map((r) =>
-    serializeCohort(r.cohort, r.course, r.teacher, softwareByCohort.get(r.cohort.id) ?? [])
+    serializeCohort(
+      r.cohort,
+      r.course,
+      r.teacher,
+      softwareByCohort.get(r.cohort.id) ?? [],
+      timeZone
+    )
   );
 }
 
@@ -1228,7 +1267,8 @@ export async function getCohort(organizationId: string, cohortId: string) {
     row.cohort,
     row.course,
     row.teacher,
-    softwareByCohort.get(cohortId) ?? []
+    softwareByCohort.get(cohortId) ?? [],
+    await organizationTimezone(organizationId)
   );
 }
 
@@ -1238,10 +1278,16 @@ export async function getCohort(organizationId: string, cohortId: string) {
 
 export type HistorialDeLaCamada = {
   enrollments: number;
-  classes: number;
+  /** Clases con asistencia o grabación (`decidirBorradoDeClases`, 034). */
+  classesWithHistory: number;
+  /** Clases sin historia: el cronograma generado. Se borran con el grupo. */
+  classesWithoutHistory: number;
   attendance: number;
-  assessments: number;
+  /** Evaluaciones con algún resultado, entrega o corrección. Las vacías se van con el grupo. */
+  assessmentsWithResults: number;
   payments: number;
+  /** Módulos de una especialización (`parent_cohort_id`, FK `restrict`). */
+  modules: number;
 };
 
 export type DecisionDeBajaCamada = {
@@ -1269,39 +1315,61 @@ export type DecisionDeBajaCamada = {
  * El caso que esto viene a resolver es el otro: **crear una camada por error
  * y no poder sacarla**. Sin inscripciones ni clases no hay historia que
  * proteger, y hoy no se puede borrar porque la ruta no existe.
+ *
+ * 2026-10-22 — Y el de un grupo que **no salió** (llegó a su fecha sin
+ * confirmarse). Las clases SIN historia (sin asistencia ni grabación, la regla
+ * de 034) ya no bloquean: son el cronograma generado, no cursada, y se borran
+ * con el grupo. Tampoco las evaluaciones vacías. Siguen bloqueando las
+ * inscripciones, las clases con historia, las evaluaciones con resultados y
+ * los módulos; cada motivo dice cuántos y cómo salir.
  */
 export function decidirBajaCamada(h: HistorialDeLaCamada): DecisionDeBajaCamada {
-  const partes: string[] = [];
+  const n = (k: number, uno: string, varios: string) => `${k} ${k === 1 ? uno : varios}`;
+  const motivos: string[] = [];
   if (h.enrollments > 0) {
-    partes.push(`${h.enrollments} ${h.enrollments === 1 ? "inscripción" : "inscripciones"}`);
-  }
-  if (h.classes > 0) {
-    partes.push(`${h.classes} ${h.classes === 1 ? "clase" : "clases"}`);
-  }
-  if (h.attendance > 0) {
-    partes.push(`asistencia registrada`);
-  }
-  if (h.assessments > 0) {
-    partes.push(`${h.assessments} ${h.assessments === 1 ? "evaluación" : "evaluaciones"}`);
+    motivos.push(
+      `Tiene ${n(h.enrollments, "inscripto", "inscriptos")}: mudalos a otro grupo o cancelá sus inscripciones.`
+    );
   }
   if (h.payments > 0) {
-    partes.push(`${h.payments} ${h.payments === 1 ? "pago" : "pagos"}`);
+    motivos.push(`Sus inscripciones tienen ${n(h.payments, "pago", "pagos")} registrados.`);
+  }
+  if (h.attendance > 0) {
+    motivos.push("Tiene asistencia registrada.");
+  }
+  if (h.classesWithHistory > 0) {
+    motivos.push(
+      `Tiene ${n(h.classesWithHistory, "clase con asistencia o grabación", "clases con asistencia o grabación")}: ` +
+        "es cursada dictada y no se borra."
+    );
+  }
+  if (h.assessmentsWithResults > 0) {
+    motivos.push(
+      `Tiene ${n(h.assessmentsWithResults, "evaluación con resultados", "evaluaciones con resultados")}: ` +
+        "son notas de alumnos y no se borran."
+    );
+  }
+  if (h.modules > 0) {
+    motivos.push(
+      `Tiene ${n(h.modules, "módulo", "módulos")}: borralos o sacalos de la especialización primero.`
+    );
   }
 
-  if (partes.length === 0) {
+  if (motivos.length === 0) {
     return {
       accion: "borrar",
-      motivo: "No tiene inscripciones ni clases: se puede borrar.",
+      motivo:
+        h.classesWithoutHistory > 0
+          ? `No tiene inscripciones ni cursada: se puede borrar. Se borran también sus ${n(
+              h.classesWithoutHistory,
+              "clase sin asistencia",
+              "clases sin asistencia"
+            )}.`
+          : "No tiene inscripciones ni clases: se puede borrar.",
     };
   }
 
-  return {
-    accion: "bloquear",
-    motivo:
-      `Tiene ${partes.join(", ")}. No se borra: eso es historia de personas ` +
-      "reales. Si el grupo ya terminó, marcalo como finalizado; si te " +
-      "equivocaste al crearlo, sacale primero las inscripciones.",
-  };
+  return { accion: "bloquear", motivo: `No se puede borrar. ${motivos.join(" ")}` };
 }
 
 export type BajaCamadaResult =
@@ -1309,16 +1377,15 @@ export type BajaCamadaResult =
   | { ok: false; status: 404 | 409; code: string; message: string };
 
 /**
- * 023 — Borra una camada, solo si no tiene nada colgando.
+ * Lo que ata a una camada, contado. Lo usan el borrado y su vista previa:
+ * la pantalla dice lo mismo que después decide el servidor.
  *
- * Lo que SÍ se borra junto con ella son las cosas que no existen sin la
- * camada y que no son historia de nadie: sus avisos y las evaluaciones que se
- * hayan creado sin resultados. Ahí `cascade` del esquema hace el trabajo.
+ * `null` si la camada no existe.
  */
-export async function deleteCohort(
+export async function historialDeLaCamada(
   organizationId: string,
   cohortId: string
-): Promise<BajaCamadaResult> {
+): Promise<HistorialDeLaCamada | null> {
   const db = getDb();
 
   const existe = await db
@@ -1326,11 +1393,9 @@ export async function deleteCohort(
     .from(schema.cohort)
     .where(scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, cohortId)))
     .limit(1);
-  if (!existe[0]) {
-    return { ok: false, status: 404, code: "not_found", message: "Grupo no encontrado" };
-  }
+  if (!existe[0]) return null;
 
-  const [inscripciones, clases, evaluaciones] = await Promise.all([
+  const [inscripciones, clases, evaluaciones, modulos] = await Promise.all([
     db
       .select({ id: schema.enrollment.id })
       .from(schema.enrollment)
@@ -1342,7 +1407,7 @@ export async function deleteCohort(
         )
       ),
     db
-      .select({ id: schema.classSession.id })
+      .select({ id: schema.classSession.id, recordingUrl: schema.classSession.recordingUrl })
       .from(schema.classSession)
       .where(
         scoped(
@@ -1361,53 +1426,159 @@ export async function deleteCohort(
           eq(schema.assessment.cohortId, cohortId)
         )
       ),
+    db
+      .select({ id: schema.cohort.id })
+      .from(schema.cohort)
+      .where(
+        scoped(
+          schema.cohort.organizationId,
+          organizationId,
+          eq(schema.cohort.parentCohortId, cohortId)
+        )
+      ),
   ]);
 
   /**
    * Asistencia y pagos se cuentan a través de las inscripciones. Si no hay
    * inscripciones no puede haber ninguno de los dos, así que no se consultan:
    * un `inArray` con lista vacía es un viaje a la base para preguntar por
-   * nada.
+   * nada. Lo mismo con las clases y las evaluaciones.
    */
   const enrollmentIds = inscripciones.map((e) => e.id);
-  const [asistencia, pagos] = enrollmentIds.length
-    ? await Promise.all([
-        db
-          .select({ id: schema.attendance.id })
-          .from(schema.attendance)
-          .where(
-            scoped(
-              schema.attendance.organizationId,
-              organizationId,
-              inArray(schema.attendance.enrollmentId, enrollmentIds)
+  const classIds = clases.map((c) => c.id);
+  const assessmentIds = evaluaciones.map((a) => a.id);
+  const ninguno: { id: string }[] = [];
+  const [asistencia, pagos, asistenciaPorClase, resultados, entregas, correcciones] =
+    await Promise.all([
+      enrollmentIds.length
+        ? db
+            .select({ id: schema.attendance.id })
+            .from(schema.attendance)
+            .where(
+              scoped(
+                schema.attendance.organizationId,
+                organizationId,
+                inArray(schema.attendance.enrollmentId, enrollmentIds)
+              )
             )
-          ),
-        db
-          .select({ id: schema.payment.id })
-          .from(schema.payment)
-          .where(
-            scoped(
-              schema.payment.organizationId,
-              organizationId,
-              inArray(schema.payment.enrollmentId, enrollmentIds)
+        : ninguno,
+      enrollmentIds.length
+        ? db
+            .select({ id: schema.payment.id })
+            .from(schema.payment)
+            .where(
+              scoped(
+                schema.payment.organizationId,
+                organizationId,
+                inArray(schema.payment.enrollmentId, enrollmentIds)
+              )
             )
-          ),
-      ])
-    : [[], []];
+        : ninguno,
+      classIds.length
+        ? db
+            .selectDistinct({ id: schema.attendance.classSessionId })
+            .from(schema.attendance)
+            .where(
+              scoped(
+                schema.attendance.organizationId,
+                organizationId,
+                inArray(schema.attendance.classSessionId, classIds)
+              )
+            )
+        : ninguno,
+      assessmentIds.length
+        ? db
+            .selectDistinct({ id: schema.assessmentResult.assessmentId })
+            .from(schema.assessmentResult)
+            .where(
+              scoped(
+                schema.assessmentResult.organizationId,
+                organizationId,
+                inArray(schema.assessmentResult.assessmentId, assessmentIds)
+              )
+            )
+        : ninguno,
+      assessmentIds.length
+        ? db
+            .selectDistinct({ id: schema.submission.assessmentId })
+            .from(schema.submission)
+            .where(
+              scoped(
+                schema.submission.organizationId,
+                organizationId,
+                inArray(schema.submission.assessmentId, assessmentIds)
+              )
+            )
+        : ninguno,
+      assessmentIds.length
+        ? db
+            .selectDistinct({ id: schema.correction.assessmentId })
+            .from(schema.correction)
+            .where(
+              scoped(
+                schema.correction.organizationId,
+                organizationId,
+                inArray(schema.correction.assessmentId, assessmentIds)
+              )
+            )
+        : ninguno,
+    ]);
 
-  const decision = decidirBajaCamada({
+  // La misma "historia" que el borrado de clases por receso (034): asistencia o grabación.
+  const conAsistencia = new Set(asistenciaPorClase.map((a) => a.id));
+  const { borrar, conservar } = decidirBorradoDeClases(
+    clases.map((c) => ({
+      id: c.id,
+      date: new Date(0),
+      tieneAsistencia: conAsistencia.has(c.id),
+      tieneGrabacion: Boolean(c.recordingUrl),
+    }))
+  );
+  const conResultados = new Set([...resultados, ...entregas, ...correcciones].map((r) => r.id));
+
+  return {
     enrollments: inscripciones.length,
-    classes: clases.length,
+    classesWithHistory: conservar.length,
+    classesWithoutHistory: borrar.length,
     attendance: asistencia.length,
-    assessments: evaluaciones.length,
+    assessmentsWithResults: conResultados.size,
     payments: pagos.length,
-  });
+    modules: modulos.length,
+  };
+}
 
+/** Lo que pasaría si se borra la camada, sin tocar nada (para el diálogo). */
+export async function previsualizarBajaCamada(
+  organizationId: string,
+  cohortId: string
+): Promise<DecisionDeBajaCamada | null> {
+  const historial = await historialDeLaCamada(organizationId, cohortId);
+  return historial ? decidirBajaCamada(historial) : null;
+}
+
+/**
+ * 023 — Borra una camada, solo si no tiene nada colgando.
+ *
+ * Lo que SÍ se borra junto con ella son las cosas que no existen sin la
+ * camada y que no son historia de nadie: sus avisos, las evaluaciones sin
+ * resultados y (2026-10-22) las clases sin asistencia ni grabación. Ahí
+ * `cascade` del esquema hace el trabajo.
+ */
+export async function deleteCohort(
+  organizationId: string,
+  cohortId: string
+): Promise<BajaCamadaResult> {
+  const historial = await historialDeLaCamada(organizationId, cohortId);
+  if (!historial) {
+    return { ok: false, status: 404, code: "not_found", message: "Grupo no encontrado" };
+  }
+
+  const decision = decidirBajaCamada(historial);
   if (decision.accion === "bloquear") {
     return { ok: false, status: 409, code: "tiene_historial", message: decision.motivo };
   }
 
-  await db
+  await getDb()
     .delete(schema.cohort)
     .where(scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, cohortId)));
 

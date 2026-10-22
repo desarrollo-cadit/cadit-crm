@@ -4,6 +4,7 @@ import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { MEDIA_LIMITS, readMediaFile, saveMediaFile } from "@/server/whatsapp/media";
 import type { Capability } from "@/lib/capabilities";
+import { horariosSeSuperponen, type HorarioDeGrupo } from "@/lib/schedule-overlap";
 
 /** 005 (DV-005, FR-007) — Alta de un profesor (entidad propia). */
 export async function createTeacher(
@@ -257,33 +258,18 @@ export type ScheduleConflict = {
 };
 
 /**
- * "Infinito" para tratar `endDate === null` como "sigue en curso" al
- * comparar rangos (DV-006), sin usar Infinity (no comparable con Date).
- */
-const FAR_FUTURE = new Date(8640000000000000);
-
-function rangesOverlap(
-  aStart: Date,
-  aEnd: Date | null,
-  bStart: Date,
-  bEnd: Date | null
-): boolean {
-  const aEndOrOngoing = aEnd ?? FAR_FUTURE;
-  const bEndOrOngoing = bEnd ?? FAR_FUTURE;
-  return aStart <= bEndOrOngoing && aEndOrOngoing >= bStart;
-}
-
-/**
- * 005 (T033, DV-006, FR-008) — cohortes del mismo profesor cuyo rango de
- * fechas se superpone con [startDate, endDate]. No bloquea nada — solo
- * informa; `excludeCohortId` evita que una cohorte se compare consigo misma
- * (alta nueva ya insertada, o edición de una existente).
+ * 005 (T033, DV-006, FR-008) — cohortes del mismo profesor que se pisan con
+ * este horario. No bloquea nada — solo informa; `excludeCohortId` evita que
+ * una cohorte se compare consigo misma (alta nueva ya insertada, o edición).
+ *
+ * 2026-10-22 — "Se pisan" es `horariosSeSuperponen`: fechas, al menos un día
+ * de la semana y el horario. Antes eran solo las fechas, y un grupo martes y
+ * jueves "chocaba" con uno lunes, miércoles y viernes.
  */
 export async function findScheduleConflicts(
   organizationId: string,
   teacherId: string,
-  startDate: Date,
-  endDate: Date | null,
+  horario: HorarioDeGrupo,
   excludeCohortId?: string
 ): Promise<ScheduleConflict[]> {
   const db = getDb();
@@ -301,7 +287,18 @@ export async function findScheduleConflicts(
 
   return rows
     .filter((r) => r.cohort.id !== excludeCohortId)
-    .filter((r) => rangesOverlap(r.cohort.startDate, r.cohort.endDate, startDate, endDate))
+    .filter((r) =>
+      horariosSeSuperponen(
+        {
+          startDate: r.cohort.startDate,
+          endDate: r.cohort.endDate,
+          daysOfWeek: r.cohort.daysOfWeek,
+          startTime: r.cohort.startTime,
+          endTime: r.cohort.endTime,
+        },
+        horario
+      )
+    )
     .map((r) => ({
       cohortId: r.cohort.id,
       courseId: r.course.id,

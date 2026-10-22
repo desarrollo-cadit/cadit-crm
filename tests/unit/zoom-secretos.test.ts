@@ -49,6 +49,8 @@ describe("credenciales de la conexión", () => {
         lastTestedAt: new Date("2026-10-01T10:00:00Z"),
         lastSyncAt: null,
         syncedThrough: null,
+        lastVerifyAt: null,
+        lastVerifyError: null,
         archivedAt: null,
         createdBy: null,
         createdAt: new Date(),

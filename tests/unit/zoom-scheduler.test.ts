@@ -218,3 +218,80 @@ describe("el tick", () => {
     expect(logs.join("\n")).not.toMatch(/secret|token|authorization|password/i);
   });
 });
+
+describe("la verificación diaria (grabaciones borradas de Zoom)", () => {
+  /**
+   * La marca vive en la BASE (`zoom_connection.last_verify_at`): acá un mapa
+   * que hace de base, y `verifyDue` decide con él, igual que la consulta real.
+   */
+  let stamps: Record<string, Date | null>;
+  let verificadas: string[];
+
+  const conVerificacion = async (over: Partial<SchedulerDeps> = {}) => {
+    const { verifyDue } = await import("@/server/zoom/verify");
+    return deps({
+      dueVerifyOrganizations: async () =>
+        Object.keys(stamps).filter((org) => verifyDue(stamps[org] ?? null, new Date(Date.now()))),
+      verifyOrg: async (orgId) => {
+        verificadas.push(orgId);
+        stamps[orgId] = new Date(Date.now());
+        return { ok: true };
+      },
+      ...over,
+    });
+  };
+
+  beforeEach(() => {
+    stamps = { org_1: null, org_2: new Date(Date.now() - 2 * 3_600_000) };
+    verificadas = [];
+  });
+
+  it("corre una vez por día y organización, según la marca persistida", async () => {
+    const { startZoomScheduler } = await import("@/server/zoom/scheduler");
+    startZoomScheduler(await conVerificacion());
+    await vi.advanceTimersByTimeAsync(30_000);
+    // org_2 se verificó hace 2 h: hoy no toca.
+    expect(verificadas).toEqual(["org_1"]);
+
+    // Muchos ticks después, mismo día: nada nuevo.
+    await vi.advanceTimersByTimeAsync(6 * 60 * MIN);
+    expect(verificadas).toEqual(["org_1"]);
+
+    // Al día siguiente org_2 vence primero (se verificó 2 h antes que org_1).
+    await vi.advanceTimersByTimeAsync(17 * 60 * MIN);
+    expect(verificadas).toEqual(["org_1", "org_2"]);
+    await vi.advanceTimersByTimeAsync(2 * 60 * MIN);
+    expect(verificadas).toEqual(["org_1", "org_2", "org_1"]);
+  });
+
+  it("un reinicio no la repite: la marca está en la base, no en el proceso", async () => {
+    const { startZoomScheduler, stopZoomScheduler } = await import("@/server/zoom/scheduler");
+    startZoomScheduler(await conVerificacion());
+    await vi.advanceTimersByTimeAsync(30_000);
+    stopZoomScheduler();
+    startZoomScheduler(await conVerificacion());
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(verificadas).toEqual(["org_1"]);
+  });
+
+  it("apagada la periódica (intervalo 0), tampoco verifica", async () => {
+    const { startZoomScheduler } = await import("@/server/zoom/scheduler");
+    expect(startZoomScheduler(await conVerificacion({ intervalMin: 0 }))).toBe(false);
+    await vi.advanceTimersByTimeAsync(48 * 60 * MIN);
+    expect(verificadas).toEqual([]);
+  });
+
+  it("una verificación que falla no frena a la sincronización ni al tick siguiente", async () => {
+    const { startZoomScheduler } = await import("@/server/zoom/scheduler");
+    startZoomScheduler(
+      await conVerificacion({
+        verifyOrg: async () => {
+          throw new Error("boom");
+        },
+      })
+    );
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(ran).toEqual(["org_1"]);
+    expect(logs.join("\n")).toMatch(/verificación: org_1 falló/);
+  });
+});

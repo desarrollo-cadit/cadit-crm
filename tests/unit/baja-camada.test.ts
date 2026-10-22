@@ -8,14 +8,21 @@ import { decidirBajaCamada } from "@/server/courses";
  * es pura y se prueba sin base. El caso que la fase vino a resolver es el
  * inofensivo —crear una camada por error y no poder sacarla, porque la ruta
  * DELETE no existía— pero la puerta que abre da a las otras 41.
+ *
+ * 2026-10-22 — Un grupo que no salió (sin confirmar en su fecha) se borra con
+ * sus clases SIN historia: el cronograma generado no es historia de nadie. Las
+ * clases con asistencia o grabación, las evaluaciones con resultados y las
+ * inscripciones siguen bloqueando.
  */
 
 const vacia = {
   enrollments: 0,
-  classes: 0,
+  classesWithHistory: 0,
+  classesWithoutHistory: 0,
   attendance: 0,
-  assessments: 0,
+  assessmentsWithResults: 0,
   payments: 0,
+  modules: 0,
 };
 
 describe("023 — baja de una camada", () => {
@@ -25,6 +32,12 @@ describe("023 — baja de una camada", () => {
     expect(d.motivo).toContain("se puede borrar");
   });
 
+  it("las clases SIN historia ya no bloquean: se borran con el grupo, y se dice cuántas", () => {
+    const d = decidirBajaCamada({ ...vacia, classesWithoutHistory: 12 });
+    expect(d.accion).toBe("borrar");
+    expect(d.motivo).toContain("12 clases sin asistencia");
+  });
+
   /**
    * Cada uno de estos, POR SÍ SOLO, alcanza para bloquear. Se prueban de a uno
    * porque el error que importa no es "no detecta nada": es "detecta cuatro de
@@ -32,36 +45,48 @@ describe("023 — baja de una camada", () => {
    */
   it.each([
     ["inscripciones", { ...vacia, enrollments: 1 }],
-    ["clases", { ...vacia, classes: 1 }],
+    ["clases con historia", { ...vacia, classesWithHistory: 1 }],
     ["asistencia", { ...vacia, attendance: 1 }],
-    ["evaluaciones", { ...vacia, assessments: 1 }],
+    ["evaluaciones con resultados", { ...vacia, assessmentsWithResults: 1 }],
     ["pagos", { ...vacia, payments: 1 }],
+    ["módulos", { ...vacia, modules: 1 }],
   ])("con %s, se bloquea", (_que, historial) => {
     expect(decidirBajaCamada(historial).accion).toBe("bloquear");
   });
 
   /**
-   * El motivo dice QUÉ la ata, no "no se puede". Un mensaje que no dice cómo
-   * salir obliga a abrir la base para averiguarlo.
+   * El motivo dice QUÉ la ata y CÓMO salir: un mensaje que no dice cómo salir
+   * obliga a abrir la base para averiguarlo.
    */
-  it("el motivo nombra lo que la ata", () => {
-    const d = decidirBajaCamada({ ...vacia, enrollments: 3, payments: 2 });
-    expect(d.motivo).toContain("3 inscripciones");
-    expect(d.motivo).toContain("2 pagos");
+  it("con inscriptos: el número y la salida", () => {
+    const d = decidirBajaCamada({ ...vacia, enrollments: 4 });
+    expect(d.motivo).toContain("Tiene 4 inscriptos: mudalos a otro grupo o cancelá sus inscripciones.");
   });
 
-  it("y ofrece las dos salidas: finalizarlo o sacarle las inscripciones", () => {
-    const d = decidirBajaCamada({ ...vacia, enrollments: 1 });
-    expect(d.motivo).toContain("marcalo como finalizado");
-    expect(d.motivo).toContain("inscripciones");
+  it("con clases con historia, evaluaciones con resultados y módulos: cada uno con su número", () => {
+    const d = decidirBajaCamada({
+      ...vacia,
+      classesWithHistory: 3,
+      assessmentsWithResults: 2,
+      modules: 5,
+    });
+    expect(d.motivo).toContain("3 clases con asistencia o grabación");
+    expect(d.motivo).toContain("2 evaluaciones con resultados");
+    expect(d.motivo).toContain("5 módulos");
+  });
+
+  it("nombra todo lo que la ata a la vez", () => {
+    const d = decidirBajaCamada({ ...vacia, enrollments: 3, payments: 2 });
+    expect(d.motivo).toContain("3 inscriptos");
+    expect(d.motivo).toContain("2 pagos");
   });
 
   /** Singular y plural: el mensaje lo lee una persona, no un log. */
   it("concuerda en singular", () => {
-    const d = decidirBajaCamada({ ...vacia, enrollments: 1, classes: 1 });
-    expect(d.motivo).toContain("1 inscripción");
-    expect(d.motivo).toContain("1 clase");
-    expect(d.motivo).not.toContain("1 inscripciones");
+    const d = decidirBajaCamada({ ...vacia, enrollments: 1, classesWithHistory: 1 });
+    expect(d.motivo).toContain("1 inscripto:");
+    expect(d.motivo).toContain("1 clase con asistencia");
+    expect(d.motivo).not.toContain("1 inscriptos");
   });
 
   /**

@@ -13,6 +13,7 @@ import { notify } from "@/lib/notify";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmSendDialog } from "@/components/cohorts/confirm-send-dialog";
+import { UnconfirmedExits } from "@/components/cohorts/unconfirmed-exits";
 
 const VARIANTE: Record<AvisoDto["status"], "success" | "warning" | "destructive" | "outline"> = {
   sent: "success",
@@ -26,6 +27,7 @@ const MOTIVO: Record<string, string> = {
   area_sin_configurar: "el área no tiene casilla configurada",
   nada_que_enviar: "todas las inscripciones tienen factura",
   correo_sin_configurar: "el correo (M365) no está configurado",
+  sin_destinatarios: "nadie del equipo puede confirmar grupos",
 };
 
 async function mensajeDeError(res: Response | null, fallback: string): Promise<string> {
@@ -45,10 +47,17 @@ export function CohortConfirmation({
   cohortId,
   initial,
   canConfirm,
+  canEdit = false,
+  startDate,
+  endDate,
 }: {
   cohortId: string;
   initial: ConfirmacionDto;
   canConfirm: boolean;
+  /** `academico.editar`: las salidas «Reprogramar» y «Borrar grupo». Las rutas exigen lo mismo. */
+  canEdit?: boolean;
+  startDate: string;
+  endDate: string | null;
 }) {
   const [estado, setEstado] = useState(initial);
   const [dialogo, setDialogo] = useState<"confirmar" | "quitar" | null>(null);
@@ -78,6 +87,8 @@ export function CohortConfirmation({
   }
 
   const confirmada = estado.confirmedAt !== null;
+  // Llegó el día de inicio sin confirmar: rojo, con las salidas (`marcaDeConfirmacion`).
+  const vencido = !confirmada && estado.marca === "sin_confirmar_vencido";
 
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
@@ -87,8 +98,18 @@ export function CohortConfirmation({
           Confirmado
         </Badge>
       ) : (
-        <Badge variant="outline">Sin confirmar</Badge>
+        <Badge
+          variant={vencido ? "destructive" : "outline"}
+          title={vencido ? "Llegó la fecha de inicio y el grupo no está confirmado" : undefined}
+        >
+          Sin confirmar
+        </Badge>
       )}
+      {vencido ? (
+        <span className="text-danger">
+          Ya llegó la fecha de inicio: confirmalo, reprogramalo o borralo.
+        </span>
+      ) : null}
       {confirmada ? (
         <span className="text-muted-foreground">
           {estado.confirmedBy ? `por ${estado.confirmedBy.name} ` : ""}
@@ -109,9 +130,12 @@ export function CohortConfirmation({
           ))}
         </ul>
       ) : null}
-      {canConfirm ? (
-        <div className="ml-auto">
-          {confirmada ? (
+      {canConfirm || (vencido && canEdit) ? (
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {vencido && canEdit ? (
+            <UnconfirmedExits cohortId={cohortId} startDate={startDate} endDate={endDate} />
+          ) : null}
+          {!canConfirm ? null : confirmada ? (
             <Button variant="ghost" size="sm" onClick={() => setDialogo("quitar")}>
               Quitar confirmación
             </Button>

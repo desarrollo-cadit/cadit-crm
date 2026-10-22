@@ -104,6 +104,14 @@ const envSchema = z.object({
   ZOOM_SYNC_BACKFILL_DAYS: z.coerce.number().int().min(1).default(90),
   /** Días que cada corrida vuelve a mirar hacia atrás (grabaciones tardías). */
   ZOOM_SYNC_OVERLAP_DAYS: z.coerce.number().int().min(0).default(3),
+  /**
+   * Días hacia atrás que vuelve a listar la verificación diaria para detectar
+   * grabaciones borradas de Zoom. Tope 180: más atrás Zoom puede no devolver
+   * grabaciones que sí existen, y eso se leería como borrado.
+   */
+  ZOOM_VERIFY_DAYS: z.coerce.number().int().min(7).max(180).default(180),
+  /** Días que una grabación faltante se conserva antes de borrarla del CRM. */
+  ZOOM_MISSING_PURGE_DAYS: z.coerce.number().int().min(1).default(30),
   /** Tolerancia de adjudicación: minutos antes del inicio de la clase. */
   ZOOM_MATCH_BEFORE_MIN: z.coerce.number().int().min(0).default(30),
   /** Fin supuesto de una clase sin `end_time`, en minutos desde el inicio. */

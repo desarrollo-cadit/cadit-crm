@@ -352,7 +352,7 @@ export function AcademicClient({
 
   async function borrarCohorte(cohort: CohortDto) {
     const nombre = cohort.name ?? cohort.courseName;
-    if (!confirm(`¿Borrar "${nombre}"? Si tiene inscripciones o clases, no se va a poder.`)) {
+    if (!confirm(`¿Borrar "${nombre}"? Sus clases sin asistencia se borran con él. Si tiene inscriptos o clases ya dictadas, no se va a poder.`)) {
       return;
     }
 
@@ -540,9 +540,20 @@ export function AcademicClient({
             >
               {titulo}
             </Link>
-            <Badge variant={STATUS_BADGE[cohort.status].variant}>
-              {STATUS_BADGE[cohort.status].label}
-            </Badge>
+            {/*
+              Llegó el día de inicio y nadie lo confirmó: en lugar de un
+              "En curso" más, la marca roja (`marcaDeConfirmacion`). El estado
+              sigue saliendo de las fechas.
+            */}
+            {cohort.confirmationFlag === "sin_confirmar_vencido" ? (
+              <Badge variant="destructive" title="Llegó la fecha de inicio y el grupo no está confirmado">
+                Sin confirmar
+              </Badge>
+            ) : (
+              <Badge variant={STATUS_BADGE[cohort.status].variant}>
+                {STATUS_BADGE[cohort.status].label}
+              </Badge>
+            )}
             {/* 032 (FR-012) — aparece con cualquier año, y se dice por qué. */}
             {sinFechas(cohort) && <Badge variant="warning">sin fechas</Badge>}
             {/* 039 — confirmada ("sale"): independiente del estado por fechas. */}

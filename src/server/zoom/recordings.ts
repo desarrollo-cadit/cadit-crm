@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getEnv } from "@/lib/env";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
+import { fechaDeBorrado } from "@/lib/recording-purge";
 import { classInstant } from "@/lib/schedule-time";
 import { organizationTimezone } from "@/server/finanzas-periodo";
 import { openPasscode, type SealedPasscode } from "./connections";
@@ -112,6 +113,8 @@ export type RecordingRowDto = {
   passcodeEmbedded: boolean;
   autoDeleteDate: string | null;
   missingInZoom: boolean;
+  /** ISO UTC: desde cuándo se borra del CRM una grabación que ya no está en Zoom. */
+  purgeOn: string | null;
   /** Solo metadatos (`MP4`, `TRANSCRIPT`…): el CRM no descarga nada. */
   fileTypes: string[];
   hasTranscript: boolean;
@@ -162,7 +165,7 @@ export type ClassRef = {
 
 export function toRecordingRowDto(
   row: RecordingRow,
-  ctx: { classes: Map<string, ClassRef>; users: Map<string, string> }
+  ctx: { classes: Map<string, ClassRef>; users: Map<string, string>; purgeDays?: number }
 ): RecordingRowDto {
   const clase = row.classSessionId ? ctx.classes.get(row.classSessionId) : undefined;
   const conflicto = row.conflictClassSessionId ? ctx.classes.get(row.conflictClassSessionId) : undefined;
@@ -183,6 +186,7 @@ export function toRecordingRowDto(
     passcodeEmbedded: row.passcodeEmbedded,
     autoDeleteDate: row.autoDeleteDate,
     missingInZoom: row.missingInZoomAt !== null,
+    purgeOn: fechaDeBorrado(row.missingInZoomAt, ctx.purgeDays ?? 30)?.toISOString() ?? null,
     fileTypes: row.fileTypes,
     hasTranscript: hasTranscript(row.fileTypes),
     assignment: {
@@ -338,7 +342,9 @@ export async function listRecordings(
   }
 
   return {
-    rows: pagina.map((r) => toRecordingRowDto(r, { classes, users })),
+    rows: pagina.map((r) =>
+      toRecordingRowDto(r, { classes, users, purgeDays: getEnv().ZOOM_MISSING_PURGE_DAYS })
+    ),
     total,
     page: ventana.page,
     pageSize: q.pageSize,
@@ -371,6 +377,9 @@ export type SyncStatusDto = {
     lastSyncAt: string | null;
     syncedThrough: string | null;
     lastError: string | null;
+    /** Última verificación diaria (grabaciones borradas de Zoom); error NULL = completa. */
+    lastVerifyAt: string | null;
+    lastVerifyError: string | null;
     lastRun:
       | (Omit<LastRun, "startedAt" | "finishedAt"> & { startedAt: string; finishedAt: string | null })
       | null;
@@ -388,6 +397,8 @@ export function toSyncStatusDto(input: {
     lastSyncAt: Date | null;
     syncedThrough: string | null;
     lastError: string | null;
+    lastVerifyAt?: Date | null;
+    lastVerifyError?: string | null;
     archivedAt: Date | null;
   }[];
   lastRuns: Map<string, LastRun>;
@@ -406,6 +417,8 @@ export function toSyncStatusDto(input: {
           lastSyncAt: c.lastSyncAt?.toISOString() ?? null,
           syncedThrough: c.syncedThrough,
           lastError: c.lastError,
+          lastVerifyAt: c.lastVerifyAt?.toISOString() ?? null,
+          lastVerifyError: c.lastVerifyError ?? null,
           lastRun: run
             ? {
                 ...run,
@@ -429,6 +442,8 @@ export async function getSyncStatus(orgId: string): Promise<SyncStatusDto> {
       lastSyncAt: schema.zoomConnection.lastSyncAt,
       syncedThrough: schema.zoomConnection.syncedThrough,
       lastError: schema.zoomConnection.lastError,
+      lastVerifyAt: schema.zoomConnection.lastVerifyAt,
+      lastVerifyError: schema.zoomConnection.lastVerifyError,
       archivedAt: schema.zoomConnection.archivedAt,
     })
     .from(schema.zoomConnection)

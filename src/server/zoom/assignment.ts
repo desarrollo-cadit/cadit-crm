@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { esGrabacionCorta, MINUTOS_MINIMOS_GRABACION } from "@/lib/recording-duration";
+import { debeBorrarse } from "@/lib/recording-purge";
 import { loadMatchContext, matchRecording, type MatchContext } from "./matching";
 import { inOrgScope } from "./scope";
 
@@ -63,7 +64,10 @@ type RecPatch = Partial<
     | "conflictClassSessionId"
     | "assignedBy"
     | "assignedAt"
-  >
+  > & {
+    /** La clase de la que se la soltó al faltar en Zoom (`detachMissing`). */
+    missingFromClassSessionId: string | null;
+  }
 >;
 
 export interface AssignmentTx {
@@ -90,10 +94,15 @@ export type AssignmentDeps = {
  * Piezas comunes
  * ============================================================ */
 
+/**
+ * Toda decisión nueva —del matcher o de una persona— olvida la clase que se
+ * recordaba de cuando la grabación faltó en Zoom: la decisión posterior manda.
+ */
 const sinClase: RecPatch = {
   classSessionId: null,
   candidateClassIds: [],
   conflictClassSessionId: null,
+  missingFromClassSessionId: null,
 };
 
 /** Un enlace en la clase que no vino de Zoom es de una persona (también los de antes de la 030). */
@@ -353,14 +362,137 @@ export async function resetToAuto(
 }
 
 /* ============================================================
+ * Faltantes en Zoom: desvincular, volver y borrar
+ * ============================================================ */
+
+/**
+ * Lo que la verificación necesita además de la adjudicación. Interfaz aparte
+ * para no obligar a cada almacenamiento de prueba de la adjudicación a
+ * implementar el borrado.
+ */
+export interface MissingTx extends AssignmentTx {
+  getMissing(id: string): Promise<{ missingInZoomAt: Date | null; missingFromClassSessionId: string | null } | null>;
+  deleteRecording(id: string): Promise<void>;
+}
+
+export type MissingDeps = {
+  run: <T>(orgId: string, fn: (tx: MissingTx) => Promise<T>) => Promise<T>;
+  now: () => Date;
+};
+
+/**
+ * Una grabación marcada como faltante en Zoom suelta su clase: el enlace de
+ * la clase se limpia SOLO si vino de Zoom y es el de ESTA grabación
+ * (`clearClassIfOwned`; un enlace pegado a mano nunca se toca). La grabación
+ * queda `sin_clase` recordando la clase, y conserva modo, quién y cuándo
+ * para la auditoría hasta que se borre. Devuelve si la desvinculó.
+ */
+export async function detachMissing(orgId: string, recordingId: string, deps: MissingDeps = dbMissingDeps): Promise<boolean> {
+  return deps.run(orgId, async (tx) => {
+    const rec = await tx.getRecording(recordingId);
+    const faltante = await tx.getMissing(recordingId);
+    if (!rec || !faltante?.missingInZoomAt || !rec.classSessionId) return false;
+    await tx.lockClasses([rec.classSessionId]);
+    await clearClassIfOwned(tx, rec);
+    await tx.updateRecording(rec.id, {
+      ...sinClase,
+      assignmentState: "sin_clase",
+      missingFromClassSessionId: rec.classSessionId,
+    });
+    return true;
+  });
+}
+
+export type Reaparicion = "restaurada" | "no_restaurada" | "automatica";
+
+/**
+ * Una grabación que se había soltado por faltar y Zoom volvió a listar.
+ *
+ *  - **Automática**: no se le fuerza la clase. La página que la volvió a
+ *    traer ya la pasó por el matcher (`adjudicatePage`), que decide con el
+ *    cronograma de HOY: puede que la clase haya cambiado o tenga otra.
+ *  - **Manual**: la decidió una persona, y el matcher no la mira nunca. Vuelve
+ *    a SU clase solo si esa clase sigue existiendo, no está cancelada y no
+ *    tiene ninguna otra grabación ni un enlace pegado a mano; si no, queda
+ *    `manual/sin_clase` para que una persona decida. Nunca desplaza a nadie.
+ *
+ * En los tres casos se olvida la clase recordada. `null` = no correspondía
+ * (sigue faltando, o no se la había soltado).
+ */
+export async function restoreReappeared(
+  orgId: string,
+  recordingId: string,
+  deps: MissingDeps = dbMissingDeps
+): Promise<Reaparicion | null> {
+  return deps.run(orgId, async (tx): Promise<Reaparicion | null> => {
+    const rec = await tx.getRecording(recordingId);
+    const faltante = await tx.getMissing(recordingId);
+    if (!rec || !faltante || faltante.missingInZoomAt || !faltante.missingFromClassSessionId) return null;
+    const previa = faltante.missingFromClassSessionId;
+    const olvidar = () => tx.updateRecording(rec.id, { missingFromClassSessionId: null });
+
+    if (rec.assignmentMode === "auto" || rec.classSessionId) {
+      await olvidar();
+      return "automatica";
+    }
+    await tx.lockClasses([previa]);
+    const cls = await tx.getClass(previa);
+    const otra = await tx.recordingOnClass(previa);
+    if (!cls || cls.canceledAt || cls.recordingUrl !== null || otra || !rec.playUrl) {
+      await olvidar();
+      return "no_restaurada";
+    }
+    await tx.updateRecording(rec.id, { ...sinClase, classSessionId: previa, assignmentState: "asignada" });
+    await tx.updateClass(previa, { recordingUrl: rec.playUrl, recordingSource: "zoom" });
+    return "restaurada";
+  });
+}
+
+/**
+ * Borra una grabación que falta en Zoom hace `purgeDays` días o más. Antes
+ * suelta su clase (mismo criterio que `detachMissing`) por si la
+ * desvinculación no llegó a correr. Nada referencia a `zoom_recording` (la
+ * bitácora de corridas es por conexión), así que se borra sin cascadas.
+ */
+export async function purgeMissing(
+  orgId: string,
+  recordingId: string,
+  opts: { purgeDays: number },
+  deps: MissingDeps = dbMissingDeps
+): Promise<boolean> {
+  return deps.run(orgId, async (tx) => {
+    const rec = await tx.getRecording(recordingId);
+    const faltante = await tx.getMissing(recordingId);
+    if (!rec || !faltante || !debeBorrarse(faltante.missingInZoomAt, deps.now(), opts.purgeDays)) return false;
+    if (rec.classSessionId) {
+      await tx.lockClasses([rec.classSessionId]);
+      await clearClassIfOwned(tx, rec);
+    }
+    await tx.deleteRecording(rec.id);
+    return true;
+  });
+}
+
+/* ============================================================
  * Implementación sobre la base
  * ============================================================ */
 
 const r = schema.zoomRecording;
 const cs = schema.classSession;
 
-function dbTx(orgId: string): AssignmentTx {
+function dbTx(orgId: string): MissingTx {
   return {
+    async getMissing(id) {
+      const [row] = await getDb()
+        .select({ missingInZoomAt: r.missingInZoomAt, missingFromClassSessionId: r.missingFromClassSessionId })
+        .from(r)
+        .where(scoped(r.organizationId, orgId, eq(r.id, id)))
+        .limit(1);
+      return row ?? null;
+    },
+    async deleteRecording(id) {
+      await getDb().delete(r).where(scoped(r.organizationId, orgId, eq(r.id, id)));
+    },
     async lockClasses(ids) {
       for (const id of [...ids].sort()) {
         await getDb().execute(sql`select pg_advisory_xact_lock(hashtext(${"rec:" + id}))`);
@@ -425,5 +557,10 @@ function dbTx(orgId: string): AssignmentTx {
 export const dbAssignmentDeps: AssignmentDeps = {
   run: (orgId, fn) => inOrgScope(orgId, () => fn(dbTx(orgId))),
   loadContext: (orgId, window) => inOrgScope(orgId, () => loadMatchContext(orgId, window)),
+  now: () => new Date(),
+};
+
+export const dbMissingDeps: MissingDeps = {
+  run: (orgId, fn) => inOrgScope(orgId, () => fn(dbTx(orgId))),
   now: () => new Date(),
 };

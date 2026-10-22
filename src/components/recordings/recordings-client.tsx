@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, FileText, RefreshCw, Video } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, FileText, RefreshCw, SearchCheck, Video } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
@@ -138,6 +138,10 @@ export function RecordingsClient({
   );
   const hora = useMemo(
     () => new Intl.DateTimeFormat("es-UY", { timeZone: timezone, hour: "2-digit", minute: "2-digit" }),
+    [timezone]
+  );
+  const dia = useMemo(
+    () => new Intl.DateTimeFormat("es-UY", { timeZone: timezone, dateStyle: "medium" }),
     [timezone]
   );
 
@@ -282,6 +286,42 @@ export function RecordingsClient({
     notify.error(err.message ?? "No pudimos iniciar la sincronización.", { id: "zoom-sync" });
   }
 
+  /**
+   * "Verificar en Zoom": la verificación diaria a pedido. Vuelve a listar
+   * meses de grabaciones para encontrar las borradas de Zoom; comparte el
+   * lease con la sincronización, así que el sondeo es el mismo.
+   */
+  async function verificar() {
+    const res = await fetch("/api/recordings/verify", { method: "POST" }).catch(() => null);
+    if (res?.status === 202) {
+      setSyncing(true);
+      corriaRef.current = true;
+      notify.success("Verificación iniciada. Puede tardar unos minutos; la tabla se actualiza cuando termine.", {
+        id: "zoom-sync",
+      });
+      programar(1500);
+      return;
+    }
+    const err = await mensajeDeError(res, "No pudimos iniciar la verificación. Probá de nuevo en un momento.");
+    if (err.code === "sync_en_curso") {
+      notify.warning(
+        err.startedAt
+          ? `Ya hay una sincronización o verificación corriendo desde las ${hora.format(new Date(err.startedAt))}.`
+          : "Ya hay una sincronización o verificación corriendo.",
+        { id: "zoom-sync" }
+      );
+      setSyncing(true);
+      corriaRef.current = true;
+      programar(5000);
+      return;
+    }
+    if (err.code === "sin_aulas") {
+      notify.warning(err.message ?? "No hay aulas vinculadas a Zoom.", { id: "zoom-sync" });
+      return;
+    }
+    notify.error(err.message ?? "No pudimos iniciar la verificación.", { id: "zoom-sync" });
+  }
+
   const conexiones = status?.connections ?? [];
   const rows = data?.rows ?? [];
   const total = data?.total ?? 0;
@@ -311,10 +351,21 @@ export function RecordingsClient({
             </p>
           </div>
           {canManage && configured && (
-            <Button onClick={() => void sincronizar()} disabled={syncing}>
-              <RefreshCw className={syncing ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
-              {syncing ? "Sincronizando…" : "Sincronizar"}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                onClick={() => void verificar()}
+                disabled={syncing}
+                title="Busca las grabaciones que se borraron de Zoom en los últimos meses. Corre sola una vez por día."
+              >
+                <SearchCheck className="h-4 w-4" />
+                Verificar en Zoom
+              </Button>
+              <Button onClick={() => void sincronizar()} disabled={syncing}>
+                <RefreshCw className={syncing ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
+                {syncing ? "Sincronizando…" : "Sincronizar"}
+              </Button>
+            </div>
           )}
         </div>
         {/* El estado de la sincronización es ESTADO (persiste); el resultado del botón va en toast. */}
@@ -517,6 +568,11 @@ export function RecordingsClient({
                                 ) : null}
                                 {r.missingInZoom && <Badge variant="destructive">Ya no está en Zoom</Badge>}
                               </div>
+                              {r.purgeOn && (
+                                <p className="mt-1 text-xs text-muted-foreground" data-purge-on={r.purgeOn}>
+                                  Se borra el {dia.format(new Date(r.purgeOn))}
+                                </p>
+                              )}
                             </TableCell>
                             <TableCell>
                               {clase ? (

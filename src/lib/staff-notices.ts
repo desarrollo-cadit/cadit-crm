@@ -29,12 +29,24 @@ export const STAFF_NOTICE_KINDS = [
   "morosidad_semanal",
   // Avisos de nuevos interesados (`src/lib/lead-notices.ts`).
   "interesado_nuevo",
+  // Grupos sin confirmar a T-7, T-2 y el día de inicio (`src/lib/avisos-sin-confirmar.ts`).
+  "sin_confirmar_t7",
+  "sin_confirmar_t2",
+  "sin_confirmar_inicio",
 ] as const;
 export type StaffNoticeKind = (typeof STAFF_NOTICE_KINDS)[number];
 
 /** 039 — Los avisos que cuelgan de UNA cohorte (los de la confirmación). */
 export const COHORT_NOTICE_KINDS = ["cohorte_confirmada", "facturacion_t7", "facturacion_t2"] as const;
 export type CohortNoticeKind = (typeof COHORT_NOTICE_KINDS)[number];
+
+/**
+ * Los avisos de un grupo que todavía NO se confirmó, a quienes pueden
+ * confirmarlo (`cohortes.confirmar`). Uno por grupo, ventana y fecha de
+ * inicio: reprogramar el grupo abre ventanas nuevas.
+ */
+export const UNCONFIRMED_NOTICE_KINDS = ["sin_confirmar_t7", "sin_confirmar_t2", "sin_confirmar_inicio"] as const;
+export type UnconfirmedNoticeKind = (typeof UNCONFIRMED_NOTICE_KINDS)[number];
 
 /**
  * 041 — De QUÉ es cada aviso. La idempotencia de 039 era "uno por cohorte y
@@ -52,7 +64,13 @@ export type SujetoDeAviso =
    * distingue un envío de otro de la MISMA persona (`claveDeInteresado` de
    * `src/lib/lead-notices.ts`: interés + día).
    */
-  | { kind: "interesado_nuevo"; contactId: string; envio: string };
+  | { kind: "interesado_nuevo"; contactId: string; envio: string }
+  /**
+   * Un grupo sin confirmar. `inicio` (`YYYY-MM-DD`) es la fecha de inicio a
+   * la que se refiere el aviso: si el grupo se reprograma, la llave cambia y
+   * las ventanas de la fecha nueva vuelven a avisar.
+   */
+  | { kind: UnconfirmedNoticeKind; cohortId: string; inicio: string };
 
 /**
  * La llave única por organización (`staff_notice.dedup_key`). Para los avisos
@@ -69,6 +87,10 @@ export function claveDeAviso(s: SujetoDeAviso): string {
       return `${s.kind}:${s.periodKey}`;
     case "interesado_nuevo":
       return `${s.kind}:${s.contactId}:${s.envio}`;
+    case "sin_confirmar_t7":
+    case "sin_confirmar_t2":
+    case "sin_confirmar_inicio":
+      return `${s.kind}:${s.cohortId}:${s.inicio}`;
     default:
       return `${s.kind}:${s.cohortId}`;
   }
@@ -131,6 +153,14 @@ export function sujetoDeRegistro(
       if (!r.dedupKey.startsWith(prefijo) || r.dedupKey.length === prefijo.length) return null;
       return { kind: r.kind, contactId: r.contactId, envio: r.dedupKey.slice(prefijo.length) };
     }
+    case "sin_confirmar_t7":
+    case "sin_confirmar_t2":
+    case "sin_confirmar_inicio": {
+      if (!r.cohortId || !r.dedupKey) return null;
+      const prefijo = `${r.kind}:${r.cohortId}:`;
+      const inicio = r.dedupKey.startsWith(prefijo) ? r.dedupKey.slice(prefijo.length) : "";
+      return /^\d{4}-\d{2}-\d{2}$/.test(inicio) ? { kind: r.kind, cohortId: r.cohortId, inicio } : null;
+    }
     default:
       return r.cohortId ? { kind: r.kind, cohortId: r.cohortId } : null;
   }
@@ -155,6 +185,9 @@ export const STAFF_NOTICE_LABELS: Record<StaffNoticeKind, string> = {
   pago_registrado: "Pago registrado",
   morosidad_semanal: "Morosidad semanal",
   interesado_nuevo: "Nuevo interesado",
+  sin_confirmar_t7: "Sin confirmar, 7 días antes",
+  sin_confirmar_t2: "Sin confirmar, 2 días antes",
+  sin_confirmar_inicio: "Sin confirmar, día de inicio",
 };
 
 export const STAFF_NOTICE_STATUS_LABELS: Record<StaffNoticeStatus, string> = {
@@ -178,6 +211,11 @@ export type AvisoDto = {
 export type ConfirmacionDto = {
   confirmedAt: string | null;
   confirmedBy: { id: string; name: string } | null;
+  /**
+   * Lo que se dibuja (`marcaDeConfirmacion`): `sin_confirmar_vencido` = llegó
+   * el día de inicio sin confirmar (rojo, con las salidas).
+   */
+  marca: "confirmado" | "sin_confirmar" | "sin_confirmar_vencido";
   avisos: AvisoDto[];
 };
 

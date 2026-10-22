@@ -64,6 +64,13 @@ export function SyncStatus({ status, timezone }: { status: SyncStatusDto | null;
             ) : (
               " · nunca sincronizada"
             )}
+            {c.lastVerifyAt && (
+              <span data-verify-at={c.lastVerifyAt}>
+                {" "}
+                · verificada en Zoom el {fecha.format(new Date(c.lastVerifyAt))}
+                {c.lastVerifyError && <span className="text-destructive"> · {c.lastVerifyError}</span>}
+              </span>
+            )}
           </li>
         ))}
         <li data-sync-periodic={intervalo}>

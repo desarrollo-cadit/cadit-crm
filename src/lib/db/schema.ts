@@ -3,6 +3,7 @@ import {
   boolean,
   check,
   date,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -3391,6 +3392,10 @@ export const staffNotice = pgTable(
         "pago_registrado",
         "morosidad_semanal",
         "interesado_nuevo",
+        // 0070 — Grupos sin confirmar (`src/lib/avisos-sin-confirmar.ts`).
+        "sin_confirmar_t7",
+        "sin_confirmar_t2",
+        "sin_confirmar_inicio",
       ],
     }).notNull(),
     status: text("status", {
@@ -3420,11 +3425,11 @@ export const staffNotice = pgTable(
     index("staff_notice_org_status_idx").on(t.organizationId, t.status),
     check(
       "staff_notice_kind_valid",
-      sql`${t.kind} IN ('cohorte_confirmada','facturacion_t7','facturacion_t2','inscripcion_nueva','pago_registrado','morosidad_semanal','interesado_nuevo')`
+      sql`${t.kind} IN ('cohorte_confirmada','facturacion_t7','facturacion_t2','inscripcion_nueva','pago_registrado','morosidad_semanal','interesado_nuevo','sin_confirmar_t7','sin_confirmar_t2','sin_confirmar_inicio')`
     ),
     check(
       "staff_notice_subject_valid",
-      sql`(${t.kind} IN ('cohorte_confirmada','facturacion_t7','facturacion_t2') AND ${t.cohortId} IS NOT NULL)
+      sql`(${t.kind} IN ('cohorte_confirmada','facturacion_t7','facturacion_t2','sin_confirmar_t7','sin_confirmar_t2','sin_confirmar_inicio') AND ${t.cohortId} IS NOT NULL)
         OR (${t.kind} = 'inscripcion_nueva' AND ${t.enrollmentId} IS NOT NULL)
         OR (${t.kind} = 'pago_registrado' AND ${t.enrollmentId} IS NOT NULL AND ${t.paymentId} IS NOT NULL)
         OR (${t.kind} = 'morosidad_semanal' AND ${t.periodKey} IS NOT NULL)
@@ -3476,6 +3481,13 @@ export const zoomConnection = pgTable(
     lastSyncAt: timestamp("last_sync_at"),
     /** Fecha (UTC) hasta la que la conexión está al día (DV-004). */
     syncedThrough: date("synced_through", { mode: "string" }),
+    /**
+     * 0069 — Última verificación diaria terminada (con o sin error): la
+     * periódica la corre una vez por día con esta marca, que sobrevive a los
+     * reinicios. `last_verify_error` NULL = completa.
+     */
+    lastVerifyAt: timestamp("last_verify_at"),
+    lastVerifyError: text("last_verify_error"),
     /** Baja lógica: no se sincroniza; sus grabaciones se conservan. */
     archivedAt: timestamp("archived_at"),
     createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
@@ -3536,6 +3548,13 @@ export const zoomRecording = pgTable(
     lastSeenAt: timestamp("last_seen_at").notNull(),
     /** DV-013 — dejó de aparecer en Zoom dentro de la ventana consultada. */
     missingInZoomAt: timestamp("missing_in_zoom_at"),
+    /**
+     * 0069 — La clase de la que se la desvinculó al faltar en Zoom. Si vuelve
+     * a aparecer, una MANUAL vuelve a esa clase (si está libre); una
+     * automática pasa por el matcher. NULL apenas se resuelve.
+     */
+    // FK con nombre corto (abajo): el automático pasa los 63 bytes de Postgres.
+    missingFromClassSessionId: text("missing_from_class_session_id"),
     classSessionId: text("class_session_id").references(() => classSession.id, {
       onDelete: "set null",
     }),
@@ -3575,6 +3594,11 @@ export const zoomRecording = pgTable(
     ),
     index("zoom_recording_org_state_idx").on(t.organizationId, t.assignmentState),
     index("zoom_recording_org_meeting_idx").on(t.organizationId, t.zoomMeetingId),
+    foreignKey({
+      name: "zoom_recording_missing_from_class_fk",
+      columns: [t.missingFromClassSessionId],
+      foreignColumns: [classSession.id],
+    }).onDelete("set null"),
     check("zoom_recording_mode_valid", sql`${t.assignmentMode} IN ('auto','manual')`),
     check(
       "zoom_recording_state_valid",

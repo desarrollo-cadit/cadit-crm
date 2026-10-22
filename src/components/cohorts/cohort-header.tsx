@@ -50,7 +50,16 @@ export function CohortHeader({
         ) : null}
       </div>
       {confirmation ? (
-        <CohortConfirmation cohortId={cohortId} initial={confirmation} canConfirm={canConfirm} />
+        <CohortConfirmation
+          // Reprogramar cambia la fecha y con ella la marca: se vuelve a montar con el estado nuevo.
+          key={header.startDate}
+          cohortId={cohortId}
+          initial={confirmation}
+          canConfirm={canConfirm}
+          canEdit={canEdit}
+          startDate={header.startDate}
+          endDate={header.endDate}
+        />
       ) : null}
       {/* 034 (FR-018) — De qué especialización es parte este módulo, con acceso directo. */}
       {header.partOf ? (

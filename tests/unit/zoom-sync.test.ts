@@ -508,3 +508,37 @@ describe("US5 — recuperación y fallos aislados", () => {
     expect(released).toEqual(["test:1"]);
   });
 });
+
+describe("faltantes: la incremental también desvincula y restaura", () => {
+  it("reconcilia cada conexión DESPUÉS de marcar faltantes y ANTES de re-adjudicar", async () => {
+    const orden: string[] = [];
+    const d = deps();
+    d.store = {
+      ...store,
+      markMissing: async (_o, args) => {
+        orden.push(`mark:${args.roomId}`);
+      },
+    };
+    d.reconcile = async (_o, connectionId) => {
+      orden.push(`reconcile:${connectionId}`);
+    };
+    d.rematch = async (_o, connectionId) => {
+      orden.push(`rematch:${connectionId}`);
+      return { assigned: 0, ambiguous: 0, conflict: 0 };
+    };
+    const { runSync } = await import("@/server/zoom/sync");
+    await runSync(ORG, "manual", {}, d);
+    expect(orden).toEqual(["mark:aula_1", "mark:aula_2", "reconcile:zc_1", "rematch:zc_1"]);
+  });
+
+  it("si reconciliar falla, la corrida sigue y termina", async () => {
+    const d = deps();
+    d.reconcile = async () => {
+      throw new Error("db");
+    };
+    const { runSync } = await import("@/server/zoom/sync");
+    await runSync(ORG, "manual", {}, d);
+    expect([...runs.values()][0]!.status).toBe("ok");
+    expect(released).toEqual(["test:1"]);
+  });
+});

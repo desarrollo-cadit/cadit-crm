@@ -210,6 +210,11 @@ export type CohortDto = {
   status: "planificada" | "en_curso" | "finalizada";
   /** 039 — Cuándo se confirmó ("la cohorte sale"); null = sin confirmar. */
   confirmedAt: string | null;
+  /**
+   * Lo que se dibuja de la confirmación (`marcaDeConfirmacion`):
+   * `sin_confirmar_vencido` = llegó el día de inicio sin confirmar (rojo).
+   */
+  confirmationFlag: "confirmado" | "sin_confirmar" | "sin_confirmar_vencido";
   software: { id: string; name: string }[];
 };
 

@@ -370,6 +370,22 @@ no por `id`: la copia crea filas nuevas, así que el `id` nunca coincide.
   = apagada**), nunca en tests ni en `next build`. Quién está vencido lo dice
   la base (`zoom_connection.last_sync_at`), así que sobrevive a reinicios; al
   arrancar, las corridas huérfanas sin lease vigente pasan a `error`.
+- **Verificación diaria de borradas** (`src/server/zoom/verify.ts`, migración
+  0069): la incremental no vuelve a mirar lo viejo, así que una vez por día
+  (misma periódica, marca `zoom_connection.last_verify_at`; botón "Verificar
+  en Zoom" en `/grabaciones` → `POST /api/recordings/verify`, 409 si el lease
+  está tomado) se re-listan `ZOOM_VERIFY_DAYS` días (default 180, tope 180)
+  en tramos de ≤ 30 días. **Si falla CUALQUIER página/aula/conexión no se
+  marca ni se borra nada**: un listado parcial nunca es "borrado". Una
+  faltante suelta su clase (solo si `recording_source='zoom'` y es su URL),
+  queda `sin_clase` recordando la clase (`missing_from_class_session_id`) y se
+  borra a los `ZOOM_MISSING_PURGE_DAYS` (default 30). Si vuelve: la
+  automática pasa por el matcher; la manual vuelve a su clase solo si está
+  libre. Lo reconcilia `src/server/zoom/missing.ts` (por estado, también desde
+  la incremental). Nada referencia a `zoom_recording`. **Freno de borrado
+  masivo** (`frenoDeBorradoMasivo`, `src/lib/recording-purge.ts`): si un aula
+  marcaría ≥ 50 % y ≥ 5 de sus conocidas, o todas con ≥ 3, esa aula no marca
+  nada, la conexión no purga y `last_verify_error` lo dice.
 - **E2E**: la app de pruebas se levanta SIEMPRE con
   `ZOOM_API_BASE_URL=<app>/api/dev/zoom-mock/v2` y
   `ZOOM_OAUTH_BASE_URL=<app>/api/dev/zoom-mock`; la sección

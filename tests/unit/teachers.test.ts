@@ -98,6 +98,22 @@ function cohortRow(
 }
 
 describe("findScheduleConflicts (T033, DV-006)", () => {
+  it("2026-10-22 — martes y jueves contra lunes, miércoles y viernes: no avisa", async () => {
+    const { findScheduleConflicts } = await import("@/server/teachers");
+    const lmv = cohortRow("coh_lmv", "2026-08-01", "2026-12-30");
+    selectQueue.push([{ ...lmv, cohort: { ...lmv.cohort, daysOfWeek: "0,2,4", startTime: "19:00", endTime: "21:00" } }]);
+
+    const conflicts = await findScheduleConflicts("org_1", "tch_1", {
+      startDate: new Date("2026-09-01"),
+      endDate: new Date("2026-11-30"),
+      daysOfWeek: "1,3",
+      startTime: "19:00",
+      endTime: "21:00",
+    });
+
+    expect(conflicts).toHaveLength(0);
+  });
+
   it("detecta superposición entre dos cohortes del mismo profesor", async () => {
     const { findScheduleConflicts } = await import("@/server/teachers");
     selectQueue.push([cohortRow("coh_existing", "2026-08-01", "2026-09-30")]);
@@ -105,8 +121,7 @@ describe("findScheduleConflicts (T033, DV-006)", () => {
     const conflicts = await findScheduleConflicts(
       "org_1",
       "tch_1",
-      new Date("2026-09-01"),
-      new Date("2026-10-15")
+      { startDate: new Date("2026-09-01"), endDate: new Date("2026-10-15"), daysOfWeek: null, startTime: null, endTime: null }
     );
 
     expect(conflicts).toHaveLength(1);
@@ -120,8 +135,7 @@ describe("findScheduleConflicts (T033, DV-006)", () => {
     const conflicts = await findScheduleConflicts(
       "org_1",
       "tch_1",
-      new Date("2026-09-01"),
-      new Date("2026-10-15")
+      { startDate: new Date("2026-09-01"), endDate: new Date("2026-10-15"), daysOfWeek: null, startTime: null, endTime: null }
     );
 
     expect(conflicts).toHaveLength(0);
@@ -134,8 +148,7 @@ describe("findScheduleConflicts (T033, DV-006)", () => {
     const conflicts = await findScheduleConflicts(
       "org_1",
       "tch_1",
-      new Date("2027-01-01"),
-      new Date("2027-02-01")
+      { startDate: new Date("2027-01-01"), endDate: new Date("2027-02-01"), daysOfWeek: null, startTime: null, endTime: null }
     );
 
     expect(conflicts).toHaveLength(1);
@@ -148,8 +161,7 @@ describe("findScheduleConflicts (T033, DV-006)", () => {
     const conflicts = await findScheduleConflicts(
       "org_1",
       "tch_1",
-      new Date("2026-08-01"),
-      new Date("2026-09-30"),
+      { startDate: new Date("2026-08-01"), endDate: new Date("2026-09-30"), daysOfWeek: null, startTime: null, endTime: null },
       "coh_self"
     );
 
