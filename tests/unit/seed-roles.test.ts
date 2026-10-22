@@ -58,6 +58,9 @@ const GRANTS = [
   migracion("0061_rol_ventas_y_empresas.sql"),
   // 042 — `facturacion.editar` (dirección, coordinación, administración).
   migracion("0063_facturacion.sql"),
+  // 045 — `marketing.ver`/`.enviar` (dirección, coordinación, ventas) y
+  // `marketing.configurar` (dirección).
+  migracion("0071_campanas_de_marketing.sql"),
 ].join("\n");
 
 /**

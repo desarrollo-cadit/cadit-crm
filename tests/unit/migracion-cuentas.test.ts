@@ -31,7 +31,12 @@ import {
  * dirección (ver `capabilities.ts`).
  */
 // 029 — `areas.configurar` también nació después y también es solo de dirección.
-const POSTERIORES: readonly Capability[] = ["alumnos.auditoria", "areas.configurar"];
+// 045 — `marketing.configurar` también: nació después y es solo de dirección.
+const POSTERIORES: readonly Capability[] = [
+  "alumnos.auditoria",
+  "areas.configurar",
+  "marketing.configurar",
+];
 const deEntonces = (caps: readonly Capability[]) =>
   caps.filter((c) => !POSTERIORES.includes(c));
 

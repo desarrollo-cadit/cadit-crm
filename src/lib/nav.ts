@@ -10,6 +10,7 @@ import {
   Kanban,
   KeyRound,
   LayoutDashboard,
+  Megaphone,
   Presentation,
   Library,
   Receipt,
@@ -79,6 +80,11 @@ export const NAV_GROUPS = [
       // 013 (T033) — Sustituye al portal corporativo descartado: el staff mira
       // y exporta el avance de los empleados de cada empresa.
       { href: "/empresas", label: "Empresas", icon: Building2, capability: "contactos.ver" },
+      /**
+       * 045 (R9) — Audiencias y campañas por correo a los contactos propios.
+       * Capacidad propia: lista nombre y correo de cientos de personas.
+       */
+      { href: "/marketing", label: "Marketing", icon: Megaphone, capability: "marketing.ver" },
     ],
   },
   {
@@ -306,6 +312,12 @@ export const SETTINGS_TABS = [
    * tiene Dirección. Al final: no cambia a dónde entra nadie.
    */
   { href: "/settings/areas", label: "Áreas", capability: "areas.configurar" },
+  /**
+   * 045 (US5) — El buzón de marketing, el remitente y el pie de las campañas.
+   * `marketing.configurar`, que solo tiene Dirección. Al final: no cambia a
+   * dónde entra nadie.
+   */
+  { href: "/settings/marketing", label: "Marketing", capability: "marketing.configurar" },
 ] as const;
 
 /**

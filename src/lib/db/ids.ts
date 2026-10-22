@@ -97,6 +97,15 @@ const prefixes = {
   /** 0066 — cada envío de un formulario público y cada nota o contacto del equipo. */
   contactFormSubmission: "cfs",
   contactActivity: "cact",
+  /** 045 — campañas de marketing por correo (data-model, encabezado). */
+  marketingSettings: "mks",
+  marketingAudience: "mka",
+  marketingCampaign: "mkc",
+  marketingCampaignRecipient: "mkr",
+  marketingCampaignLink: "mkl",
+  marketingClick: "mkk",
+  marketingUnsubscribe: "mku",
+  marketingImage: "mki",
 } as const;
 
 export type IdKind = keyof typeof prefixes;
