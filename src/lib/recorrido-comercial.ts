@@ -65,8 +65,11 @@ export type RegistroHistorico = {
   edition: string | null;
 };
 
-/** Sin tildes, en minúsculas y con los espacios colapsados. */
-function plano(s: string): string {
+/**
+ * Sin tildes, en minúsculas y con los espacios colapsados. La comparte el
+ * importador del historial (046 US6) para asociar cursos y vendedores.
+ */
+export function plano(s: string): string {
   return s
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")

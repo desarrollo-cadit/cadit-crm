@@ -169,13 +169,13 @@ convencional por fase.
 
 **Goal**: leer la planilla, asociar, simular y aplicar por tandas, deshacer.
 
-- [ ] T047 [P] [US6] Fixture inventada `tests/fixtures/historial-planilla.csv` (BOM, comillas, filas con problemas; ningún dato real) y test en rojo `tests/unit/historial-csv.test.ts`: `leerCsv` (BOM, comillas, comas y saltos dentro de comillas, CRLF) y `leerPlanilla` (encabezado exacto, correo/teléfono normalizados, al menos uno, fecha real, curso y nombre obligatorios, problemas con número de fila) (FR-014)
-- [ ] T048 [US6] Implementar `src/lib/historial-import/csv.ts` y `src/lib/historial-import/planilla.ts`
-- [ ] T049 [P] [US6] Test en rojo `tests/unit/historial-plan.test.ts`: `sugerirCurso` (sin tildes ni mayúsculas, exacto), `sugerirVendedor` (nombre o iniciales únicas), `validarMapeo`, `planDeImportacion` — reconoce por correo y después por teléfono, crea una sola vez a quien aparece en varias filas, completa solo vacíos, no completa un correo/teléfono ajeno, empresa existente o nueva, cursada nueva / ya presente / repetida en el archivo, `dedupKey` (FR-015..FR-019)
-- [ ] T050 [US6] Implementar `src/lib/historial-import/plan.ts`
-- [ ] T051 [P] [US6] Test en rojo `tests/unit/historial-import-servidor.test.ts`: `aplicarTanda` procesa 300 filas, crea empresas y contactos antes que las cursadas, inserta con `on conflict do nothing`, acumula contadores, vacía `pending_rows` al terminar; `deshacerImportacion` borra solo las cursadas de esa importación; importación ajena → `null`
-- [ ] T052 [US6] Implementar `src/server/historial-import.ts` (`analizarPlanilla`, `vistaPrevia`, `crearImportacion`, `aplicarTanda`, `deshacerImportacion`, `listarImportaciones`)
-- [ ] T053 [US6] Rutas `src/app/api/historial/importaciones/{route.ts,analizar/route.ts,vista-previa/route.ts,[id]/route.ts,[id]/aplicar/route.ts}` con `historial.importar` y Zod `.strict()` según contracts/historical-import.md (FR-020, FR-022)
+- [x] T047 [P] [US6] Fixture inventada `tests/fixtures/historial-planilla.csv` (BOM, comillas, filas con problemas; ningún dato real) y test en rojo `tests/unit/historial-csv.test.ts`: `leerCsv` (BOM, comillas, comas y saltos dentro de comillas, CRLF) y `leerPlanilla` (encabezado exacto, correo/teléfono normalizados, al menos uno, fecha real, curso y nombre obligatorios, problemas con número de fila) (FR-014)
+- [x] T048 [US6] Implementar `src/lib/historial-import/csv.ts` y `src/lib/historial-import/planilla.ts`
+- [x] T049 [P] [US6] Test en rojo `tests/unit/historial-plan.test.ts`: `sugerirCurso` (sin tildes ni mayúsculas, exacto), `sugerirVendedor` (nombre o iniciales únicas), `validarMapeo`, `planDeImportacion` — reconoce por correo y después por teléfono, crea una sola vez a quien aparece en varias filas, completa solo vacíos, no completa un correo/teléfono ajeno, empresa existente o nueva, cursada nueva / ya presente / repetida en el archivo, `dedupKey` (FR-015..FR-019)
+- [x] T050 [US6] Implementar `src/lib/historial-import/plan.ts`
+- [x] T051 [P] [US6] Test en rojo `tests/unit/historial-import-servidor.test.ts`: `aplicarTanda` procesa 300 filas, crea empresas y contactos antes que las cursadas, inserta con `on conflict do nothing`, acumula contadores, vacía `pending_rows` al terminar; `deshacerImportacion` borra solo las cursadas de esa importación; importación ajena → `null`
+- [x] T052 [US6] Implementar `src/server/historial-import.ts` (`analizarPlanilla`, `vistaPrevia`, `crearImportacion`, `aplicarTanda`, `deshacerImportacion`, `listarImportaciones`)
+- [x] T053 [US6] Rutas `src/app/api/historial/importaciones/{route.ts,analizar/route.ts,vista-previa/route.ts,[id]/route.ts,[id]/aplicar/route.ts}` con `historial.importar` y Zod `.strict()` según contracts/historical-import.md (FR-020, FR-022)
 
 **Checkpoint**: gate verde → commit.
 
