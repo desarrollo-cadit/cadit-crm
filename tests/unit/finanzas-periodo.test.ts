@@ -777,6 +777,6 @@ describe("027/FR-019 — el rol y la pantalla nuevos entran en la guía sin toca
     const grupos = NAV_GROUPS.filter((g) =>
       (g.items as readonly { href: string }[]).some((i) => i.href === "/finanzas")
     );
-    expect(grupos.map((g) => g.label)).toEqual(["Gestión"]);
+    expect(grupos.map((g) => g.label)).toEqual(["Administración"]);
   });
 });

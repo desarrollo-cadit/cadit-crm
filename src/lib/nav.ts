@@ -59,6 +59,9 @@ export type NavItem = {
  * decide por dentro qué paneles mostrar según capacidades).
  */
 export const NAV_GROUPS = [
+  // 2026-10-23 — Agrupada por el EQUIPO que usa cada pantalla (los mismos de
+  // los roles y las áreas). Un grupo sin nada visible para la sesión no se
+  // dibuja (`app-nav.tsx`).
   {
     label: "Inicio",
     items: [
@@ -66,7 +69,7 @@ export const NAV_GROUPS = [
     ],
   },
   {
-    label: "CRM",
+    label: "Comercial",
     items: [
       { href: "/inbox", label: "Bandeja", icon: Inbox, badge: "unread", capability: "inbox.ver" },
       { href: "/pipeline", label: "Pipeline", icon: Kanban, capability: "inscripciones.ver" },
@@ -80,30 +83,29 @@ export const NAV_GROUPS = [
       // 013 (T033) — Sustituye al portal corporativo descartado: el staff mira
       // y exporta el avance de los empleados de cada empresa.
       { href: "/empresas", label: "Empresas", icon: Building2, capability: "contactos.ver" },
+    ],
+  },
+  {
+    label: "Marketing",
+    items: [
       /**
        * 045 (R9) — Audiencias y campañas por correo a los contactos propios.
        * Capacidad propia: lista nombre y correo de cientos de personas.
        */
       { href: "/marketing", label: "Marketing", icon: Megaphone, capability: "marketing.ver" },
-    ],
-  },
-  {
-    label: "Gestión",
-    items: [
-      { href: "/academico", label: "Académico", icon: GraduationCap, capability: "academico.ver" },
-      { href: "/calendar", label: "Calendario", icon: CalendarDays, capability: "academico.ver" },
-      /**
-       * 035 (US3, FR-013) — Quién tiene cada licencia, por programa.
-       * `academico.ver` y no una capacidad nueva (FR-021): el software y sus
-       * licencias ya son parte de la gestión académica.
-       */
-      { href: "/licencias", label: "Licencias", icon: KeyRound, capability: "academico.ver" },
       /**
        * 033 (FR-001) — Los talleres, con su propia sección. `academico.ver` y
        * no una capacidad nueva: un taller es un curso de tipo taller, y verlo
        * es ver la gestión académica (FR-022).
        */
       { href: "/talleres", label: "Talleres", icon: Presentation, capability: "academico.ver" },
+    ],
+  },
+  {
+    label: "Académico",
+    items: [
+      { href: "/academico", label: "Académico", icon: GraduationCap, capability: "academico.ver" },
+      { href: "/calendar", label: "Calendario", icon: CalendarDays, capability: "academico.ver" },
       /**
        * 031 (US4, DV-012) — Las correcciones que esperan aprobación. Solo con
        * `correcciones.aprobar`: quien no puede aprobar no tiene nada que hacer
@@ -124,6 +126,32 @@ export const NAV_GROUPS = [
         icon: Library,
         capability: "academico.ver",
       },
+    ],
+  },
+  {
+    label: "Soporte",
+    items: [
+      /**
+       * 035 (US3, FR-013) — Quién tiene cada licencia, por programa.
+       * `academico.ver` y no una capacidad nueva (FR-021): el software y sus
+       * licencias ya son parte de la gestión académica.
+       */
+      { href: "/licencias", label: "Licencias", icon: KeyRound, capability: "academico.ver" },
+      /**
+       * 030 (US1) — Las grabaciones de Zoom de todas las aulas en una tabla.
+       * Capacidad propia (DV-009): sin `grabaciones.ver` el ítem no aparece.
+       */
+      {
+        href: "/grabaciones",
+        label: "Grabaciones",
+        icon: Video,
+        capability: "grabaciones.ver",
+      },
+    ],
+  },
+  {
+    label: "Administración",
+    items: [
       /**
        * 026 (FR-008) — El cierre contable del mes.
        *
@@ -140,16 +168,6 @@ export const NAV_GROUPS = [
        * el número desde la fila pide además `facturacion.editar`.
        */
       { href: "/facturacion", label: "Facturación", icon: Receipt, capability: "cobranza.ver" },
-      /**
-       * 030 (US1) — Las grabaciones de Zoom de todas las aulas en una tabla.
-       * Capacidad propia (DV-009): sin `grabaciones.ver` el ítem no aparece.
-       */
-      {
-        href: "/grabaciones",
-        label: "Grabaciones",
-        icon: Video,
-        capability: "grabaciones.ver",
-      },
     ],
   },
   // {
