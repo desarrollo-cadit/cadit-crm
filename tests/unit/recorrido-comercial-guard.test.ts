@@ -125,3 +125,26 @@ describe("046 US6 — el importador del historial", () => {
     expect(leer("tests/fixtures/historial-planilla.csv")).toMatch(/@ejemplo\.test/);
   });
 });
+
+describe("046 US8 — reportes", () => {
+  it("la ruta pide `reportes.ver` y los ingresos dependen de `cobranza.ver`", () => {
+    const src = leer("src/app/api/dashboard/reportes/route.ts");
+    expect(src).toMatch(/export const GET = requireCapability\(\s*"reportes\.ver"/);
+    expect(src).toContain('conIngresos: sessionCapabilities(session).includes("cobranza.ver")');
+  });
+
+  it("el servidor solo lee pagos dentro de `if (opts.conIngresos)`", () => {
+    const src = leer("src/server/reportes.ts");
+    const antes = src.slice(0, src.indexOf("if (opts.conIngresos)"));
+    expect(antes).not.toContain("schema.payment");
+  });
+
+  it("los reportes salen de la derivación única", () => {
+    expect(leer("src/server/reportes.ts")).toContain("historialesDeLaOrganizacion(");
+    expect(leer("src/lib/reportes.ts")).toContain("metricasDeRecompra(");
+  });
+
+  it("el inicio muestra la sección solo con `reportes.ver`", () => {
+    expect(leer("src/app/(app)/page.tsx")).toContain('includes("reportes.ver")');
+  });
+});

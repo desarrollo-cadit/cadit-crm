@@ -235,8 +235,8 @@ convencional por fase.
 
 ## Phase 14: User Story 8 — La sección Reportes (P1)
 
-- [ ] T074 [US8] `src/components/dashboard/reports-panel.tsx` con Recharts según la skill `dataviz` (tokens, claro y oscuro, accesible; carga y vacío en cada gráfico) y montaje en `src/app/(app)/page.tsx` con `reportes.ver`
-- [ ] T075 Guard en `tests/unit/recorrido-comercial-guard.test.ts` (rutas nuevas con su capacidad; ingresos solo con `cobranza.ver`), `CLAUDE.md`, quickstart §6, gate final con `NEXT_DIST_DIR=.next-build pnpm build`
+- [x] T074 [US8] `src/components/dashboard/reports-panel.tsx` con Recharts según la skill `dataviz` (tokens, claro y oscuro, accesible; carga y vacío en cada gráfico) y montaje en `src/app/(app)/page.tsx` con `reportes.ver`
+- [x] T075 Guard en `tests/unit/recorrido-comercial-guard.test.ts` (rutas nuevas con su capacidad; ingresos solo con `cobranza.ver`), `CLAUDE.md`, quickstart §6, gate final (el build quedó fuera por decisión del dueño)
 
 **Checkpoint**: gate verde → commit.
 
