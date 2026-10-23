@@ -62,9 +62,9 @@ convencional por fase.
 
 **Independent Test**: un contacto con un curso aprobado, uno cursado sin aprobar, uno en curso y uno en un grupo que nunca se dictó muestra los tres primeros y no el cuarto.
 
-- [ ] T011 [P] [US1] Test en rojo `tests/unit/recorrido-comercial-contacto.test.ts`: `historialADto` serializa fechas a ISO y no lleva montos; la ruta `src/app/api/contacts/[id]/recorrido-comercial/route.ts` pide `contactos.ver` y responde 404 si `recorridoComercialDelContacto` devuelve `null`
-- [ ] T012 [US1] Implementar `recorridoComercialDelContacto(orgId, contactId)` + `historialADto` en `src/server/recorrido-comercial.ts` y la ruta GET `src/app/api/contacts/[id]/recorrido-comercial/route.ts` (FR-004)
-- [ ] T013 [US1] Tarjeta "Cursos que hizo" en `src/components/contacts/recorrido-comercial-card.tsx` (estado como `Badge`, grupo, fechas, "Especialización · N de M módulos aprobados", "sin resultado cargado") y montarla arriba en `src/components/contacts/seguimiento-client.tsx`
+- [x] T011 [P] [US1] Test en rojo `tests/unit/recorrido-comercial-contacto.test.ts`: `historialADto` serializa fechas a ISO y no lleva montos; la ruta `src/app/api/contacts/[id]/recorrido-comercial/route.ts` pide `contactos.ver` y responde 404 si `recorridoComercialDelContacto` devuelve `null`
+- [x] T012 [US1] Implementar `recorridoComercialDelContacto(orgId, contactId)` + `historialADto` en `src/server/recorrido-comercial.ts` y la ruta GET `src/app/api/contacts/[id]/recorrido-comercial/route.ts` (FR-004)
+- [x] T013 [US1] Tarjeta "Cursos que hizo" en `src/components/contacts/recorrido-comercial-card.tsx` (estado como `Badge`, grupo, fechas, "Especialización · N de M módulos aprobados", "sin resultado cargado") y montarla arriba en `src/components/contacts/seguimiento-client.tsx`
 
 **Checkpoint**: gate verde → commit de US1.
 

@@ -296,3 +296,72 @@ export async function historialesDeLaOrganizacion(
 ): Promise<Map<string, EntradaDeHistorial[]>> {
   return historialesComerciales(await cargarCursadasComerciales(organizationId, { now }), now);
 }
+
+/* ============================================================
+ * La ficha del contacto (US1, US3)
+ * ============================================================ */
+
+export type EntradaDeHistorialDto = {
+  courseId: string;
+  courseName: string;
+  estado: EntradaDeHistorial["estado"];
+  sinResultado: boolean;
+  cohortId: string;
+  cohortName: string;
+  startDate: string;
+  endDate: string | null;
+  veces: number;
+  especializacion: EntradaDeHistorial["especializacion"];
+};
+
+export type SugerenciaDto = {
+  courseId: string;
+  courseName: string;
+  porCursos: string[];
+  proximoGrupo: { cohortId: string; name: string; startDate: string } | null;
+};
+
+export type RecorridoComercialDto = {
+  historial: EntradaDeHistorialDto[];
+  sugerencias: SugerenciaDto[];
+};
+
+/** Solo los campos del contrato: lo que no está acá no viaja. */
+export function historialADto(entradas: readonly EntradaDeHistorial[]): EntradaDeHistorialDto[] {
+  return entradas.map((e) => ({
+    courseId: e.courseId,
+    courseName: e.courseName,
+    estado: e.estado,
+    sinResultado: e.sinResultado,
+    cohortId: e.cohortId,
+    cohortName: e.cohortName,
+    startDate: e.startDate.toISOString(),
+    endDate: e.endDate ? e.endDate.toISOString() : null,
+    veces: e.veces,
+    especializacion: e.especializacion,
+  }));
+}
+
+/**
+ * Lo que muestra la ficha: qué cursó y qué le podría interesar. `null` si el
+ * contacto no es de esta organización (la ruta responde 404).
+ *
+ * Archivados y dados de baja de marketing aparecen igual: es información
+ * para quien atiende (spec, Edge Cases). Las audiencias los excluyen aparte.
+ */
+export async function recorridoComercialDelContacto(
+  organizationId: string,
+  contactId: string,
+  now: Date = new Date()
+): Promise<RecorridoComercialDto | null> {
+  const [contacto] = await getDb()
+    .select({ id: schema.contact.id })
+    .from(schema.contact)
+    .where(scoped(schema.contact.organizationId, organizationId, eq(schema.contact.id, contactId)))
+    .limit(1);
+  if (!contacto) return null;
+
+  const cursadas = await cargarCursadasComerciales(organizationId, { contactIds: [contactId], now });
+  const historial = historialesComerciales(cursadas, now).get(contactId) ?? [];
+  return { historial: historialADto(historial), sugerencias: [] };
+}

@@ -17,6 +17,7 @@ import {
   type EntradaDeSeguimiento,
 } from "@/lib/seguimiento";
 import type { SeguimientoDto } from "@/server/seguimiento";
+import { RecorridoComercialCard } from "@/components/contacts/recorrido-comercial-card";
 import { cn } from "@/lib/utils";
 
 const fechaHora = (iso: string) =>
@@ -95,6 +96,8 @@ export function SeguimientoClient({ contactId, canWrite }: { contactId: string; 
 
   return (
     <div className="mx-auto grid max-w-4xl gap-6 p-6">
+      {/* 046 — qué cursó y qué le podría interesar, al atenderlo (SC-001). */}
+      <RecorridoComercialCard contactId={contactId} />
       <ContactCard contactId={contactId} contact={data.contact} canWrite={canWrite} onRecorded={agregar} />
       <MarketingCard contactId={contactId} marketing={data.marketing} onChanged={() => setVersion((v) => v + 1)} />
       {canWrite ? <NoteForm contactId={contactId} onAdded={agregar} /> : null}
