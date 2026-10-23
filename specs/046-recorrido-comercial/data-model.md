@@ -130,3 +130,65 @@ type MetricasDeRecompra = {
 ```
 
 Sin montos: ninguna de estas estructuras lleva plata.
+
+## §6 `historical_import_batch` — una importación de historial (0073, US6)
+
+| Columna | Tipo | Regla |
+|---|---|---|
+| `id` | text PK | `hib_` |
+| `organization_id` | text NOT NULL | FK cascade; RLS |
+| `source_label` | text NOT NULL | "planilla 2020–2024" |
+| `file_name` | text NULL | nombre del archivo subido |
+| `status` | text NOT NULL | `aplicando` · `aplicada` · `deshecha` (CHECK) |
+| `mapping` | jsonb NOT NULL | `{ cursos: {label: courseId o null}, vendedores: {raw: sellerId o null} }` |
+| `pending_rows` | jsonb NULL | filas válidas por aplicar; NULL al terminar o deshacer |
+| `total_rows`, `processed_rows`, `problem_rows` | integer NOT NULL | avance y descartadas |
+| `contacts_created`, `contacts_completed`, `companies_created`, `takings_created`, `takings_existing` | integer NOT NULL default 0 | resultado acumulado |
+| `imported_by`, `undone_by` | text NULL | FK user set null |
+| `created_at`, `finished_at`, `undone_at` | timestamp | |
+
+Índice `(organization_id, created_at)`.
+
+## §7 `historical_course_taking` — una cursada histórica (0073, US6)
+
+| Columna | Tipo | Regla |
+|---|---|---|
+| `id` | text PK | `hct_` |
+| `organization_id` | text NOT NULL | FK cascade; RLS |
+| `contact_id` | text NOT NULL | FK contact cascade |
+| `course_id` | text NULL | FK course set null |
+| `course_label` | text NOT NULL | nombre unificado de la planilla (siempre) |
+| `original_label` | text NULL | `curso_original` |
+| `taken_on` | timestamp NOT NULL | `fecha` (medianoche UTC, como `cohort.start_date`) |
+| `company_id` | text NULL | FK company set null |
+| `seller_id` | text NULL | FK seller set null |
+| `is_student` | boolean NOT NULL default false | `estudiante = si` |
+| `edition`, `note` | text NULL | |
+| `source_label` | text NOT NULL | "planilla 2020–2024" |
+| `source_row` | integer NULL | `fila_planilla` |
+| `batch_id` | text NOT NULL | FK `historical_import_batch` cascade |
+| `dedup_key` | text NOT NULL | `contactId|curso:<courseId>|AAAA-MM-DD` o `contactId|texto:<label normalizado>|AAAA-MM-DD` |
+| `created_at` | timestamp | |
+
+Índices: UNIQUE `(organization_id, dedup_key)`; `(organization_id, contact_id)`;
+`(organization_id, batch_id)`.
+
+## §8 La derivación con registros históricos
+
+```ts
+type RegistroHistorico = {
+  contactId: string;
+  courseId: string | null;     // null = texto
+  courseLabel: string;
+  courseName: string;          // nombre del catálogo, o el texto
+  categoryId: string | null;
+  takenOn: Date;
+  edition: string | null;
+};
+```
+
+`historialesComerciales(cursadas, now, historicos = [])`: cada registro da una
+entrada `estado: "curso_historico"`, `courseId` = el del catálogo o
+`texto:<label>`, `cohortId: null`, `cohortName` = "Edición N" o null,
+`startDate = primerInicio = ultimoInicioCursado = takenOn`. Se fusiona con
+las demás del mismo curso por rango (DV-012).

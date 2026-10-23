@@ -145,7 +145,54 @@ convencional por fase.
 
 ---
 
+## Phase 8: User Story 6 — Datos y derivación de cursadas históricas (P1)
+
+**Goal**: guardar cursadas históricas sin grupos falsos y contarlas en el historial comercial.
+
+**Independent Test**: una cursada histórica de Revit Arquitectura hace que la persona entre en "cursó Revit Arquitectura" y no en "aprobó"; la ficha la muestra con "Registro histórico".
+
+- [ ] T038 [P] [US6] Test en rojo `tests/unit/migracion-historial.test.ts`: `drizzle/0073_historial_importado.sql` crea `historical_import_batch` y `historical_course_taking` con `if not exists`, RLS + `tenant_isolation`, CHECK de `status`, FKs en `do $`, UNIQUE `(organization_id, dedup_key)`, y suma `historial.importar` solo al rol `direccion` (FR-019, FR-022)
+- [ ] T039 [US6] Tablas `historicalImportBatch` y `historicalCourseTaking` en `src/lib/db/schema.ts`, prefijos `hib`/`hct` en `src/lib/db/ids.ts`; generar y reescribir a mano `drizzle/0073_historial_importado.sql` (+ journal y snapshot)
+- [ ] T040 [US6] Capacidad `historial.importar` en `src/lib/capabilities.ts` (solo Dirección: fuera de coordinación y soporte), `src/lib/guia.ts`, `src/components/settings/roles-client.tsx` y pestaña `/settings/historial` en `src/lib/nav.ts`; ajustar `tests/unit/{capabilities,seed-roles,migracion-cuentas,finanzas-periodo,settings-acceso}.test.ts`
+- [ ] T041 [P] [US6] Test en rojo en `tests/unit/recorrido-comercial.test.ts`: `historialesComerciales(cursadas, now, historicos)` — estado `curso_historico` (cursado, nunca aprobó), texto sin catálogo como `texto:<label>`, un dato real del mismo curso gana, edición en `cohortName`, `etiquetaDeEntrada` = "Cursó (registro histórico)" (FR-021)
+- [ ] T042 [US6] `RegistroHistorico` y `curso_historico` en `src/lib/recorrido-comercial.ts`
+- [ ] T043 [P] [US6] Test en rojo en `tests/unit/marketing-historial-filtros.test.ts` y `tests/unit/rutas-de-cursos.test.ts`: una cursada histórica cuenta para cursó / no hizo / últimos N meses / sugerencias, nunca para aprobó ni cursó sin aprobar
+- [ ] T044 [US6] `cargarRegistrosHistoricos` en `src/server/recorrido-comercial.ts` y su uso en `historialesDeLaOrganizacion` y `recorridoComercialDelContacto` (con su caso en `tests/unit/recorrido-comercial-contacto.test.ts`)
+- [ ] T045 [US6] Insignia "Registro histórico" en `src/components/contacts/recorrido-comercial-card.tsx`
+- [ ] T046 Probar la 0073 en un PostgreSQL descartable (0000→0073, 0073 dos veces, RLS, único de `dedup_key`)
+
+**Checkpoint**: gate verde → commit.
+
+---
+
+## Phase 9: User Story 6 — El importador (P1)
+
+**Goal**: leer la planilla, asociar, simular y aplicar por tandas, deshacer.
+
+- [ ] T047 [P] [US6] Fixture inventada `tests/fixtures/historial-planilla.csv` (BOM, comillas, filas con problemas; ningún dato real) y test en rojo `tests/unit/historial-csv.test.ts`: `leerCsv` (BOM, comillas, comas y saltos dentro de comillas, CRLF) y `leerPlanilla` (encabezado exacto, correo/teléfono normalizados, al menos uno, fecha real, curso y nombre obligatorios, problemas con número de fila) (FR-014)
+- [ ] T048 [US6] Implementar `src/lib/historial-import/csv.ts` y `src/lib/historial-import/planilla.ts`
+- [ ] T049 [P] [US6] Test en rojo `tests/unit/historial-plan.test.ts`: `sugerirCurso` (sin tildes ni mayúsculas, exacto), `sugerirVendedor` (nombre o iniciales únicas), `validarMapeo`, `planDeImportacion` — reconoce por correo y después por teléfono, crea una sola vez a quien aparece en varias filas, completa solo vacíos, no completa un correo/teléfono ajeno, empresa existente o nueva, cursada nueva / ya presente / repetida en el archivo, `dedupKey` (FR-015..FR-019)
+- [ ] T050 [US6] Implementar `src/lib/historial-import/plan.ts`
+- [ ] T051 [P] [US6] Test en rojo `tests/unit/historial-import-servidor.test.ts`: `aplicarTanda` procesa 300 filas, crea empresas y contactos antes que las cursadas, inserta con `on conflict do nothing`, acumula contadores, vacía `pending_rows` al terminar; `deshacerImportacion` borra solo las cursadas de esa importación; importación ajena → `null`
+- [ ] T052 [US6] Implementar `src/server/historial-import.ts` (`analizarPlanilla`, `vistaPrevia`, `crearImportacion`, `aplicarTanda`, `deshacerImportacion`, `listarImportaciones`)
+- [ ] T053 [US6] Rutas `src/app/api/historial/importaciones/{route.ts,analizar/route.ts,vista-previa/route.ts,[id]/route.ts,[id]/aplicar/route.ts}` con `historial.importar` y Zod `.strict()` según contracts/historical-import.md (FR-020, FR-022)
+
+**Checkpoint**: gate verde → commit.
+
+---
+
+## Phase 10: User Story 6 — La pantalla Importar historial (P1)
+
+- [ ] T054 [US6] `src/app/(app)/settings/historial/page.tsx` (gate `historial.importar`) y `src/components/settings/historial-import-client.tsx`: subir CSV; paso 1 asociaciones (cursos con "Dejar como texto", vendedores con "Sin vendedor"); paso 2 vista previa con cantidades y problemas; paso 3 confirmar con avance por tandas y "Continuar"; lista de importaciones con "Deshacer esta importación"
+- [ ] T055 [US6] Guard en `tests/unit/recorrido-comercial-guard.test.ts`: rutas del importador con `historial.importar`; el importador no lee plata; ningún CSV real en `tests/fixtures` (solo la planilla inventada)
+- [ ] T056 `CLAUDE.md` (fila "Importar historial"), quickstart §5, gate final y marcar tareas
+
+**Checkpoint**: gate verde → commit.
+
+---
+
 ## Dependencies & Execution Order
 
+- Phases 8 → 9 → 10 (US6) van en orden y dependen de la Phase 1.
 - Phase 1 bloquea todo. US1 → US3 (la tarjeta crece). US2 → US3 (sugerencias usan rutas) y → US4 (atajo de ruta). US5 depende solo de Phase 1.
 - Dentro de cada fase: test en rojo antes de su implementación.

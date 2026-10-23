@@ -224,3 +224,84 @@ Sin violaciones de la constitución: no aplica.
   autorreferencia rechaza una fila.
 - Gate: `pnpm typecheck && pnpm lint && pnpm test` por fase.
 - Pendiente de verificación humana: las tres pantallas (quickstart §4).
+
+---
+
+## Ampliación US6 — Importar el historial 2020–2024 (2026-10-23)
+
+Historia nueva aprobada por el dueño. **Migración**:
+`drizzle/0073_historial_importado.sql`. **Contrato**:
+[contracts/historical-import.md](./contracts/historical-import.md).
+**Modelo**: [data-model §6–§8](./data-model.md).
+
+### Summary
+
+Dirección sube el CSV limpio de la planilla 2020–2024 desde Ajustes →
+Importar historial. Tres pasos: asociar cursos y vendedores, vista previa
+(sin escribir), confirmar (por tandas, retomable). Cada fila se vuelve una
+**cursada histórica** (`historical_course_taking`): no se inventan grupos ni
+inscripciones. La derivación única (`historialesComerciales`) las cuenta como
+`curso_historico`.
+
+### Constitution Check (US6)
+
+| Principio | Estado | Cómo se cumple |
+|---|---|---|
+| I. Seguridad | ✅ | Capacidad nueva `historial.importar`, solo Dirección. La planilla viaja solo al servidor de la instancia; las filas pendientes se guardan en la importación y se BORRAN al terminar o deshacer. Los tests usan una planilla inventada (`tests/fixtures/historial-planilla.csv`), nunca la real. |
+| II. Soberanía | ✅ | Sin servicios externos ni dependencias nuevas: lector CSV propio. |
+| III. Multi-tenancy | ✅ | Dos tablas con `organization_id` NOT NULL, índices org-first, RLS + `tenant_isolation` a mano en la 0073. Cada tanda corre en la transacción del pedido. |
+| IV. Idempotencia | ✅ | `dedup_key` único por organización (contacto + curso o texto + fecha) e `on conflict do nothing`; tandas retomables por `processed_rows`; contactos reconocidos por correo/teléfono antes de crear; empresas por nombre. 0073 re-ejecutable. |
+| V. Calidad | ✅ | TDD en lo puro: lector CSV, filas, sugerencias, plan (el MISMO para vista previa y aplicación). |
+| VII. Trazabilidad | ✅ | Cada importación guarda quién, cuándo, archivo, asociaciones y resultado; cada cursada histórica su fila de planilla y su importación. |
+| VIII. Foco | ✅ | Contactos propios (exalumnos). |
+| IX. En vivo | ⚠️ diferida por el dueño | Sin E2E en vivo; quickstart §5 lista la verificación humana. |
+
+### Decisiones
+
+- **DV-011 Tabla propia, sin grupos falsos.** `historical_course_taking` con
+  `course_id` (catálogo) o solo `course_label` (texto). La derivación las
+  recibe aparte de las cursadas reales y les asigna `curso_historico`.
+- **DV-012 Rango del estado histórico.** `aprobo` > `en_curso` >
+  `curso_sin_aprobar` > `curso_historico` > `por_empezar`: un dato real del
+  mismo curso gana. `curso_historico` es "cursado" (`esCursado`) pero nunca
+  "aprobó" ni "cursó sin aprobar".
+- **DV-013 Un plan puro para vista previa y aplicación.**
+  `planDeImportacion(filas, mapeo, estado)` decide por fila: contacto
+  (existente por correo, si no por teléfono, si no nuevo), qué campos vacíos
+  completa, empresa (`buscarEmpresaPorNombre` o nueva) y si la cursada es
+  nueva o ya estaba. La vista previa lo corre sobre todas las filas; cada
+  tanda sobre sus filas con el estado de la base en ese momento.
+- **DV-014 Completa, nunca pisa.** Apellido, correo, teléfono, empresa y
+  origen solo si están vacíos. El correo o el teléfono no se completan si ya
+  son de otro contacto; con identidad provisional (`sinwa:`), el teléfono
+  pasa a ser la identidad (`planDeTelefono`).
+- **DV-015 Tandas guardadas en la importación.** Confirmar valida y guarda las
+  filas válidas y el mapeo en `historical_import_batch.pending_rows`;
+  `POST …/aplicar` procesa 300 filas por pedido (≈ 10 pedidos), cada uno en su
+  transacción. Al terminar, `pending_rows` se vacía. Si se corta, "Continuar".
+- **DV-016 Deshacer = borrar sus cursadas.** Contactos y empresas creados
+  quedan. Las cursadas de otra importación no se tocan.
+- **DV-017 Sugerencias.** Curso: nombre igual sin tildes ni mayúsculas.
+  Vendedor: nombre igual, o iniciales del nombre (CP = "Cristina Pérez")
+  cuando un único vendedor las tiene.
+
+### Source Code (US6)
+
+| Capa | Archivo |
+|---|---|
+| Migración | `drizzle/0073_historial_importado.sql` (+ journal, snapshot) |
+| Esquema | `src/lib/db/schema.ts` (`historicalImportBatch`, `historicalCourseTaking`) · `src/lib/db/ids.ts` (`hib`, `hct`) |
+| Capacidad | `src/lib/capabilities.ts` · `src/lib/guia.ts` · `src/components/settings/roles-client.tsx` · `src/lib/nav.ts` |
+| Puro | `src/lib/historial-import/csv.ts` · `planilla.ts` · `plan.ts` |
+| Derivación | `src/lib/recorrido-comercial.ts` (`RegistroHistorico`, `curso_historico`) |
+| Servidor | `src/server/recorrido-comercial.ts` (lee las históricas) · `src/server/historial-import.ts` |
+| Rutas | `src/app/api/historial/importaciones/{route.ts,analizar,vista-previa,[id],[id]/aplicar}` |
+| UI | `src/app/(app)/settings/historial/page.tsx` · `src/components/settings/historial-import-client.tsx` · insignia en `recorrido-comercial-card.tsx` |
+
+### Entrega por fases (US6)
+
+| Fase | Contenido |
+|---|---|
+| **F8 Datos y derivación** | 0073, esquema, capacidad, `curso_historico` en la derivación y el loader, insignia en la ficha |
+| **F9 Importador** | CSV, filas, sugerencias, plan, servidor y rutas |
+| **F10 Pantalla** | Ajustes → Importar historial (tres pasos, continuar, deshacer) |

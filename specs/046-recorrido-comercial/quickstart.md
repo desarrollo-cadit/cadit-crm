@@ -47,3 +47,18 @@ Esperado: `relrowsecurity = t`, la política `tenant_isolation` existe, y un
    B" da la cantidad esperada y los excluidos por baja siguen contados aparte.
 5. Marketing → Recompra: tasa, días promedio y pares; cambiar el período
    recalcula.
+
+## 5. Importar el historial 2020–2024 (US6)
+
+En producción, en este orden:
+
+1. **Respaldo antes de importar**: un respaldo de la base (Coolify → Backups,
+   o `pg_dump`) inmediatamente antes. "Deshacer" borra las cursadas
+   históricas, pero no los contactos ni las empresas creados.
+2. Deploy: la 0073 se aplica sola y le da `historial.importar` a Dirección.
+3. Ajustes → Importar historial → subir `historial-limpio.csv`.
+4. Paso 1: revisar cada curso (preelegido si coincide) y cada vendedor.
+5. Paso 2: leer la vista previa y las filas con problemas.
+6. Paso 3: confirmar y esperar a que termine (si se corta, "Continuar").
+7. Verificación humana: dos fichas de exalumnos (Seguimiento) con la insignia
+   "Registro histórico"; Marketing → Recompra con "Todo".

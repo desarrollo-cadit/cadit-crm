@@ -149,6 +149,51 @@ el cálculo a mano.
 
 ---
 
+### User Story 6 - Importar el historial 2020–2024 desde la app (Priority: P1)
+
+*(Agregada el 2026-10-23, aprobada por el dueño.)*
+
+Dirección sube la planilla histórica de cursadas 2020–2024 (≈ 2 132 personas y
+2 882 cursadas, un CSV limpio con una fila por cursada) desde **Ajustes →
+Importar historial**, sin scripts de servidor ni acceso directo a la base. Esos
+años no tienen grupos ni inscripciones en el sistema: se guardan como
+**registros históricos** de cursada, que el historial comercial cuenta como
+"cursó (registro histórico)".
+
+**Why this priority**: sin esos cinco años, el historial, las audiencias y
+Recompra solo ven lo cargado desde 2025, y la mayoría de los exalumnos
+aparecería como "no hizo nada".
+
+**Independent Test**: con una planilla chica conocida, el paso de vista previa
+dice exactamente cuántos contactos se crean, cuántos se completan, cuántas
+cursadas se crean y qué filas tienen problemas; al confirmar, la ficha de una
+de esas personas muestra la cursada con la marca "Registro histórico", y
+"Deshacer esta importación" la saca sin borrar el contacto.
+
+**Acceptance Scenarios**:
+
+1. **Given** la planilla, **When** se sube, **Then** cada curso distinto de la
+   planilla se asocia a un curso del catálogo (preelegido si el nombre coincide
+   sin tildes ni mayúsculas) o se deja como texto, y cada vendedor distinto a un
+   vendedor o "sin vendedor".
+2. **Given** las asociaciones, **When** se pide la vista previa, **Then** se ven
+   las cantidades (contactos a crear / a completar / sin cambios, empresas a
+   crear, cursadas nuevas / ya presentes) y las filas con problemas, sin
+   escribir nada.
+3. **Given** una persona que ya existe con el mismo correo (o, si no, el mismo
+   teléfono), **When** se importa, **Then** se usa ese contacto y solo se
+   completan los datos que tenía vacíos; nunca se pisa un dato.
+4. **Given** una importación ya aplicada, **When** se vuelve a importar la misma
+   planilla, **Then** no se duplica ninguna cursada.
+5. **Given** una importación, **When** se elige "Deshacer esta importación",
+   **Then** se borran sus cursadas históricas; los contactos y empresas creados
+   quedan.
+6. **Given** una cursada histórica de Revit Arquitectura, **When** se filtra
+   "cursó Revit Arquitectura", **Then** la persona entra; **When** se filtra
+   "aprobó Revit Arquitectura", **Then** no entra (no se sabe si aprobó).
+
+---
+
 ### Edge Cases
 
 - Una persona hizo el mismo curso dos veces (recursada): cuenta una vez como
@@ -164,6 +209,14 @@ el cálculo a mano.
 - Contactos archivados o dados de baja de marketing: aparecen en su historial y
   sugerencias (es información para quien atiende), pero las audiencias los
   excluyen como siempre.
+- Un curso de la planilla que no existe en el catálogo: se guarda como texto,
+  figura en el historial y en Recompra, pero no se puede filtrar por él ni abre
+  rutas.
+- La misma persona con un registro histórico y una inscripción real del mismo
+  curso: una sola entrada, gana el dato real.
+- Correo de un contacto y teléfono de otro en la misma fila: manda el correo; el
+  teléfono no se completa si ya es de otra persona.
+- La importación se corta a mitad: se retoma desde donde quedó, sin duplicar.
 
 ## Requirements *(mandatory)*
 
@@ -210,6 +263,32 @@ el cálculo a mano.
 - **FR-012**: Las métricas y los segmentos MUST requerir el permiso de ver
   marketing; no muestran plata.
 
+**Importación del historial (US6)**
+
+- **FR-014**: El sistema MUST permitir importar desde la app un CSV de cursadas
+  históricas (columnas `nombre, apellido, correo, telefono, empresa, curso,
+  curso_original, estudiante, edicion, fecha, vendedor, nota, fila_planilla`),
+  sin scripts ni acceso directo a la base.
+- **FR-015**: Cada curso distinto MUST asociarse a un curso del catálogo o
+  quedar como texto; cada vendedor distinto a un vendedor o a ninguno.
+- **FR-016**: Antes de escribir, MUST mostrarse una vista previa con las
+  cantidades y las filas con problemas.
+- **FR-017**: Un contacto MUST reconocerse por correo normalizado y, si no, por
+  teléfono; si no existe se crea con origen `importacion:planilla-2020-2024`.
+  De un contacto existente solo se completan campos vacíos (nunca se pisan).
+- **FR-018**: La empresa MUST vincularse por nombre exacto normalizado y
+  crearse si falta.
+- **FR-019**: Una cursada histórica MUST guardarse una sola vez por persona,
+  curso y fecha: reimportar no duplica. No se crean grupos ni inscripciones.
+- **FR-020**: La importación MUST aplicarse por tandas, retomable, y dejar
+  registro de quién la hizo, cuándo y con qué resultado; MUST poder
+  deshacerse (se borran sus cursadas; contactos y empresas quedan).
+- **FR-021**: El historial comercial MUST contar las cursadas históricas como
+  "cursó (registro histórico)": valen para cursó, no hizo, últimos N meses,
+  sugerencias y Recompra, pero nunca como "aprobó" ni "cursó sin aprobar".
+- **FR-022**: Importar MUST requerir la capacidad `historial.importar`, que
+  por defecto solo tiene Dirección.
+
 **Datos**
 
 - **FR-013**: Todo dato nuevo MUST pertenecer a una organización y quedar aislado
@@ -220,6 +299,11 @@ el cálculo a mano.
 - **Ruta entre cursos**: curso de origen, curso siguiente, orden.
 - **Cursada comercial** (derivada, no se guarda): contacto, curso, grupo,
   fechas y resultado, según FR-001 a FR-003.
+- **Cursada histórica** (US6): contacto, curso del catálogo o texto, fecha,
+  empresa, vendedor, si era estudiante, edición, nota, origen y la importación
+  que la creó.
+- **Importación de historial** (US6): quién, cuándo, archivo, asociaciones,
+  avance y resultado.
 
 ## Success Criteria *(mandatory)*
 
