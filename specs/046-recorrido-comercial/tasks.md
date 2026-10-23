@@ -76,12 +76,12 @@ convencional por fase.
 
 **Independent Test**: cargar dos siguientes, reordenar, quitar uno: queda guardado en ese orden.
 
-- [ ] T014 [P] [US2] Test en rojo `tests/unit/rutas-de-cursos.test.ts` (parte rutas): `validarSiguientes` — rechaza autorreferencia, repetidos, cursos inexistentes y talleres; acepta lista vacía y ciclos (FR-005)
-- [ ] T015 [US2] Implementar `validarSiguientes` en `src/lib/rutas-de-cursos.ts`
-- [ ] T016 [P] [US2] Test en rojo `tests/unit/course-routes-servidor.test.ts`: `guardarSiguientes` borra e inserta en orden con `position` = índice; curso ajeno → `not_found`; inválido → `invalid_body` sin escribir; `listarRutas` agrupa en orden
-- [ ] T017 [US2] Implementar `src/server/course-routes.ts` (`listarRutas`, `rutasPorCurso`, `guardarSiguientes`)
-- [ ] T018 [US2] Rutas `src/app/api/course-routes/route.ts` (GET, `academico.ver`) y `src/app/api/courses/[id]/next-courses/route.ts` (PUT, `academico.editar`, Zod `.strict()`) según contracts/course-routes.md (FR-006)
-- [ ] T019 [US2] Diálogo `src/components/academic/next-courses-dialog.tsx` (agregar, subir/bajar, quitar, guardar) y en `src/components/academic/academic-client.tsx` la línea "Siguen: …" por curso y el botón "Cursos siguientes" solo con `canEdit`
+- [x] T014 [P] [US2] Test en rojo `tests/unit/rutas-de-cursos.test.ts` (parte rutas): `validarSiguientes` — rechaza autorreferencia, repetidos, cursos inexistentes y talleres; acepta lista vacía y ciclos (FR-005)
+- [x] T015 [US2] Implementar `validarSiguientes` en `src/lib/rutas-de-cursos.ts`
+- [x] T016 [P] [US2] Test en rojo `tests/unit/course-routes-servidor.test.ts`: `guardarSiguientes` borra e inserta en orden con `position` = índice; curso ajeno → `not_found`; inválido → `invalid_body` sin escribir; `listarRutas` agrupa en orden
+- [x] T017 [US2] Implementar `src/server/course-routes.ts` (`listarRutas`, `rutasPorCurso`, `guardarSiguientes`)
+- [x] T018 [US2] Rutas `src/app/api/course-routes/route.ts` (GET, `academico.ver`) y `src/app/api/courses/[id]/next-courses/route.ts` (PUT, `academico.editar`, Zod `.strict()`) según contracts/course-routes.md (FR-006)
+- [x] T019 [US2] Diálogo `src/components/academic/next-courses-dialog.tsx` (agregar, subir/bajar, quitar, guardar) y en `src/components/academic/academic-client.tsx` la línea "Siguen: …" por curso y el botón "Cursos siguientes" solo con `canEdit`
 
 **Checkpoint**: gate verde → commit de US2.
 

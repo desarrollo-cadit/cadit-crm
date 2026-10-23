@@ -39,6 +39,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CohortForm } from "@/components/academic/cohort-form";
 import { CourseForm } from "@/components/academic/course-form";
+import { NextCoursesDialog } from "@/components/academic/next-courses-dialog";
 import { TeacherForm } from "@/components/academic/teacher-form";
 import { RoomsPanel } from "@/components/academic/rooms-panel";
 import { notify } from "@/lib/notify";
@@ -333,6 +334,9 @@ export function AcademicClient({
   const [software, setSoftware] = useState<SoftwareDto[]>([]);
   const [categories, setCategories] = useState<CourseCategoryDto[]>([]);
   const [loadError, setLoadError] = useState(false);
+  /** 046 (US2) — Rutas entre cursos: origen → siguientes en orden. */
+  const [rutas, setRutas] = useState<Map<string, string[]>>(new Map());
+  const [rutaDe, setRutaDe] = useState<CourseDto | null>(null);
   const [showCourseForm, setShowCourseForm] = useState<
     { mode: "create" } | { mode: "edit"; course: CourseDto } | null
   >(null);
@@ -498,6 +502,9 @@ export function AcademicClient({
         read<{ software: SoftwareDto[] }>("/api/software", (d) => setSoftware(d.software)),
         read<{ categories: CourseCategoryDto[] }>("/api/course-categories", (d) =>
           setCategories(d.categories)
+        ),
+        read<{ routes: { fromCourseId: string; toCourseIds: string[] }[] }>("/api/course-routes", (d) =>
+          setRutas(new Map(d.routes.map((r) => [r.fromCourseId, r.toCourseIds])))
         ),
       ]);
     } finally {
@@ -891,15 +898,28 @@ export function AcademicClient({
                       </p>
                     )}
                     <p className="mt-0.5 text-xs text-muted-foreground">/cursos/{c.slug}</p>
+                    {/* 046 (US2) — qué se le recomienda a quien lo cursó. */}
+                    {(rutas.get(c.id)?.length ?? 0) > 0 && (
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        Siguen: {rutas.get(c.id)!.map(courseNameFor).join(", ")}
+                      </p>
+                    )}
                   </div>
                   {canEdit && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setShowCourseForm({ mode: "edit", course: c })}
-                    >
-                      Editar
-                    </Button>
+                    <div className="flex shrink-0 items-center gap-1">
+                      {c.kind !== "taller" && (
+                        <Button variant="ghost" size="sm" onClick={() => setRutaDe(c)}>
+                          Cursos siguientes
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowCourseForm({ mode: "edit", course: c })}
+                      >
+                        Editar
+                      </Button>
+                    </div>
                   )}
                 </li>
               ))}
@@ -1023,6 +1043,19 @@ export function AcademicClient({
           onDeleted={(id) => {
             setShowCourseForm(null);
             setCourses((prev) => prev.filter((c) => c.id !== id));
+          }}
+        />
+      )}
+
+      {rutaDe && (
+        <NextCoursesDialog
+          course={rutaDe}
+          courses={courses}
+          initial={rutas.get(rutaDe.id) ?? []}
+          onClose={() => setRutaDe(null)}
+          onSaved={(ids) => {
+            setRutas((prev) => new Map(prev).set(rutaDe.id, ids));
+            setRutaDe(null);
           }}
         />
       )}
