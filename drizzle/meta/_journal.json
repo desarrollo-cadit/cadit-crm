@@ -519,6 +519,13 @@
       "when": 1792768931275,
       "tag": "0073_historial_importado",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1792775653955,
+      "tag": "0074_reportes",
+      "breakpoints": true
     }
   ]
 }

@@ -211,12 +211,12 @@ convencional por fase.
 
 ## Phase 12: User Story 8 — Datos de reportes (P1)
 
-- [ ] T064 [P] [US8] Test en rojo `tests/unit/migracion-reportes.test.ts`: `drizzle/0074_reportes.sql` agrega `course.is_free` y `company.exclude_from_reports` con `if not exists` y default false, y `reportes.ver` solo a `direccion` y `coordinacion` (FR-026, FR-029, FR-030)
-- [ ] T065 [US8] Esquema + 0074 a mano; `reportes.ver` en `src/lib/capabilities.ts` (Dirección y Coordinación; fuera de soporte), `guia.ts`, `roles-client.tsx`; ajustar los tests de capacidades y `seed-roles`
-- [ ] T066 [P] [US8] Test en rojo: `isFree` editable en `PATCH /api/courses/[id]` (`academico.editar`) y `excludeFromReports` en `PATCH /api/companies/[id]` (`empresas.editar`) — esquemas Zod en `src/server/courses.ts` y `src/lib/company.ts`
-- [ ] T067 [US8] Casilla "Gratuito: no cuenta como venta" en `src/components/academic/course-form.tsx` y "Excluir de los reportes" en el formulario de empresa (`src/components/companies/`)
-- [ ] T068 [P] [US8] Test en rojo en `tests/unit/recorrido-comercial.test.ts` y `recorrido-comercial-servidor.test.ts`: la entrada lleva `sellerId` y `companyId` de la compra (inscripción o cursada histórica) (DV-022)
-- [ ] T069 [US8] `sellerId`/`companyId` en `CursadaComercial`, `RegistroHistorico`, la derivación y el loader
+- [x] T064 [P] [US8] Test en rojo `tests/unit/migracion-reportes.test.ts`: `drizzle/0074_reportes.sql` agrega `course.is_free` y `company.exclude_from_reports` con `if not exists` y default false, y `reportes.ver` solo a `direccion` y `coordinacion` (FR-026, FR-029, FR-030)
+- [x] T065 [US8] Esquema + 0074 a mano; `reportes.ver` en `src/lib/capabilities.ts` (Dirección y Coordinación; fuera de soporte), `guia.ts`, `roles-client.tsx`; ajustar los tests de capacidades y `seed-roles`
+- [x] T066 [P] [US8] Test en rojo: `isFree` editable en `PATCH /api/courses/[id]` (`academico.editar`) y `excludeFromReports` en `PATCH /api/companies/[id]` (`empresas.editar`) — esquemas Zod en `src/server/courses.ts` y `src/lib/company.ts`
+- [x] T067 [US8] Casilla "Gratuito: no cuenta como venta" en `src/components/academic/course-form.tsx` y "Excluir de los reportes" en el formulario de empresa (`src/components/companies/`)
+- [x] T068 [P] [US8] Test en rojo en `tests/unit/recorrido-comercial.test.ts` y `recorrido-comercial-servidor.test.ts`: la entrada lleva `sellerId` y `companyId` de la compra (inscripción o cursada histórica) (DV-022)
+- [x] T069 [US8] `sellerId`/`companyId` en `CursadaComercial`, `RegistroHistorico`, la derivación y el loader
 
 **Checkpoint**: gate verde → commit.
 

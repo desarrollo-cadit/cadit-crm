@@ -282,3 +282,28 @@ describe("tipoDeContacto", () => {
     expect(tipoDeContacto(deAna([cursada({ ...EN_CURSO, stageKind: "lost" })]))).toBe("exalumno");
   });
 });
+
+/* ============================================================
+ * 046 US8 (T068; DV-022) — La venta en la entrada del historial
+ * ============================================================ */
+
+describe("historialesComerciales — vendedor y empresa de la compra", () => {
+  it("la entrada lleva el vendedor y la empresa de la PRIMERA compra de ese curso", () => {
+    const [e] = deAna([
+      cursada({ startDate: new Date("2024-03-01"), endDate: new Date("2024-05-01"), sellerId: "sel_1", companyId: "emp_1" }),
+      cursada({ startDate: new Date("2025-03-01"), endDate: new Date("2025-05-01"), sellerId: "sel_2", companyId: null }),
+    ]);
+    expect(e).toMatchObject({ sellerId: "sel_1", companyId: "emp_1" });
+  });
+
+  it("una cursada histórica trae su vendedor y su empresa", () => {
+    const [e] =
+      historialesComerciales([], NOW, [historico({ sellerId: "sel_h", companyId: "emp_h" })]).get("ct_ana") ?? [];
+    expect(e).toMatchObject({ sellerId: "sel_h", companyId: "emp_h" });
+  });
+
+  it("sin datos de venta: null", () => {
+    const [e] = deAna([cursada()]);
+    expect(e).toMatchObject({ sellerId: null, companyId: null });
+  });
+});

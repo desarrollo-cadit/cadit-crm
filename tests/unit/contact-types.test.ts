@@ -37,6 +37,8 @@ function entrada(p: Partial<EntradaDeHistorial>): EntradaDeHistorial {
     ultimoInicioCursado: d,
     veces: 1,
     activo: false,
+    sellerId: null,
+    companyId: null,
     especializacion: null,
     ...p,
   };

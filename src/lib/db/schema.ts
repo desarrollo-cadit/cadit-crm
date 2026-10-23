@@ -354,6 +354,12 @@ export const company = pgTable(
     /** Solo con `credito` (CHECK). Con contado o sin condición, NULL. */
     paymentTermDays: integer("payment_term_days"),
     notes: text("notes"),
+    /**
+     * 046 US8 (FR-030) — "Excluir de los reportes": convenios que la academia
+     * deja afuera de sus métricas (p. ej. ANEP PAEMFE). Sus cursadas no cuentan
+     * en ningún reporte del inicio.
+     */
+    excludeFromReports: boolean("exclude_from_reports").notNull().default(false),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -448,6 +454,12 @@ export const course = pgTable(
      * para que los cursos ya cargados sigan publicándose igual que antes.
      */
     published: boolean("published").notNull().default(true),
+    /**
+     * 046 US8 (FR-029) — "Gratuito: no cuenta como venta". Un curso gratuito
+     * (p. ej. "Revit básico") sale de los reportes de ventas; las cursadas
+     * históricas asociadas a él lo heredan por el curso.
+     */
+    isFree: boolean("is_free").notNull().default(false),
     /**
      * 028 fase 5 (FR-019) — si este curso ENTREGA certificado.
      *

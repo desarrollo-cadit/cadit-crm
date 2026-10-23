@@ -28,6 +28,7 @@ const VACIA: CompanyFields = {
   paymentTerms: null,
   paymentTermDays: null,
   notes: null,
+  excludeFromReports: false,
 };
 
 describe("esUruguay — el país que decide cómo se valida el RUT", () => {

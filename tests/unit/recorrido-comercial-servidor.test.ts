@@ -119,3 +119,14 @@ describe("armarCursadasComerciales", () => {
     expect(filas[1]?.parentEnrollmentId).toBe("madre");
   });
 });
+
+describe("armarCursadasComerciales — la venta (046 US8)", () => {
+  it("pasa el vendedor y la empresa de la inscripción", () => {
+    const base = inscripcion("e1");
+    const [c] = armarCursadasComerciales({
+      ...vacias,
+      inscripciones: [{ ...base, enrollment: { ...base.enrollment, sellerId: "sel_1", companyId: "emp_1" } }],
+    });
+    expect(c).toMatchObject({ sellerId: "sel_1", companyId: "emp_1" });
+  });
+});

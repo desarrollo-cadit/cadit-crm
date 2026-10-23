@@ -51,6 +51,8 @@ export const GET = requireCapability(
       */
       published: c.published,
       grantsCertificate: c.grantsCertificate,
+      // 046 US8 — gratuito: no cuenta como venta en los reportes.
+      isFree: c.isFree,
       // 038 (FR-012) — el editor se precarga de acá: sin el campo, guardar lo borraría.
       certificateDescription: c.certificateDescription,
       minAttendancePct: c.minAttendancePct,

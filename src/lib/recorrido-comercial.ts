@@ -47,6 +47,9 @@ export type CursadaComercial = {
   nuncaDictada: boolean;
   aprobacion: ModuleState;
   certificadoVigente: boolean;
+  /** 046 US8 — el vendedor y la empresa de la inscripción (de la madre, en un módulo). */
+  sellerId?: string | null;
+  companyId?: string | null;
 };
 
 /**
@@ -63,6 +66,9 @@ export type RegistroHistorico = {
   categoryId: string | null;
   takenOn: Date;
   edition: string | null;
+  /** 046 US8 — el vendedor y la empresa asociados en la importación. */
+  sellerId?: string | null;
+  companyId?: string | null;
 };
 
 /**
@@ -114,6 +120,9 @@ export type EntradaDeHistorial = {
    * mejor) y a la vez estar inscripta de nuevo.
    */
   activo: boolean;
+  /** 046 US8 (DV-022) — El vendedor y la empresa de la compra (la primera de ese curso). */
+  sellerId: string | null;
+  companyId: string | null;
   especializacion: { modulosAprobados: number; modulosTotal: number } | null;
 };
 
@@ -137,7 +146,6 @@ export function esCursado(estado: EstadoComercial): boolean {
   return ESTADOS_CURSADOS.includes(estado);
 }
 
-/** El rótulo de una entrada, sin acusar a nadie de reprobar si no hay datos. */
 /**
  * 046 US7 (FR-023) — El tipo de un contacto, derivado de su historial (nunca
  * guardado). Precedencia: alumno activo > exalumno > lead. Un grupo que nunca
@@ -159,6 +167,7 @@ export function tipoDeContacto(historial: readonly Pick<EntradaDeHistorial, "est
   return "lead";
 }
 
+/** El rótulo de una entrada, sin acusar a nadie de reprobar si no hay datos. */
 export function etiquetaDeEntrada(e: Pick<EntradaDeHistorial, "estado" | "sinResultado">): string {
   if (e.estado === "curso_sin_aprobar" && e.sinResultado) return "Cursó · sin resultado cargado";
   return ESTADO_COMERCIAL_LABEL[e.estado];
@@ -250,6 +259,8 @@ export function historialesComerciales(
       ultimoInicioCursado: esCursado(decision.estado) ? c.startDate : null,
       veces: 1,
       activo: decision.estado === "en_curso" || decision.estado === "por_empezar",
+      sellerId: c.sellerId ?? null,
+      companyId: c.companyId ?? null,
       especializacion:
         hijas.length > 0
           ? {
@@ -278,6 +289,8 @@ export function historialesComerciales(
       ultimoInicioCursado: r.takenOn,
       veces: 1,
       activo: false,
+      sellerId: r.sellerId ?? null,
+      companyId: r.companyId ?? null,
       especializacion: null,
     });
   }
@@ -305,13 +318,17 @@ function fusionar(a: EntradaDeHistorial, b: EntradaDeHistorial): EntradaDeHistor
       ? b
       : a;
   const ultimos = [a.ultimoInicioCursado, b.ultimoInicioCursado].filter((d): d is Date => d !== null);
+  const primera = a.primerInicio.getTime() <= b.primerInicio.getTime() ? a : b;
   return {
     ...mejor,
-    primerInicio: a.primerInicio.getTime() <= b.primerInicio.getTime() ? a.primerInicio : b.primerInicio,
+    primerInicio: primera.primerInicio,
     ultimoInicioCursado: ultimos.length
       ? new Date(Math.max(...ultimos.map((d) => d.getTime())))
       : null,
     veces: a.veces + b.veces,
     activo: a.activo || b.activo,
+    // 046 US8 (DV-022) — la venta es la de la PRIMERA compra de ese curso.
+    sellerId: primera.sellerId,
+    companyId: primera.companyId,
   };
 }

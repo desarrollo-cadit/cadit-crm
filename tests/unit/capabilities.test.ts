@@ -344,3 +344,17 @@ describe("045 — marketing.ver / marketing.enviar / marketing.configurar", () =
     }
   });
 });
+
+/** 046 US8 (FR-026) — `reportes.ver`: Dirección y Coordinación, nadie más. */
+describe("046 — reportes.ver", () => {
+  const byKey = (k: string) => SYSTEM_ROLES.find((r) => r.key === k)!;
+  it("Dirección y Coordinación la tienen", () => {
+    expect(byKey("direccion").capabilities).toContain("reportes.ver");
+    expect(byKey("coordinacion").capabilities).toContain("reportes.ver");
+  });
+  it("Soporte, Administración y Ventas no", () => {
+    for (const key of ["soporte", "administracion", "ventas"]) {
+      expect(byKey(key).capabilities, key).not.toContain("reportes.ver");
+    }
+  });
+});

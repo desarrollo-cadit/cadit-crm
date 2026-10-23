@@ -40,6 +40,9 @@ export type InscripcionLeida = {
     attendanceWaiverAt: Date | null;
     attendanceWaiverReason: string | null;
     attendanceWaiverRevokedAt: Date | null;
+    /** 046 US8 — la venta: quién vendió y qué empresa paga. */
+    sellerId?: string | null;
+    companyId?: string | null;
   };
   waiverAuthorName: string | null;
   stageKind: "open" | "won" | "lost";
@@ -135,6 +138,8 @@ export function armarCursadasComerciales(p: PiezasDelRecorrido): CursadaComercia
       nuncaDictada: p.noDictadas.has(enrollment.id),
       aprobacion: state,
       certificadoVigente: certificadoVigente.has(enrollment.id),
+      sellerId: enrollment.sellerId ?? null,
+      companyId: enrollment.companyId ?? null,
     };
   });
 }
@@ -165,6 +170,8 @@ export async function cargarCursadasComerciales(
       attendanceWaiverAt: e.attendanceWaiverAt,
       attendanceWaiverReason: e.attendanceWaiverReason,
       attendanceWaiverRevokedAt: e.attendanceWaiverRevokedAt,
+      sellerId: e.sellerId,
+      companyId: e.companyId,
       waiverAuthorName: schema.user.name,
       stageKind: schema.pipelineStage.kind,
       cohortId: schema.cohort.id,
@@ -265,6 +272,8 @@ export async function cargarCursadasComerciales(
         attendanceWaiverAt: f.attendanceWaiverAt,
         attendanceWaiverReason: f.attendanceWaiverReason,
         attendanceWaiverRevokedAt: f.attendanceWaiverRevokedAt,
+        sellerId: f.sellerId,
+        companyId: f.companyId,
       },
       waiverAuthorName: f.waiverAuthorName,
       stageKind: f.stageKind,
@@ -313,6 +322,8 @@ export async function cargarRegistrosHistoricos(
       categoryId: schema.course.categoryId,
       takenOn: h.takenOn,
       edition: h.edition,
+      sellerId: h.sellerId,
+      companyId: h.companyId,
     })
     .from(h)
     .leftJoin(schema.course, eq(schema.course.id, h.courseId))
@@ -332,6 +343,8 @@ export async function cargarRegistrosHistoricos(
     categoryId: f.catalogName ? f.categoryId : null,
     takenOn: f.takenOn,
     edition: f.edition,
+    sellerId: f.sellerId,
+    companyId: f.companyId,
   }));
 }
 

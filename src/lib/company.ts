@@ -31,6 +31,8 @@ export type CompanyFields = {
   /** Solo con `credito`; con contado (o sin condición) siempre NULL. */
   paymentTermDays: number | null;
   notes: string | null;
+  /** 046 US8 (FR-030) — "Excluir de los reportes": sus cursadas no cuentan en el inicio. */
+  excludeFromReports: boolean;
 };
 
 const texto = (max: number) => z.string().trim().max(max).nullable().optional();
@@ -61,6 +63,7 @@ const camposOpcionales = {
     .nullable()
     .optional(),
   notes: texto(2000),
+  excludeFromReports: z.boolean().optional(),
 };
 
 export const companyCreateSchema = z.object({
@@ -199,6 +202,7 @@ export function resolverEmpresa(
       paymentTerms,
       paymentTermDays: paymentTerms === "credito" ? dias : null,
       notes: limpio(tomar("notes") as string | null),
+      excludeFromReports: (tomar("excludeFromReports") as boolean | null) ?? false,
     },
   };
 }

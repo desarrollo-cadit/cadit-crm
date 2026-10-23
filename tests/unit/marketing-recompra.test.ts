@@ -23,6 +23,8 @@ function compra(courseId: string, inicio: string): EntradaDeHistorial {
     ultimoInicioCursado: d,
     veces: 1,
     activo: false,
+    sellerId: null,
+    companyId: null,
     especializacion: null,
   };
 }

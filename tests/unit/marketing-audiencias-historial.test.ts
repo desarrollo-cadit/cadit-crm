@@ -64,6 +64,8 @@ function entrada(courseId: string, estado: EntradaDeHistorial["estado"]): Entrad
     ultimoInicioCursado: d,
     veces: 1,
     activo: false,
+    sellerId: null,
+    companyId: null,
     especializacion: null,
   };
 }

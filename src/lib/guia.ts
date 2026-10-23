@@ -220,6 +220,11 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
     que: "importar la planilla histórica de cursadas (2020–2024): asociar cursos y vendedores, ver la vista previa, aplicarla y deshacerla. Crea y completa contactos en bloque (nunca pisa un dato): por defecto solo la tiene Dirección",
     donde: "/settings/historial",
   },
+  // 046 US8 — Reportes del inicio.
+  "reportes.ver": {
+    que: "ver la sección Reportes del inicio: cursos más cursados, alumnos por período, empresas, embudo de leads por origen, recompra y ventas por año y por vendedor. Los ingresos por curso aparecen solo si además tiene ver cobranza. Por defecto la tienen Dirección y Coordinación",
+    donde: "/",
+  },
 };
 
 /**
@@ -253,7 +258,8 @@ export const GRUPOS_CAPACIDADES: readonly {
   },
   { titulo: "Conversaciones", incluye: (c) => c.startsWith("inbox.") },
   // 046 US6 — importar el historial es una operación de la plataforma.
-  { titulo: "Plataforma", incluye: (c) => /^(configuracion|accesos|alumnos|areas|historial)\./.test(c) },
+  // 046 US8 — los reportes también van con la plataforma.
+  { titulo: "Plataforma", incluye: (c) => /^(configuracion|accesos|alumnos|areas|historial|reportes)\./.test(c) },
 ];
 
 /**

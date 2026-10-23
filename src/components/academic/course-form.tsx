@@ -137,6 +137,8 @@ export function CourseForm({
   const [grantsCertificate, setGrantsCertificate] = useState(
     initial?.grantsCertificate ?? true
   );
+  // 046 US8 (FR-029) — un curso gratuito no cuenta como venta en los reportes.
+  const [isFree, setIsFree] = useState(initial?.isFree ?? false);
   /** 009/010 — default de asistencia mínima para las cohortes de este curso. */
   // 038 (FR-012) — el párrafo del certificado del curso o del módulo.
   const [certificateDescription, setCertificateDescription] = useState(
@@ -151,7 +153,7 @@ export function CourseForm({
     {
       name, kind, slug, tagline, description, categoryId, level, modality,
       durationWeeks, hoursPerWeek, imageUrl, imageFile, syllabusUrl, objectives,
-      targetAudience, newCategory, published, grantsCertificate,
+      targetAudience, newCategory, published, grantsCertificate, isFree,
       certificateDescription, minAttendancePct,
       modules: modules.map((m) => ({ title: m.title, topics: m.topics })),
     },
@@ -271,6 +273,7 @@ export function CourseForm({
       targetAudience: targetAudience.trim() || null,
       published,
       grantsCertificate,
+      isFree,
       certificateDescription: certificateDescription.trim() || null,
       minAttendancePct: minAttendancePct.trim() ? Number(minAttendancePct) : null,
       // Omitir `modules` deja el temario como está; mandarlo lo reemplaza.
@@ -407,6 +410,21 @@ export function CourseForm({
                 una especialización: se cursan, se aprueban y su aprobación
                 sigue contando para el certificado general del programa, pero
                 no emiten uno propio.
+              </span>
+            </span>
+          </label>
+
+          <label className="flex items-start gap-2.5 rounded-md border p-3">
+            <Checkbox
+              className="mt-0.5"
+              checked={isFree}
+              onChange={(e) => setIsFree(e.target.checked)}
+            />
+            <span className="space-y-0.5">
+              <span className="block text-sm font-medium">Gratuito: no cuenta como venta</span>
+              <span className="block text-xs text-muted-foreground">
+                Tildalo en los cursos sin costo (por ejemplo, un básico de regalo): se
+                cursan igual, pero los reportes de ventas del inicio no los cuentan.
               </span>
             </span>
           </label>

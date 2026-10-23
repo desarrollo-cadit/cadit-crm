@@ -49,6 +49,7 @@ export function serializeCompany(c: CompanyRow): CompanyDto {
     paymentTerms: c.paymentTerms,
     paymentTermDays: c.paymentTermDays,
     notes: c.notes,
+    excludeFromReports: c.excludeFromReports,
   };
 }
 
