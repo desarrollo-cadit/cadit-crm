@@ -193,6 +193,34 @@ describe("assignLicense (T028, FR-003)", () => {
   });
 });
 
+/**
+ * 2026-10-23 — "Tenía licencia propia": no se le presta una. Se rechaza antes
+ * de mirar el stock (422 `licencia_propia`), también en la hija de un módulo
+ * cuya madre la tiene marcada.
+ */
+describe("assignLicense con licencia propia", () => {
+  it("la inscripción con la marca → 422 licencia_propia, sin tocar nada", async () => {
+    const { assignLicense } = await import("@/server/licenses");
+    selectQueue.push([{ id: "enr_1", parentEnrollmentId: null, hadOwnLicense: true }]);
+    const result = await assignLicense("org_1", "enr_1", "sw_1");
+    expect(result).toMatchObject({ ok: false, status: 422, code: "licencia_propia" });
+    expect(inserts).toHaveLength(0);
+    expect(updates).toHaveLength(0);
+    expect(selectQueue).toHaveLength(0);
+  });
+
+  it("la hija de un módulo cuya madre tiene la marca → 422 licencia_propia", async () => {
+    const { assignLicense } = await import("@/server/licenses");
+    selectQueue.push(
+      [{ id: "enr_hija", parentEnrollmentId: "enr_madre", hadOwnLicense: false }],
+      [{ hadOwnLicense: true }]
+    );
+    const result = await assignLicense("org_1", "enr_hija", "sw_1");
+    expect(result).toMatchObject({ ok: false, status: 422, code: "licencia_propia" });
+    expect(inserts).toHaveLength(0);
+  });
+});
+
 describe("034 (FR-020) — varias licencias por inscripción", () => {
   it("un segundo programa AGREGA una licencia: no mueve la que había", async () => {
     const { assignLicense } = await import("@/server/licenses");
@@ -228,6 +256,7 @@ describe("034 (FR-020) — varias licencias por inscripción", () => {
     const { assignLicense } = await import("@/server/licenses");
     selectQueue.push(
       [{ id: "enr_hija", parentEnrollmentId: "enr_madre" }],
+      [{ hadOwnLicense: false }], // 2026-10-23 — la madre no trajo la suya
       [{ name: "Revit", totalLicenses: 5 }],
       [],
       [],

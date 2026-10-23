@@ -7,6 +7,7 @@ import { licenciaOcupada, licenciasRepetidasEnRecorrido } from "@/lib/license-ru
 import { licenciaDelGrupoBloquea, MENSAJE_LICENCIA_DEL_GRUPO } from "@/lib/group-licenses";
 import { normalizarCorreo } from "@/lib/contact-identity";
 import { correoDeLicencia } from "@/lib/license-email";
+import { MENSAJE_LICENCIA_PROPIA_ASIGNAR } from "@/lib/terminos-licencia";
 
 /**
  * 005 (T028, DV-004, US4) — pool de licencias por software: disponibles =
@@ -143,8 +144,33 @@ export type AssignLicenseResult =
       warnings: string[];
     }
   | { ok: false; status: 404; code: "not_found"; message: string }
-  | { ok: false; status: 422; code: "invalid_body"; message: string }
+  | { ok: false; status: 422; code: "invalid_body" | "licencia_propia"; message: string }
   | { ok: false; status: 409; code: "no_stock" | "asignado_al_grupo"; message: string };
+
+/**
+ * 2026-10-23 — ¿Trajo su propia licencia? La marca de la inscripción o, en la
+ * hija de un módulo, la de su madre (la marca vale para todo el recorrido; en
+ * el roster de la especialización se tilda en la madre).
+ */
+export async function tieneLicenciaPropia(
+  organizationId: string,
+  e: { hadOwnLicense: boolean; parentEnrollmentId: string | null }
+): Promise<boolean> {
+  if (e.hadOwnLicense) return true;
+  if (!e.parentEnrollmentId) return false;
+  const [madre] = await getDb()
+    .select({ hadOwnLicense: schema.enrollment.hadOwnLicense })
+    .from(schema.enrollment)
+    .where(
+      scoped(
+        schema.enrollment.organizationId,
+        organizationId,
+        eq(schema.enrollment.id, e.parentEnrollmentId)
+      )
+    )
+    .limit(1);
+  return Boolean(madre?.hadOwnLicense);
+}
 
 /**
  * 005 (T028, FR-003) — asigna una licencia de `softwareId` a la inscripción;
@@ -169,6 +195,7 @@ export async function assignLicense(
       id: schema.enrollment.id,
       parentEnrollmentId: schema.enrollment.parentEnrollmentId,
       cohortId: schema.enrollment.cohortId,
+      hadOwnLicense: schema.enrollment.hadOwnLicense,
     })
     .from(schema.enrollment)
     .where(
@@ -181,6 +208,22 @@ export async function assignLicense(
     .limit(1);
   if (!enrollmentRows[0]) {
     return { ok: false, status: 404, code: "not_found", message: "Inscripción no encontrada" };
+  }
+
+  // 2026-10-23 — "Tenía licencia propia" (de la inscripción o, en la hija de
+  // un módulo, de su madre): no se le presta una. Antes de tocar el stock.
+  if (
+    await tieneLicenciaPropia(organizationId, {
+      hadOwnLicense: enrollmentRows[0].hadOwnLicense,
+      parentEnrollmentId: enrollmentRows[0].parentEnrollmentId ?? null,
+    })
+  ) {
+    return {
+      ok: false,
+      status: 422,
+      code: "licencia_propia",
+      message: MENSAJE_LICENCIA_PROPIA_ASIGNAR,
+    };
   }
 
   // 035 (FR-008) — Lo del grupo no se asigna por alumno, por ninguna vía.

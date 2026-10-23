@@ -18,6 +18,7 @@ import {
   type SendEnrollmentEmailResult,
 } from "@/server/email/enrollment-emails";
 import { getCohortRoster, type RosterEntryDto } from "@/server/enrollments";
+import { destinoDeTerminos, type MotivoSinTerminos } from "@/lib/terminos-licencia";
 
 /**
  * 2026-10-05 — Envío masivo por cohorte: términos de la licencia ATC,
@@ -59,6 +60,14 @@ export type BulkCandidate = {
   portalLink: { suspended: boolean } | null;
   /** Dado de baja (contacto archivado): su inscripción sigue en el roster. */
   withdrawn: boolean;
+  /**
+   * 2026-10-23 — Para los términos (`destinoDeTerminos`): licencia asignada
+   * (propia o de sus módulos), "Tenía licencia propia" (suya o de la madre) y
+   * el correo de la licencia ya resuelto por `correoDeLicencia`.
+   */
+  licenseAssigned: boolean;
+  hadOwnLicense: boolean;
+  licenseEmail: string | null;
 };
 
 export type BulkPartition = {
@@ -75,6 +84,12 @@ export type BulkPartition = {
    * envío que falló, es una persona a la que no corresponde escribirle.
    */
   withdrawn: string[];
+  /**
+   * 2026-10-23 — Solo términos: no corresponde mandárselos (licencia propia,
+   * sin licencia asignada o sin correo para la licencia). Se registran como
+   * salteados, con el motivo de `destinoDeTerminos`.
+   */
+  notEligible: string[];
 };
 
 /**
@@ -90,7 +105,22 @@ export function candidatesFromRoster(entries: readonly RosterEntryDto[]): BulkCa
     welcomeEmailSentAt: e.welcomeEmailSentAt ? new Date(e.welcomeEmailSentAt) : null,
     portalLink: e.portalAccess.granted ? { suspended: e.portalAccess.suspended } : null,
     withdrawn: e.contact.archived,
+    // La misma "licencia asignada" que el roster pinta en verde: la de la
+    // inscripción o la de alguno de sus módulos (especialización).
+    licenseAssigned:
+      e.checklist.licenseAssigned || Boolean(e.moduleLicenses?.some((l) => l.licenseAssigned)),
+    hadOwnLicense: e.checklist.hadOwnLicense || e.parentHadOwnLicense,
+    licenseEmail: e.licenseEmail.email,
   }));
+}
+
+/** Los términos de este candidato: a qué correo, o por qué no. */
+function destinoDe(c: BulkCandidate) {
+  return destinoDeTerminos({
+    licenseAssigned: c.licenseAssigned,
+    hadOwnLicense: c.hadOwnLicense,
+    licenseEmail: c.licenseEmail,
+  });
 }
 
 export function partitionRecipients(
@@ -103,6 +133,7 @@ export function partitionRecipients(
     hasAccess: [],
     withoutEmail: [],
     withdrawn: [],
+    notEligible: [],
   };
   for (const c of candidates) {
     // Antes que cualquier otra regla: a quien se fue no se le escribe.
@@ -118,7 +149,12 @@ export function partitionRecipients(
     }
     const marca = kind === "terms" ? c.termsEmailSentAt : c.welcomeEmailSentAt;
     if (marca) p.alreadySent.push(c.enrollmentId);
-    else if (!c.hasEmail) p.withoutEmail.push(c.enrollmentId);
+    // 2026-10-23 — Los términos van a quien tiene licencia prestada, al
+    // correo de la licencia: el del alumno no decide nada acá.
+    else if (kind === "terms") {
+      if (destinoDe(c).ok) p.toSend.push(c.enrollmentId);
+      else p.notEligible.push(c.enrollmentId);
+    } else if (!c.hasEmail) p.withoutEmail.push(c.enrollmentId);
     else p.toSend.push(c.enrollmentId);
   }
   return p;
@@ -127,7 +163,7 @@ export function partitionRecipients(
 export type RecipientRow = {
   enrollmentId: string;
   position: number;
-  outcome: "pending" | "skipped_already_sent" | "skipped_has_access";
+  outcome: "pending" | "skipped_already_sent" | "skipped_has_access" | "skipped_not_eligible";
   message: string | null;
 };
 
@@ -144,6 +180,7 @@ export function recipientRows(
   const destino = new Set([...p.toSend, ...p.withoutEmail]);
   const yaEnviado = new Set(p.alreadySent);
   const conAcceso = new Set(p.hasAccess);
+  const noCorresponde = new Set(p.notEligible);
   const filas: RecipientRow[] = [];
   candidates.forEach((c, position) => {
     const fila = { enrollmentId: c.enrollmentId, position };
@@ -156,6 +193,13 @@ export function recipientRows(
         ...fila,
         outcome: "skipped_has_access",
         message: c.portalLink?.suspended ? ACCESO_SUSPENDIDO : YA_TIENE_ACCESO,
+      });
+    } else if (noCorresponde.has(c.enrollmentId)) {
+      const destino = destinoDe(c);
+      filas.push({
+        ...fila,
+        outcome: "skipped_not_eligible",
+        message: destino.ok ? null : destino.mensaje,
       });
     }
   });
@@ -360,7 +404,28 @@ export type BulkCounts = {
   hasAccess: number;
   withoutEmail: number;
   withdrawn: number;
+  /** 2026-10-23 — Solo términos: a quién no le corresponden, por motivo. */
+  notEligible: Record<MotivoSinTerminos, number>;
 };
+
+/** Cuántos no corresponden, por motivo (para la confirmación). */
+export function contarNoCorresponde(
+  candidates: readonly BulkCandidate[],
+  p: BulkPartition
+): Record<MotivoSinTerminos, number> {
+  const cuenta: Record<MotivoSinTerminos, number> = {
+    licencia_propia: 0,
+    sin_licencia: 0,
+    sin_correo_licencia: 0,
+  };
+  const ids = new Set(p.notEligible);
+  for (const c of candidates) {
+    if (!ids.has(c.enrollmentId)) continue;
+    const destino = destinoDe(c);
+    if (!destino.ok) cuenta[destino.motivo]++;
+  }
+  return cuenta;
+}
 
 export type BulkRunRecipientDto = {
   enrollmentId: string;
@@ -395,7 +460,8 @@ type Result<T> =
   | { ok: false; status: 404 | 409 | 422; code: string; message: string };
 
 const NADA_PARA_ENVIAR: Record<BulkSendKind, string> = {
-  terms: "Todos los alumnos del grupo con correo ya recibieron los términos de la licencia.",
+  terms:
+    "No hay a quién mandarle los términos: solo van a quien tiene una licencia asignada (no propia) y correo para la licencia, y no los recibió todavía.",
   welcome: "Todos los alumnos del grupo con correo ya recibieron la bienvenida.",
   portal_access:
     "No hay alumnos para invitar: quienes tienen correo cargado ya tienen acceso al portal.",
@@ -438,6 +504,7 @@ export async function bulkSendOverview(
         hasAccess: p.hasAccess.length,
         withoutEmail: p.withoutEmail.length,
         withdrawn: p.withdrawn.length,
+        notEligible: contarNoCorresponde(candidates, p),
       },
       blockedReason:
         kind === "welcome" && !roster.cohort.whatsappGroupLink ? SIN_ENLACE_DEL_GRUPO : null,
@@ -630,6 +697,7 @@ export async function getBulkRun(
     sent: 0,
     skipped_already_sent: 0,
     skipped_has_access: 0,
+    skipped_not_eligible: 0,
     failed: 0,
   };
   for (const d of destinatarios) totals[d.recipient.outcome]++;

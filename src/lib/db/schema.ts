@@ -1272,6 +1272,10 @@ export const BULK_SEND_OUTCOMES = [
   "sent",
   "skipped_already_sent",
   "skipped_has_access",
+  // 2026-10-23 — Términos: no le corresponden (licencia propia, sin licencia
+  // asignada o sin correo para la licencia). El motivo va en `message`. La
+  // columna es texto: no hace falta migración.
+  "skipped_not_eligible",
   "failed",
 ] as const;
 export type BulkSendOutcome = (typeof BULK_SEND_OUTCOMES)[number];

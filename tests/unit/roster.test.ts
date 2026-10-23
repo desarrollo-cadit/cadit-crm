@@ -44,6 +44,20 @@ vi.mock("@/lib/db", () => ({
   ),
 }));
 
+/**
+ * 2026-10-23 — "Tenía licencia propia" y las licencias del grupo: la
+ * verificación y la sincronización viven en `group-licenses.ts` (el único,
+ * con `licenses.ts`, que escribe `license`). Acá se mira que
+ * `updateChecklist` las llame en el orden correcto.
+ */
+const verificarMarca = vi.fn();
+const sincronizar = vi.fn();
+vi.mock("@/server/group-licenses", () => ({
+  verificarMarcaDeLicenciaPropia: (...a: unknown[]) => verificarMarca(...a),
+  sincronizarRecorrido: (...a: unknown[]) => sincronizar(...a),
+  listarProgramasDelGrupo: async () => [],
+}));
+
 const baseEnrollment = {
   id: "enr_1",
   amount: 7600000,
@@ -170,14 +184,19 @@ describe("buildRosterEntry — DTO por capacidad (FR-016)", () => {
 describe("updateChecklist (T023, FR-013)", () => {
   beforeEach(() => {
     updates.length = 0;
+    verificarMarca.mockReset();
+    sincronizar.mockReset();
+    verificarMarca.mockResolvedValue({ ok: true });
+    sincronizar.mockResolvedValue({ sinStock: [] });
   });
 
   it("persiste cada campo del checklist independientemente, sin tocar los omitidos", async () => {
     const { updateChecklist } = await import("@/server/enrollments");
-    await updateChecklist("org_1", "enr_1", {
+    const r = await updateChecklist("org_1", "enr_1", {
       termsEmailSentAt: "now",
       hadOwnLicense: true,
     });
+    expect(r.ok).toBe(true);
 
     expect(updates).toHaveLength(1);
     const set = updates[0]!.set as Record<string, unknown>;
@@ -193,6 +212,42 @@ describe("updateChecklist (T023, FR-013)", () => {
 
     const set = updates[0]!.set as Record<string, unknown>;
     expect(set.academiaOnlineAccessAt).toBeNull();
+    // Sin tocar la marca, nada de licencias.
+    expect(verificarMarca).not.toHaveBeenCalled();
+    expect(sincronizar).not.toHaveBeenCalled();
+  });
+
+  it("marcar licencia propia con una licencia individual asignada → 409, sin escribir", async () => {
+    verificarMarca.mockResolvedValue({ ok: false, mensaje: "liberala primero" });
+    const { updateChecklist } = await import("@/server/enrollments");
+    const r = await updateChecklist("org_1", "enr_1", { hadOwnLicense: true });
+    expect(r).toEqual({
+      ok: false,
+      status: 409,
+      code: "licencia_asignada",
+      message: "liberala primero",
+    });
+    expect(updates).toHaveLength(0);
+    expect(sincronizar).not.toHaveBeenCalled();
+  });
+
+  it("marcar licencia propia sincroniza el grupo DESPUÉS de escribir la marca (libera las del grupo)", async () => {
+    verificarMarca.mockResolvedValue({ ok: true });
+    sincronizar.mockImplementation(async () => {
+      expect(updates).toHaveLength(1);
+      return { sinStock: [] };
+    });
+    const { updateChecklist } = await import("@/server/enrollments");
+    await updateChecklist("org_1", "enr_1", { hadOwnLicense: true });
+    expect(verificarMarca).toHaveBeenCalledWith("org_1", "enr_1");
+    expect(sincronizar).toHaveBeenCalledWith("org_1", "enr_1");
+  });
+
+  it("desmarcarla no verifica nada y vuelve a dar las del grupo", async () => {
+    const { updateChecklist } = await import("@/server/enrollments");
+    await updateChecklist("org_1", "enr_1", { hadOwnLicense: false });
+    expect(verificarMarca).toHaveBeenCalledTimes(0);
+    expect(sincronizar).toHaveBeenCalledTimes(1);
   });
 });
 

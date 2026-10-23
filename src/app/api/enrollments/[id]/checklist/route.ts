@@ -25,8 +25,11 @@ export const PATCH = requireCapability(
   const body = await parseBody(req, patchSchema);
   if (!body.ok) return body.response;
 
-  const updated = await updateChecklist(session.organizationId, id, body.data);
-  if (!updated) return apiError(404, "not_found", "Inscripción no encontrada");
+  // 2026-10-23 — Marcar "Tenía licencia propia" con una licencia individual
+  // asignada responde 409 `licencia_asignada` (que la liberen primero).
+  const result = await updateChecklist(session.organizationId, id, body.data);
+  if (!result.ok) return apiError(result.status, result.code, result.message);
+  const updated = result.enrollment;
 
   return Response.json({
     enrollment: {

@@ -1,4 +1,6 @@
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
+import { necesitaLicencia } from "@/lib/terminos-licencia";
+import { alias } from "drizzle-orm/pg-core";
 import { getDb, schema } from "@/lib/db";
 import type { Currency } from "@/lib/db/schema";
 import { newId } from "@/lib/db/ids";
@@ -32,6 +34,8 @@ import { resumirLicencias } from "@/lib/license-rules";
 import {
   listarProgramasDelGrupo,
   sincronizarLicenciasDelGrupo,
+  sincronizarRecorrido,
+  verificarMarcaDeLicenciaPropia,
   type GroupLicenseDto,
 } from "@/server/group-licenses";
 import { softwareDelGrupo } from "@/server/licenses";
@@ -432,6 +436,12 @@ export type RosterEntryDto = {
    */
   licenseEmail: { email: string | null; distinto: boolean; propio: string | null };
   /**
+   * 2026-10-23 — La hija de un módulo cuya MADRE tiene marcada "Tenía licencia
+   * propia". La marca vale para todo el recorrido: no se le asigna licencia
+   * ni se le mandan los términos. Falso en una inscripción sin madre.
+   */
+  parentHadOwnLicense: boolean;
+  /**
    * 012 (T017/T017d) — Acceso al portal del alumno.
    *
    * `blockedReason` viaja en el DTO para que la pantalla pueda decir POR QUÉ
@@ -496,7 +506,12 @@ export function buildRosterEntry(
   /** 2026-10-06 — el vendedor de la inscripción; `null` = sin vendedor. */
   seller: Pick<typeof schema.seller.$inferSelect, "id" | "name" | "archivedAt"> | null = null,
   /** 033 (FR-004) — el tipo del curso de la cohorte: un taller no lleva vendedor. */
-  courseKind: CourseKind | null = null
+  courseKind: CourseKind | null = null,
+  /**
+   * 2026-10-23 — La madre, si es la hija de un módulo: su correo de licencia
+   * se hereda (`correoDeLicencia`) y su "Tenía licencia propia" también.
+   */
+  parent: { licenseEmail: string | null; hadOwnLicense: boolean } | null = null
 ): RosterEntryDto {
   const licencias = resumirLicencias(
     license === null ? [] : "softwareId" in license ? [license] : license
@@ -526,10 +541,15 @@ export function buildRosterEntry(
     },
     welcomeEmailSentAt: enrollment.welcomeEmailSentAt?.toISOString() ?? null,
     licenseEmail: {
-      ...correoDeLicencia({ licenseEmail: enrollment.licenseEmail, contactEmail: contact.email }),
+      ...correoDeLicencia({
+        licenseEmail: enrollment.licenseEmail,
+        parentLicenseEmail: parent?.licenseEmail ?? null,
+        contactEmail: contact.email,
+      }),
       // Lo cargado a mano (para editarlo); null = usa el del alumno.
       propio: enrollment.licenseEmail,
     },
+    parentHadOwnLicense: parent?.hadOwnLicense ?? false,
   };
   if (!capabilities.includes("cobranza.ver")) return base;
   return {
@@ -591,6 +611,8 @@ export async function getCohortRoster(
       )
     );
 
+  // 2026-10-23 — La madre (especialización) de una hija de módulo, en un join.
+  const inscripcionMadre = alias(schema.enrollment, "inscripcion_madre");
   const rows = await db
     .select({
       enrollment: schema.enrollment,
@@ -602,11 +624,19 @@ export async function getCohortRoster(
         name: schema.seller.name,
         archivedAt: schema.seller.archivedAt,
       },
+      // 2026-10-23 — La madre de una hija de módulo (correo de licencia y
+      // "Tenía licencia propia" se heredan).
+      parent: {
+        id: inscripcionMadre.id,
+        licenseEmail: inscripcionMadre.licenseEmail,
+        hadOwnLicense: inscripcionMadre.hadOwnLicense,
+      },
     })
     .from(schema.enrollment)
     .innerJoin(schema.contact, eq(schema.enrollment.contactId, schema.contact.id))
     .leftJoin(schema.license, eq(schema.license.enrollmentId, schema.enrollment.id))
     .leftJoin(schema.seller, eq(schema.seller.id, schema.enrollment.sellerId))
+    .leftJoin(inscripcionMadre, eq(inscripcionMadre.id, schema.enrollment.parentEnrollmentId))
     // 012 — el acceso al portal es del CONTACTO, no de la inscripción: la
     // misma persona puede cursar tres veces y entra con una sola cuenta. Va
     // como join y no como consulta por fila para no volver la lista un N+1.
@@ -650,7 +680,10 @@ export async function getCohortRoster(
       licencias,
       r.accountLink,
       r.seller,
-      cohort.courseKind
+      cohort.courseKind,
+      r.parent?.id
+        ? { licenseEmail: r.parent.licenseEmail, hadOwnLicense: r.parent.hadOwnLicense }
+        : null
     )
   );
 
@@ -865,9 +898,19 @@ export { csvField };
  * y acá el pedido es explícito: sin monto/factura/checklist/teléfono en el
  * archivo exportado).
  */
+export type ExportVariant = "comun" | "licenciamiento";
+
+/**
+ * 2026-10-23 — `licenciamiento`: las MISMAS columnas, pero solo las
+ * inscripciones que necesitan una licencia prestada (`necesitaLicencia`, la
+ * misma regla que los términos) y con el correo de la LICENCIA
+ * (`correoDeLicencia`) en la columna del correo. Lo que se agrega acá son
+ * datos que el roster ya muestra a quien puede exportar (`inscripciones.ver`).
+ */
 export async function exportCohortRosterCsv(
   organizationId: string,
-  cohortId: string
+  cohortId: string,
+  variant: ExportVariant = "comun"
 ): Promise<string | null> {
   const db = getDb();
   const cohortRows = await db
@@ -879,10 +922,13 @@ export async function exportCohortRosterCsv(
 
   const rows = await db
     .select({
+      id: schema.enrollment.id,
       firstName: schema.contact.firstName,
       lastName: schema.contact.lastName,
       email: schema.contact.email,
       licenseEmail: schema.enrollment.licenseEmail,
+      hadOwnLicense: schema.enrollment.hadOwnLicense,
+      parentEnrollmentId: schema.enrollment.parentEnrollmentId,
     })
     .from(schema.enrollment)
     .innerJoin(schema.contact, eq(schema.enrollment.contactId, schema.contact.id))
@@ -895,22 +941,94 @@ export async function exportCohortRosterCsv(
     )
     .orderBy(asc(schema.contact.firstName));
 
-  // 2026-10-21 — `correo_licencia` sale de `correoDeLicencia` (license_email ?? correo).
-  const lines = [
-    "nombre,apellido,correo,correo_licencia",
-    ...rows.map((r) =>
-      [
-        csvField(r.firstName),
-        csvField(r.lastName),
-        csvField(r.email),
-        csvField(
+  const linea = (r: (typeof rows)[number], correo: string | null, correoLicencia: string | null) =>
+    [
+      csvField(r.firstName),
+      csvField(r.lastName),
+      csvField(correo),
+      csvField(correoLicencia),
+    ].join(",");
+
+  if (variant === "comun") {
+    // 2026-10-21 — `correo_licencia` sale de `correoDeLicencia` (license_email ?? correo).
+    return [
+      CSV_HEADER,
+      ...rows.map((r) =>
+        linea(
+          r,
+          r.email,
           correoDeLicencia({ licenseEmail: r.licenseEmail ?? null, contactEmail: r.email }).email
-        ),
-      ].join(",")
-    ),
+        )
+      ),
+    ].join("\r\n");
+  }
+
+  // Licenciamiento: la madre de cada hija de módulo (hereda correo y marca) y
+  // quién tiene alguna licencia asignada, propia o de una hija suya.
+  const parentIds = [
+    ...new Set(rows.flatMap((r) => (r.parentEnrollmentId ? [r.parentEnrollmentId] : []))),
   ];
-  return lines.join("\r\n");
+  const madres = parentIds.length
+    ? await db
+        .select({
+          id: schema.enrollment.id,
+          licenseEmail: schema.enrollment.licenseEmail,
+          hadOwnLicense: schema.enrollment.hadOwnLicense,
+        })
+        .from(schema.enrollment)
+        .where(
+          scoped(
+            schema.enrollment.organizationId,
+            organizationId,
+            inArray(schema.enrollment.id, parentIds)
+          )
+        )
+    : [];
+  const madrePorId = new Map(madres.map((m) => [m.id, m]));
+  const ids = rows.map((r) => r.id);
+  const asignadas = ids.length
+    ? await db
+        .select({
+          enrollmentId: schema.license.enrollmentId,
+          parentEnrollmentId: schema.enrollment.parentEnrollmentId,
+        })
+        .from(schema.license)
+        .innerJoin(schema.enrollment, eq(schema.license.enrollmentId, schema.enrollment.id))
+        .where(
+          scoped(
+            schema.license.organizationId,
+            organizationId,
+            eq(schema.license.assigned, true),
+            or(
+              inArray(schema.license.enrollmentId, ids),
+              inArray(schema.enrollment.parentEnrollmentId, ids)
+            )
+          )
+        )
+    : [];
+  const conLicencia = new Set(
+    asignadas.flatMap((a) => [a.enrollmentId, ...(a.parentEnrollmentId ? [a.parentEnrollmentId] : [])])
+  );
+
+  const lineas: string[] = [];
+  for (const r of rows) {
+    const madre = r.parentEnrollmentId ? madrePorId.get(r.parentEnrollmentId) : undefined;
+    const necesita = necesitaLicencia({
+      licenseAssigned: conLicencia.has(r.id),
+      hadOwnLicense: r.hadOwnLicense || Boolean(madre?.hadOwnLicense),
+    });
+    if (!necesita) continue;
+    const correo = correoDeLicencia({
+      licenseEmail: r.licenseEmail ?? null,
+      parentLicenseEmail: madre?.licenseEmail ?? null,
+      contactEmail: r.email,
+    }).email;
+    lineas.push(linea(r, correo, correo));
+  }
+  return [CSV_HEADER, ...lineas].join("\r\n");
 }
+
+const CSV_HEADER = "nombre,apellido,correo,correo_licencia";
 
 /** 005 (T023, FR-013/FR-014) — checklist de onboarding, accesible a cualquier rol. */
 export type ChecklistInput = {
@@ -920,11 +1038,31 @@ export type ChecklistInput = {
   academiaOnlineAccessAt?: "now" | null;
 };
 
+export type UpdateChecklistResult =
+  | { ok: true; enrollment: typeof schema.enrollment.$inferSelect }
+  | { ok: false; status: 404; code: "not_found"; message: string }
+  | { ok: false; status: 409; code: "licencia_asignada"; message: string };
+
+/**
+ * 2026-10-23 — "Tenía licencia propia" y las licencias ya asignadas
+ * (`planMarcarLicenciaPropia`): con una INDIVIDUAL asignada se rechaza (409
+ * `licencia_asignada`, que la liberen primero); las del GRUPO se devuelven al
+ * stock al sincronizar, porque quien trajo la suya deja de ser del grupo a
+ * efectos de licencias. Desmarcarla vuelve a darle las del grupo (si hay
+ * stock). La verificación va ANTES de escribir: devolver un error no revierte
+ * la transacción del pedido.
+ */
 export async function updateChecklist(
   organizationId: string,
   enrollmentId: string,
   input: ChecklistInput
-) {
+): Promise<UpdateChecklistResult> {
+  if (input.hadOwnLicense === true) {
+    const marca = await verificarMarcaDeLicenciaPropia(organizationId, enrollmentId);
+    if (!marca.ok) {
+      return { ok: false, status: 409, code: "licencia_asignada", message: marca.mensaje };
+    }
+  }
   const db = getDb();
   const now = new Date();
   const set: Record<string, unknown> = { updatedAt: now };
@@ -952,7 +1090,16 @@ export async function updateChecklist(
       )
     )
     .returning();
-  return updated[0] ?? null;
+  const enrollment = updated[0];
+  if (!enrollment) {
+    return { ok: false, status: 404, code: "not_found", message: "Inscripción no encontrada" };
+  }
+  // Con la marca ya escrita: libera las del grupo (marcar) o las vuelve a dar
+  // (desmarcar), en la inscripción y en sus módulos.
+  if (input.hadOwnLicense !== undefined) {
+    await sincronizarRecorrido(organizationId, enrollmentId);
+  }
+  return { ok: true, enrollment };
 }
 
 export function serializeEnrollmentCommercial(

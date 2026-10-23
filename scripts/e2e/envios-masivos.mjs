@@ -83,14 +83,31 @@ export async function seccionEnviosMasivos({ api, ok, BASE }) {
     JSON.stringify({ cohortId, enrA, enrB, enrC })
   );
 
+  // ---- 2026-10-23 — Los términos van solo a quien tiene licencia asignada
+  // (no propia) y al correo de la licencia. Los tres reciben una licencia;
+  // Ceci no tiene correo, así que no hay correo para su licencia.
+  const swMasivo = (
+    await api("/api/software", {
+      method: "POST",
+      body: JSON.stringify({ name: `Masivo lic ${sello}`, totalLicenses: 5 }),
+    })
+  ).json?.software?.id;
+  for (const enr of [enrA, enrB, enrC]) {
+    const r = await api(`/api/enrollments/${enr}/license`, {
+      method: "PUT",
+      body: JSON.stringify({ softwareId: swMasivo }),
+    });
+    ok("setup: licencia asignada", r.res.status === 200, `${r.res.status} ${JSON.stringify(r.json)}`);
+  }
+
   // ---- Vista previa: a quién le llegaría cada correo.
   const previa = await api(`/api/cohorts/${cohortId}/emails/bulk`);
   const terminos = previa.json?.kinds?.find((k) => k.kind === "terms");
   const bienvenida = previa.json?.kinds?.find((k) => k.kind === "welcome");
   ok(
-    "vista previa de términos: 2 a enviar, 1 sin correo, 0 ya enviados",
+    "vista previa de términos: 2 a enviar, 1 sin correo para la licencia, 0 ya enviados",
     terminos?.counts?.toSend === 2 &&
-      terminos.counts.withoutEmail === 1 &&
+      terminos.counts.notEligible?.sin_correo_licencia === 1 &&
       terminos.counts.alreadySent === 0,
     JSON.stringify(terminos?.counts)
   );
@@ -122,10 +139,37 @@ export async function seccionEnviosMasivos({ api, ok, BASE }) {
   ok(
     "cada destinatario queda registrado con su motivo: ninguno figura como enviado",
     corrida?.totals?.sent === 0 &&
-      corrida.totals.failed === 3 &&
+      corrida.totals.failed === 2 &&
       Boolean(porAlumno(corrida, enrA)?.message) &&
-      Boolean(porAlumno(corrida, enrC)?.message),
+      porAlumno(corrida, enrC)?.outcome === "skipped_not_eligible" &&
+      (porAlumno(corrida, enrC)?.message ?? "").includes("correo para la licencia"),
     JSON.stringify(corrida?.recipients?.map((r) => [r.outcome, r.message]))
+  );
+
+  // ---- 2026-10-23 — Exportar para licenciamiento: solo quien necesita
+  // licencia, con el correo de la licencia; la común sigue con todos.
+  const exportar = async (q) => {
+    const r = await api(`/api/cohorts/${cohortId}/export${q}`);
+    return r.res.ok ? await r.res.text() : `HTTP ${r.res.status}`;
+  };
+  const textoComun = await exportar("");
+  const textoLic = await exportar("?variante=licenciamiento");
+  ok(
+    "exportación para licenciamiento: Ana y Beto con su correo, sin Ceci",
+    textoLic.includes(correoA) && textoLic.includes(correoB) && !textoLic.includes("Ceci"),
+    textoLic
+  );
+  ok("la exportación común sigue con los tres", textoComun.includes("Ceci"), textoComun);
+
+  // ---- "Tenía licencia propia" con una licencia asignada a mano: 409.
+  const marcar = await api(`/api/enrollments/${enrA}/checklist`, {
+    method: "PATCH",
+    body: JSON.stringify({ hadOwnLicense: true }),
+  });
+  ok(
+    "marcar licencia propia con una licencia asignada pide liberarla primero (409)",
+    marcar.res.status === 409 && marcar.json?.error?.code === "licencia_asignada",
+    `${marcar.res.status} ${JSON.stringify(marcar.json)}`
   );
   const rosterTras = await api(`/api/cohorts/${cohortId}/roster`);
   const filaA = rosterTras.json?.enrollments?.find((e) => e.id === enrA);

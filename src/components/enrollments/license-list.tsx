@@ -34,7 +34,14 @@ export function LicenseList({
   onChanged,
   label = "Licencias",
   group = [],
+  bloqueo = null,
 }: {
+  /**
+   * 2026-10-23 — Por qué no se puede asignar (p. ej. "Tenía licencia
+   * propia"): sin selector, con el motivo a la vista. El servidor lo rechaza
+   * igual (422 `licencia_propia`); esto evita ofrecer lo que va a fallar.
+   */
+  bloqueo?: string | null;
   enrollmentId: string;
   /** Los `softwareId` ya asignados a esta inscripción. */
   assignedIds: readonly string[];
@@ -141,7 +148,21 @@ export function LicenseList({
           ) : null}
         </span>
       ))}
-      {canEdit && libres.length > 0 ? (
+      {canEdit && libres.length > 0 && bloqueo ? (
+        <Select
+          className="h-7 w-auto px-1.5 py-0.5 text-xs"
+          value=""
+          disabled
+          title={bloqueo}
+          aria-label={`Agregar licencia (${label}): ${bloqueo}`}
+        >
+          <option value="">agregar…</option>
+        </Select>
+      ) : null}
+      {canEdit && libres.length > 0 && bloqueo ? (
+        <span className="text-muted-foreground">{bloqueo}</span>
+      ) : null}
+      {canEdit && libres.length > 0 && !bloqueo ? (
         <Select
           className="h-7 w-auto px-1.5 py-0.5 text-xs"
           value=""

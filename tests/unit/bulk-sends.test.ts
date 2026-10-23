@@ -40,26 +40,63 @@ function alumno(id: string, over: Partial<Candidate> = {}): Candidate {
     welcomeEmailSentAt: null,
     portalLink: null,
     withdrawn: false,
+    licenseAssigned: true,
+    hadOwnLicense: false,
+    licenseEmail: `${id}@example.com`,
     ...over,
   };
 }
 
 describe("partitionRecipients — quién lo recibe y quién no", () => {
-  it("términos: saltea a quien ya tiene la marca y separa a quien no tiene correo", async () => {
+  it("términos: saltea a quien ya tiene la marca y a quien no corresponde, con el motivo", async () => {
     const { partitionRecipients } = await import("@/server/bulk-sends");
     const p = partitionRecipients("terms", [
       alumno("enr_1"),
       alumno("enr_2", { termsEmailSentAt: AYER }),
+      // El correo del alumno no importa: los términos van al de la licencia.
       alumno("enr_3", { hasEmail: false }),
       alumno("enr_4", { welcomeEmailSentAt: AYER }),
+      alumno("enr_5", { hadOwnLicense: true }),
+      alumno("enr_6", { licenseAssigned: false }),
+      alumno("enr_7", { licenseEmail: null }),
     ]);
     expect(p).toEqual({
-      toSend: ["enr_1", "enr_4"],
+      toSend: ["enr_1", "enr_3", "enr_4"],
       alreadySent: ["enr_2"],
       hasAccess: [],
-      withoutEmail: ["enr_3"],
+      withoutEmail: [],
       withdrawn: [],
+      notEligible: ["enr_5", "enr_6", "enr_7"],
     });
+  });
+
+  it("términos: las filas de la corrida dicen por qué se salteó a cada uno", async () => {
+    const { partitionRecipients, recipientRows } = await import("@/server/bulk-sends");
+    const { MENSAJE_SIN_TERMINOS } = await import("@/lib/terminos-licencia");
+    const candidatos = [
+      alumno("enr_1"),
+      alumno("enr_2", { hadOwnLicense: true }),
+      alumno("enr_3", { licenseAssigned: false }),
+      alumno("enr_4", { licenseEmail: null }),
+    ];
+    const filas = recipientRows(candidatos, partitionRecipients("terms", candidatos));
+    expect(filas.map((f) => [f.enrollmentId, f.outcome, f.message])).toEqual([
+      ["enr_1", "pending", null],
+      ["enr_2", "skipped_not_eligible", MENSAJE_SIN_TERMINOS.licencia_propia],
+      ["enr_3", "skipped_not_eligible", MENSAJE_SIN_TERMINOS.sin_licencia],
+      ["enr_4", "skipped_not_eligible", MENSAJE_SIN_TERMINOS.sin_correo_licencia],
+    ]);
+  });
+
+  it("la licencia no cuenta para la bienvenida ni para el acceso al portal", async () => {
+    const { partitionRecipients } = await import("@/server/bulk-sends");
+    for (const kind of ["welcome", "portal_access"] as const) {
+      const p = partitionRecipients(kind, [
+        alumno("enr_1", { hadOwnLicense: true, licenseAssigned: false, licenseEmail: null }),
+      ]);
+      expect(p.toSend, kind).toEqual(["enr_1"]);
+      expect(p.notEligible, kind).toEqual([]);
+    }
   });
 
   it("bienvenida: mira SU marca, no la de términos", async () => {
@@ -92,6 +129,7 @@ describe("partitionRecipients — quién lo recibe y quién no", () => {
       hasAccess: ["enr_2", "enr_3", "enr_5"],
       withoutEmail: ["enr_4"],
       withdrawn: [],
+      notEligible: [],
     });
   });
 
@@ -153,6 +191,7 @@ describe("partitionRecipients — quién lo recibe y quién no", () => {
         },
         welcomeEmailSentAt: null,
         licenseEmail: { email: "ana@x.com", distinto: false, propio: null },
+        parentHadOwnLicense: false,
         portalAccess: {
           granted: true,
           suspended: false,
@@ -169,8 +208,54 @@ describe("partitionRecipients — quién lo recibe y quién no", () => {
         welcomeEmailSentAt: null,
         portalLink: { suspended: false },
         withdrawn: true,
+        licenseAssigned: false,
+        hadOwnLicense: false,
+        licenseEmail: "ana@x.com",
       },
     ]);
+  });
+
+  it("candidatesFromRoster: la licencia de los módulos cuenta, y la marca de la madre también", async () => {
+    const { candidatesFromRoster } = await import("@/server/bulk-sends");
+    const base = {
+      contact: { id: "ct_1", name: "Ana", phone: null, email: "ana@x.com", archived: false },
+      checklist: {
+        licenseAssigned: false,
+        licenseSoftwareId: null,
+        licenseSoftwareIds: [],
+        termsEmailSentAt: null,
+        softwareInstalledAt: null,
+        hadOwnLicense: false,
+        academiaOnlineAccessAt: null,
+      },
+      parentHadOwnLicense: false,
+      welcomeEmailSentAt: null,
+      licenseEmail: { email: "lic@x.com", distinto: true, propio: "lic@x.com" },
+      portalAccess: { granted: false, suspended: false, blockedReason: null, emailSentAt: null },
+    };
+    const [madre, hija] = candidatesFromRoster([
+      {
+        ...base,
+        id: "enr_madre",
+        moduleLicenses: [
+          {
+            moduleName: "Revit",
+            enrollmentId: "enr_h",
+            software: [],
+            licenseAssigned: true,
+            licenseSoftwareId: "sw_1",
+            licenseSoftwareIds: ["sw_1"],
+          },
+        ],
+      },
+      { ...base, id: "enr_hija", parentHadOwnLicense: true },
+    ]);
+    expect(madre).toMatchObject({
+      licenseAssigned: true,
+      hadOwnLicense: false,
+      licenseEmail: "lic@x.com",
+    });
+    expect(hija).toMatchObject({ hadOwnLicense: true });
   });
 });
 

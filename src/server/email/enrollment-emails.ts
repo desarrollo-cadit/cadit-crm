@@ -2,6 +2,8 @@ import { asc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { getEnv } from "@/lib/env";
+import { correoDeLicencia } from "@/lib/license-email";
+import { destinoDeTerminos } from "@/lib/terminos-licencia";
 import { sendMail } from "@/lib/m365/client";
 import { recesosDeCohorte } from "@/lib/recess";
 import { ACADEMY_TIME_ZONE, conZona } from "@/lib/schedule-time";
@@ -134,6 +136,27 @@ async function moduleLicenseNames(
     )
     .orderBy(asc(schema.software.name));
   return rows.map((r) => r.name);
+}
+
+/**
+ * 2026-10-23 — Lo que la hija de un módulo hereda de su madre para los
+ * términos: el correo de la licencia y "Tenía licencia propia".
+ */
+async function parentLicenseFacts(
+  organizationId: string,
+  parentEnrollmentId: string
+): Promise<{ licenseEmail: string | null; hadOwnLicense: boolean } | null> {
+  const rows = await getDb()
+    .select({
+      licenseEmail: schema.enrollment.licenseEmail,
+      hadOwnLicense: schema.enrollment.hadOwnLicense,
+    })
+    .from(schema.enrollment)
+    .where(
+      scoped(schema.enrollment.organizationId, organizationId, eq(schema.enrollment.id, parentEnrollmentId))
+    )
+    .limit(1);
+  return rows[0] ?? null;
 }
 
 /** "Revit", "Revit y Navisworks", "AutoCAD, Revit y Navisworks". */
@@ -301,19 +324,61 @@ export async function sendEnrollmentEmail(
 
   const { enrollment, contact, cohort, course } = ctx;
 
-  if (!contact.email) {
-    return {
-      ok: false,
-      status: 422,
-      code: "no_email",
-      message: `${fullName(contact)} no tiene correo cargado`,
-    };
-  }
-
   // Ya enviado: no se repite salvo pedido explícito.
   const already = kind === "terms" ? enrollment.termsEmailSentAt : enrollment.welcomeEmailSentAt;
   if (already && !opts.force) {
     return { ok: true, sentAt: already.toISOString(), skipped: true };
+  }
+
+  /**
+   * 2026-10-23 — A quién va. La bienvenida, al alumno. Los términos documentan
+   * un préstamo: solo a quien tiene licencia asignada (suya o de sus módulos)
+   * y no trajo la propia, y al correo de la LICENCIA (`correoDeLicencia`).
+   * La regla es `destinoDeTerminos`, la misma del envío al grupo.
+   */
+  // 034 — El paquete (las de esta inscripción) y las de sus módulos, sin repetir.
+  const nombresDeLicencias =
+    kind === "terms"
+      ? [
+          ...new Set([
+            ...(await ownLicenseNames(organizationId, enrollmentId)),
+            ...(await moduleLicenseNames(organizationId, enrollmentId)),
+          ]),
+        ]
+      : [];
+  let destinatario: string;
+  if (kind === "terms") {
+    const madre = enrollment.parentEnrollmentId
+      ? await parentLicenseFacts(organizationId, enrollment.parentEnrollmentId)
+      : null;
+    const destino = destinoDeTerminos({
+      licenseAssigned: nombresDeLicencias.length > 0,
+      hadOwnLicense: enrollment.hadOwnLicense || Boolean(madre?.hadOwnLicense),
+      licenseEmail: correoDeLicencia({
+        licenseEmail: enrollment.licenseEmail,
+        parentLicenseEmail: madre?.licenseEmail ?? null,
+        contactEmail: contact.email,
+      }).email,
+    });
+    if (!destino.ok) {
+      return {
+        ok: false,
+        status: 422,
+        code: destino.motivo,
+        message: `${fullName(contact)}: ${destino.mensaje}`,
+      };
+    }
+    destinatario = destino.email;
+  } else {
+    if (!contact.email) {
+      return {
+        ok: false,
+        status: 422,
+        code: "no_email",
+        message: `${fullName(contact)} no tiene correo cargado`,
+      };
+    }
+    destinatario = contact.email;
   }
 
   // La bienvenida invita al grupo: sin enlace cargado, el correo pierde su
@@ -351,16 +416,7 @@ export async function sendEnrollmentEmail(
   const logoUrl = `${env.APP_BASE_URL}/logo-cadit.png`;
   const soporte = env.M365_SENDER ?? "";
   const courseName = cohort.name ?? course.name;
-  // 034 — El paquete (las de esta inscripción) y las de sus módulos, sin repetir.
-  const licencias =
-    kind === "terms"
-      ? listaEnPalabras([
-          ...new Set([
-            ...(await ownLicenseNames(organizationId, enrollmentId)),
-            ...(await moduleLicenseNames(organizationId, enrollmentId)),
-          ]),
-        ])
-      : null;
+  const licencias = kind === "terms" ? listaEnPalabras(nombresDeLicencias) : null;
 
   const html =
     kind === "terms"
@@ -371,14 +427,13 @@ export async function sendEnrollmentEmail(
           curso: courseName,
           fechaInicio: formatDate(cohort.startDate),
           fechaFin: formatDate(cohort.endDate),
-          // La cuenta a la que se presta la licencia. El texto dice "una
-          // cuenta indicada por el beneficiario (preferentemente: personal)",
-          // así que puede no ser la de contacto — hoy no hay dónde guardar
-          // esa distinción y se usa la del alumno. Ver docs/deuda-tecnica.md.
-          usuario: contact.email,
-          // Sin licencia cargada el documento no puede nombrar el producto.
-          // Se declara la falta en vez de inventar un genérico: un préstamo
-          // que no dice qué se presta no documenta nada.
+          // La cuenta a la que se presta la licencia: el correo de la
+          // licencia (`correoDeLicencia`, 2026-10-21), que puede no ser el
+          // del alumno. Es también a donde sale el correo.
+          usuario: destinatario,
+          // Sin licencia asignada los términos no salen (`destinoDeTerminos`),
+          // así que `licencias` siempre nombra algo; el respaldo queda por
+          // las dudas.
           licencias: licencias ?? "a confirmar",
           academia,
           acento,
@@ -399,7 +454,7 @@ export async function sendEnrollmentEmail(
   const cc = welcome ? copiaDeBienvenida(welcome) : [];
 
   const sent = await sendMail({
-    to: contact.email,
+    to: destinatario,
     subject: SUBJECTS[kind](vista ? nombreEnFrase(vista) : courseName),
     html: html ?? welcomeHtml ?? "",
     ...(cc.length > 0 ? { cc } : {}),

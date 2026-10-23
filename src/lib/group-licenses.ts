@@ -155,6 +155,25 @@ export function planSincronizarInscripcion(input: {
 }
 
 /**
+ * 2026-10-23 — ¿Cuenta esta inscripción como miembro del grupo para sus
+ * licencias? No, si está de baja (FR-006) o si trajo su propia licencia
+ * ("Tenía licencia propia", suya o de la madre de su módulo).
+ *
+ * Decisión: asignar al grupo SALTEA a quien trajo la suya en vez de fallar.
+ * El todo o nada de FR-002 es sobre quienes necesitan una licencia; quien no
+ * la necesita no puede dejar al resto sin la suya. Y la sincronización le
+ * libera las del grupo, como a una baja: un asiento ocupado por alguien que
+ * usa su propia licencia es stock perdido.
+ */
+export function cuentaParaLicenciasDelGrupo(i: {
+  archived: boolean;
+  hadOwnLicense: boolean;
+  parentHadOwnLicense: boolean;
+}): boolean {
+  return !i.archived && !i.hadOwnLicense && !i.parentHadOwnLicense;
+}
+
+/**
  * FR-008 — Con el programa en el grupo de la cohorte, asignarlo o quitarlo
  * por alumno queda prohibido en toda ruta. Una sola función para que las dos
  * puertas (asignar y liberar) no puedan responder distinto.

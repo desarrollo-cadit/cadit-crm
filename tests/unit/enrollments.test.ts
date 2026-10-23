@@ -492,4 +492,66 @@ describe("exportCohortRosterCsv (005 iteración 6)", () => {
 
     expect(result).toBe("nombre,apellido,correo,correo_licencia");
   });
+
+  /**
+   * 2026-10-23 — "Exportar para licenciamiento": las mismas columnas, solo
+   * quien necesita una licencia prestada (`necesitaLicencia`: asignada, propia
+   * o de sus módulos, y sin "Tenía licencia propia") y con el correo de la
+   * LICENCIA (`correoDeLicencia`) en la columna del correo.
+   */
+  it("para licenciamiento: solo quien necesita licencia, con el correo de la licencia", async () => {
+    selectQueue.push(
+      [{ id: "coh_1" }],
+      [
+        // Licencia asignada, correo de licencia distinto → entra con ese correo.
+        { id: "enr_1", firstName: "Ana", lastName: "A", email: "ana@x.com", licenseEmail: "empresa@x.com", hadOwnLicense: false, parentEnrollmentId: null },
+        // Licencia asignada pero tenía la propia → fuera.
+        { id: "enr_2", firstName: "Beto", lastName: "B", email: "beto@x.com", licenseEmail: null, hadOwnLicense: true, parentEnrollmentId: null },
+        // Sin licencia asignada → fuera.
+        { id: "enr_3", firstName: "Ceci", lastName: "C", email: "ceci@x.com", licenseEmail: null, hadOwnLicense: false, parentEnrollmentId: null },
+        // Madre de especialización: la licencia es de un módulo → entra.
+        { id: "enr_4", firstName: "Dani", lastName: "D", email: "dani@x.com", licenseEmail: null, hadOwnLicense: false, parentEnrollmentId: null },
+        // Hija de módulo con licencia, cuya madre la tenía propia → fuera.
+        { id: "enr_5", firstName: "Eva", lastName: "E", email: "eva@x.com", licenseEmail: null, hadOwnLicense: false, parentEnrollmentId: "enr_m" },
+        // Hija de módulo con licencia: hereda el correo de licencia de la madre.
+        { id: "enr_6", firstName: "Fede", lastName: "F", email: "fede@x.com", licenseEmail: null, hadOwnLicense: false, parentEnrollmentId: "enr_m2" },
+      ],
+      // Las madres de las hijas.
+      [
+        { id: "enr_m", licenseEmail: null, hadOwnLicense: true },
+        { id: "enr_m2", licenseEmail: "madre@x.com", hadOwnLicense: false },
+      ],
+      // Licencias asignadas: de la inscripción o de una hija suya.
+      [
+        { enrollmentId: "enr_1", parentEnrollmentId: null },
+        { enrollmentId: "enr_2", parentEnrollmentId: null },
+        { enrollmentId: "enr_h4", parentEnrollmentId: "enr_4" },
+        { enrollmentId: "enr_5", parentEnrollmentId: "enr_m" },
+        { enrollmentId: "enr_6", parentEnrollmentId: "enr_m2" },
+      ]
+    );
+
+    const { exportCohortRosterCsv } = await import("@/server/enrollments");
+    const result = await exportCohortRosterCsv("org_1", "coh_1", "licenciamiento");
+
+    expect(result).toBe(
+      [
+        "nombre,apellido,correo,correo_licencia",
+        "Ana,A,empresa@x.com,empresa@x.com",
+        "Dani,D,dani@x.com,dani@x.com",
+        "Fede,F,madre@x.com,madre@x.com",
+      ].join("\r\n")
+    );
+  });
+
+  it("la exportación común no consulta licencias ni madres", async () => {
+    selectQueue.push(
+      [{ id: "coh_1" }],
+      [{ id: "enr_1", firstName: "Ana", lastName: "A", email: "ana@x.com", licenseEmail: null, hadOwnLicense: true, parentEnrollmentId: null }]
+    );
+    const { exportCohortRosterCsv } = await import("@/server/enrollments");
+    const result = await exportCohortRosterCsv("org_1", "coh_1");
+    expect(result).toBe(["nombre,apellido,correo,correo_licencia", "Ana,A,ana@x.com,ana@x.com"].join("\r\n"));
+    expect(selectQueue).toHaveLength(0);
+  });
 });

@@ -52,6 +52,7 @@ const RESULTADO: Record<
   sent: { texto: "Enviado", variante: "success" },
   skipped_already_sent: { texto: "Ya lo había recibido", variante: "secondary" },
   skipped_has_access: { texto: "Ya tiene acceso", variante: "secondary" },
+  skipped_not_eligible: { texto: "No corresponde", variante: "secondary" },
   failed: { texto: "No se envió", variante: "destructive" },
 };
 
@@ -176,7 +177,11 @@ export function BulkSendsPanel({
                 disabled={ocupado || sinDestino || Boolean(k.blockedReason)}
                 title={
                   k.blockedReason ??
-                  (sinDestino ? "Todos los alumnos con correo ya lo recibieron." : undefined)
+                  (sinDestino
+                    ? k.kind === "terms"
+                      ? "Nadie del grupo los necesita ahora: ya los recibieron, o no tienen licencia asignada, tenían la propia o no hay correo para la licencia."
+                      : "Todos los alumnos con correo ya lo recibieron."
+                    : undefined)
                 }
                 onClick={() => setConfirmar(k)}
               >
@@ -270,6 +275,32 @@ export function BulkSendsPanel({
               en el detalle con ese motivo.
             </p>
           )}
+          {confirmar.kind === "terms" && (
+            <>
+              <p>
+                Los términos van al correo de la licencia, y solo a quienes tienen una licencia
+                asignada que no es propia.
+              </p>
+              {confirmar.counts.notEligible.licencia_propia > 0 && (
+                <p>
+                  {alumnos(confirmar.counts.notEligible.licencia_propia)} con licencia propia: no
+                  se les envía.
+                </p>
+              )}
+              {confirmar.counts.notEligible.sin_licencia > 0 && (
+                <p>
+                  {alumnos(confirmar.counts.notEligible.sin_licencia)} sin licencia asignada: no
+                  se les envía.
+                </p>
+              )}
+              {confirmar.counts.notEligible.sin_correo_licencia > 0 && (
+                <p>
+                  {alumnos(confirmar.counts.notEligible.sin_correo_licencia)} sin correo para la
+                  licencia: no se les envía y van a figurar en el detalle con ese motivo.
+                </p>
+              )}
+            </>
+          )}
           {confirmar.counts.withdrawn > 0 && (
             <p>
               {confirmar.counts.withdrawn === 1
@@ -301,7 +332,8 @@ function ProgresoDeCorrida({
   onCerrar: () => void;
 }) {
   const t = corrida.totals;
-  const procesados = t.sent + t.failed + t.skipped_already_sent + t.skipped_has_access;
+  const procesados =
+    t.sent + t.failed + t.skipped_already_sent + t.skipped_has_access + t.skipped_not_eligible;
   const total = procesados + t.pending;
 
   return (

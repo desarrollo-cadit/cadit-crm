@@ -62,10 +62,30 @@ vi.mock("@/server/email/templates", () => ({
 const equipo = vi.fn();
 vi.mock("@/server/welcome-team", () => ({ equipoParaBienvenida: () => equipo() }));
 
-function contexto(over: { termsEmailSentAt?: Date | null } = {}) {
+function contexto(
+  over: {
+    termsEmailSentAt?: Date | null;
+    hadOwnLicense?: boolean;
+    licenseEmail?: string | null;
+    parentEnrollmentId?: string | null;
+    contactEmail?: string | null;
+  } = {}
+) {
   return {
-    enrollment: { id: "enr_madre", termsEmailSentAt: over.termsEmailSentAt ?? null, welcomeEmailSentAt: null },
-    contact: { id: "ct_1", firstName: "Ana", lastName: "Pérez", email: "ana@x.com" },
+    enrollment: {
+      id: "enr_madre",
+      termsEmailSentAt: over.termsEmailSentAt ?? null,
+      welcomeEmailSentAt: null,
+      hadOwnLicense: over.hadOwnLicense ?? false,
+      licenseEmail: over.licenseEmail ?? null,
+      parentEnrollmentId: over.parentEnrollmentId ?? null,
+    },
+    contact: {
+      id: "ct_1",
+      firstName: "Ana",
+      lastName: "Pérez",
+      email: over.contactEmail === undefined ? "ana@x.com" : over.contactEmail,
+    },
     cohort: {
       name: "EBIM 13",
       startDate: new Date("2026-09-01T12:00:00.000Z"),
@@ -133,16 +153,106 @@ describe("términos de una especialización", () => {
     expect(vars.licencias).toBe("AutoCAD y Revit");
   });
 
-  it("sin licencias en ningún lado, lo declara en vez de inventar", async () => {
+  /**
+   * 2026-10-23 — Sin licencia asignada en ningún lado no hay préstamo que
+   * documentar: antes salía con "a confirmar"; ahora no sale y se dice por qué.
+   */
+  it("sin licencias en ningún lado, no se manda y se dice por qué", async () => {
     selectQueue.push([contexto()]);
     selectQueue.push([]);
-    sendMail.mockResolvedValue({ ok: true, data: "msg_1" });
+    selectQueue.push([]);
+
+    const { sendEnrollmentEmail } = await import("@/server/email/enrollment-emails");
+    const r = await sendEnrollmentEmail("org_1", "enr_madre", "terms");
+
+    expect(r).toMatchObject({ ok: false, status: 422, code: "sin_licencia" });
+    expect(sendMail).not.toHaveBeenCalled();
+    expect(updates).toHaveLength(0);
+  });
+});
+
+/**
+ * 2026-10-23 — Los términos van a quien tiene licencia prestada (no propia) y
+ * al correo de la licencia (`correoDeLicencia`), no al del alumno. La misma
+ * regla que el envío al grupo (`destinoDeTerminos`).
+ */
+describe("términos: a quién y a qué correo", () => {
+  it("con licencia propia no se manda, aunque tenga una asignada", async () => {
+    selectQueue.push([contexto({ hadOwnLicense: true })]);
+    selectQueue.push([{ name: "Revit" }]);
+    selectQueue.push([]);
+
+    const { sendEnrollmentEmail } = await import("@/server/email/enrollment-emails");
+    const r = await sendEnrollmentEmail("org_1", "enr_madre", "terms");
+
+    expect(r).toMatchObject({ ok: false, status: 422, code: "licencia_propia" });
+    expect(sendMail).not.toHaveBeenCalled();
+  });
+
+  it("va al correo de la licencia y el documento nombra esa cuenta", async () => {
+    selectQueue.push([contexto({ licenseEmail: "empresa@example.com" })]);
+    selectQueue.push([{ name: "Revit" }]);
+    selectQueue.push([]);
+    sendMail.mockResolvedValue({ ok: true });
+
+    const { sendEnrollmentEmail } = await import("@/server/email/enrollment-emails");
+    const r = await sendEnrollmentEmail("org_1", "enr_madre", "terms");
+
+    expect(r.ok).toBe(true);
+    expect((sendMail.mock.calls[0]?.[0] as { to: string }).to).toBe("empresa@example.com");
+    const vars = renderTemplate.mock.calls[0]?.[1] as { usuario: string };
+    expect(vars.usuario).toBe("empresa@example.com");
+  });
+
+  it("la hija de un módulo hereda el correo de licencia de la madre", async () => {
+    selectQueue.push([contexto({ parentEnrollmentId: "enr_m" })]);
+    selectQueue.push([{ name: "Revit" }]);
+    selectQueue.push([]);
+    selectQueue.push([{ licenseEmail: "madre@example.com", hadOwnLicense: false }]);
+    sendMail.mockResolvedValue({ ok: true });
 
     const { sendEnrollmentEmail } = await import("@/server/email/enrollment-emails");
     await sendEnrollmentEmail("org_1", "enr_madre", "terms");
 
-    const vars = renderTemplate.mock.calls[0]?.[1] as { licencias: string };
-    expect(vars.licencias).toBe("a confirmar");
+    expect((sendMail.mock.calls[0]?.[0] as { to: string }).to).toBe("madre@example.com");
+  });
+
+  it("la hija de un módulo cuya madre tenía licencia propia no lo recibe", async () => {
+    selectQueue.push([contexto({ parentEnrollmentId: "enr_m" })]);
+    selectQueue.push([{ name: "Revit" }]);
+    selectQueue.push([]);
+    selectQueue.push([{ licenseEmail: null, hadOwnLicense: true }]);
+
+    const { sendEnrollmentEmail } = await import("@/server/email/enrollment-emails");
+    const r = await sendEnrollmentEmail("org_1", "enr_madre", "terms");
+
+    expect(r).toMatchObject({ ok: false, code: "licencia_propia" });
+    expect(sendMail).not.toHaveBeenCalled();
+  });
+
+  it("sin correo del alumno pero con correo de licencia, sale igual", async () => {
+    selectQueue.push([contexto({ contactEmail: null, licenseEmail: "lic@example.com" })]);
+    selectQueue.push([{ name: "Revit" }]);
+    selectQueue.push([]);
+    sendMail.mockResolvedValue({ ok: true });
+
+    const { sendEnrollmentEmail } = await import("@/server/email/enrollment-emails");
+    const r = await sendEnrollmentEmail("org_1", "enr_madre", "terms");
+
+    expect(r.ok).toBe(true);
+    expect((sendMail.mock.calls[0]?.[0] as { to: string }).to).toBe("lic@example.com");
+  });
+
+  it("sin ningún correo para la licencia, no se manda y se dice", async () => {
+    selectQueue.push([contexto({ contactEmail: null })]);
+    selectQueue.push([{ name: "Revit" }]);
+    selectQueue.push([]);
+
+    const { sendEnrollmentEmail } = await import("@/server/email/enrollment-emails");
+    const r = await sendEnrollmentEmail("org_1", "enr_madre", "terms");
+
+    expect(r).toMatchObject({ ok: false, status: 422, code: "sin_correo_licencia" });
+    expect(sendMail).not.toHaveBeenCalled();
   });
 });
 

@@ -1,9 +1,12 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { licenciaOcupada } from "@/lib/license-rules";
+import { planMarcarLicenciaPropia } from "@/lib/terminos-licencia";
 import {
+  cuentaParaLicenciasDelGrupo,
   mensajeFaltanLicencias,
   planAsignarAlGrupo,
   planQuitarDelGrupo,
@@ -55,12 +58,24 @@ async function cohorteConFechas(db: Db, organizationId: string, cohortId: string
   return row ?? null;
 }
 
-/** Las inscripciones activas del grupo (contacto no dado de baja). */
+/**
+ * Las inscripciones activas del grupo (contacto no dado de baja).
+ *
+ * 2026-10-23 — Tampoco quien trajo su propia licencia, ni la hija de un
+ * módulo cuya madre la trajo (`cuentaParaLicenciasDelGrupo`): asignar al
+ * grupo los saltea en vez de fallar, y no figuran como faltantes.
+ */
 async function miembrosActivos(db: Db, organizationId: string, cohortId: string): Promise<string[]> {
+  const madre = alias(schema.enrollment, "madre_del_grupo");
   const rows = await db
-    .select({ id: schema.enrollment.id })
+    .select({
+      id: schema.enrollment.id,
+      hadOwnLicense: schema.enrollment.hadOwnLicense,
+      parentHadOwnLicense: madre.hadOwnLicense,
+    })
     .from(schema.enrollment)
     .innerJoin(schema.contact, eq(schema.enrollment.contactId, schema.contact.id))
+    .leftJoin(madre, eq(madre.id, schema.enrollment.parentEnrollmentId))
     .where(
       scoped(
         schema.enrollment.organizationId,
@@ -69,7 +84,60 @@ async function miembrosActivos(db: Db, organizationId: string, cohortId: string)
         isNull(schema.contact.archivedAt)
       )
     );
-  return rows.map((r) => r.id);
+  return rows
+    .filter((r) =>
+      cuentaParaLicenciasDelGrupo({
+        archived: false,
+        hadOwnLicense: r.hadOwnLicense,
+        parentHadOwnLicense: Boolean(r.parentHadOwnLicense),
+      })
+    )
+    .map((r) => r.id);
+}
+
+/** 2026-10-23 — La inscripción y sus hijas de módulo (si es una madre). */
+async function recorrido(db: Db, organizationId: string, enrollmentId: string): Promise<string[]> {
+  const hijas = await db
+    .select({ id: schema.enrollment.id })
+    .from(schema.enrollment)
+    .where(
+      scoped(
+        schema.enrollment.organizationId,
+        organizationId,
+        eq(schema.enrollment.parentEnrollmentId, enrollmentId)
+      )
+    );
+  return [enrollmentId, ...hijas.map((h) => h.id)];
+}
+
+/**
+ * 2026-10-23 — ¿Se puede marcar "Tenía licencia propia"? Mira las licencias
+ * de la inscripción y de sus módulos (`planMarcarLicenciaPropia`): con una
+ * individual asignada, no. Las del grupo las libera `sincronizarRecorrido`
+ * después de escribir la marca.
+ */
+export async function verificarMarcaDeLicenciaPropia(
+  organizationId: string,
+  enrollmentId: string
+): Promise<{ ok: true } | { ok: false; mensaje: string }> {
+  const db = getDb();
+  const ids = await recorrido(db, organizationId, enrollmentId);
+  const plan = planMarcarLicenciaPropia(await licenciasDe(db, organizationId, ids));
+  return plan.ok ? { ok: true } : { ok: false, mensaje: plan.mensaje };
+}
+
+/**
+ * 2026-10-23 — Sincroniza las licencias del grupo de la inscripción y de sus
+ * módulos. Lo llama el checklist al cambiar "Tenía licencia propia".
+ */
+export async function sincronizarRecorrido(
+  organizationId: string,
+  enrollmentId: string
+): Promise<{ sinStock: { enrollmentId: string; softwareId: string }[] }> {
+  return sincronizarLicenciasDelGrupo(
+    organizationId,
+    await recorrido(getDb(), organizationId, enrollmentId)
+  );
 }
 
 /** Las filas de `license` de estas inscripciones, con la ocupación de HOY. */
@@ -352,17 +420,21 @@ export async function sincronizarLicenciasDelGrupo(
 ): Promise<{ sinStock: { enrollmentId: string; softwareId: string }[] }> {
   if (enrollmentIds.length === 0) return { sinStock: [] };
   const db = getDb();
-  const inscripciones = await db
+  const madre = alias(schema.enrollment, "madre_a_sincronizar");
+  const filas = await db
     .select({
       id: schema.enrollment.id,
       cohortId: schema.enrollment.cohortId,
       archivedAt: schema.contact.archivedAt,
+      hadOwnLicense: schema.enrollment.hadOwnLicense,
+      parentHadOwnLicense: madre.hadOwnLicense,
       startDate: schema.cohort.startDate,
       endDate: schema.cohort.endDate,
     })
     .from(schema.enrollment)
     .innerJoin(schema.contact, eq(schema.enrollment.contactId, schema.contact.id))
     .leftJoin(schema.cohort, eq(schema.enrollment.cohortId, schema.cohort.id))
+    .leftJoin(madre, eq(madre.id, schema.enrollment.parentEnrollmentId))
     .where(
       scoped(
         schema.enrollment.organizationId,
@@ -370,10 +442,20 @@ export async function sincronizarLicenciasDelGrupo(
         inArray(schema.enrollment.id, [...enrollmentIds])
       )
     );
-  if (inscripciones.length === 0) return { sinStock: [] };
+  if (filas.length === 0) return { sinStock: [] };
+  // 2026-10-23 — Quien trajo su licencia queda fuera del grupo igual que una
+  // baja (`cuentaParaLicenciasDelGrupo`): sus licencias del grupo se liberan.
+  const inscripciones = filas.map((f) => ({
+    ...f,
+    fueraDelGrupo: !cuentaParaLicenciasDelGrupo({
+      archived: f.archivedAt !== null,
+      hadOwnLicense: f.hadOwnLicense,
+      parentHadOwnLicense: Boolean(f.parentHadOwnLicense),
+    }),
+  }));
 
   const cohortIds = [
-    ...new Set(inscripciones.flatMap((i) => (i.cohortId && !i.archivedAt ? [i.cohortId] : []))),
+    ...new Set(inscripciones.flatMap((i) => (i.cohortId && !i.fueraDelGrupo ? [i.cohortId] : []))),
   ];
   const [grupos, licencias] = await Promise.all([
     softwareDelGrupo(organizationId, cohortIds),
@@ -398,7 +480,7 @@ export async function sincronizarLicenciasDelGrupo(
   const sinStock: { enrollmentId: string; softwareId: string }[] = [];
   const ahora = new Date();
   for (const i of inscripciones) {
-    const suyo = i.archivedAt || !i.cohortId ? [] : grupos.filter((g) => g.cohortId === i.cohortId);
+    const suyo = i.fueraDelGrupo || !i.cohortId ? [] : grupos.filter((g) => g.cohortId === i.cohortId);
     const fechas = { startDate: i.startDate, endDate: i.endDate };
     const grupo = suyo.map((g) => ({
       softwareId: g.softwareId,

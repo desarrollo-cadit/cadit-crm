@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  cuentaParaLicenciasDelGrupo,
   licenciaDelGrupoBloquea,
   mensajeFaltanLicencias,
   MENSAJE_LICENCIA_DEL_GRUPO,
@@ -269,5 +270,22 @@ describe("licenciaDelGrupoBloquea (FR-008)", () => {
     expect(MENSAJE_LICENCIA_DEL_GRUPO("Revit")).toBe(
       "Revit está asignado al grupo: se asigna y se quita desde el grupo, no por alumno."
     );
+  });
+});
+
+/**
+ * 2026-10-23 — Quien trajo su licencia ("Tenía licencia propia", suya o de la
+ * madre de su módulo) no es del grupo a efectos de licencias, igual que quien
+ * está de baja: asignar al grupo lo saltea (no hace fallar al resto: el todo
+ * o nada es sobre quienes SÍ necesitan una) y la sincronización le libera las
+ * del grupo.
+ */
+describe("cuentaParaLicenciasDelGrupo", () => {
+  it("de baja o con licencia propia (suya o de la madre) no cuenta", () => {
+    const base = { archived: false, hadOwnLicense: false, parentHadOwnLicense: false };
+    expect(cuentaParaLicenciasDelGrupo(base)).toBe(true);
+    expect(cuentaParaLicenciasDelGrupo({ ...base, archived: true })).toBe(false);
+    expect(cuentaParaLicenciasDelGrupo({ ...base, hadOwnLicense: true })).toBe(false);
+    expect(cuentaParaLicenciasDelGrupo({ ...base, parentHadOwnLicense: true })).toBe(false);
   });
 });

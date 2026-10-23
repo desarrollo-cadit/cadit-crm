@@ -1,7 +1,17 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useState } from "react";
-import { ChevronRight, Download, FileText, KeyRound, Mail, UserPlus } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Download,
+  FileText,
+  KeyRound,
+  Mail,
+  UserPlus,
+} from "lucide-react";
+import { ItemDeMenu, MenuFlotante } from "@/components/ui/floating-menu";
+import { destinoDeTerminos } from "@/lib/terminos-licencia";
 import type { CohortRosterDto, ModuleLicenseLine, RosterEntryDto } from "@/server/enrollments";
 import type { CompanyDto } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { cn, formatAmount } from "@/lib/utils";
 import { BillingBulkPanel } from "@/components/cohorts/billing-bulk-panel";
 import { BillingPanel } from "@/components/cohorts/billing-panel";
@@ -156,9 +166,13 @@ export function RosterClient({
   } | null>(null);
   const [notFound, setNotFound] = useState(false);
   /** 035 (FR-018) — Confirmación del PRIMER envío de los términos ATC. */
+  /** 2026-10-23 — Menú de "Exportar" (común / para licenciamiento). */
+  const [menuExportar, setMenuExportar] = useState<{ x: number; y: number } | null>(null);
   const [confirmTerms, setConfirmTerms] = useState<{
     enrollmentId: string;
     contactName: string;
+    /** 2026-10-23 — El correo de la licencia, a donde salen los términos. */
+    email: string;
   } | null>(null);
 
   const refetch = useCallback(async () => {
@@ -386,13 +400,46 @@ export function RosterClient({
           )}
         </div>
         <div className="flex items-center gap-2">
-          <a
-            href={`/api/cohorts/${cohortId}/export`}
-            download
-            className={cn(buttonVariants({ size: "sm", variant: "outline" }))}
+          {/* 2026-10-23 — Dos exportaciones: la común y la de licenciamiento
+              (solo quien necesita licencia, con el correo de la licencia). */}
+          <Button
+            size="sm"
+            variant="outline"
+            aria-haspopup="menu"
+            aria-expanded={menuExportar !== null}
+            onClick={(ev) => {
+              const r = ev.currentTarget.getBoundingClientRect();
+              setMenuExportar(menuExportar ? null : { x: r.left, y: r.bottom + 4 });
+            }}
           >
-            <Download className="h-4 w-4" /> Exportar CSV
-          </a>
+            <Download className="h-4 w-4" /> Exportar
+            <ChevronDown className="h-3.5 w-3.5" aria-hidden />
+          </Button>
+          {menuExportar && (
+            <MenuFlotante
+              x={menuExportar.x}
+              y={menuExportar.y}
+              onClose={() => setMenuExportar(null)}
+            >
+              <ItemDeMenu
+                onSelect={() => {
+                  setMenuExportar(null);
+                  window.location.href = `/api/cohorts/${cohortId}/export`;
+                }}
+              >
+                Exportación común
+              </ItemDeMenu>
+              <ItemDeMenu
+                hint="Solo quienes tienen una licencia asignada (no propia), con el correo de la licencia"
+                onSelect={() => {
+                  setMenuExportar(null);
+                  window.location.href = `/api/cohorts/${cohortId}/export?variante=licenciamiento`;
+                }}
+              >
+                Exportar para licenciamiento
+              </ItemDeMenu>
+            </MenuFlotante>
+          )}
           {canEnroll && (
             <Button size="sm" onClick={() => setShowEnrollForm(true)}>
               <UserPlus className="h-4 w-4" /> Inscribir alumno
@@ -469,6 +516,21 @@ export function RosterClient({
                       Boolean(e.moduleLicenses?.some((l) => l.licenseAssigned))
                     );
                     const open = expanded === e.id;
+                    // 2026-10-23 — Licencia propia (suya o de la madre del
+                    // módulo): no se asigna licencia ni van los términos.
+                    const licenciaPropia = e.checklist.hadOwnLicense || e.parentHadOwnLicense;
+                    const bloqueoLicencia = licenciaPropia
+                      ? e.parentHadOwnLicense && !e.checklist.hadOwnLicense
+                        ? "Tenía licencia propia (marcado en la especialización): no se asigna."
+                        : "Tenía licencia propia: no se asigna. Desmarcala si necesita una."
+                      : null;
+                    const destinoTerminos = destinoDeTerminos({
+                      licenseAssigned:
+                        e.checklist.licenseAssigned ||
+                        Boolean(e.moduleLicenses?.some((l) => l.licenseAssigned)),
+                      hadOwnLicense: licenciaPropia,
+                      licenseEmail: e.licenseEmail.email,
+                    });
                     return (
                       <Fragment key={e.id}>
                         <TableRow>
@@ -593,11 +655,13 @@ export function RosterClient({
                         options={catalogo}
                         group={grupo}
                         canEdit={canEditLicenses}
+                        bloqueo={bloqueoLicencia}
                         onChanged={() => void refetch()}
                       />
                       <ModuleLicenses
                         lines={e.moduleLicenses ?? []}
                         canEdit={canEditLicenses}
+                        bloqueo={bloqueoLicencia}
                         onChanged={() => void refetch()}
                       />
                     </span>
@@ -609,6 +673,7 @@ export function RosterClient({
                       options={roster.cohort.software}
                       group={grupo}
                       canEdit={canEditLicenses}
+                      bloqueo={bloqueoLicencia}
                       onChanged={() => void refetch()}
                     />
                   )}
@@ -645,7 +710,10 @@ export function RosterClient({
                     </label>
                     </Fragment>
                   ))}
-                  <label className="flex items-center gap-1.5">
+                  <label
+                    className="flex items-center gap-1.5"
+                    title="Con una licencia asignada a mano, hay que liberarla primero. Las del grupo vuelven al stock."
+                  >
                     <Checkbox
                       checked={e.checklist.hadOwnLicense}
                       disabled={!canFollowUp}
@@ -678,11 +746,15 @@ export function RosterClient({
                                     <Button
                                       variant="outline"
                                       size="sm"
-                                      disabled={sendingEmail === e.id + "terms"}
+                                      disabled={
+                                        sendingEmail === e.id + "terms" || !destinoTerminos.ok
+                                      }
                                       title={
-                                        e.checklist.termsEmailSentAt
-                                          ? "Reenviar los términos de la licencia"
-                                          : undefined
+                                        !destinoTerminos.ok
+                                          ? destinoTerminos.mensaje
+                                          : e.checklist.termsEmailSentAt
+                                            ? `Reenviar los términos de la licencia a ${destinoTerminos.email}`
+                                            : `Se envían al correo de la licencia: ${destinoTerminos.email}`
                                       }
                                       onClick={() =>
                                         e.checklist.termsEmailSentAt
@@ -692,9 +764,11 @@ export function RosterClient({
                                               contactName: e.contact.name,
                                               sentAt: e.checklist.termsEmailSentAt,
                                             })
-                                          : setConfirmTerms({
+                                          : destinoTerminos.ok &&
+                                            setConfirmTerms({
                                               enrollmentId: e.id,
                                               contactName: e.contact.name,
+                                              email: destinoTerminos.email,
                                             })
                                       }
                                     >
@@ -728,6 +802,11 @@ export function RosterClient({
                                           : "Enviar bienvenida + grupo"}
                                     </Button>
                                   </>
+                                )}
+                                {canFollowUp && !destinoTerminos.ok && (
+                                  <span className="text-muted-foreground">
+                                    T&C: {destinoTerminos.mensaje}
+                                  </span>
                                 )}
                                 {!canFollowUp && e.checklist.termsEmailSentAt && (
                                   <span className="text-muted-foreground">
@@ -870,7 +949,12 @@ export function RosterClient({
                                     <span>Cédula: {e.nationalId ?? "—"}</span>
                                     <span>Factura: {e.invoiceNumber ?? "—"}</span>
                                     <span>Recibo: {e.receiptNumber ?? "—"}</span>
-                                    <span>Empresa: {e.companyId ?? "—"}</span>
+                                    <span>
+                                      Empresa:{" "}
+                                      {e.companyId
+                                        ? (companies.find((c) => c.id === e.companyId)?.legalName ?? "…")
+                                        : "—"}
+                                    </span>
                                     {e.paymentNotes && (
                                       <span className="col-span-2 sm:col-span-4">
                                         Notas: {e.paymentNotes}
@@ -1031,7 +1115,7 @@ export function RosterClient({
         >
           <p className="text-foreground">
             Se le va a enviar a {confirmTerms.contactName} el correo con los términos de la
-            licencia ATC.
+            licencia ATC, al correo de la licencia: {confirmTerms.email}.
           </p>
           <p>Un correo enviado no se puede deshacer.</p>
         </ConfirmSendDialog>
@@ -1105,11 +1189,14 @@ function ModuleLicenses({
   lines,
   canEdit,
   onChanged,
+  bloqueo = null,
 }: {
   lines: ModuleLicenseLine[];
   /** `academico.editar` — la capacidad de la ruta de licencias. */
   canEdit: boolean;
   onChanged: () => void;
+  /** 2026-10-23 — "Tenía licencia propia" en la madre: tampoco en los módulos. */
+  bloqueo?: string | null;
 }) {
   if (lines.length === 0) {
     return (
@@ -1134,6 +1221,7 @@ function ModuleLicenses({
               options={l.software}
               group={l.groupSoftware ?? []}
               canEdit={canEdit}
+              bloqueo={bloqueo}
               onChanged={onChanged}
             />
           )}
