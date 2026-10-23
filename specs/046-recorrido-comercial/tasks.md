@@ -108,13 +108,13 @@ convencional por fase.
 
 **Independent Test**: "aprobaron A y no hicieron B" devuelve exactamente a quienes cumplen y excluye a quienes se dieron de baja.
 
-- [ ] T024 [P] [US4] Test en rojo en `tests/unit/marketing-audiencia.test.ts`: claves nuevas de `AudienceFiltersSchema` válidas; `months` fuera de rango, listas vacías y claves desconocidas rechazadas; una audiencia guardada sin claves nuevas sigue valiendo (FR-008)
-- [ ] T025 [US4] Sumar las claves a `AudienceFiltersSchema` en `src/lib/marketing/audience.ts`
-- [ ] T026 [P] [US4] Test en rojo `tests/unit/marketing-historial-filtros.test.ts`: `cumpleFiltrosDeHistorial` por filtro; AND entre filtros; 10 aprobaron A, 3 con B → 7; nunca dictada no cuenta como cursó; atajo de ruta; últimos N meses por curso y por categoría; historial vacío cumple solo "no hizo" (FR-008..FR-010)
-- [ ] T027 [US4] Implementar `src/lib/marketing/historial-filtros.ts` (`tieneFiltrosDeHistorial`, `cumpleFiltrosDeHistorial`, `contactosQueCumplen`)
-- [ ] T028 [P] [US4] Test en rojo `tests/unit/marketing-audiencias-historial.test.ts`: `condicionDeHistorial` devuelve `IN` o `NOT IN` según DV-008; sin filtros de historial no lee historiales; combinado con filtros de la 045, `particionarAudiencia` sigue excluyendo baja, archivado y sin correo
-- [ ] T029 [US4] En `src/server/marketing/audiences.ts`: `condicionDeHistorial` en `condicionesDeFiltros` (usa `historialesDeLaOrganizacion` y `rutasPorCurso`), y `categories` en `opcionesDeFiltros`
-- [ ] T030 [US4] Sección "Historial de cursos" en `src/components/marketing/audience-builder.tsx` (cursó / aprobó / cursó sin aprobar / no hizo / últimos N meses por curso o categoría / siguiente paso de la ruta de un curso)
+- [x] T024 [P] [US4] Test en rojo en `tests/unit/marketing-audiencia.test.ts`: claves nuevas de `AudienceFiltersSchema` válidas; `months` fuera de rango, listas vacías y claves desconocidas rechazadas; una audiencia guardada sin claves nuevas sigue valiendo (FR-008)
+- [x] T025 [US4] Sumar las claves a `AudienceFiltersSchema` en `src/lib/marketing/audience.ts`
+- [x] T026 [P] [US4] Test en rojo `tests/unit/marketing-historial-filtros.test.ts`: `cumpleFiltrosDeHistorial` por filtro; AND entre filtros; 10 aprobaron A, 3 con B → 7; nunca dictada no cuenta como cursó; atajo de ruta; últimos N meses por curso y por categoría; historial vacío cumple solo "no hizo" (FR-008..FR-010)
+- [x] T027 [US4] Implementar `src/lib/marketing/historial-filtros.ts` (`tieneFiltrosDeHistorial`, `cumpleFiltrosDeHistorial`, `contactosQueCumplen`)
+- [x] T028 [P] [US4] Test en rojo `tests/unit/marketing-audiencias-historial.test.ts`: `condicionDeHistorial` devuelve `IN` o `NOT IN` según DV-008; sin filtros de historial no lee historiales; combinado con filtros de la 045, `particionarAudiencia` sigue excluyendo baja, archivado y sin correo
+- [x] T029 [US4] En `src/server/marketing/audiences.ts`: `condicionDeHistorial` en `condicionesDeFiltros` (usa `historialesDeLaOrganizacion` y `rutasPorCurso`), y `categories` en `opcionesDeFiltros`
+- [x] T030 [US4] Sección "Historial de cursos" en `src/components/marketing/audience-builder.tsx` (cursó / aprobó / cursó sin aprobar / no hizo / últimos N meses por curso o categoría / siguiente paso de la ruta de un curso)
 
 **Checkpoint**: gate verde → commit de US4.
 

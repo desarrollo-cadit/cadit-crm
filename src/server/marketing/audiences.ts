@@ -1,9 +1,12 @@
-import { asc, desc, eq, exists, gte, inArray, lt, ne, or, sql, type SQL } from "drizzle-orm";
+import { asc, desc, eq, exists, gte, inArray, lt, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { etiquetaDeCohorte } from "@/lib/cohortes-inscribibles";
 import { whereDeBajaActiva } from "./bajas";
+import { contactosQueCumplen, tieneFiltrosDeHistorial } from "@/lib/marketing/historial-filtros";
+import { historialesDeLaOrganizacion } from "@/server/recorrido-comercial";
+import { rutasPorCurso } from "@/server/course-routes";
 import {
   AudienceFiltersSchema,
   ORIGEN_WHATSAPP,
@@ -55,6 +58,8 @@ export type OpcionesDeFiltros = {
   cohorts: { id: string; name: string; courseName: string; startDate: string | null }[];
   courses: { id: string; name: string }[];
   companies: { id: string; name: string }[];
+  /** 046 — categorías del catálogo, para "cursó algo de una categoría". */
+  categories: { id: string; name: string }[];
 };
 
 /** Lo que se congela por destinatario al confirmar el envío (DV-008). */
@@ -154,9 +159,16 @@ export async function opcionesDeFiltros(orgId: string): Promise<OpcionesDeFiltro
     .where(scoped(schema.company.organizationId, orgId))
     .orderBy(asc(schema.company.legalName));
 
+  const categories = await db
+    .select({ id: schema.courseCategory.id, name: schema.courseCategory.name })
+    .from(schema.courseCategory)
+    .where(scoped(schema.courseCategory.organizationId, orgId))
+    .orderBy(asc(schema.courseCategory.name));
+
   return {
     sources,
     stages,
+    categories,
     cohorts: cohortRows.map((c) => ({
       id: c.id,
       name: etiquetaDeCohorte({ courseName: c.courseName, name: c.name }),
@@ -190,6 +202,29 @@ async function zonaDeLaOrganizacion(orgId: string): Promise<string> {
     .where(scoped(schema.organization.id, orgId))
     .limit(1);
   return row?.timezone ?? "America/Montevideo";
+}
+
+/**
+ * 046 (US4; FR-008…FR-010, DV-007, DV-008) — Los filtros de historial como UNA
+ * condición sobre `contact.id`. Quién cumple lo decide la función pura
+ * `contactosQueCumplen` sobre los historiales de `historialesComerciales`, la
+ * misma derivación que la ficha del contacto: no hay una versión SQL de
+ * "cursó" o "aprobó" que pueda divergir.
+ *
+ * Sin filtros de historial no se lee nada. Las exclusiones de la 045 (prueba,
+ * baja, archivado, sin correo, duplicado) no se tocan: siguen en
+ * `candidatosDeAudiencia` y `particionarAudiencia`.
+ */
+export async function condicionDeHistorial(orgId: string, f: AudienceFilters): Promise<SQL | undefined> {
+  if (!tieneFiltrosDeHistorial(f)) return undefined;
+  const now = new Date();
+  const [historiales, rutas] = await Promise.all([
+    historialesDeLaOrganizacion(orgId, now),
+    f.historyNextStepOfCourseId ? rutasPorCurso(orgId) : Promise.resolve(new Map<string, string[]>()),
+  ]);
+  const { modo, ids } = contactosQueCumplen(historiales, f, { rutas, now });
+  if (modo === "excluir") return ids.length > 0 ? notInArray(schema.contact.id, ids) : undefined;
+  return ids.length > 0 ? inArray(schema.contact.id, ids) : sql`false`;
 }
 
 /** Las condiciones de los filtros sobre `contact` (AND entre filtros). */
@@ -274,6 +309,9 @@ async function condicionesDeFiltros(orgId: string, f: AudienceFilters): Promise<
     if (desde) conds.push(gte(ct.createdAt, desde));
     if (hastaExclusivo) conds.push(lt(ct.createdAt, hastaExclusivo));
   }
+
+  const historial = await condicionDeHistorial(orgId, f);
+  if (historial) conds.push(historial);
 
   return conds;
 }
