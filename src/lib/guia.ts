@@ -204,15 +204,15 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
   },
   // 045 — Campañas de marketing por correo.
   "marketing.ver": {
-    que: "ver las audiencias, las campañas, a quién se le enviaron y sus resultados (enviados, bajas y clics)",
+    que: "ver las audiencias, las campañas, a quién se le enviaron y cómo les fue (enviados, bajas y clics). Muestra nombre y correo de muchas personas a la vez: por defecto la tienen Dirección, Coordinación y Ventas",
     donde: "/marketing",
   },
   "marketing.enviar": {
-    que: "armar audiencias, redactar campañas, mandarte una prueba, enviarlas y cancelarlas",
+    que: "armar audiencias, redactar campañas, mandarte una prueba y enviarlas (hasta 500 personas, de a una) o cancelarlas. No hace falta aprobación de nadie: por defecto la tienen Dirección, Coordinación y Ventas",
     donde: "/marketing",
   },
   "marketing.configurar": {
-    que: "elegir el buzón de marketing, el remitente y el pie de los correos, probar el buzón y reactivar a alguien que se dio de baja",
+    que: "elegir el buzón de marketing, el remitente y el pie de los correos y probar el buzón; también reactivar los correos de alguien que se dio de baja, que deshace una oposición expresa de esa persona (Ley 18.331). Por defecto solo la tiene Dirección",
     donde: "/settings/marketing",
   },
 };
