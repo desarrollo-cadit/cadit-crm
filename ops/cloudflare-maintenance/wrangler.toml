@@ -1,0 +1,8 @@
+name = "cadit-mantenimiento"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+
+# El dominio del CRM. Tiene que estar "proxied" (nube naranja) en Cloudflare.
+routes = [
+  { pattern = "campus.cadit.com.uy/*", zone_name = "cadit.com.uy" }
+]
