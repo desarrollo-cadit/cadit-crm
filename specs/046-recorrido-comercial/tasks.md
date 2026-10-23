@@ -137,9 +137,9 @@ convencional por fase.
 
 ## Phase 7: Polish & Cross-Cutting
 
-- [ ] T035 Guard `tests/unit/recorrido-comercial-guard.test.ts`: solo `src/lib/recorrido-comercial.ts` decide estados comerciales; el loader usa `inscripcionesNoDictadas` y `estadoDeAprobacionDeCursada`; ningún archivo nuevo lee `installment`, `payment` ni `amount`; las rutas nuevas declaran su capacidad (FR-010, FR-012, SC-003)
-- [ ] T036 [P] `CLAUDE.md`: fila "Recorrido comercial" en el mapa del código; `specs/ROADMAP.md`: el ítem pasa a implementado (046)
-- [ ] T037 Gate final completo y marcar todas las tareas
+- [x] T035 Guard `tests/unit/recorrido-comercial-guard.test.ts`: solo `src/lib/recorrido-comercial.ts` decide estados comerciales; el loader usa `inscripcionesNoDictadas` y `estadoDeAprobacionDeCursada`; ningún archivo nuevo lee `installment`, `payment` ni `amount`; las rutas nuevas declaran su capacidad (FR-010, FR-012, SC-003)
+- [x] T036 [P] `CLAUDE.md`: fila "Recorrido comercial" en el mapa del código; `specs/ROADMAP.md`: el ítem pasa a implementado (046)
+- [x] T037 Gate final completo y marcar todas las tareas
 
 **Checkpoint**: gate verde → commit de cierre.
 

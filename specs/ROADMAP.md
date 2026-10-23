@@ -178,6 +178,10 @@ Anotado para no perderlo; nada de esto tiene spec todavía.
 
 ### Recorrido comercial del alumno (recompra y marketing)
 
+> **IMPLEMENTADO como [046](046-recorrido-comercial/spec.md) (2026-10-23).** Historial comercial
+> en la ficha, rutas entre cursos, "Le podría interesar", filtros de audiencia por
+> historial y la vista Recompra. Sin E2E en vivo (decisión del dueño).
+
 **El problema**: hoy sabemos qué cursó cada persona, pero no lo usamos para
 venderle el siguiente curso. Quien hizo *Revit Arquitectura* es el candidato
 natural para *Revit MEP* o *Revit Estructura*, y nadie lo está mirando.
