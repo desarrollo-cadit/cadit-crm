@@ -1,4 +1,4 @@
-import { desc, ilike, isNull, or, sql } from "drizzle-orm";
+import { and, desc, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import {
   contactoNuevoCampos,
@@ -11,6 +11,7 @@ import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { serializeContact } from "@/server/contacts";
 import { buscarContactoDuplicado, respuestaDeDuplicado } from "@/server/contact-duplicates";
+import { condicionDeTipo, tiposDeLaOrganizacion } from "@/server/contact-types";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,8 @@ const listQuerySchema = z.object({
   // (un page/pageSize inválido vuelve al default en vez de 422).
   page: z.coerce.number().int().min(1).catch(1),
   pageSize: z.coerce.number().int().min(1).max(MAX_PAGE_SIZE).catch(DEFAULT_PAGE_SIZE),
+  // 046 US7 — lead / alumno activo / exalumno; otro valor = todos.
+  tipo: z.enum(["lead", "alumno_activo", "exalumno"]).optional().catch(undefined),
 });
 
 /**
@@ -55,12 +58,33 @@ export const GET = requireCapability(
     ? undefined
     : isNull(schema.contact.archivedAt);
 
-  const whereClause = scoped(
+  /**
+   * 046 US7 (FR-024) — El tipo sale de la derivación única del historial;
+   * acá se aplica como un conjunto de ids en el WHERE, así la búsqueda, los
+   * archivados y la paginación siguen en SQL.
+   */
+  const tipos = await tiposDeLaOrganizacion(session.organizationId);
+  const tipo = query.data.tipo ?? null;
+  const baseClause = scoped(
     schema.contact.organizationId,
     session.organizationId,
     searchCondition,
     archivedCondition
   );
+  const whereClause = scoped(
+    schema.contact.organizationId,
+    session.organizationId,
+    searchCondition,
+    archivedCondition,
+    condicionDeTipo(tipo, tipos)
+  );
+  const contar = async (condicion: SQL | undefined) => {
+    const [r] = await db
+      .select({ n: sql<number>`count(*)` })
+      .from(schema.contact)
+      .where(condicion ? and(baseClause, condicion) : baseClause);
+    return Number(r?.n ?? 0);
+  };
 
   const [rows, countRows] = await Promise.all([
     db
@@ -73,9 +97,20 @@ export const GET = requireCapability(
     db.select({ n: sql<number>`count(*)` }).from(schema.contact).where(whereClause),
   ]);
 
-  const contacts = rows.map(serializeContact);
+  const contacts = rows.map((c) => ({ ...serializeContact(c), tipo: tipos.tipoDe(c.id) }));
   const total = Number(countRows[0]?.n ?? 0);
-  return Response.json({ contacts, total, page, pageSize });
+  const [todos, alumnos, exalumnos] = await Promise.all([
+    contar(undefined),
+    contar(condicionDeTipo("alumno_activo", tipos)),
+    contar(condicionDeTipo("exalumno", tipos)),
+  ]);
+  return Response.json({
+    contacts,
+    total,
+    page,
+    pageSize,
+    tipos: { todos, lead: todos - alumnos - exalumnos, alumno_activo: alumnos, exalumno: exalumnos },
+  });
 });
 
 /**

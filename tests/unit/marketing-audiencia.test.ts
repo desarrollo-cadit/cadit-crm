@@ -200,3 +200,11 @@ describe("AudienceFiltersSchema — filtros de historial (046, FR-008)", () => {
     expect(AudienceFiltersSchema.parse(vieja)).toEqual(vieja);
   });
 });
+
+describe("AudienceFiltersSchema — tipo de contacto (046 US7, FR-025)", () => {
+  it("acepta los tres tipos y rechaza otro", () => {
+    expect(AudienceFiltersSchema.safeParse({ v: 1, contactTypes: ["lead", "exalumno"] }).success).toBe(true);
+    expect(AudienceFiltersSchema.safeParse({ v: 1, contactTypes: ["profesor"] }).success).toBe(false);
+    expect(AudienceFiltersSchema.safeParse({ v: 1, contactTypes: [] }).success).toBe(false);
+  });
+});

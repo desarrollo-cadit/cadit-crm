@@ -108,6 +108,12 @@ export type EntradaDeHistorial = {
   ultimoInicioCursado: Date | null;
   /** Cuántas cursadas de ese curso cuentan (recursada = 2). */
   veces: number;
+  /**
+   * 046 US7 — Alguna cursada de este curso está en curso o por empezar. Se
+   * guarda aparte del estado porque la recursada puede tener "aprobó" (lo
+   * mejor) y a la vez estar inscripta de nuevo.
+   */
+  activo: boolean;
   especializacion: { modulosAprobados: number; modulosTotal: number } | null;
 };
 
@@ -132,6 +138,27 @@ export function esCursado(estado: EstadoComercial): boolean {
 }
 
 /** El rótulo de una entrada, sin acusar a nadie de reprobar si no hay datos. */
+/**
+ * 046 US7 (FR-023) — El tipo de un contacto, derivado de su historial (nunca
+ * guardado). Precedencia: alumno activo > exalumno > lead. Un grupo que nunca
+ * se dictó no aparece en el historial, así que no hace alumno a nadie.
+ */
+export type TipoDeContacto = "lead" | "alumno_activo" | "exalumno";
+
+export const TIPOS_DE_CONTACTO: readonly TipoDeContacto[] = ["lead", "alumno_activo", "exalumno"];
+
+export const TIPO_DE_CONTACTO_LABEL: Record<TipoDeContacto, string> = {
+  lead: "Lead",
+  alumno_activo: "Alumno activo",
+  exalumno: "Exalumno",
+};
+
+export function tipoDeContacto(historial: readonly Pick<EntradaDeHistorial, "estado" | "activo">[]): TipoDeContacto {
+  if (historial.some((e) => e.activo)) return "alumno_activo";
+  if (historial.some((e) => esCursado(e.estado))) return "exalumno";
+  return "lead";
+}
+
 export function etiquetaDeEntrada(e: Pick<EntradaDeHistorial, "estado" | "sinResultado">): string {
   if (e.estado === "curso_sin_aprobar" && e.sinResultado) return "Cursó · sin resultado cargado";
   return ESTADO_COMERCIAL_LABEL[e.estado];
@@ -222,6 +249,7 @@ export function historialesComerciales(
       primerInicio: c.startDate,
       ultimoInicioCursado: esCursado(decision.estado) ? c.startDate : null,
       veces: 1,
+      activo: decision.estado === "en_curso" || decision.estado === "por_empezar",
       especializacion:
         hijas.length > 0
           ? {
@@ -249,6 +277,7 @@ export function historialesComerciales(
       primerInicio: r.takenOn,
       ultimoInicioCursado: r.takenOn,
       veces: 1,
+      activo: false,
       especializacion: null,
     });
   }
@@ -283,5 +312,6 @@ function fusionar(a: EntradaDeHistorial, b: EntradaDeHistorial): EntradaDeHistor
       ? new Date(Math.max(...ultimos.map((d) => d.getTime())))
       : null,
     veces: a.veces + b.veces,
+    activo: a.activo || b.activo,
   };
 }

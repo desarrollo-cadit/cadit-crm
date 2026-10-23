@@ -1,5 +1,5 @@
 import type { AudienceFilters } from "@/lib/marketing/audience";
-import { esCursado, type EntradaDeHistorial } from "@/lib/recorrido-comercial";
+import { esCursado, tipoDeContacto, type EntradaDeHistorial } from "@/lib/recorrido-comercial";
 
 /**
  * 046 (US4; FR-008…FR-010) — Los filtros de audiencia por historial de
@@ -12,7 +12,10 @@ import { esCursado, type EntradaDeHistorial } from "@/lib/recorrido-comercial";
  * AND entre filtros; "alguno de" dentro de cada lista.
  */
 
-type EntradaParaFiltrar = Pick<EntradaDeHistorial, "courseId" | "categoryId" | "estado" | "ultimoInicioCursado">;
+type EntradaParaFiltrar = Pick<
+  EntradaDeHistorial,
+  "courseId" | "categoryId" | "estado" | "ultimoInicioCursado" | "activo"
+>;
 
 export type ContextoDeHistorial = {
   /** Origen → siguientes, en orden (`rutasPorCurso`). */
@@ -27,7 +30,8 @@ export function tieneFiltrosDeHistorial(f: AudienceFilters): boolean {
       f.historyNotApprovedCourseIds ||
       f.historyNotDoneCourseIds ||
       f.historyRecent ||
-      f.historyNextStepOfCourseId
+      f.historyNextStepOfCourseId ||
+      f.contactTypes
   );
 }
 
@@ -77,6 +81,8 @@ export function cumpleFiltrosDeHistorial(
     );
     if (!cumple) return false;
   }
+
+  if (f.contactTypes && !f.contactTypes.includes(tipoDeContacto(historial))) return false;
 
   if (f.historyNextStepOfCourseId) {
     const origen = f.historyNextStepOfCourseId;

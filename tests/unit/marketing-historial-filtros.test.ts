@@ -166,3 +166,23 @@ describe("cursadas históricas (046 US6, FR-021)", () => {
     expect(cumpleFiltrosDeHistorial(h, f({ historyNotApprovedCourseIds: ["arq"] }), ctx)).toBe(false);
   });
 });
+
+describe("tipo de contacto (046 US7, FR-025)", () => {
+  const exalumno = historialDe([cursada("ct", "arq")]);
+  const activo = historialDe([
+    cursada("ct", "arq", { startDate: new Date("2026-11-10"), endDate: new Date("2027-01-10") }),
+  ]);
+
+  it("filtra por tipo, derivado del historial", () => {
+    expect(cumpleFiltrosDeHistorial(exalumno, f({ contactTypes: ["exalumno"] }), ctx)).toBe(true);
+    expect(cumpleFiltrosDeHistorial(activo, f({ contactTypes: ["exalumno"] }), ctx)).toBe(false);
+    expect(cumpleFiltrosDeHistorial(activo, f({ contactTypes: ["alumno_activo", "exalumno"] }), ctx)).toBe(true);
+  });
+
+  it("lead alcanza a quien no tiene historial (se expresa como exclusión)", () => {
+    expect(tieneFiltrosDeHistorial(f({ contactTypes: ["lead"] }))).toBe(true);
+    expect(cumpleFiltrosDeHistorial([], f({ contactTypes: ["lead"] }), ctx)).toBe(true);
+    const r = contactosQueCumplen(historialesComerciales([cursada("x", "arq")], NOW), f({ contactTypes: ["lead"] }), ctx);
+    expect(r).toEqual({ modo: "excluir", ids: ["x"] });
+  });
+});

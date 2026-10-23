@@ -237,6 +237,8 @@ export type ContactDto = {
   nationalId: string | null;
   /** 043 — La empresa de la persona (`contact.company_id`), no la de una venta. */
   companyId: string | null;
+  /** 046 US7 — Derivado del historial comercial (solo en el listado). */
+  tipo?: "lead" | "alumno_activo" | "exalumno";
   archivedAt: string | null;
   /** Iteración 3 — para la columna "Creado" de la tabla de contactos. */
   createdAt: string;

@@ -50,6 +50,7 @@ describe("historialADto", () => {
         primerInicio: new Date("2025-03-01T00:00:00Z"),
         ultimoInicioCursado: new Date("2025-03-01T00:00:00Z"),
         veces: 1,
+        activo: false,
         especializacion: null,
       },
     ]);

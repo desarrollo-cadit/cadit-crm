@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { notify } from "@/lib/notify";
 import { MARKETING_RECIPIENT_CAP, type AudienceFilters, type ExclusionCounts } from "@/lib/marketing/audience";
 import type { AudienceDto, AudiencePreviewDto, OpcionesDeFiltros } from "@/server/marketing/audiences";
+import { TIPOS_DE_CONTACTO, TIPO_DE_CONTACTO_LABEL, type TipoDeContacto } from "@/lib/recorrido-comercial";
 
 /**
  * 045 (US1; FR-001…FR-005, FR-018, SC-001) — Armar una audiencia y ver al
@@ -215,6 +216,18 @@ export function AudienceBuilder({
     });
   };
 
+  /** 046 US7 — tipo de contacto (lead / alumno activo / exalumno). */
+  const setTipos = (valores: string[]) => {
+    setPage(1);
+    setFilters((f) => {
+      const next = { ...f };
+      const tipos = valores.filter((v): v is TipoDeContacto => (TIPOS_DE_CONTACTO as readonly string[]).includes(v));
+      if (tipos.length === 0) delete next.contactTypes;
+      else next.contactTypes = tipos;
+      return next;
+    });
+  };
+
   const setFecha = (clave: "createdFrom" | "createdTo", valor: string) => {
     setPage(1);
     setFilters((f) => {
@@ -343,6 +356,7 @@ export function AudienceBuilder({
               setLista={setLista}
               setReciente={setReciente}
               setSiguientePaso={setSiguientePaso}
+              setTipos={setTipos}
               disabled={disabled}
             />
             <fieldset className="rounded-md border bg-card px-3 py-2">
@@ -467,6 +481,7 @@ function HistorialDeCursos({
   setLista,
   setReciente,
   setSiguientePaso,
+  setTipos,
   disabled,
 }: {
   opciones: OpcionesDeFiltros;
@@ -474,6 +489,7 @@ function HistorialDeCursos({
   setLista: (clave: ClaveLista, valores: string[]) => void;
   setReciente: (cambio: Partial<Reciente> | null) => void;
   setSiguientePaso: (courseId: string) => void;
+  setTipos: (valores: string[]) => void;
   disabled: boolean;
 }) {
   const cursos = op.courses.map((c) => ({ value: c.id, label: c.name }));
@@ -484,6 +500,13 @@ function HistorialDeCursos({
       <p className="text-xs text-muted-foreground">
         Solo cuenta lo que se dictó. Inscripto y por empezar no es «cursó», pero sí cuenta como «hizo».
       </p>
+      <FiltroMultiple
+        label="Tipo de contacto"
+        opciones={TIPOS_DE_CONTACTO.map((t) => ({ value: t, label: TIPO_DE_CONTACTO_LABEL[t] }))}
+        seleccion={filters.contactTypes ?? []}
+        onChange={setTipos}
+        disabled={disabled}
+      />
       <FiltroMultiple
         label="Cursó alguno de"
         opciones={cursos}

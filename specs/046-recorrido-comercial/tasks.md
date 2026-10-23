@@ -197,13 +197,13 @@ convencional por fase.
 
 **Independent Test**: grupo no dictado → lead; cursada histórica → exalumno; grupo por empezar → alumno activo aunque haya aprobado otro.
 
-- [ ] T057 [P] [US7] Test en rojo en `tests/unit/recorrido-comercial.test.ts`: `activo` en la entrada (OR al fusionar recursadas) y `tipoDeContacto` — precedencia, grupo nunca dictado no hace alumno, solo histórico = exalumno, sin historial = lead (FR-023)
-- [ ] T058 [US7] `activo` y `tipoDeContacto` en `src/lib/recorrido-comercial.ts`
-- [ ] T059 [P] [US7] Test en rojo `tests/unit/contact-types.test.ts`: `idsPorTipo` (pura) y `condicionDeTipo` (IN / NOT IN) en `src/server/contact-types.ts`; la ruta `GET /api/contacts` acepta `tipo` y devuelve `tipos`
-- [ ] T060 [US7] `src/server/contact-types.ts` y `src/app/api/contacts/route.ts` (filtro en SQL, paginación intacta, `tipo` por fila, cantidades) (FR-024)
-- [ ] T061 [US7] Pestañas Todos / Leads / Alumnos activos / Exalumnos con cantidades e insignia por fila en `src/components/contacts/contacts-client.tsx` (el "Nuevo" de 48 h queda)
-- [ ] T062 [P] [US7] Test en rojo en `tests/unit/marketing-audiencia.test.ts` y `tests/unit/marketing-historial-filtros.test.ts`: `contactTypes` en el esquema y en `cumpleFiltrosDeHistorial` (lead alcanza a quien no tiene historial) (FR-025)
-- [ ] T063 [US7] `contactTypes` en `src/lib/marketing/audience.ts`, `src/lib/marketing/historial-filtros.ts` y `src/components/marketing/audience-builder.tsx`
+- [x] T057 [P] [US7] Test en rojo en `tests/unit/recorrido-comercial.test.ts`: `activo` en la entrada (OR al fusionar recursadas) y `tipoDeContacto` — precedencia, grupo nunca dictado no hace alumno, solo histórico = exalumno, sin historial = lead (FR-023)
+- [x] T058 [US7] `activo` y `tipoDeContacto` en `src/lib/recorrido-comercial.ts`
+- [x] T059 [P] [US7] Test en rojo `tests/unit/contact-types.test.ts`: `idsPorTipo` (pura) y `condicionDeTipo` (IN / NOT IN) en `src/server/contact-types.ts`; la ruta `GET /api/contacts` acepta `tipo` y devuelve `tipos`
+- [x] T060 [US7] `src/server/contact-types.ts` y `src/app/api/contacts/route.ts` (filtro en SQL, paginación intacta, `tipo` por fila, cantidades) (FR-024)
+- [x] T061 [US7] Pestañas Todos / Leads / Alumnos activos / Exalumnos con cantidades e insignia por fila en `src/components/contacts/contacts-client.tsx` (el "Nuevo" de 48 h queda)
+- [x] T062 [P] [US7] Test en rojo en `tests/unit/marketing-audiencia.test.ts` y `tests/unit/marketing-historial-filtros.test.ts`: `contactTypes` en el esquema y en `cumpleFiltrosDeHistorial` (lead alcanza a quien no tiene historial) (FR-025)
+- [x] T063 [US7] `contactTypes` en `src/lib/marketing/audience.ts`, `src/lib/marketing/historial-filtros.ts` y `src/components/marketing/audience-builder.tsx`
 
 **Checkpoint**: gate verde → commit.
 

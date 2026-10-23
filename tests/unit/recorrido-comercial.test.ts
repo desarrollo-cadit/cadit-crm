@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   claveDeCursoTexto,
+  tipoDeContacto,
   esCursado,
   etiquetaDeEntrada,
   historialesComerciales,
@@ -237,5 +238,47 @@ describe("historialesComerciales — registros históricos (US6)", () => {
       ) ?? [];
     expect(h).toHaveLength(1);
     expect(h[0]?.veces).toBe(2);
+  });
+});
+
+/* ============================================================
+ * 046 US7 (T057; FR-023) — Tipo de contacto
+ * ============================================================ */
+
+describe("tipoDeContacto", () => {
+  const POR_EMPEZAR = { startDate: new Date("2026-11-10"), endDate: new Date("2027-01-10") };
+  const EN_CURSO = { startDate: new Date("2026-10-01"), endDate: new Date("2026-12-01") };
+
+  it("sin historial es lead", () => {
+    expect(tipoDeContacto([])).toBe("lead");
+  });
+
+  it("un grupo que nunca se dictó no hace alumno: sigue siendo lead", () => {
+    expect(tipoDeContacto(deAna([cursada({ nuncaDictada: true })]))).toBe("lead");
+  });
+
+  it("solo una cursada histórica = exalumno", () => {
+    expect(tipoDeContacto(historialesComerciales([], NOW, [historico()]).get("ct_ana") ?? [])).toBe("exalumno");
+  });
+
+  it("aprobó y no tiene nada activo = exalumno", () => {
+    expect(tipoDeContacto(deAna([cursada()]))).toBe("exalumno");
+  });
+
+  it("en curso o por empezar = alumno activo, aunque también sea exalumno (precedencia)", () => {
+    expect(tipoDeContacto(deAna([cursada(EN_CURSO)]))).toBe("alumno_activo");
+    expect(tipoDeContacto(deAna([cursada(), cursada({ courseId: "otro", ...POR_EMPEZAR })]))).toBe("alumno_activo");
+  });
+
+  it("recursada: aprobó antes y vuelve a estar inscripto en el mismo curso = activo", () => {
+    const h = deAna([cursada(), cursada(POR_EMPEZAR)]);
+    expect(h).toHaveLength(1);
+    expect(h[0]?.estado).toBe("aprobo");
+    expect(h[0]?.activo).toBe(true);
+    expect(tipoDeContacto(h)).toBe("alumno_activo");
+  });
+
+  it("abandonó a mitad no está activo", () => {
+    expect(tipoDeContacto(deAna([cursada({ ...EN_CURSO, stageKind: "lost" })]))).toBe("exalumno");
   });
 });

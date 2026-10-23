@@ -63,6 +63,7 @@ function entrada(courseId: string, estado: EntradaDeHistorial["estado"]): Entrad
     primerInicio: d,
     ultimoInicioCursado: d,
     veces: 1,
+    activo: false,
     especializacion: null,
   };
 }

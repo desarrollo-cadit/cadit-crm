@@ -31,9 +31,25 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EnrollLauncher } from "@/components/enrollments/enroll-launcher";
+import { TIPO_DE_CONTACTO_LABEL, type TipoDeContacto } from "@/lib/recorrido-comercial";
 import { notify } from "@/lib/notify";
 
 const PAGE_SIZE = 20;
+
+/** 046 US7 — Las pestañas por tipo de contacto (derivado del historial). */
+type Pestana = "todos" | TipoDeContacto;
+type CantidadesPorTipo = Record<Pestana, number>;
+const PESTANAS: { key: Pestana; label: string }[] = [
+  { key: "todos", label: "Todos" },
+  { key: "lead", label: "Leads" },
+  { key: "alumno_activo", label: "Alumnos activos" },
+  { key: "exalumno", label: "Exalumnos" },
+];
+const VARIANTE_TIPO: Record<TipoDeContacto, "outline" | "success" | "secondary"> = {
+  lead: "outline",
+  alumno_activo: "success",
+  exalumno: "secondary",
+};
 
 /** Extrae "Landing Revit" de "formulario:Landing Revit" para el badge. */
 function formSourceLabel(source: string | null): string | null {
@@ -70,12 +86,15 @@ export function ContactsClient({ canEnroll = false }: { canEnroll?: boolean }) {
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<ContactDto | null>(null);
+  const [pestana, setPestana] = useState<Pestana>("todos");
+  const [cantidades, setCantidades] = useState<CantidadesPorTipo | null>(null);
 
   const refetch = useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams();
     if (query.trim()) params.set("q", query.trim());
     if (showArchived) params.set("archived", "true");
+    if (pestana !== "todos") params.set("tipo", pestana);
     params.set("page", String(page));
     params.set("pageSize", String(PAGE_SIZE));
     const res = await fetch(`/api/contacts?${params}`).catch(() => null);
@@ -86,12 +105,14 @@ export function ContactsClient({ canEnroll = false }: { canEnroll?: boolean }) {
     const data = (await res.json()) as {
       contacts: ContactDto[];
       total: number;
+      tipos?: CantidadesPorTipo;
     };
     setContacts(data.contacts);
     setTotal(data.total);
+    setCantidades(data.tipos ?? null);
     setSelected(new Set());
     setLoading(false);
-  }, [query, showArchived, page]);
+  }, [query, showArchived, page, pestana]);
 
   useEffect(() => {
     const t = setTimeout(() => void refetch(), 250);
@@ -101,7 +122,7 @@ export function ContactsClient({ canEnroll = false }: { canEnroll?: boolean }) {
   // Búsqueda o filtro nuevos: siempre vuelve a la página 1.
   useEffect(() => {
     setPage(1);
-  }, [query, showArchived]);
+  }, [query, showArchived, pestana]);
 
   /**
    * 014 (T008, DV-008) — Da de baja a un alumno.
@@ -229,6 +250,27 @@ export function ContactsClient({ canEnroll = false }: { canEnroll?: boolean }) {
         </div>
       </header>
 
+      {/* 046 US7 — Todos / Leads / Alumnos activos / Exalumnos: el filtro lo hace el servidor. */}
+      <nav className="flex gap-1 border-b px-6" aria-label="Tipo de contacto">
+        {PESTANAS.map((p) => (
+          <button
+            key={p.key}
+            type="button"
+            aria-current={pestana === p.key ? "page" : undefined}
+            onClick={() => setPestana(p.key)}
+            className={cn(
+              "-mb-px border-b-2 px-3 py-2 text-sm",
+              pestana === p.key
+                ? "border-primary font-medium text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {p.label}
+            {cantidades ? <span className="ml-1.5 text-xs text-muted-foreground">{cantidades[p.key]}</span> : null}
+          </button>
+        ))}
+      </nav>
+
       <div className="flex-1 overflow-y-auto p-6">
         {loading ? (
           <div className="space-y-2">
@@ -305,6 +347,9 @@ export function ContactsClient({ canEnroll = false }: { canEnroll?: boolean }) {
                               <Badge variant="default" title="Llegó por un formulario en las últimas 48 horas">
                                 Nuevo
                               </Badge>
+                            )}
+                            {c.tipo && (
+                              <Badge variant={VARIANTE_TIPO[c.tipo]}>{TIPO_DE_CONTACTO_LABEL[c.tipo]}</Badge>
                             )}
                             {c.archivedAt && (
                               <Badge variant="secondary">Archivado</Badge>
