@@ -258,11 +258,22 @@ export function parseQuery<S extends z.ZodTypeAny>(
 /** Parsea el body JSON con un esquema Zod; inválido → Response 422. */
 export async function parseBody<T>(
   req: Request,
-  schema: z.ZodType<T>
+  schema: z.ZodType<T>,
+  /**
+   * `emptyAs`: un pedido SIN cuerpo vale como este valor (y se valida igual).
+   * Para rutas que agregan un cuerpo opcional y tienen que seguir aceptando a
+   * los clientes que no mandan nada. Sin la opción, vacío es un error.
+   */
+  opts: { emptyAs?: unknown } = {}
 ): Promise<{ ok: true; data: T } | { ok: false; response: Response }> {
   let raw: unknown;
   try {
-    raw = await req.json();
+    if (opts.emptyAs !== undefined) {
+      const texto = await req.text();
+      raw = texto.trim() ? JSON.parse(texto) : opts.emptyAs;
+    } else {
+      raw = await req.json();
+    }
   } catch {
     return {
       ok: false,

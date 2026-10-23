@@ -9,6 +9,7 @@ import {
   type AvisoDto,
   type ConfirmacionDto,
 } from "@/lib/staff-notices";
+import { avisarAlConfirmarPorDefecto } from "@/lib/marca-de-confirmacion";
 import { notify } from "@/lib/notify";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,7 @@ const MOTIVO: Record<string, string> = {
   nada_que_enviar: "todas las inscripciones tienen factura",
   correo_sin_configurar: "el correo (M365) no está configurado",
   sin_destinatarios: "nadie del equipo puede confirmar grupos",
+  sin_aviso_por_eleccion: "se confirmó sin avisar por correo",
 };
 
 async function mensajeDeError(res: Response | null, fallback: string): Promise<string> {
@@ -61,6 +63,8 @@ export function CohortConfirmation({
 }) {
   const [estado, setEstado] = useState(initial);
   const [dialogo, setDialogo] = useState<"confirmar" | "quitar" | null>(null);
+  // Un grupo que ya empezó se confirma sin mandarle a Soporte una lista vieja.
+  const [avisar, setAvisar] = useState(() => avisarAlConfirmarPorDefecto(new Date(startDate), new Date()));
   const [enVuelo, setEnVuelo] = useState(false);
 
   async function aplicar(accion: "confirmar" | "quitar") {
@@ -68,6 +72,9 @@ export function CohortConfirmation({
     try {
       const res = await fetch(`/api/cohorts/${cohortId}/confirmation`, {
         method: accion === "confirmar" ? "POST" : "DELETE",
+        ...(accion === "confirmar"
+          ? { headers: { "content-type": "application/json" }, body: JSON.stringify({ avisar }) }
+          : {}),
       }).catch(() => null);
       if (!res?.ok) {
         notify.error(await mensajeDeError(res, "No se pudo guardar. Probá de nuevo en un momento."));
@@ -78,7 +85,9 @@ export function CohortConfirmation({
       setDialogo(null);
       notify.success(
         accion === "confirmar"
-          ? "Grupo confirmado. Soporte recibe el aviso por correo."
+          ? avisar
+            ? "Grupo confirmado. Soporte recibe el aviso por correo."
+            : "Grupo confirmado, sin enviar correos."
           : "Se quitó la confirmación."
       );
     } finally {
@@ -156,14 +165,30 @@ export function CohortConfirmation({
           onConfirm={() => void aplicar("confirmar")}
           onClose={() => setDialogo(null)}
         >
-          <p>
-            El grupo queda confirmado: sale. Soporte recibe por correo la lista de alumnos con las
-            licencias que necesita cada uno.
-          </p>
-          <p>
-            Siete y dos días antes del inicio, Administración recibe las inscripciones que todavía no
-            tienen factura.
-          </p>
+          <p>El grupo queda confirmado: sale.</p>
+          <label className="flex items-start gap-2 text-foreground">
+            <input
+              type="checkbox"
+              className="mt-0.5 accent-primary"
+              checked={avisar}
+              onChange={(e) => setAvisar(e.target.checked)}
+            />
+            <span>
+              Avisar a Soporte por correo, con la lista de alumnos y las licencias que necesita cada
+              uno.
+            </span>
+          </label>
+          {avisarAlConfirmarPorDefecto(new Date(startDate), new Date()) ? (
+            <p>
+              Siete y dos días antes del inicio, Administración recibe las inscripciones que todavía
+              no tienen factura.
+            </p>
+          ) : (
+            <p>
+              El grupo ya empezó: no se manda ningún aviso de facturación, y el de Soporte solo si lo
+              marcás.
+            </p>
+          )}
         </ConfirmSendDialog>
       ) : null}
       {dialogo === "quitar" ? (

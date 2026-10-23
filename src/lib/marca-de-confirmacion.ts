@@ -41,3 +41,14 @@ export function marcaDeConfirmacion(
   const empezo = faltan === null ? now >= g.startDate : faltan <= 0;
   return empezo ? "sin_confirmar_vencido" : "sin_confirmar";
 }
+
+/**
+ * 2026-10-22 — ¿Confirmar avisa a Soporte por correo, por defecto?
+ *
+ * Solo si el grupo todavía no empezó. Confirmar uno que ya está en curso (o
+ * terminó) y nunca se confirmó porque la confirmación no existía mandaría la
+ * lista de licencias de algo que ya pasó. Quien confirma puede cambiarlo.
+ */
+export function avisarAlConfirmarPorDefecto(startDate: Date, now: Date): boolean {
+  return now < startDate;
+}
