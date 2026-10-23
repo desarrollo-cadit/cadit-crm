@@ -139,7 +139,9 @@ describe("SYSTEM_ROLES — la semilla de la fase 4", () => {
     expect(coord?.capabilities).toContain("cobranza.ver");
     // 045 — ni configurar marketing (buzón, pie, revertir bajas).
     expect(coord?.capabilities).not.toContain("marketing.configurar");
-    expect(CAPABILITIES.length - coord!.capabilities.length).toBe(4);
+    // 046 US6 — ni importar el historial (crea contactos en bloque).
+    expect(coord?.capabilities).not.toContain("historial.importar");
+    expect(CAPABILITIES.length - coord!.capabilities.length).toBe(5);
   });
 
   /**
@@ -339,6 +341,20 @@ describe("045 — marketing.ver / marketing.enviar / marketing.configurar", () =
       expect(hasCapability("owner", c)).toBe(true);
       expect(hasCapability("member", c)).toBe(true);
       expect(hasCapability("soporte", c)).toBe(false);
+    }
+  });
+});
+
+/** 046 US8 (FR-026) — `reportes.ver`: Dirección y Coordinación, nadie más. */
+describe("046 — reportes.ver", () => {
+  const byKey = (k: string) => SYSTEM_ROLES.find((r) => r.key === k)!;
+  it("Dirección y Coordinación la tienen", () => {
+    expect(byKey("direccion").capabilities).toContain("reportes.ver");
+    expect(byKey("coordinacion").capabilities).toContain("reportes.ver");
+  });
+  it("Soporte, Administración y Ventas no", () => {
+    for (const key of ["soporte", "administracion", "ventas"]) {
+      expect(byKey(key).capabilities, key).not.toContain("reportes.ver");
     }
   });
 });

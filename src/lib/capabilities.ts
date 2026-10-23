@@ -117,6 +117,18 @@ export const CAPABILITIES = [
   "marketing.ver",
   "marketing.enviar",
   "marketing.configurar",
+  /**
+   * 046 US6 — Importar el historial de cursadas (planilla 2020–2024) desde
+   * Ajustes: crea contactos y empresas y deja cursadas históricas en bloque.
+   * Solo Dirección (FR-022); el dueño la reparte si quiere.
+   */
+  "historial.importar",
+  /**
+   * 046 US8 (FR-026) — La sección Reportes del inicio: cursos, alumnos,
+   * empresas, embudo, recompra y ventas por año y vendedor. Dirección y
+   * Coordinación. Los ingresos piden además `cobranza.ver`.
+   */
+  "reportes.ver",
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -199,6 +211,18 @@ const sinConfigurarMarketing = (c: Capability) => c !== "marketing.configurar";
 const sinMarketing = (c: Capability) => !c.startsWith("marketing.");
 
 /**
+ * 046 US6 (FR-022) — Importar el historial crea y completa contactos en
+ * bloque: es decisión de quien dirige.
+ */
+const sinImportarHistorial = (c: Capability) => c !== "historial.importar";
+
+/**
+ * 046 US8 (FR-026) — Los reportes del inicio son de quien dirige y quien
+ * coordina; soporte no los recibe (el dueño la reparte si quiere).
+ */
+const sinReportes = (c: Capability) => c !== "reportes.ver";
+
+/**
  * Mapeo rol → capacidades, FIEL al comportamiento actual.
  *
  * Cuidado con `member`: el data-model de la fase lo proyectaba como
@@ -224,7 +248,9 @@ export const ROLE_CAPABILITIES: Record<string, readonly Capability[]> = {
       sinConfirmarCohortes(c) &&
       sinEmpresas(c) &&
       sinFacturacion(c) &&
-      sinMarketing(c)
+      sinMarketing(c) &&
+      sinImportarHistorial(c) &&
+      sinReportes(c)
   ),
 };
 
@@ -266,7 +292,8 @@ export const SYSTEM_ROLES: readonly {
         c !== "configuracion.editar" &&
         sinAuditoria(c) &&
         sinAreas(c) &&
-        sinConfigurarMarketing(c)
+        sinConfigurarMarketing(c) &&
+        sinImportarHistorial(c)
     ),
   },
   {
@@ -282,7 +309,9 @@ export const SYSTEM_ROLES: readonly {
         sinConfirmarCohortes(c) &&
         sinEmpresas(c) &&
         sinFacturacion(c) &&
-        sinMarketing(c)
+        sinMarketing(c) &&
+        sinImportarHistorial(c) &&
+        sinReportes(c)
     ),
   },
   /**

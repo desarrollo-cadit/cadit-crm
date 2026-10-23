@@ -50,6 +50,18 @@
     */
     --border-strong: #939397;
 
+    /*
+      046 US8 — Series de los gráficos de Reportes, en orden fijo (nunca
+      ciclado). Validadas con la skill dataviz contra --bg en los dos temas:
+      separación para daltonismo y visión normal OK. En claro, 3, 4 y 5 quedan
+      bajo 3:1 contra el fondo: por eso cada gráfico ofrece su tabla.
+    */
+    --chart-1: #2a78d6;
+    --chart-2: #eb6834;
+    --chart-3: #1baf7a;
+    --chart-4: #eda100;
+    --chart-5: #e87ba4;
+
     /* Chat */
     --chat-bg: #f4f5f7;
     --bubble-out: #f2f5f8;
@@ -231,6 +243,11 @@
     --text-4: #6e6e77;
     --border: #2a2a30;
     --border-strong: #6d6d73;
+    --chart-1: #3987e5;
+    --chart-2: #d95926;
+    --chart-3: #199e70;
+    --chart-4: #c98500;
+    --chart-5: #d55181;
 
     /*
       El chat se aclara UN paso respecto del fondo en vez de oscurecerse: la

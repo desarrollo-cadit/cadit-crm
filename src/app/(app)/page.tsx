@@ -9,6 +9,7 @@ import { FinancePanel } from "@/components/dashboard/finance-panel";
 import { TodayPanel } from "@/components/dashboard/today-panel";
 import { LicenseInventoryPanel } from "@/components/dashboard/license-inventory-panel";
 import { OverduePanel } from "@/components/finance/overdue-panel";
+import { ReportsPanel } from "@/components/dashboard/reports-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +52,8 @@ export default async function HomePage() {
     ? sessionCapabilities(session).includes("cobranza.ver")
     : false;
 
+  const verReportes = session ? sessionCapabilities(session).includes("reportes.ver") : false;
+
   const authSession = await getAuth().api.getSession({ headers: await headers() });
 
   /**
@@ -82,6 +85,9 @@ export default async function HomePage() {
             </div>
           </section>
         )}
+
+        {/* 046 US8 (FR-026) — Reportes: con `reportes.ver` (Dirección y Coordinación). */}
+        {verReportes && <ReportsPanel />}
 
         <section className="space-y-3">
           <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">

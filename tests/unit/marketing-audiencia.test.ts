@@ -166,3 +166,45 @@ describe("rangoDeAlta — días de la organización", () => {
     expect(rangoDeAlta(undefined, undefined, "UTC")).toEqual({ desde: null, hastaExclusivo: null });
   });
 });
+
+describe("AudienceFiltersSchema — filtros de historial (046, FR-008)", () => {
+  it("acepta las claves nuevas", () => {
+    const r = AudienceFiltersSchema.safeParse({
+      v: 1,
+      historyTakenCourseIds: ["arq"],
+      historyApprovedCourseIds: ["arq"],
+      historyNotApprovedCourseIds: ["mep"],
+      historyNotDoneCourseIds: ["mep"],
+      historyRecent: { months: 12, categoryIds: ["cat_bim"] },
+      historyNextStepOfCourseId: "arq",
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("«últimos N meses» sin listas = cualquier curso", () => {
+    expect(AudienceFiltersSchema.safeParse({ v: 1, historyRecent: { months: 6 } }).success).toBe(true);
+  });
+
+  it.each([0, 121, 1.5])("rechaza meses fuera de rango o no enteros (%s)", (months) => {
+    expect(AudienceFiltersSchema.safeParse({ v: 1, historyRecent: { months } }).success).toBe(false);
+  });
+
+  it("rechaza listas vacías y claves desconocidas", () => {
+    expect(AudienceFiltersSchema.safeParse({ v: 1, historyTakenCourseIds: [] }).success).toBe(false);
+    expect(AudienceFiltersSchema.safeParse({ v: 1, historyRecent: { months: 3, otra: 1 } }).success).toBe(false);
+    expect(AudienceFiltersSchema.safeParse({ v: 1, historyFoo: ["x"] }).success).toBe(false);
+  });
+
+  it("una audiencia guardada antes de 046 sigue valiendo igual", () => {
+    const vieja = { v: 1, sources: ["whatsapp"], courseIds: ["arq"] };
+    expect(AudienceFiltersSchema.parse(vieja)).toEqual(vieja);
+  });
+});
+
+describe("AudienceFiltersSchema — tipo de contacto (046 US7, FR-025)", () => {
+  it("acepta los tres tipos y rechaza otro", () => {
+    expect(AudienceFiltersSchema.safeParse({ v: 1, contactTypes: ["lead", "exalumno"] }).success).toBe(true);
+    expect(AudienceFiltersSchema.safeParse({ v: 1, contactTypes: ["profesor"] }).success).toBe(false);
+    expect(AudienceFiltersSchema.safeParse({ v: 1, contactTypes: [] }).success).toBe(false);
+  });
+});

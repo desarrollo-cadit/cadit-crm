@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -25,6 +26,8 @@ type Borrador = {
   paymentTerms: PaymentTerms | "";
   paymentTermDays: string;
   notes: string;
+  /** 046 US8 (FR-030) */
+  excludeFromReports: boolean;
 };
 
 function borradorDe(c: CompanyDto | null): Borrador {
@@ -43,6 +46,7 @@ function borradorDe(c: CompanyDto | null): Borrador {
     paymentTerms: c?.paymentTerms ?? "",
     paymentTermDays: c?.paymentTermDays ? String(c.paymentTermDays) : "",
     notes: c?.notes ?? "",
+    excludeFromReports: c?.excludeFromReports ?? false,
   };
 }
 
@@ -92,6 +96,7 @@ export function CompanyForm({
         paymentTerms: b.paymentTerms === "" ? null : b.paymentTerms,
         paymentTermDays: b.paymentTerms === "credito" && dias !== null && Number.isFinite(dias) ? dias : null,
         notes: b.notes,
+        excludeFromReports: b.excludeFromReports,
       }),
     }).catch(() => null);
     setSaving(false);
@@ -112,7 +117,7 @@ export function CompanyForm({
   }
 
   const campo = (
-    k: Exclude<keyof Borrador, "paymentTerms" | "notes">,
+    k: Exclude<keyof Borrador, "paymentTerms" | "notes" | "excludeFromReports">,
     label: string,
     props: React.InputHTMLAttributes<HTMLInputElement> = {}
   ) => (
@@ -186,6 +191,21 @@ export function CompanyForm({
             placeholder="Orden de compra, horario de recepción de facturas…"
           />
         </div>
+
+        {/* 046 US8 (FR-030) — convenios que la academia deja afuera de sus métricas. */}
+        <label className="flex items-start gap-2.5 rounded-md border p-3">
+          <Checkbox
+            className="mt-0.5"
+            checked={b.excludeFromReports}
+            onChange={(e) => set("excludeFromReports", e.target.checked)}
+          />
+          <span className="space-y-0.5">
+            <span className="block text-sm font-medium">Excluir de los reportes</span>
+            <span className="block text-xs text-muted-foreground">
+              Sus cursadas no cuentan en los reportes del inicio (por ejemplo, un convenio que no es una venta).
+            </span>
+          </span>
+        </label>
 
         {error && (
           <p role="alert" className="text-sm text-destructive">

@@ -5,15 +5,9 @@ import { scoped } from "@/lib/db/tenant";
 import { fullName } from "@/lib/utils";
 import type { Capability } from "@/lib/capabilities";
 import type { Currency } from "@/lib/db/schema";
+import { columnasDeClaseConLista, relojDeAsistencia } from "@/server/attendance";
+import { estadoDeAprobacionDeCursada } from "@/server/estado-de-cursada";
 import {
-  attendancePercentage,
-  columnasDeClaseConLista,
-  relojDeAsistencia,
-  resolveMinAttendance,
-} from "@/server/attendance";
-import {
-  dispensaDeInscripcion,
-  estadoDeModulo,
   programApprovalState,
   razonDeModulo,
   type ApprovalState,
@@ -365,67 +359,37 @@ export async function getStudentRecord(
     RecordModule,
     "position" | "camadaId" | "camadaName" | "otraCamada"
   > => {
-    const clasesDeLaCohorte = clases.filter((c) => c.cohortId === cohort?.id);
-    const asistenciaDeEsta = asistencias.filter((a) => a.enrollmentId === enrollment.id);
-
     /**
-     * 013 (T034) — **0% porque nadie pasó lista NO es 0% porque no vino.**
-     *
-     * `attendancePercentage` devuelve 0 cuando hay clases y ninguna marca de
-     * presencia, y para la planilla de asistencia está bien. En el legajo es
-     * una acusación: dice que la persona no fue a ninguna clase, cuando lo que
-     * pasó es que el profesor todavía no tomó lista.
-     *
-     * Lo encontró el arnés E2E, no el test unitario: hacía falta una cohorte
-     * CON cronograma generado y SIN asistencia cargada, que es exactamente el
-     * estado de las 41 cohortes reales el día que se genere el cronograma.
+     * 046 (research R2) — La regla de una cursada vive en
+     * `estadoDeAprobacionDeCursada`, compartida con el recorrido comercial:
+     * asistencia `null` sin marcas (0% porque nadie pasó lista NO es 0%
+     * porque no vino, 013 T034), mínimo del grupo o del curso, dispensa que
+     * saltea solo la asistencia (028 FR-024) y `estadoDeModulo` (030).
      */
-    const pct =
-      asistenciaDeEsta.length === 0
-        ? null
-        : attendancePercentage(
-            clasesDeLaCohorte.map((c) => ({
-              sessionDate: c.date,
-              endTime: c.endTime,
-              canceled: Boolean(c.canceledAt),
-              tomada: Boolean(c.tomada),
-              status:
-                asistenciaDeEsta.find((a) => a.classSessionId === c.id)?.status ?? null,
-            })),
-            enrollment.enrolledAt,
-            reloj
-          );
-
-    const minPct = resolveMinAttendance(
-      cohort?.minAttendancePct ?? null,
-      course?.minAttendancePct ?? null
-    );
-
-    const evalsDeLaCohorte = evaluaciones.filter((a) => a.cohortId === cohort?.id);
-    const misResultados = evalsDeLaCohorte.map((a) => ({
-      name: a.name,
-      passed:
-        resultados.find(
-          (r) => r.assessmentId === a.id && r.enrollmentId === enrollment.id
-        )?.passed ?? null,
-      required: a.required,
-    }));
-
-    /**
-     * 028 (FR-024) — La dispensa entra acá y en ningún otro lado: saltea la
-     * compuerta de asistencia y nada más. Sin dispensa —las 384 filas de
-     * hoy— `moduleApprovalState` devuelve exactamente lo que devolvía
-     * `approvalState` (FR-032).
-     */
-    const dispensa = dispensaDeInscripcion({
-      ...enrollment,
-      attendanceWaiverByName: waiverAuthor,
-    });
-    const { state, reasons } = estadoDeModulo(
-      misResultados.filter((r) => r.required).map((r) => r.passed),
-      pct,
-      minPct,
-      dispensa
+    const {
+      attendancePct: pct,
+      minAttendancePct: minPct,
+      assessments: misResultados,
+      dispensa,
+      state,
+      reasons,
+    } = estadoDeAprobacionDeCursada(
+      {
+        enrolledAt: enrollment.enrolledAt,
+        attendanceWaiverAt: enrollment.attendanceWaiverAt,
+        attendanceWaiverReason: enrollment.attendanceWaiverReason,
+        attendanceWaiverRevokedAt: enrollment.attendanceWaiverRevokedAt,
+        waiverAuthorName: waiverAuthor,
+        cohortMinPct: cohort?.minAttendancePct ?? null,
+        courseMinPct: course?.minAttendancePct ?? null,
+      },
+      {
+        clases: clases.filter((c) => c.cohortId === cohort?.id),
+        asistencias: asistencias.filter((a) => a.enrollmentId === enrollment.id),
+        evaluaciones: evaluaciones.filter((a) => a.cohortId === cohort?.id),
+        resultados: resultados.filter((r) => r.enrollmentId === enrollment.id),
+        reloj,
+      }
     );
 
     // Sin evaluaciones obligatorias Y sin asistencia registrada no hay nada

@@ -41,6 +41,27 @@ export const AudienceFiltersSchema = z
     companyIds: lista.optional(),
     createdFrom: fecha.optional(),
     createdTo: fecha.optional(),
+    /**
+     * 046 (FR-008, FR-009) — Por historial de cursos. Se evalúan con la
+     * definición única de `src/lib/recorrido-comercial.ts` (FR-010):
+     * `src/lib/marketing/historial-filtros.ts`. Opcionales, así que las
+     * audiencias guardadas antes siguen valiendo con `v: 1`.
+     */
+    historyTakenCourseIds: lista.optional(),
+    historyApprovedCourseIds: lista.optional(),
+    historyNotApprovedCourseIds: lista.optional(),
+    historyNotDoneCourseIds: lista.optional(),
+    historyRecent: z
+      .object({
+        months: z.number().int().min(1).max(120),
+        courseIds: lista.optional(),
+        categoryIds: lista.optional(),
+      })
+      .strict()
+      .optional(),
+    historyNextStepOfCourseId: z.string().trim().min(1).max(200).optional(),
+    /** 046 US7 (FR-025) — lead / alumno activo / exalumno, derivado del historial. */
+    contactTypes: z.array(z.enum(["lead", "alumno_activo", "exalumno"])).min(1).max(3).optional(),
   })
   .strict()
   .refine((f) => !f.createdFrom || !f.createdTo || f.createdFrom <= f.createdTo, {

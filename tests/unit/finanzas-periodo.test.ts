@@ -733,6 +733,10 @@ describe("FR-007/FR-008 — la vista se gobierna con `cobranza.ver` y se declara
       "marketing.ver",
       "marketing.enviar",
       "marketing.configurar",
+      // 046 US6 — importar el historial, tampoco.
+      "historial.importar",
+      // 046 US8 — los reportes del inicio, tampoco.
+      "reportes.ver",
     ]);
     expect(CAPABILITIES.filter((c) => !posteriores.has(c))).toHaveLength(17);
     expect(CAPABILITIES).not.toContain("finanzas.ver" as Capability);

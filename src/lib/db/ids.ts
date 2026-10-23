@@ -106,6 +106,11 @@ const prefixes = {
   marketingClick: "mkk",
   marketingUnsubscribe: "mku",
   marketingImage: "mki",
+  /** 046 — rutas entre cursos (curso → cursos siguientes recomendados). */
+  courseRoute: "crr",
+  /** 046 US6 — importaciones de historial y cursadas históricas. */
+  historicalImportBatch: "hib",
+  historicalCourseTaking: "hct",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

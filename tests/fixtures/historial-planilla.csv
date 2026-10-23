@@ -1,0 +1,9 @@
+nombre,apellido,correo,telefono,empresa,curso,curso_original,estudiante,edicion,fecha,vendedor,nota,fila_planilla
+Lucía,Inventada,lucia.inventada@ejemplo.test,59899000001,Constructora Ficticia SA,Revit Arquitectura,REVIT ARQ,,9,2021-03-15,CP,,2
+Lucía,Inventada,lucia.inventada@ejemplo.test,,,Revit MEP,Revit Mep,,,2022-04-10,GC,"Pagó en dos cuotas, sin factura",3
+Martín,Ejemplo,,59899000002,,Revit Arquitectura,Revit arq.,si,10,2021-08-01,,,4
+Sofía,De Prueba,sofia.prueba@ejemplo.test,,"Estudio Falso, Arquitectos",Dynamo Básico,dynamo,,,2023-02-20,Sofía,,5
+,Sinnombre,sin.nombre@ejemplo.test,,,Revit Arquitectura,,,,2021-05-05,,,6
+Pedro,Sincanal,,,,Revit Arquitectura,,,,2021-05-05,,,7
+Ana,Fechamal,ana.fecha@ejemplo.test,,,Revit Arquitectura,,,,2021-02-30,,,8
+Juan,Sincurso,juan.curso@ejemplo.test,,,,,,,2021-06-06,,,9

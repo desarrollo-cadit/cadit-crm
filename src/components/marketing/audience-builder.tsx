@@ -6,10 +6,12 @@ import { AlertTriangle, ChevronDown, Trash2, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { notify } from "@/lib/notify";
 import { MARKETING_RECIPIENT_CAP, type AudienceFilters, type ExclusionCounts } from "@/lib/marketing/audience";
 import type { AudienceDto, AudiencePreviewDto, OpcionesDeFiltros } from "@/server/marketing/audiences";
+import { TIPOS_DE_CONTACTO, TIPO_DE_CONTACTO_LABEL, type TipoDeContacto } from "@/lib/recorrido-comercial";
 
 /**
  * 045 (US1; FR-001…FR-005, FR-018, SC-001) — Armar una audiencia y ver al
@@ -21,7 +23,20 @@ import type { AudienceDto, AudiencePreviewDto, OpcionesDeFiltros } from "@/serve
 
 type Opcion = { value: string; label: string; hint?: string };
 
-type ClaveLista = "sources" | "stageIds" | "cohortIds" | "courseIds" | "interestCourseIds" | "companyIds";
+type ClaveLista =
+  | "sources"
+  | "stageIds"
+  | "cohortIds"
+  | "courseIds"
+  | "interestCourseIds"
+  | "companyIds"
+  // 046 (US4) — por historial de cursos.
+  | "historyTakenCourseIds"
+  | "historyApprovedCourseIds"
+  | "historyNotApprovedCourseIds"
+  | "historyNotDoneCourseIds";
+
+type Reciente = NonNullable<AudienceFilters["historyRecent"]>;
 
 const ESPERA_MS = 350;
 
@@ -174,6 +189,45 @@ export function AudienceBuilder({
     });
   };
 
+  /** 046 — "cursó algo en los últimos N meses"; sin meses, el filtro no existe. */
+  const setReciente = (cambio: Partial<Reciente> | null) => {
+    setPage(1);
+    setFilters((f) => {
+      const next = { ...f };
+      if (cambio === null) {
+        delete next.historyRecent;
+        return next;
+      }
+      const r: Reciente = { months: 12, ...f.historyRecent, ...cambio };
+      if (r.courseIds?.length === 0) delete r.courseIds;
+      if (r.categoryIds?.length === 0) delete r.categoryIds;
+      next.historyRecent = r;
+      return next;
+    });
+  };
+
+  const setSiguientePaso = (courseId: string) => {
+    setPage(1);
+    setFilters((f) => {
+      const next = { ...f };
+      if (!courseId) delete next.historyNextStepOfCourseId;
+      else next.historyNextStepOfCourseId = courseId;
+      return next;
+    });
+  };
+
+  /** 046 US7 — tipo de contacto (lead / alumno activo / exalumno). */
+  const setTipos = (valores: string[]) => {
+    setPage(1);
+    setFilters((f) => {
+      const next = { ...f };
+      const tipos = valores.filter((v): v is TipoDeContacto => (TIPOS_DE_CONTACTO as readonly string[]).includes(v));
+      if (tipos.length === 0) delete next.contactTypes;
+      else next.contactTypes = tipos;
+      return next;
+    });
+  };
+
   const setFecha = (clave: "createdFrom" | "createdTo", valor: string) => {
     setPage(1);
     setFilters((f) => {
@@ -296,6 +350,15 @@ export function AudienceBuilder({
               onChange={(v) => setLista("companyIds", v)}
               disabled={disabled}
             />
+            <HistorialDeCursos
+              opciones={op}
+              filters={filters}
+              setLista={setLista}
+              setReciente={setReciente}
+              setSiguientePaso={setSiguientePaso}
+              setTipos={setTipos}
+              disabled={disabled}
+            />
             <fieldset className="rounded-md border bg-card px-3 py-2">
               <legend className="px-1 text-sm font-medium">Fecha de alta</legend>
               <div className="grid grid-cols-2 gap-2">
@@ -404,5 +467,148 @@ export function AudienceBuilder({
         )}
       </section>
     </div>
+  );
+}
+
+/**
+ * 046 (US4; FR-008, FR-009) — Filtros por lo que cada persona cursó de verdad.
+ * "Cursó" y "aprobó" son los mismos que muestra la ficha del contacto: un
+ * grupo que nunca se dictó no cuenta. Se combinan (Y) con el resto.
+ */
+function HistorialDeCursos({
+  opciones: op,
+  filters,
+  setLista,
+  setReciente,
+  setSiguientePaso,
+  setTipos,
+  disabled,
+}: {
+  opciones: OpcionesDeFiltros;
+  filters: AudienceFilters;
+  setLista: (clave: ClaveLista, valores: string[]) => void;
+  setReciente: (cambio: Partial<Reciente> | null) => void;
+  setSiguientePaso: (courseId: string) => void;
+  setTipos: (valores: string[]) => void;
+  disabled: boolean;
+}) {
+  const cursos = op.courses.map((c) => ({ value: c.id, label: c.name }));
+  const reciente = filters.historyRecent;
+  return (
+    <fieldset className="space-y-2 rounded-md border bg-card px-3 py-2">
+      <legend className="px-1 text-sm font-medium">Historial de cursos</legend>
+      <p className="text-xs text-muted-foreground">
+        Solo cuenta lo que se dictó. Inscripto y por empezar no es «cursó», pero sí cuenta como «hizo».
+      </p>
+      <FiltroMultiple
+        label="Tipo de contacto"
+        opciones={TIPOS_DE_CONTACTO.map((t) => ({ value: t, label: TIPO_DE_CONTACTO_LABEL[t] }))}
+        seleccion={filters.contactTypes ?? []}
+        onChange={setTipos}
+        disabled={disabled}
+      />
+      <FiltroMultiple
+        label="Cursó alguno de"
+        opciones={cursos}
+        seleccion={filters.historyTakenCourseIds ?? []}
+        onChange={(v) => setLista("historyTakenCourseIds", v)}
+        disabled={disabled}
+      />
+      <FiltroMultiple
+        label="Aprobó alguno de"
+        opciones={cursos}
+        seleccion={filters.historyApprovedCourseIds ?? []}
+        onChange={(v) => setLista("historyApprovedCourseIds", v)}
+        disabled={disabled}
+      />
+      <FiltroMultiple
+        label="Cursó sin aprobar alguno de"
+        opciones={cursos}
+        seleccion={filters.historyNotApprovedCourseIds ?? []}
+        onChange={(v) => setLista("historyNotApprovedCourseIds", v)}
+        disabled={disabled}
+      />
+      <FiltroMultiple
+        label="No hizo ninguno de"
+        opciones={cursos}
+        seleccion={filters.historyNotDoneCourseIds ?? []}
+        onChange={(v) => setLista("historyNotDoneCourseIds", v)}
+        disabled={disabled}
+      />
+
+      <div className="space-y-1 rounded-md border px-3 py-2">
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="h-4 w-4 accent-primary"
+            checked={Boolean(reciente)}
+            onChange={(e) => setReciente(e.target.checked ? {} : null)}
+            disabled={disabled}
+          />
+          <span className="font-medium">Cursó algo en los últimos meses</span>
+        </label>
+        {reciente && (
+          <div className="space-y-2 pt-1">
+            <div className="flex items-center gap-2">
+              <Label htmlFor="history-months" className="text-xs">
+                Meses
+              </Label>
+              <Input
+                id="history-months"
+                type="number"
+                min={1}
+                max={120}
+                className="h-8 w-24"
+                value={reciente.months}
+                onChange={(e) => {
+                  const n = Math.round(Number(e.target.value));
+                  if (Number.isFinite(n) && n >= 1 && n <= 120) setReciente({ months: n });
+                }}
+                disabled={disabled}
+              />
+            </div>
+            <FiltroMultiple
+              label="De estos cursos"
+              opciones={cursos}
+              seleccion={reciente.courseIds ?? []}
+              onChange={(v) => setReciente({ courseIds: v })}
+              disabled={disabled}
+            />
+            {op.categories.length > 0 && (
+              <FiltroMultiple
+                label="O de estas categorías"
+                opciones={op.categories.map((c) => ({ value: c.id, label: c.name }))}
+                seleccion={reciente.categoryIds ?? []}
+                onChange={(v) => setReciente({ categoryIds: v })}
+                disabled={disabled}
+              />
+            )}
+            <p className="text-xs text-muted-foreground">Sin cursos ni categorías elegidos, vale cualquier curso.</p>
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-1">
+        <Label htmlFor="history-next-step" className="text-xs">
+          Siguiente paso de la ruta de
+        </Label>
+        <Select
+          id="history-next-step"
+          value={filters.historyNextStepOfCourseId ?? ""}
+          onChange={(e) => setSiguientePaso(e.target.value)}
+          disabled={disabled}
+        >
+          <option value="">Ningún curso</option>
+          {op.courses.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          Quienes cursaron ese curso y todavía no hicieron ninguno de sus cursos siguientes.
+        </p>
+      </div>
+    </fieldset>
   );
 }

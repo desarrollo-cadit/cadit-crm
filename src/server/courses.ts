@@ -97,6 +97,8 @@ export type CourseContentInput = {
   minAttendancePct?: number | null;
   /** 032 (FR-001/FR-003) — curso, módulo o taller. Default `curso` en el alta. */
   kind?: CourseKind;
+  /** 046 US8 (FR-029) — "Gratuito: no cuenta como venta". Default `false`. */
+  isFree?: boolean;
 };
 
 /**
@@ -144,6 +146,7 @@ export const courseContentSchema = {
   syllabusUrl: httpUrl.nullable().optional(),
   published: z.boolean().optional(),
   grantsCertificate: z.boolean().optional(),
+  isFree: z.boolean().optional(),
   certificateDescription: z
     .string()
     .trim()
@@ -211,6 +214,7 @@ export async function createCourse(
       // 028 fase 5 — y certifica salvo que se diga lo contrario: el curso que
       // no entrega certificado es la excepción, no la regla.
       grantsCertificate: input.grantsCertificate ?? true,
+      isFree: input.isFree ?? false,
       certificateDescription: input.certificateDescription ?? null,
       minAttendancePct: input.minAttendancePct ?? null,
       // 032 (FR-001) — sin tipo declarado, es un curso del catálogo.
@@ -297,6 +301,7 @@ export async function updateCourse(
       ...(input.grantsCertificate !== undefined
         ? { grantsCertificate: input.grantsCertificate }
         : {}),
+      ...(input.isFree !== undefined ? { isFree: input.isFree } : {}),
       ...(input.certificateDescription !== undefined
         ? { certificateDescription: input.certificateDescription }
         : {}),
