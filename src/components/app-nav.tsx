@@ -122,7 +122,7 @@ export function AppNav({
       <nav className="-mx-1 flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-1 pb-3">
         {NAV_GROUPS.map((group) => {
           // Un grupo sin ítems permitidos no se dibuja: un encabezado
-          // ("Gestión") con nada debajo parece un error de carga.
+          // ("Soporte") con nada debajo parece un error de carga.
           const items = group.items.filter(
             (i) => i.capability === null || capabilities.includes(i.capability)
           );

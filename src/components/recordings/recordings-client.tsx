@@ -334,7 +334,7 @@ export function RecordingsClient({
   return (
     <div className="flex h-full min-w-0 flex-col">
       <header className="space-y-3 border-b px-4 pb-3 pt-4 md:px-6">
-        <Breadcrumb items={[{ label: "Gestión", href: null }, { label: "Grabaciones", href: null }]} />
+        <Breadcrumb items={[{ label: "Soporte", href: null }, { label: "Grabaciones", href: null }]} />
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <h1 className="flex items-center gap-2 text-lg font-semibold text-foreground">

@@ -8,14 +8,13 @@ import { GUIA_CAPACIDADES } from "@/lib/guia";
  * menú con capacidad esté descrito en la guía.
  */
 describe("045 — navegación de Marketing", () => {
-  const crm = NAV_GROUPS.find((g) => g.label === "CRM")!;
+  const marketing = NAV_GROUPS.find((g) => g.label === "Marketing")!;
 
-  it("«Marketing» está en el grupo CRM, justo después de «Empresas»", () => {
-    const labels = crm.items.map((i) => i.label as string);
-    const iEmpresas = labels.indexOf("Empresas");
-    expect(iEmpresas).toBeGreaterThanOrEqual(0);
-    const item = crm.items[iEmpresas + 1];
-    expect(item, "no hay nada después de Empresas").toBeDefined();
+  // 2026-10-23 — La barra se agrupa por el equipo que la usa: «Marketing» abre
+  // su propio grupo (antes colgaba de «CRM», detrás de «Empresas»).
+  it("«Marketing» es el primer ítem del grupo Marketing", () => {
+    const item = marketing.items[0];
+    expect(item, "el grupo Marketing está vacío").toBeDefined();
     expect({ href: item!.href, label: item!.label, capability: item!.capability }).toEqual({
       href: "/marketing",
       label: "Marketing",
