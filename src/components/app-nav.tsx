@@ -129,7 +129,7 @@ export function AppNav({
           if (items.length === 0) return null;
           return (
           <div key={group.label} className="flex flex-col gap-0.5">
-            <span className="px-2.5 pb-1 text-[10.5px] font-semibold uppercase tracking-wide text-text-3">
+            <span className="px-2.5 pb-1 text-[10.5px] font-semibold uppercase tracking-wide text-barra-rotulo">
               {group.label}
             </span>
             {items.map((item) => {

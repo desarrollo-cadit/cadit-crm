@@ -66,6 +66,7 @@ const config: Config = {
         "text-2": "var(--text-2)",
         "text-3": "var(--text-3)",
         "text-4": "var(--text-4)",
+        "barra-rotulo": "var(--barra-rotulo)",
         chat: "var(--chat-bg)",
         "bubble-out": "var(--bubble-out)",
         "bubble-out-text": "var(--bubble-out-text)",

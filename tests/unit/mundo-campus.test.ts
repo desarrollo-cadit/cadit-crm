@@ -93,6 +93,12 @@ describe("la barra lateral se lee", () => {
       expect(contrastRatio(tinta, fondo)).toBeGreaterThanOrEqual(4.5);
     });
 
+    it(`los rótulos de grupo sobre el navy (${nombre})`, () => {
+      const rotulo = ATLAS[nombre]["barra-rotulo"];
+      expect(rotulo).toBeDefined();
+      expect(contrastRatio(rotulo!, fondo)).toBeGreaterThanOrEqual(4.5);
+    });
+
     it(`texto blanco sobre el ítem activo y el hover (${nombre})`, () => {
       expect(contrastRatio(tinta, sobre(fondo, velo("accent-tint")))).toBeGreaterThanOrEqual(4.5);
       expect(contrastRatio(tinta, sobre(fondo, velo("bg-hover")))).toBeGreaterThanOrEqual(4.5);

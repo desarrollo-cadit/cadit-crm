@@ -207,6 +207,8 @@
     */
     --barra-fondo: #001b5e;
     --barra-tinta: #ffffff;
+    /* Rótulos de grupo de la barra: naranja de marca sobre el navy, 5.7:1. */
+    --barra-rotulo: #f97316;
 
   }
 
@@ -280,6 +282,8 @@
     /* La barra lateral es la misma en los dos temas: el navy se despega del fondo casi negro. */
     --barra-fondo: #001b5e;
     --barra-tinta: #ffffff;
+    /* Rótulos de grupo de la barra: naranja de marca sobre el navy, 5.7:1. */
+    --barra-rotulo: #f97316;
 
     /* Más opaco que en claro: sobre fondo oscuro un velo tenue no separa nada. */
     --overlay: rgba(0, 0, 0, 0.7);
