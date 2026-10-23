@@ -113,6 +113,7 @@ describe("recorridoComercialDelContacto", () => {
     selectQueue.push([]); // evaluaciones
     selectQueue.push([]); // resultados
     selectQueue.push([{ enrollmentId: "enr_1", revokedAt: null }]); // certificado vigente
+    selectQueue.push([]); // cursadas históricas (046 US6)
     selectQueue.push([{ fromCourseId: "arq", toCourseId: "mep", position: 0 }]); // rutas
     selectQueue.push([{ id: "mep", name: "Revit MEP", published: true, kind: "curso" }]); // cursos sugeridos
     selectQueue.push([
@@ -136,6 +137,42 @@ describe("recorridoComercialDelContacto", () => {
         proximoGrupo: { cohortId: "coh_mep", name: "Revit MEP — Noviembre", startDate: "2026-11-10" },
       },
     ]);
+  });
+});
+
+describe("recorridoComercialDelContacto — cursadas históricas (046 US6)", () => {
+  it("una cursada de la planilla figura como registro histórico y abre la ruta", async () => {
+    selectQueue.push([{ id: "ct_1" }]); // el contacto
+    selectQueue.push([]); // sin inscripciones
+    selectQueue.push([
+      {
+        contactId: "ct_1",
+        courseId: "arq",
+        courseLabel: "Revit Arquitectura",
+        catalogName: "Revit Arquitectura",
+        categoryId: null,
+        takenOn: new Date("2022-05-01T00:00:00Z"),
+        edition: "9",
+      },
+      {
+        contactId: "ct_1",
+        courseId: null,
+        courseLabel: "Dynamo",
+        catalogName: null,
+        categoryId: null,
+        takenOn: new Date("2021-05-01T00:00:00Z"),
+        edition: null,
+      },
+    ]); // cursadas históricas
+    selectQueue.push([{ fromCourseId: "arq", toCourseId: "mep", position: 0 }]); // rutas
+    selectQueue.push([{ id: "mep", name: "Revit MEP", published: true, kind: "curso" }]); // cursos
+    selectQueue.push([]); // grupos
+    const r = await recorridoComercialDelContacto("org_1", "ct_1", new Date("2026-10-23T12:00:00Z"));
+    expect(r?.historial).toEqual([
+      expect.objectContaining({ courseId: "arq", estado: "curso_historico", cohortId: null, cohortName: "Edición 9" }),
+      expect.objectContaining({ courseId: "texto:dynamo", courseName: "Dynamo", estado: "curso_historico" }),
+    ]);
+    expect(r?.sugerencias.map((s) => s.courseId)).toEqual(["mep"]);
   });
 });
 

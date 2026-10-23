@@ -163,3 +163,12 @@ describe("proximoGrupoAbierto", () => {
     expect(proximoGrupoAbierto([g("ya", "2026-01-01", { end: "2026-03-01" })], NOW)).toBeNull();
   });
 });
+
+describe("sugerenciasDeRecompra — cursada histórica (046 US6)", () => {
+  it("una cursada histórica abre la ruta como cualquier cursada", () => {
+    const r = new Map([["arq", ["mep"]]]);
+    expect(
+      sugerenciasDeRecompra([entrada("arq", "curso_historico")], r, CATALOGO, new Map()).map((x) => x.courseId)
+    ).toEqual(["mep"]);
+  });
+});

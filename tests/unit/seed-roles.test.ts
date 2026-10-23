@@ -61,6 +61,8 @@ const GRANTS = [
   // 045 — `marketing.ver`/`.enviar` (dirección, coordinación, ventas) y
   // `marketing.configurar` (dirección).
   migracion("0071_campanas_de_marketing.sql"),
+  // 046 US6 — `historial.importar` (dirección).
+  migracion("0073_historial_importado.sql"),
 ].join("\n");
 
 /**

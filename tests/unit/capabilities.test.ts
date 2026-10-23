@@ -139,7 +139,9 @@ describe("SYSTEM_ROLES — la semilla de la fase 4", () => {
     expect(coord?.capabilities).toContain("cobranza.ver");
     // 045 — ni configurar marketing (buzón, pie, revertir bajas).
     expect(coord?.capabilities).not.toContain("marketing.configurar");
-    expect(CAPABILITIES.length - coord!.capabilities.length).toBe(4);
+    // 046 US6 — ni importar el historial (crea contactos en bloque).
+    expect(coord?.capabilities).not.toContain("historial.importar");
+    expect(CAPABILITIES.length - coord!.capabilities.length).toBe(5);
   });
 
   /**

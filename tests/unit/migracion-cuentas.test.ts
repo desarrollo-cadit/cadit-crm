@@ -36,6 +36,8 @@ const POSTERIORES: readonly Capability[] = [
   "alumnos.auditoria",
   "areas.configurar",
   "marketing.configurar",
+  // 046 US6 — `historial.importar` también: nació después y es solo de dirección.
+  "historial.importar",
 ];
 const deEntonces = (caps: readonly Capability[]) =>
   caps.filter((c) => !POSTERIORES.includes(c));

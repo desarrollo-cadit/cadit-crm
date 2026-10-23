@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  claveDeCursoTexto,
   esCursado,
   etiquetaDeEntrada,
   historialesComerciales,
   type CursadaComercial,
+  type RegistroHistorico,
 } from "@/lib/recorrido-comercial";
 
 /**
@@ -171,5 +173,69 @@ describe("historialesComerciales — recursada (edge case)", () => {
     expect(esCursado("en_curso")).toBe(true);
     expect(esCursado("aprobo")).toBe(true);
     expect(esCursado("curso_sin_aprobar")).toBe(true);
+  });
+});
+
+/* ============================================================
+ * 046 US6 (T041; FR-021) — Cursadas históricas de la planilla
+ * ============================================================ */
+
+
+function historico(p: Partial<RegistroHistorico> = {}): RegistroHistorico {
+  return {
+    contactId: "ct_ana",
+    courseId: "crs_arq",
+    courseLabel: "Revit Arquitectura",
+    courseName: "Revit Arquitectura",
+    categoryId: "cat_bim",
+    takenOn: new Date("2022-05-01T00:00:00Z"),
+    edition: null,
+    ...p,
+  };
+}
+
+describe("historialesComerciales — registros históricos (US6)", () => {
+  it("una cursada histórica es «cursó (registro histórico)»: cuenta como cursada, nunca como aprobó", () => {
+    const [e] = historialesComerciales([], NOW, [historico({ edition: "9" })]).get("ct_ana") ?? [];
+    expect(e).toMatchObject({
+      courseId: "crs_arq",
+      estado: "curso_historico",
+      cohortId: null,
+      cohortName: "Edición 9",
+      veces: 1,
+    });
+    expect(esCursado("curso_historico")).toBe(true);
+    expect(etiquetaDeEntrada(e!)).toBe("Cursó (registro histórico)");
+    expect(e?.ultimoInicioCursado?.toISOString().slice(0, 10)).toBe("2022-05-01");
+  });
+
+  it("un curso que no está en el catálogo queda como texto", () => {
+    const [e] =
+      historialesComerciales([], NOW, [historico({ courseId: null, courseLabel: "Dynamo Avanzado", courseName: "Dynamo Avanzado", categoryId: null })]).get(
+        "ct_ana"
+      ) ?? [];
+    expect(e?.courseId).toBe("texto:dynamo avanzado");
+    expect(e?.courseName).toBe("Dynamo Avanzado");
+  });
+
+  it("un dato real del mismo curso gana; la cursada vieja suma vez y fecha de compra", () => {
+    const h = historialesComerciales([cursada({ aprobacion: "reprobado" })], NOW, [historico()]).get("ct_ana") ?? [];
+    expect(h).toHaveLength(1);
+    expect(h[0]).toMatchObject({ estado: "curso_sin_aprobar", veces: 2 });
+    expect(h[0]?.primerInicio.toISOString().slice(0, 10)).toBe("2022-05-01");
+  });
+
+  it("el texto se compara sin tildes, mayúsculas ni espacios de más, y no confunde «ss» con «s»", () => {
+    expect(claveDeCursoTexto("Revit  MEP")).toBe(claveDeCursoTexto("revit mép"));
+    expect(claveDeCursoTexto("Classes")).not.toBe(claveDeCursoTexto("Clases"));
+  });
+
+  it("dos registros históricos del mismo curso son una entrada", () => {
+    const h =
+      historialesComerciales([], NOW, [historico(), historico({ takenOn: new Date("2023-05-01T00:00:00Z") })]).get(
+        "ct_ana"
+      ) ?? [];
+    expect(h).toHaveLength(1);
+    expect(h[0]?.veces).toBe(2);
   });
 });

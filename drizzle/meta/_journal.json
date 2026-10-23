@@ -512,6 +512,13 @@
       "when": 1792764837107,
       "tag": "0072_rutas_entre_cursos",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1792768931275,
+      "tag": "0073_historial_importado",
+      "breakpoints": true
     }
   ]
 }

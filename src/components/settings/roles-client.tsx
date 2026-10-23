@@ -58,6 +58,7 @@ const CAPABILITY_LABELS: Record<string, string> = {
   "marketing.ver": "Ver marketing",
   "marketing.enviar": "Enviar campañas",
   "marketing.configurar": "Configurar marketing y revertir bajas",
+  "historial.importar": "Importar el historial de cursadas",
 };
 
 /**
@@ -80,7 +81,8 @@ const GROUPS: { title: string; match: (c: string) => boolean }[] = [
     match: (c) => /^(contactos|inscripciones|cobranza|empresas|facturacion|marketing)\./.test(c),
   },
   { title: "Conversaciones", match: (c) => c.startsWith("inbox.") },
-  { title: "Plataforma", match: (c) => /^(configuracion|accesos|alumnos|areas)\./.test(c) },
+  // 046 US6 — `historial.importar` va con Plataforma, igual que en la guía.
+  { title: "Plataforma", match: (c) => /^(configuracion|accesos|alumnos|areas|historial)\./.test(c) },
 ];
 
 async function mensajeDeError(res: Response | null, fallback: string): Promise<string> {

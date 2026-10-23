@@ -26,6 +26,7 @@ const VARIANTE: Record<EstadoComercial, "success" | "secondary" | "outline" | "w
   en_curso: "outline",
   por_empezar: "secondary",
   curso_sin_aprobar: "warning",
+  curso_historico: "outline",
 };
 
 /**
@@ -133,7 +134,8 @@ function EntradaItem({ entrada: e }: { entrada: EntradaDeHistorialDto }) {
       <div className="min-w-0 space-y-0.5">
         <p className="text-sm font-medium">{e.courseName}</p>
         <p className="text-xs text-muted-foreground">
-          Grupo {e.cohortName} · {dia(e.startDate)}
+          {e.cohortId ? `Grupo ${e.cohortName} · ` : e.cohortName ? `${e.cohortName} · ` : ""}
+          {dia(e.startDate)}
           {e.endDate ? ` al ${dia(e.endDate)}` : ""}
           {e.veces > 1 ? ` · lo cursó ${e.veces} veces` : ""}
         </p>
@@ -144,7 +146,15 @@ function EntradaItem({ entrada: e }: { entrada: EntradaDeHistorialDto }) {
           </p>
         ) : null}
       </div>
-      <Badge variant={VARIANTE[e.estado]}>{etiquetaDeEntrada(e)}</Badge>
+      {/* 046 US6 — una cursada de la planilla 2020–2024: se cursó, sin resultado conocido. */}
+      {e.estado === "curso_historico" ? (
+        <span className="flex flex-wrap gap-1">
+          <Badge variant="secondary">Cursó</Badge>
+          <Badge variant={VARIANTE[e.estado]}>Registro histórico</Badge>
+        </span>
+      ) : (
+        <Badge variant={VARIANTE[e.estado]}>{etiquetaDeEntrada(e)}</Badge>
+      )}
     </li>
   );
 }

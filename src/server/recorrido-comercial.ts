@@ -9,6 +9,7 @@ import {
   historialesComerciales,
   type CursadaComercial,
   type EntradaDeHistorial,
+  type RegistroHistorico,
 } from "@/lib/recorrido-comercial";
 import { asistenciaTomadaSql, relojDeAsistencia, type AttendanceStatus, type RelojDeAsistencia } from "@/server/attendance";
 import { inscripcionesNoDictadas } from "@/server/cursadas-no-dictadas";
@@ -292,12 +293,55 @@ export async function cargarCursadasComerciales(
   });
 }
 
+/**
+ * 046 US6 (FR-021) — Las cursadas de la planilla histórica
+ * (`historical_course_taking`), con el nombre y la categoría del curso del
+ * catálogo cuando se asociaron; si no, el texto de la planilla.
+ */
+export async function cargarRegistrosHistoricos(
+  organizationId: string,
+  opts: { contactIds?: readonly string[] } = {}
+): Promise<RegistroHistorico[]> {
+  if (opts.contactIds && opts.contactIds.length === 0) return [];
+  const h = schema.historicalCourseTaking;
+  const filas = await getDb()
+    .select({
+      contactId: h.contactId,
+      courseId: h.courseId,
+      courseLabel: h.courseLabel,
+      catalogName: schema.course.name,
+      categoryId: schema.course.categoryId,
+      takenOn: h.takenOn,
+      edition: h.edition,
+    })
+    .from(h)
+    .leftJoin(schema.course, eq(schema.course.id, h.courseId))
+    .where(
+      scoped(
+        h.organizationId,
+        organizationId,
+        opts.contactIds ? inArray(h.contactId, [...opts.contactIds]) : undefined
+      )
+    );
+  return filas.map((f) => ({
+    contactId: f.contactId,
+    // Un curso borrado del catálogo deja `course_id` en NULL: queda el texto.
+    courseId: f.catalogName ? f.courseId : null,
+    courseLabel: f.courseLabel,
+    courseName: f.catalogName ?? f.courseLabel,
+    categoryId: f.catalogName ? f.categoryId : null,
+    takenOn: f.takenOn,
+    edition: f.edition,
+  }));
+}
+
 /** Los historiales de toda la organización, por contacto (audiencias, Recompra). */
 export async function historialesDeLaOrganizacion(
   organizationId: string,
   now: Date = new Date()
 ): Promise<Map<string, EntradaDeHistorial[]>> {
-  return historialesComerciales(await cargarCursadasComerciales(organizationId, { now }), now);
+  const cursadas = await cargarCursadasComerciales(organizationId, { now });
+  return historialesComerciales(cursadas, now, await cargarRegistrosHistoricos(organizationId));
 }
 
 /* ============================================================
@@ -309,8 +353,9 @@ export type EntradaDeHistorialDto = {
   courseName: string;
   estado: EntradaDeHistorial["estado"];
   sinResultado: boolean;
-  cohortId: string;
-  cohortName: string;
+  /** `null` en un registro histórico (046 US6). */
+  cohortId: string | null;
+  cohortName: string | null;
   startDate: string;
   endDate: string | null;
   veces: number;
@@ -365,7 +410,8 @@ export async function recorridoComercialDelContacto(
   if (!contacto) return null;
 
   const cursadas = await cargarCursadasComerciales(organizationId, { contactIds: [contactId], now });
-  const historial = historialesComerciales(cursadas, now).get(contactId) ?? [];
+  const historicos = await cargarRegistrosHistoricos(organizationId, { contactIds: [contactId] });
+  const historial = historialesComerciales(cursadas, now, historicos).get(contactId) ?? [];
   return {
     historial: historialADto(historial),
     sugerencias: await sugerenciasDelHistorial(organizationId, historial, now),

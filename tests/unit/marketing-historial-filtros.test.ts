@@ -137,3 +137,32 @@ describe("contactosQueCumplen — «aprobaron A y no hicieron B» (US4-1)", () =
     expect([...r.ids].sort()).toEqual(["ct0", "ct1", "ct2"]);
   });
 });
+
+describe("cursadas históricas (046 US6, FR-021)", () => {
+  const h =
+    historialesComerciales([], NOW, [
+      {
+        contactId: "ct",
+        courseId: "arq",
+        courseLabel: "arq",
+        courseName: "arq",
+        categoryId: "cat_bim",
+        takenOn: new Date("2026-03-01T00:00:00Z"),
+        edition: null,
+      },
+    ]).get("ct") ?? [];
+
+  it("cuentan para cursó, no hizo y últimos N meses", () => {
+    expect(cumpleFiltrosDeHistorial(h, f({ historyTakenCourseIds: ["arq"] }), ctx)).toBe(true);
+    expect(cumpleFiltrosDeHistorial(h, f({ historyNotDoneCourseIds: ["arq"] }), ctx)).toBe(false);
+    expect(cumpleFiltrosDeHistorial(h, f({ historyRecent: { months: 12, categoryIds: ["cat_bim"] } }), ctx)).toBe(
+      true
+    );
+    expect(cumpleFiltrosDeHistorial(h, f({ historyNextStepOfCourseId: "arq" }), ctx)).toBe(true);
+  });
+
+  it("nunca para aprobó ni cursó sin aprobar (no se sabe)", () => {
+    expect(cumpleFiltrosDeHistorial(h, f({ historyApprovedCourseIds: ["arq"] }), ctx)).toBe(false);
+    expect(cumpleFiltrosDeHistorial(h, f({ historyNotApprovedCourseIds: ["arq"] }), ctx)).toBe(false);
+  });
+});

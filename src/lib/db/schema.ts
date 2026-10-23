@@ -4050,3 +4050,96 @@ export const courseRoute = pgTable(
     check("course_route_no_self", sql`${t.fromCourseId} <> ${t.toCourseId}`),
   ]
 );
+
+/* ============================================================
+ * 046 US6 — Historial importado (planilla 2020–2024)
+ * ============================================================ */
+
+export const HISTORICAL_IMPORT_STATUSES = ["aplicando", "aplicada", "deshecha"] as const;
+
+/**
+ * Una importación de historial desde la app (Ajustes → Importar historial).
+ * Guarda quién, cuándo, con qué asociaciones y qué resultado. Las filas
+ * válidas esperan en `pending_rows` mientras se aplican por tandas y se
+ * BORRAN al terminar o deshacer: no queda una copia de datos personales
+ * fuera de los contactos.
+ */
+export const historicalImportBatch = pgTable(
+  "historical_import_batch",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    sourceLabel: text("source_label").notNull(),
+    fileName: text("file_name"),
+    status: text("status", { enum: HISTORICAL_IMPORT_STATUSES }).notNull().default("aplicando"),
+    /** `{ cursos: {label: courseId|null}, vendedores: {raw: sellerId|null} }`. */
+    mapping: jsonb("mapping").$type<Record<string, unknown>>().notNull(),
+    pendingRows: jsonb("pending_rows").$type<unknown[]>(),
+    totalRows: integer("total_rows").notNull().default(0),
+    processedRows: integer("processed_rows").notNull().default(0),
+    problemRows: integer("problem_rows").notNull().default(0),
+    contactsCreated: integer("contacts_created").notNull().default(0),
+    contactsCompleted: integer("contacts_completed").notNull().default(0),
+    companiesCreated: integer("companies_created").notNull().default(0),
+    takingsCreated: integer("takings_created").notNull().default(0),
+    takingsExisting: integer("takings_existing").notNull().default(0),
+    importedBy: text("imported_by").references(() => user.id, { onDelete: "set null" }),
+    undoneBy: text("undone_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    finishedAt: timestamp("finished_at"),
+    undoneAt: timestamp("undone_at"),
+  },
+  (t) => [
+    index("historical_import_batch_org_created_idx").on(t.organizationId, t.createdAt),
+    check(
+      "historical_import_batch_status_valid",
+      sql`${t.status} IN ('aplicando','aplicada','deshecha')`
+    ),
+  ]
+);
+
+/**
+ * Una cursada de la planilla histórica: NO es una inscripción ni un grupo
+ * (esos años no tienen grupos en el sistema). El historial comercial la
+ * cuenta como "cursó (registro histórico)" — nunca como "aprobó".
+ *
+ * `course_id` es el curso del catálogo al que se asoció el nombre de la
+ * planilla; sin asociación queda solo `course_label` (texto). `dedup_key`
+ * (contacto + curso o texto + fecha) es lo que impide duplicar al reimportar.
+ */
+export const historicalCourseTaking = pgTable(
+  "historical_course_taking",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    contactId: text("contact_id")
+      .notNull()
+      .references(() => contact.id, { onDelete: "cascade" }),
+    courseId: text("course_id").references(() => course.id, { onDelete: "set null" }),
+    courseLabel: text("course_label").notNull(),
+    originalLabel: text("original_label"),
+    /** El día de la cursada (medianoche UTC, como `cohort.start_date`). */
+    takenOn: timestamp("taken_on").notNull(),
+    companyId: text("company_id").references(() => company.id, { onDelete: "set null" }),
+    sellerId: text("seller_id").references(() => seller.id, { onDelete: "set null" }),
+    isStudent: boolean("is_student").notNull().default(false),
+    edition: text("edition"),
+    note: text("note"),
+    sourceLabel: text("source_label").notNull(),
+    sourceRow: integer("source_row"),
+    batchId: text("batch_id")
+      .notNull()
+      .references(() => historicalImportBatch.id, { onDelete: "cascade" }),
+    dedupKey: text("dedup_key").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("historical_course_taking_org_dedup_uq").on(t.organizationId, t.dedupKey),
+    index("historical_course_taking_org_contact_idx").on(t.organizationId, t.contactId),
+    index("historical_course_taking_org_batch_idx").on(t.organizationId, t.batchId),
+  ]
+);

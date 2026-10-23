@@ -215,6 +215,11 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
     que: "elegir el buzón de marketing, el remitente y el pie de los correos y probar el buzón; también reactivar los correos de alguien que se dio de baja, que deshace una oposición expresa de esa persona (Ley 18.331). Por defecto solo la tiene Dirección",
     donde: "/settings/marketing",
   },
+  // 046 US6 — Importar el historial de cursadas.
+  "historial.importar": {
+    que: "importar la planilla histórica de cursadas (2020–2024): asociar cursos y vendedores, ver la vista previa, aplicarla y deshacerla. Crea y completa contactos en bloque (nunca pisa un dato): por defecto solo la tiene Dirección",
+    donde: "Ajustes → Importar historial",
+  },
 };
 
 /**
@@ -247,7 +252,8 @@ export const GRUPOS_CAPACIDADES: readonly {
     incluye: (c) => /^(contactos|inscripciones|cobranza|empresas|facturacion|marketing)\./.test(c),
   },
   { titulo: "Conversaciones", incluye: (c) => c.startsWith("inbox.") },
-  { titulo: "Plataforma", incluye: (c) => /^(configuracion|accesos|alumnos|areas)\./.test(c) },
+  // 046 US6 — importar el historial es una operación de la plataforma.
+  { titulo: "Plataforma", incluye: (c) => /^(configuracion|accesos|alumnos|areas|historial)\./.test(c) },
 ];
 
 /**

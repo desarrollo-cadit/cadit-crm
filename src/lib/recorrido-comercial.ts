@@ -22,7 +22,13 @@ import type { CourseKind } from "@/lib/course-kind";
  *   con `programApprovalState` sobre sus módulos, igual que el legajo.
  */
 
-export type EstadoComercial = "aprobo" | "curso_sin_aprobar" | "en_curso" | "por_empezar";
+export type EstadoComercial =
+  | "aprobo"
+  | "curso_sin_aprobar"
+  | "en_curso"
+  | "por_empezar"
+  /** 046 US6 — una cursada de la planilla 2020–2024: se cursó, no se sabe si aprobó. */
+  | "curso_historico";
 
 /** Una inscripción CON grupo, con todo lo que hace falta para decidir. */
 export type CursadaComercial = {
@@ -43,17 +49,54 @@ export type CursadaComercial = {
   certificadoVigente: boolean;
 };
 
+/**
+ * 046 US6 (FR-021) — Una cursada de la planilla histórica
+ * (`historical_course_taking`): sin grupo ni inscripción. `courseId` null =
+ * el curso no se asoció al catálogo y queda como texto.
+ */
+export type RegistroHistorico = {
+  contactId: string;
+  courseId: string | null;
+  courseLabel: string;
+  /** El nombre del curso del catálogo, o el texto de la planilla. */
+  courseName: string;
+  categoryId: string | null;
+  takenOn: Date;
+  edition: string | null;
+};
+
+/** Sin tildes, en minúsculas y con los espacios colapsados. */
+function plano(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * La llave de un curso que solo existe como texto: dos filas con "Revit  MEP"
+ * y "revit mep" son el mismo curso. La usan el historial y la deduplicación
+ * del importador.
+ */
+export function claveDeCursoTexto(label: string): string {
+  return `texto:${plano(label)}`;
+}
+
 /** Un curso del historial de una persona (una sola entrada por curso). */
 export type EntradaDeHistorial = {
+  /** El id del catálogo, o `texto:<nombre>` si vino de la planilla sin asociar. */
   courseId: string;
   courseName: string;
   categoryId: string | null;
   estado: EstadoComercial;
   /** "Cursó sin aprobar" porque nadie cargó datos, no porque reprobó. */
   sinResultado: boolean;
-  /** El grupo de la cursada que dio el mejor resultado. */
-  cohortId: string;
-  cohortName: string;
+  /** El grupo de la cursada que dio el mejor resultado; `null` en un registro histórico. */
+  cohortId: string | null;
+  /** El nombre del grupo, o "Edición N" de un registro histórico. */
+  cohortName: string | null;
   startDate: Date;
   endDate: Date | null;
   /** El primer inicio de ese curso: la fecha de la "compra" (métricas). */
@@ -70,10 +113,16 @@ export const ESTADO_COMERCIAL_LABEL: Record<EstadoComercial, string> = {
   curso_sin_aprobar: "Cursó sin aprobar",
   en_curso: "En curso",
   por_empezar: "Inscripto, por empezar",
+  curso_historico: "Cursó (registro histórico)",
 };
 
 /** Lo que cuenta como "cursó": empezó en un grupo que se dictó. */
-export const ESTADOS_CURSADOS: readonly EstadoComercial[] = ["aprobo", "curso_sin_aprobar", "en_curso"];
+export const ESTADOS_CURSADOS: readonly EstadoComercial[] = [
+  "aprobo",
+  "curso_sin_aprobar",
+  "en_curso",
+  "curso_historico",
+];
 
 export function esCursado(estado: EstadoComercial): boolean {
   return ESTADOS_CURSADOS.includes(estado);
@@ -85,10 +134,15 @@ export function etiquetaDeEntrada(e: Pick<EntradaDeHistorial, "estado" | "sinRes
   return ESTADO_COMERCIAL_LABEL[e.estado];
 }
 
+/**
+ * 046 US6 (DV-012) — Un dato real del mismo curso gana a un registro
+ * histórico: el histórico no sabe si aprobó.
+ */
 const RANGO: Record<EstadoComercial, number> = {
-  aprobo: 4,
-  en_curso: 3,
-  curso_sin_aprobar: 2,
+  aprobo: 5,
+  en_curso: 4,
+  curso_sin_aprobar: 3,
+  curso_historico: 2,
   por_empezar: 1,
 };
 
@@ -124,7 +178,8 @@ function estadoDeCursada(
  */
 export function historialesComerciales(
   cursadas: readonly CursadaComercial[],
-  now: Date
+  now: Date,
+  historicos: readonly RegistroHistorico[] = []
 ): Map<string, EntradaDeHistorial[]> {
   const hijasDe = new Map<string, CursadaComercial[]>();
   for (const c of cursadas) {
@@ -133,6 +188,12 @@ export function historialesComerciales(
   }
 
   const porContactoYCurso = new Map<string, Map<string, EntradaDeHistorial>>();
+  const agregar = (contactId: string, nueva: EntradaDeHistorial) => {
+    const delContacto = porContactoYCurso.get(contactId) ?? new Map<string, EntradaDeHistorial>();
+    porContactoYCurso.set(contactId, delContacto);
+    const previa = delContacto.get(nueva.courseId);
+    delContacto.set(nueva.courseId, previa ? fusionar(previa, nueva) : nueva);
+  };
 
   for (const c of cursadas) {
     // Los módulos de una especialización viven dentro de su madre.
@@ -167,10 +228,26 @@ export function historialesComerciales(
           : null,
     };
 
-    const delContacto = porContactoYCurso.get(c.contactId) ?? new Map<string, EntradaDeHistorial>();
-    porContactoYCurso.set(c.contactId, delContacto);
-    const previa = delContacto.get(c.courseId);
-    delContacto.set(c.courseId, previa ? fusionar(previa, nueva) : nueva);
+    agregar(c.contactId, nueva);
+  }
+
+  // 046 US6 — Las cursadas de la planilla: "cursó (registro histórico)".
+  for (const r of historicos) {
+    agregar(r.contactId, {
+      courseId: r.courseId ?? claveDeCursoTexto(r.courseLabel),
+      courseName: r.courseName,
+      categoryId: r.categoryId,
+      estado: "curso_historico",
+      sinResultado: false,
+      cohortId: null,
+      cohortName: r.edition?.trim() ? `Edición ${r.edition.trim()}` : null,
+      startDate: r.takenOn,
+      endDate: null,
+      primerInicio: r.takenOn,
+      ultimoInicioCursado: r.takenOn,
+      veces: 1,
+      especializacion: null,
+    });
   }
 
   const resultado = new Map<string, EntradaDeHistorial[]>();
