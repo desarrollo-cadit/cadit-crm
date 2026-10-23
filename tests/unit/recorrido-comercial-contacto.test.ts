@@ -79,6 +79,64 @@ describe("recorridoComercialDelContacto", () => {
     selectQueue.push([]); // sus inscripciones
     expect(await recorridoComercialDelContacto("org_1", "ct_1")).toEqual({ historial: [], sugerencias: [] });
   });
+
+  it("aprobó Arquitectura con ruta → MEP: sugiere MEP con su próximo grupo (US3)", async () => {
+    selectQueue.push([{ id: "ct_1" }]); // el contacto
+    selectQueue.push([
+      {
+        id: "enr_1",
+        contactId: "ct_1",
+        parentEnrollmentId: null,
+        enrolledAt: null,
+        attendanceWaiverAt: null,
+        attendanceWaiverReason: null,
+        attendanceWaiverRevokedAt: null,
+        waiverAuthorName: null,
+        stageKind: "won",
+        cohortId: "coh_arq",
+        cohortName: "Marzo",
+        startDate: new Date("2025-03-01"),
+        endDate: new Date("2025-05-01"),
+        confirmedAt: new Date("2025-02-01"),
+        parentCohortId: null,
+        cohortMinPct: null,
+        courseId: "arq",
+        courseName: "Revit Arquitectura",
+        courseKind: "curso",
+        categoryId: null,
+        courseMinPct: null,
+      },
+    ]);
+    selectQueue.push([{ timezone: "America/Montevideo" }]); // reloj
+    selectQueue.push([]); // clases
+    selectQueue.push([]); // asistencias
+    selectQueue.push([]); // evaluaciones
+    selectQueue.push([]); // resultados
+    selectQueue.push([{ enrollmentId: "enr_1", revokedAt: null }]); // certificado vigente
+    selectQueue.push([{ fromCourseId: "arq", toCourseId: "mep", position: 0 }]); // rutas
+    selectQueue.push([{ id: "mep", name: "Revit MEP", published: true, kind: "curso" }]); // cursos sugeridos
+    selectQueue.push([
+      {
+        id: "coh_mep",
+        name: "Noviembre",
+        courseId: "mep",
+        courseName: "Revit MEP",
+        startDate: new Date("2026-11-10"),
+        endDate: new Date("2026-12-20"),
+        parentCohortId: null,
+      },
+    ]); // grupos
+    const r = await recorridoComercialDelContacto("org_1", "ct_1", new Date("2026-10-23T12:00:00Z"));
+    expect(r?.historial.map((e) => [e.courseId, e.estado])).toEqual([["arq", "aprobo"]]);
+    expect(r?.sugerencias).toEqual([
+      {
+        courseId: "mep",
+        courseName: "Revit MEP",
+        porCursos: ["Revit Arquitectura"],
+        proximoGrupo: { cohortId: "coh_mep", name: "Revit MEP — Noviembre", startDate: "2026-11-10" },
+      },
+    ]);
+  });
 });
 
 describe("GET /api/contacts/[id]/recorrido-comercial", () => {

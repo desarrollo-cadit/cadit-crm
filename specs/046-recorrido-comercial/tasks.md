@@ -93,10 +93,10 @@ convencional por fase.
 
 **Independent Test**: aprobó Arquitectura, ruta → MEP, Estructura, ya inscripta en Estructura: se sugiere solo MEP con su próximo grupo.
 
-- [ ] T020 [P] [US3] Test en rojo en `tests/unit/rutas-de-cursos.test.ts`: `sugerenciasDeRecompra` (orden de la ruta, sin repetidos, sin lo hecho ni inscripto, sin no publicados ni talleres, solo desde cursos cursados, `porCursos`) y `proximoGrupoAbierto` (primer grupo planificado, no módulo; null si no hay) (FR-007)
-- [ ] T021 [US3] Implementar `sugerenciasDeRecompra` y `proximoGrupoAbierto` en `src/lib/rutas-de-cursos.ts`
-- [ ] T022 [US3] `recorridoComercialDelContacto` suma `sugerencias` (rutas de `rutasPorCurso`, cursos publicados y próximos grupos leídos con `scoped()`), con su caso en `tests/unit/recorrido-comercial-contacto.test.ts`
-- [ ] T023 [US3] Sección "Le podría interesar" en `src/components/contacts/recorrido-comercial-card.tsx` (próximo grupo o "Sin grupo abierto por ahora"); no se dibuja si no hay sugerencias
+- [x] T020 [P] [US3] Test en rojo en `tests/unit/rutas-de-cursos.test.ts`: `sugerenciasDeRecompra` (orden de la ruta, sin repetidos, sin lo hecho ni inscripto, sin no publicados ni talleres, solo desde cursos cursados, `porCursos`) y `proximoGrupoAbierto` (primer grupo planificado, no módulo; null si no hay) (FR-007)
+- [x] T021 [US3] Implementar `sugerenciasDeRecompra` y `proximoGrupoAbierto` en `src/lib/rutas-de-cursos.ts`
+- [x] T022 [US3] `recorridoComercialDelContacto` suma `sugerencias` (rutas de `rutasPorCurso`, cursos publicados y próximos grupos leídos con `scoped()`), con su caso en `tests/unit/recorrido-comercial-contacto.test.ts`
+- [x] T023 [US3] Sección "Le podría interesar" en `src/components/contacts/recorrido-comercial-card.tsx` (próximo grupo o "Sin grupo abierto por ahora"); no se dibuja si no hay sugerencias
 
 **Checkpoint**: gate verde → commit de US3.
 

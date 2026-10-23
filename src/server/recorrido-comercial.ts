@@ -2,7 +2,10 @@ import { eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import type { CourseKind } from "@/lib/course-kind";
+import { proximoGrupoAbierto, sugerenciasDeRecompra } from "@/lib/rutas-de-cursos";
+import { rutasPorCurso } from "@/server/course-routes";
 import {
+  esCursado,
   historialesComerciales,
   type CursadaComercial,
   type EntradaDeHistorial,
@@ -363,5 +366,57 @@ export async function recorridoComercialDelContacto(
 
   const cursadas = await cargarCursadasComerciales(organizationId, { contactIds: [contactId], now });
   const historial = historialesComerciales(cursadas, now).get(contactId) ?? [];
-  return { historial: historialADto(historial), sugerencias: [] };
+  return {
+    historial: historialADto(historial),
+    sugerencias: await sugerenciasDelHistorial(organizationId, historial, now),
+  };
+}
+
+/**
+ * US3 (FR-007) — Lee lo justo para sugerir: las rutas, los cursos candidatos
+ * (publicados, tipo) y sus grupos. Sin historial cursado, ni una consulta.
+ */
+async function sugerenciasDelHistorial(
+  organizationId: string,
+  historial: readonly EntradaDeHistorial[],
+  now: Date
+): Promise<SugerenciaDto[]> {
+  if (!historial.some((e) => esCursado(e.estado))) return [];
+  const rutas = await rutasPorCurso(organizationId);
+  const candidatos = [
+    ...new Set(historial.filter((e) => esCursado(e.estado)).flatMap((e) => rutas.get(e.courseId) ?? [])),
+  ];
+  if (candidatos.length === 0) return [];
+
+  const db = getDb();
+  const cursos = await db
+    .select({
+      id: schema.course.id,
+      name: schema.course.name,
+      published: schema.course.published,
+      kind: schema.course.kind,
+    })
+    .from(schema.course)
+    .where(scoped(schema.course.organizationId, organizationId, inArray(schema.course.id, candidatos)));
+  const grupos = await db
+    .select({
+      id: schema.cohort.id,
+      name: schema.cohort.name,
+      courseId: schema.cohort.courseId,
+      courseName: schema.course.name,
+      startDate: schema.cohort.startDate,
+      endDate: schema.cohort.endDate,
+      parentCohortId: schema.cohort.parentCohortId,
+    })
+    .from(schema.cohort)
+    .innerJoin(schema.course, eq(schema.course.id, schema.cohort.courseId))
+    .where(scoped(schema.cohort.organizationId, organizationId, inArray(schema.cohort.courseId, candidatos)));
+
+  const gruposPorCurso = agrupar(grupos, (g) => g.courseId);
+  return sugerenciasDeRecompra(
+    historial,
+    rutas,
+    new Map(cursos.map((c) => [c.id, { name: c.name, published: c.published, kind: c.kind }])),
+    new Map(candidatos.map((id) => [id, proximoGrupoAbierto(gruposPorCurso.get(id) ?? [], now)]))
+  );
 }

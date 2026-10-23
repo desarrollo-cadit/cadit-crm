@@ -1,4 +1,7 @@
+import { computeCohortStatus } from "@/lib/cohort-status";
+import { cohortesInscribibles, etiquetaDeCohorte } from "@/lib/cohortes-inscribibles";
 import type { CourseKind } from "@/lib/course-kind";
+import { esCursado, type EstadoComercial } from "@/lib/recorrido-comercial";
 
 /**
  * 046 (US2, US3; FR-005, FR-007) — Rutas entre cursos: qué se puede guardar
@@ -51,4 +54,88 @@ export function validarSiguientes(
     if (curso.kind === "taller") return { ok: false, code: "invalid_body", message: TALLER };
   }
   return { ok: true, ids: [...nextCourseIds] };
+}
+
+/* ============================================================
+ * "Le podría interesar" (US3, FR-007)
+ * ============================================================ */
+
+export type GrupoAbierto = { cohortId: string; name: string; startDate: string };
+
+export type SugerenciaDeRecompra = {
+  courseId: string;
+  courseName: string;
+  /** Los cursos que la persona hizo y que llevan a este. */
+  porCursos: string[];
+  proximoGrupo: GrupoAbierto | null;
+};
+
+/**
+ * Los siguientes de lo que la persona CURSÓ (aprobó, cursó sin aprobar o
+ * está cursando), en el orden de la ruta, empezando por lo más reciente que
+ * hizo. Sin repetidos, sin lo que ya hizo o en lo que ya está inscripta
+ * (cualquier estado del historial), sin cursos que no se publican y sin
+ * talleres. Un curso sin siguientes no sugiere nada.
+ *
+ * `historial` viene de `historialesComerciales` (ya ordenado, más reciente
+ * primero): la definición de "cursó" no se repite acá.
+ */
+export function sugerenciasDeRecompra(
+  historial: readonly { courseId: string; courseName: string; estado: EstadoComercial }[],
+  rutas: ReadonlyMap<string, readonly string[]>,
+  cursos: ReadonlyMap<string, { name: string; published: boolean; kind: CourseKind }>,
+  proximos: ReadonlyMap<string, GrupoAbierto | null>
+): SugerenciaDeRecompra[] {
+  const yaHechos = new Set(historial.map((e) => e.courseId));
+  const sugeridas = new Map<string, SugerenciaDeRecompra>();
+
+  for (const origen of historial) {
+    if (!esCursado(origen.estado)) continue;
+    for (const id of rutas.get(origen.courseId) ?? []) {
+      if (yaHechos.has(id)) continue;
+      const curso = cursos.get(id);
+      if (!curso || !curso.published || curso.kind === "taller") continue;
+      const previa = sugeridas.get(id);
+      if (previa) {
+        if (!previa.porCursos.includes(origen.courseName)) previa.porCursos.push(origen.courseName);
+        continue;
+      }
+      sugeridas.set(id, {
+        courseId: id,
+        courseName: curso.name,
+        porCursos: [origen.courseName],
+        proximoGrupo: proximos.get(id) ?? null,
+      });
+    }
+  }
+  return [...sugeridas.values()];
+}
+
+/**
+ * El próximo grupo abierto a inscripción de un curso: el primero que
+ * todavía no empezó, sin módulos de especialización (el mismo criterio que
+ * `cohortesInscribibles`). `null` = "sin grupo abierto por ahora".
+ */
+export function proximoGrupoAbierto(
+  grupos: readonly {
+    id: string;
+    name: string | null;
+    courseName: string;
+    startDate: Date;
+    endDate: Date | null;
+    parentCohortId: string | null;
+  }[],
+  now: Date
+): GrupoAbierto | null {
+  const abiertos = cohortesInscribibles(
+    grupos.map((g) => ({
+      ...g,
+      startDate: g.startDate.toISOString(),
+      status: computeCohortStatus(g.startDate, g.endDate, now),
+    }))
+  ).filter((g) => g.status === "planificada");
+  const primero = abiertos[0];
+  return primero
+    ? { cohortId: primero.id, name: etiquetaDeCohorte(primero), startDate: primero.startDate.slice(0, 10) }
+    : null;
 }
