@@ -106,6 +106,8 @@ const prefixes = {
   marketingClick: "mkk",
   marketingUnsubscribe: "mku",
   marketingImage: "mki",
+  /** 046 — rutas entre cursos (curso → cursos siguientes recomendados). */
+  courseRoute: "crr",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

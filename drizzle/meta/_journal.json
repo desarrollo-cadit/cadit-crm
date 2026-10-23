@@ -505,6 +505,13 @@
       "when": 1792689183493,
       "tag": "0071_campanas_de_marketing",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1792764837107,
+      "tag": "0072_rutas_entre_cursos",
+      "breakpoints": true
     }
   ]
 }

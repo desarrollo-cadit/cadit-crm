@@ -4014,3 +4014,39 @@ export const marketingImage = pgTable(
     ),
   ]
 );
+
+/* ============================================================
+ * 046 — Recorrido comercial: rutas entre cursos
+ * ============================================================ */
+
+/**
+ * Una ruta curada a mano por la academia: después de `from_course_id`, se
+ * recomienda `to_course_id`, en el lugar `position` (0, 1, 2…). No es un
+ * cálculo: así siempre se sabe por qué se sugiere algo (spec US2).
+ *
+ * Los ciclos (A → B → A) se permiten: cada sugerencia descarta lo ya hecho.
+ * Que un curso no se siga a sí mismo lo garantiza la base (CHECK).
+ */
+export const courseRoute = pgTable(
+  "course_route",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    fromCourseId: text("from_course_id")
+      .notNull()
+      .references(() => course.id, { onDelete: "cascade" }),
+    toCourseId: text("to_course_id")
+      .notNull()
+      .references(() => course.id, { onDelete: "cascade" }),
+    position: integer("position").notNull(),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("course_route_org_from_to_uq").on(t.organizationId, t.fromCourseId, t.toCourseId),
+    index("course_route_org_from_pos_idx").on(t.organizationId, t.fromCourseId, t.position),
+    check("course_route_no_self", sql`${t.fromCourseId} <> ${t.toCourseId}`),
+  ]
+);
