@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { FileText, Mail, MessageCircle, StickyNote, type LucideIcon } from "lucide-react";
+import { FileText, Mail, MailCheck, MailX, MessageCircle, StickyNote, type LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +13,7 @@ import {
   enlaceDeWhatsApp,
   origenDelFormulario,
   type ActividadDto,
+  type EntradaDeMarketing,
   type EntradaDeSeguimiento,
 } from "@/lib/seguimiento";
 import type { SeguimientoDto } from "@/server/seguimiento";
@@ -32,6 +33,8 @@ const ICONO: Record<EntradaDeSeguimiento["tipo"], LucideIcon> = {
   nota: StickyNote,
   contacto_email: Mail,
   contacto_whatsapp: MessageCircle,
+  baja_marketing: MailX,
+  baja_marketing_revertida: MailCheck,
 };
 
 const INTERES: Record<"curso" | "taller" | "general", string> = {
@@ -53,6 +56,7 @@ const INTERES: Record<"curso" | "taller" | "general", string> = {
 export function SeguimientoClient({ contactId, canWrite }: { contactId: string; canWrite: boolean }) {
   const [data, setData] = useState<SeguimientoDto | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [version, setVersion] = useState(0);
 
   useEffect(() => {
     let vigente = true;
@@ -74,7 +78,7 @@ export function SeguimientoClient({ contactId, canWrite }: { contactId: string; 
     return () => {
       vigente = false;
     };
-  }, [contactId]);
+  }, [contactId, version]);
 
   const agregar = (a: ActividadDto) =>
     setData((d) => (d ? { ...d, timeline: [{ tipo: a.kind, ...a } as EntradaDeSeguimiento, ...d.timeline] } : d));
@@ -92,6 +96,7 @@ export function SeguimientoClient({ contactId, canWrite }: { contactId: string; 
   return (
     <div className="mx-auto grid max-w-4xl gap-6 p-6">
       <ContactCard contactId={contactId} contact={data.contact} canWrite={canWrite} onRecorded={agregar} />
+      <MarketingCard contactId={contactId} marketing={data.marketing} onChanged={() => setVersion((v) => v + 1)} />
       {canWrite ? <NoteForm contactId={contactId} onAdded={agregar} /> : null}
       <Timeline timeline={data.timeline} />
     </div>
@@ -299,7 +304,13 @@ function TimelineItem({ entrada: e }: { entrada: EntradaDeSeguimiento }) {
         <Icon className="h-4 w-4" aria-hidden />
       </span>
       <div className="min-w-0 flex-1 space-y-1">
-        {e.tipo === "formulario" ? <FormEntry entrada={e} /> : <ActivityEntry entrada={e} />}
+        {e.tipo === "formulario" ? (
+          <FormEntry entrada={e} />
+        ) : e.tipo === "baja_marketing" || e.tipo === "baja_marketing_revertida" ? (
+          <MarketingEntry entrada={e} />
+        ) : (
+          <ActivityEntry entrada={e} />
+        )}
       </div>
     </li>
   );
@@ -351,7 +362,7 @@ const TITULO_ACTIVIDAD: Record<"nota" | "contacto_email" | "contacto_whatsapp", 
 function ActivityEntry({
   entrada: e,
 }: {
-  entrada: Exclude<EntradaDeSeguimiento, { tipo: "formulario" }>;
+  entrada: Extract<EntradaDeSeguimiento, { tipo: "nota" | "contacto_email" | "contacto_whatsapp" }>;
 }) {
   return (
     <>
@@ -362,5 +373,87 @@ function ActivityEntry({
       <p className="text-xs text-muted-foreground">{fechaHora(e.at)}</p>
       {e.body ? <p className="whitespace-pre-wrap text-sm">{e.body}</p> : null}
     </>
+  );
+}
+
+/** 045 (FR-013) — La baja o la reactivación de los correos de marketing. */
+function MarketingEntry({ entrada: e }: { entrada: EntradaDeMarketing }) {
+  return (
+    <>
+      <p className="text-sm">
+        {e.tipo === "baja_marketing" ? (
+          <span className="font-medium">
+            Se dio de baja de los correos de marketing{e.campaignName ? ` (campaña «${e.campaignName}»)` : ""}
+          </span>
+        ) : (
+          <>
+            <span className="font-medium">Se reactivaron los correos de marketing</span>
+            <span className="text-muted-foreground"> · {e.authorName ?? "Cuenta eliminada"}</span>
+          </>
+        )}
+      </p>
+      <p className="text-xs text-muted-foreground">{fechaHora(e.at)}</p>
+    </>
+  );
+}
+
+/**
+ * 045 (FR-013, FR-015; US4-5) — ¿Recibe campañas? Reactivar solo se ofrece
+ * con `marketing.configurar` (`revertible`, decidido en el servidor): deshace
+ * una oposición expresa de la persona. Los correos de sus cursos no dependen
+ * de esto.
+ */
+function MarketingCard({
+  contactId,
+  marketing,
+  onChanged,
+}: {
+  contactId: string;
+  marketing: SeguimientoDto["marketing"];
+  onChanged: () => void;
+}) {
+  const [reactivando, setReactivando] = useState(false);
+  if (marketing.estado === "suscripto") return null;
+
+  async function reactivar() {
+    if (!window.confirm("¿Reactivar los correos de marketing para esta persona? Se había dado de baja ella misma.")) {
+      return;
+    }
+    setReactivando(true);
+    try {
+      const res = await fetch(`/api/contacts/${contactId}/marketing-unsubscribe`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        notify.error(body?.error?.message ?? "No se pudo reactivar.");
+        return;
+      }
+      notify.success("Se reactivaron los correos de marketing.");
+      onChanged();
+    } finally {
+      setReactivando(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <MailX className="h-4 w-4" aria-hidden />
+          No recibe correos de marketing
+        </CardTitle>
+        <CardDescription>
+          Se dio de baja el {fechaHora(marketing.desde)}
+          {marketing.campana ? ` desde la campaña «${marketing.campana}»` : ""}. Los correos de sus cursos le
+          siguen llegando.
+        </CardDescription>
+      </CardHeader>
+      {marketing.revertible ? (
+        <CardContent>
+          <Button variant="outline" size="sm" onClick={() => void reactivar()} loading={reactivando}>
+            Reactivar correos de marketing
+          </Button>
+        </CardContent>
+      ) : null}
+    </Card>
   );
 }

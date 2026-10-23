@@ -498,6 +498,13 @@
       "when": 1792672851922,
       "tag": "0070_avisos_sin_confirmar",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1792689183493,
+      "tag": "0071_campanas_de_marketing",
+      "breakpoints": true
     }
   ]
 }

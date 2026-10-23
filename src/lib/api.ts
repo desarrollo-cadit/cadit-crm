@@ -150,6 +150,9 @@ const UNIQUE_VIOLATION_MESSAGES: Record<string, string> = {
   course_org_slug_uq: "Ya existe un curso con esa dirección web (slug)",
   course_category_org_slug_uq: "Ya existe una categoría con esa dirección web (slug)",
   seller_org_user_uq: "Esa persona del equipo ya está cargada como vendedor",
+  // 045 — las carreras que el chequeo previo no alcanza a ver.
+  marketing_audience_org_name_uq: "Ya hay una audiencia con ese nombre.",
+  marketing_campaign_one_sending_uq: "Ya hay otra campaña enviándose. Esperá a que termine o cancelala.",
 };
 
 function describeUniqueViolation(constraintName: string): string {

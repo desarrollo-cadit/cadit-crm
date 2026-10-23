@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
@@ -109,6 +109,15 @@ export async function saveMediaFile(
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, data);
   return path.join(organizationId, assetId); // ruta relativa persistida en BD
+}
+
+/**
+ * 045 — Borra un archivo del volumen. Que ya no exista no es un error: borrar
+ * una campaña dos veces (o una imagen cuyo archivo se perdió) no tiene que
+ * dejar la fila viva.
+ */
+export async function deleteMediaFile(organizationId: string, assetId: string): Promise<void> {
+  await rm(mediaFilePath(organizationId, assetId), { force: true });
 }
 
 export async function readMediaFile(

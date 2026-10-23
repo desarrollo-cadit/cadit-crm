@@ -2,8 +2,12 @@ import { desc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
+import { estadoDeMarketingDelContacto } from "@/server/marketing/unsubscribe";
 import {
   armarLineaDeTiempo,
+  entradasDeMarketing,
+  estadoDeMarketing,
+  type EstadoDeMarketingDto,
   type ActividadDto,
   type EntradaDeSeguimiento,
   type EnvioDeFormularioDto,
@@ -85,6 +89,12 @@ export async function registrarEnvioDeFormulario(
 export type SeguimientoDto = {
   contact: { email: string | null; phone: string | null };
   timeline: EntradaDeSeguimiento[];
+  /**
+   * 045 (FR-013, FR-015) — ¿Recibe campañas? Viaja con `contactos.ver` como
+   * el resto de la pestaña: fecha y nombre de campaña no son plata ni datos
+   * nuevos de la persona. `revertible` lo decide `marketing.configurar`.
+   */
+  marketing: EstadoDeMarketingDto;
 };
 
 async function contactoDeLaOrganizacion(organizationId: string, contactId: string) {
@@ -103,7 +113,8 @@ async function contactoDeLaOrganizacion(organizationId: string, contactId: strin
  */
 export async function seguimientoDelContacto(
   organizationId: string,
-  contactId: string
+  contactId: string,
+  opts: { puedeReactivarMarketing?: boolean } = {}
 ): Promise<SeguimientoDto | null> {
   const contacto = await contactoDeLaOrganizacion(organizationId, contactId);
   if (!contacto) return null;
@@ -158,9 +169,12 @@ export async function seguimientoDelContacto(
     authorName: authorName ?? null,
   }));
 
+  const bajas = await estadoDeMarketingDelContacto(organizationId, contactId);
+
   return {
     contact: { email: contacto.email, phone: contacto.phone },
-    timeline: armarLineaDeTiempo(enviosDto, actividadesDto),
+    timeline: armarLineaDeTiempo(enviosDto, actividadesDto, entradasDeMarketing(bajas)),
+    marketing: estadoDeMarketing(bajas, opts.puedeReactivarMarketing === true),
   };
 }
 

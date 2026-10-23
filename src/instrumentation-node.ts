@@ -80,3 +80,19 @@ export async function startStaffNoticesOnBoot(): Promise<void> {
     console.error("[boot] avisos internos no arrancaron:", err instanceof Error ? err.name : "error");
   }
 }
+
+/**
+ * 045 (DV-003; US3-5) — Campañas de marketing: retoma las que quedaron
+ * `enviando` tras un reinicio y enciende la periódica (`MARKETING_TICK_SEC`;
+ * 0 = solo al arrancar). La MISMA guarda que las demás (`shouldStartScheduler`,
+ * adentro de `startMarketingOnBoot`): nunca en tests ni en `next build`, y
+ * nada puede tumbar el arranque.
+ */
+export async function startMarketingOnBoot(): Promise<void> {
+  try {
+    const { startMarketingOnBoot: arrancar } = await import("@/server/marketing/runner");
+    await arrancar();
+  } catch (err) {
+    console.error("[boot] campañas de marketing no arrancaron:", err instanceof Error ? err.name : "error");
+  }
+}

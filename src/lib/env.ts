@@ -69,6 +69,17 @@ const envSchema = z.object({
    */
   BULK_SEND_PAUSE_MS: z.coerce.number().int().min(0).default(2000),
   /**
+   * 045 — Pausa entre dos correos de una campaña de marketing. Mismo límite de
+   * Exchange (~30 por minuto por buzón): 2000 ≈ 30 correos/min. 0 solo en
+   * pruebas.
+   */
+  MARKETING_SEND_PAUSE_MS: z.coerce.number().int().min(0).default(2000),
+  /**
+   * 045 — Segundos entre pasadas que retoman campañas `enviando` con el lease
+   * vencido o la pausa por límite cumplida. 0 = solo al arrancar.
+   */
+  MARKETING_TICK_SEC: z.coerce.number().int().min(0).default(60),
+  /**
    * 030 — Zoom (constitución 1.6.0). Bases de la API y del OAuth: vacías en
    * producción (se usan https://api.zoom.us/v2 y https://zoom.us); en local
    * apuntan al zoom-mock. Las CREDENCIALES no van acá: se cargan cifradas

@@ -18,7 +18,9 @@ export type TemplateName =
   | "bienvenida-cohorte"
   | "acceso-portal"
   // 029 — correo de derivación a un área (Ventas/Soporte).
-  | "derivacion-area";
+  | "derivacion-area"
+  // 045 — campañas de marketing (armazón con pie fijo y baja).
+  | "campana-marketing";
 
 declare const safeHtmlBrand: unique symbol;
 

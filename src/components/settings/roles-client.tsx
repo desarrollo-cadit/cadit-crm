@@ -55,6 +55,9 @@ const CAPABILITY_LABELS: Record<string, string> = {
   "areas.configurar": "Configurar las áreas de derivación del agente",
   "grabaciones.ver": "Ver las grabaciones de Zoom y copiar sus enlaces",
   "grabaciones.gestionar": "Sincronizar y adjudicar grabaciones a clases",
+  "marketing.ver": "Ver marketing",
+  "marketing.enviar": "Enviar campañas",
+  "marketing.configurar": "Configurar marketing y revertir bajas",
 };
 
 /**
@@ -73,7 +76,8 @@ const GROUPS: { title: string; match: (c: string) => boolean }[] = [
   // 040 — `empresas.editar` va con lo comercial, igual que en la guía.
   {
     title: "Comercial y financiero",
-    match: (c) => /^(contactos|inscripciones|cobranza|empresas|facturacion)\./.test(c),
+    // 045 — `marketing.*` también, igual que en la guía.
+    match: (c) => /^(contactos|inscripciones|cobranza|empresas|facturacion|marketing)\./.test(c),
   },
   { title: "Conversaciones", match: (c) => c.startsWith("inbox.") },
   { title: "Plataforma", match: (c) => /^(configuracion|accesos|alumnos|areas)\./.test(c) },

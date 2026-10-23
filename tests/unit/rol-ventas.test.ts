@@ -42,7 +42,7 @@ describe("040 — el rol `ventas`", () => {
     expect(ventas!.name).toBe("Ventas");
   });
 
-  it("lleva exactamente sus seis capacidades", () => {
+  it("lleva exactamente sus ocho capacidades", () => {
     expect([...ventas!.capabilities].sort()).toEqual(
       [
         "academico.ver",
@@ -51,8 +51,21 @@ describe("040 — el rol `ventas`", () => {
         "contactos.ver",
         "inscripciones.ver",
         "empresas.editar",
+        // 045 (P-02) — arma audiencias y campañas, y las envía.
+        "marketing.ver",
+        "marketing.enviar",
       ].sort()
     );
+  });
+
+  /**
+   * 045 (FR-025, P-02) — Ventas ve y envía campañas sin aprobación previa, pero
+   * no configura el buzón ni revierte bajas: eso es de quien dirige.
+   */
+  it("045 — ve y envía campañas, pero no configura marketing", () => {
+    expect(ventas!.capabilities).toContain("marketing.ver");
+    expect(ventas!.capabilities).toContain("marketing.enviar");
+    expect(ventas!.capabilities).not.toContain("marketing.configurar");
   });
 
   it("no tiene NINGUNA capacidad financiera ni de cobranza", () => {
@@ -62,9 +75,9 @@ describe("040 — el rol `ventas`", () => {
     }
   });
 
-  it("todo lo suyo es de lectura, salvo editar empresas", () => {
+  it("todo lo suyo es de lectura, salvo editar empresas y enviar campañas", () => {
     const escrituras = ventas!.capabilities.filter((c) => !c.endsWith(".ver"));
-    expect(escrituras).toEqual(["empresas.editar"]);
+    expect([...escrituras].sort()).toEqual(["empresas.editar", "marketing.enviar"].sort());
   });
 
   it("no confirma cohortes ni sigue inscripciones (checklist, correos, mover leads)", () => {
@@ -225,9 +238,33 @@ describe("040 — lo que el rol Ventas puede llamar", () => {
     expect(suyas.length).toBeGreaterThan(40);
   });
 
-  it("no escribe en ningún lado salvo en empresas", () => {
+  /**
+   * 045 — Las escrituras de marketing (`marketing.enviar`) viven solo bajo
+   * `api/marketing/`: audiencias, campañas e imágenes, nunca datos de cursada
+   * ni de plata.
+   */
+  it("045 — sus escrituras de marketing viven solo bajo `api/marketing/`", () => {
+    const deMarketing = suyas.filter((p) => p.capacidad === "marketing.enviar");
+    for (const p of deMarketing) {
+      expect(p.ruta.startsWith("marketing/"), `${p.metodo} ${p.ruta}`).toBe(true);
+    }
+  });
+
+  /**
+   * 045 — Con `marketing.ver` hay POST que no escriben: la vista previa de una
+   * audiencia (y, después, la de un correo) manda filtros en el cuerpo y solo
+   * lee. Son las únicas.
+   */
+  it("045 — con `marketing.ver`, los únicos POST son vistas previas", () => {
+    const posts = suyas
+      .filter((p) => p.capacidad === "marketing.ver" && p.metodo !== "GET")
+      .map((p) => p.ruta);
+    for (const ruta of posts) expect(ruta, ruta).toMatch(/^marketing\/.*preview\/route\.ts$/);
+  });
+
+  it("no escribe en ningún lado salvo en empresas (y en marketing)", () => {
     const escrituras = suyas
-      .filter((p) => p.metodo !== "GET")
+      .filter((p) => p.metodo !== "GET" && !p.ruta.startsWith("marketing/"))
       .map((p) => `${p.metodo} ${p.ruta} (${p.capacidad})`);
     expect(escrituras.sort()).toEqual(
       ["PATCH companies/[id]/route.ts (empresas.editar)", "POST companies/route.ts (empresas.editar)"].sort()

@@ -137,7 +137,9 @@ describe("SYSTEM_ROLES — la semilla de la fase 4", () => {
     // 029 — configurar las áreas de derivación del agente también es de dirección.
     expect(coord?.capabilities).not.toContain("areas.configurar");
     expect(coord?.capabilities).toContain("cobranza.ver");
-    expect(CAPABILITIES.length - coord!.capabilities.length).toBe(3);
+    // 045 — ni configurar marketing (buzón, pie, revertir bajas).
+    expect(coord?.capabilities).not.toContain("marketing.configurar");
+    expect(CAPABILITIES.length - coord!.capabilities.length).toBe(4);
   });
 
   /**
@@ -299,5 +301,44 @@ describe("039 — cohortes.confirmar", () => {
     expect(hasCapability("owner", "cohortes.confirmar")).toBe(true);
     expect(hasCapability("member", "cohortes.confirmar")).toBe(true);
     expect(hasCapability("soporte", "cohortes.confirmar")).toBe(false);
+  });
+});
+
+/**
+ * 045 (FR-025, DV-014) — Marketing: ver y enviar campañas, y configurar el
+ * buzón (que además revierte bajas). Ver y enviar: dirección, coordinación y
+ * ventas. Configurar: solo dirección. Soporte y administración, ninguna:
+ * `marketing.ver` lista nombre y correo de cientos de contactos.
+ */
+describe("045 — marketing.ver / marketing.enviar / marketing.configurar", () => {
+  const byKey = (k: string) => SYSTEM_ROLES.find((r) => r.key === k)!;
+  const MARKETING: Capability[] = ["marketing.ver", "marketing.enviar", "marketing.configurar"];
+
+  it("las tres están en la lista cerrada", () => {
+    for (const c of MARKETING) expect(CAPABILITIES).toContain(c);
+  });
+
+  it("dirección tiene las tres", () => {
+    for (const c of MARKETING) expect(byKey("direccion").capabilities).toContain(c);
+  });
+
+  it("coordinación ve y envía, pero no configura", () => {
+    expect(byKey("coordinacion").capabilities).toContain("marketing.ver");
+    expect(byKey("coordinacion").capabilities).toContain("marketing.enviar");
+    expect(byKey("coordinacion").capabilities).not.toContain("marketing.configurar");
+  });
+
+  it("soporte y administración no tienen ninguna", () => {
+    for (const key of ["soporte", "administracion"]) {
+      for (const c of MARKETING) expect(byKey(key).capabilities, `${key} tiene ${c}`).not.toContain(c);
+    }
+  });
+
+  it("respaldo por código: owner y member todo; soporte nada de marketing", () => {
+    for (const c of MARKETING) {
+      expect(hasCapability("owner", c)).toBe(true);
+      expect(hasCapability("member", c)).toBe(true);
+      expect(hasCapability("soporte", c)).toBe(false);
+    }
   });
 });

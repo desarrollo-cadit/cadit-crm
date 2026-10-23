@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { renderTemplate } from "@/server/email/templates";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { markSafeHtml, renderTemplate } from "@/server/email/templates";
 import { contenidoPortalPara } from "@/server/email/portal-access-copy";
 // 023 — `escapeHtml` se unificó en `@/lib/utils`: había tres copias divergentes.
 import { escapeHtml } from "@/lib/utils";
@@ -140,5 +142,35 @@ describe("renderTemplate — 029 derivacion-area y bloques {{{x}}}", () => {
   it("un bloque ausente queda vacío, sin llaves a la vista", () => {
     const html = renderTemplate("derivacion-area", {});
     expect(html).not.toMatch(/\{\{\{?\w+\}?\}\}/);
+  });
+});
+
+/**
+ * 045 (T033; FR-011) — El armazón de las campañas: el cuerpo entra como
+ * bloque ya escapado (`{{{cuerpo}}}`) y el pie es fijo, con la baja siempre.
+ */
+describe("renderTemplate — 045 campana-marketing", () => {
+  const leer = () =>
+    readFileSync(path.join(process.cwd(), "docs", "email-templates", "campana-marketing.html"), "utf8");
+
+  it("existe y tiene el bloque del cuerpo y el pie con remitente, dirección, contacto y baja", () => {
+    const src = leer();
+    expect(src).toContain("{{{cuerpo}}}");
+    for (const m of ["{{remitente}}", "{{direccion}}", "{{contacto}}", "{{urlBaja}}"]) {
+      expect(src, `falta ${m}`).toContain(m);
+    }
+    expect(src).toContain("No quiero recibir más correos");
+  });
+
+  it("es un `TemplateName` válido y escapa los marcadores del pie", () => {
+    const html = renderTemplate(
+      "campana-marketing",
+      { remitente: "<b>x</b>", direccion: "Calle & 1", contacto: "a@b.test", urlBaja: "https://x.test/baja/1" },
+      { cuerpo: markSafeHtml("<p>hola</p>") }
+    );
+    expect(html).toContain("&lt;b&gt;x&lt;/b&gt;");
+    expect(html).toContain("Calle &amp; 1");
+    expect(html).toContain("<p>hola</p>");
+    expect(html).not.toMatch(/\{\{\w+\}\}/);
   });
 });

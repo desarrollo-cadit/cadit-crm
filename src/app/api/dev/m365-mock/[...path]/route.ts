@@ -1,5 +1,5 @@
 import { mockGuard } from "@/lib/dev-guard";
-import { isFailing, pushMail } from "@/server/dev/m365-mock-state";
+import { isDenying, isFailing, pushMail, takeThrottle } from "@/server/dev/m365-mock-state";
 
 /**
  * 029 (DV-010) — Imitación de Entra ID + Microsoft Graph para el correo.
@@ -12,6 +12,8 @@ import { isFailing, pushMail } from "@/server/dev/m365-mock-state";
  * - `POST {tenant}/oauth2/v2.0/token` → token falso.
  * - `POST v1.0/users/{sender}/sendMail` → guarda el mensaje y responde 202,
  *   o 500 si el modo falla está activo (camino infeliz del self-test).
+ * - 045 — `deny` responde 403 `ErrorAccessDenied`; `throttle: n` hace que los
+ *   próximos n envíos respondan 429 con `Retry-After: 1`.
  */
 export const dynamic = "force-dynamic";
 
@@ -27,6 +29,18 @@ export async function POST(req: Request, { params }: Params) {
   }
 
   if (path.length === 4 && path[0] === "v1.0" && path[1] === "users" && path[3] === "sendMail") {
+    if (isDenying()) {
+      return Response.json(
+        { error: { code: "ErrorAccessDenied", message: "mock: acceso denegado al buzón" } },
+        { status: 403 }
+      );
+    }
+    if (takeThrottle()) {
+      return Response.json(
+        { error: { code: "ApplicationThrottled", message: "mock: demasiados correos" } },
+        { status: 429, headers: { "retry-after": "1" } }
+      );
+    }
     if (isFailing()) {
       return Response.json({ error: { message: "mock: fallo forzado" } }, { status: 500 });
     }

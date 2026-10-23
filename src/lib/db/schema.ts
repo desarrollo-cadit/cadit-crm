@@ -3749,3 +3749,268 @@ export const contactActivity = pgTable(
     ),
   ]
 );
+
+/* ============================================================
+ * 045 — Marketing: campañas por correo (constitución 1.8.0, II.3)
+ * ============================================================ */
+
+/**
+ * Buzón de marketing, remitente y pie: una fila por organización (DV-006).
+ * La credencial de M365 sigue en el entorno; acá solo vive la dirección del
+ * buzón SEPARADO del operativo (`M365_SENDER`) y si pasó la prueba.
+ */
+export const marketingSettings = pgTable(
+  "marketing_settings",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** Normalizado (trim + minúsculas). Distinto de `M365_SENDER`. */
+    senderEmail: text("sender_email"),
+    senderName: text("sender_name"),
+    footerAddress: text("footer_address"),
+    footerContact: text("footer_contact"),
+    /** El buzón que pasó la prueba; cambiar `sender_email` lo vuelve NULL. */
+    verifiedSender: text("verified_sender"),
+    verifiedAt: timestamp("verified_at"),
+    lastTestAt: timestamp("last_test_at"),
+    /** Mensaje legible del último fallo; NULL si la última prueba salió bien. */
+    lastTestError: text("last_test_error"),
+    updatedBy: text("updated_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("marketing_settings_org_uq").on(t.organizationId)]
+);
+
+/**
+ * Una audiencia: filtros guardados que se evalúan AL USARSE (FR-005). Borrarla
+ * no toca campañas: cada campaña guarda su propia copia de los filtros.
+ */
+export const marketingAudience = pgTable(
+  "marketing_audience",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    /** `AudienceFilters` de `src/lib/marketing/audience.ts`, validado por Zod. */
+    filters: jsonb("filters").$type<Record<string, unknown>>().notNull(),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("marketing_audience_org_name_uq").on(t.organizationId, sql`lower(${t.name})`)]
+);
+
+/**
+ * Una campaña. `borrador → enviando → enviada | cancelada`; solo el borrador
+ * se edita. Al confirmar se congelan filtros, remitente y pie (FR-006).
+ */
+export const marketingCampaign = pgTable(
+  "marketing_campaign",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    subject: text("subject").notNull(),
+    /** `CampaignBody` de `src/lib/marketing/body.ts`. */
+    body: jsonb("body")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{"v":1,"blocks":[]}'::jsonb`),
+    audienceId: text("audience_id").references(() => marketingAudience.id, {
+      onDelete: "set null",
+    }),
+    /** Copia de los filtros; congelada al confirmar. */
+    filters: jsonb("filters").$type<Record<string, unknown>>(),
+    status: text("status", { enum: ["borrador", "enviando", "enviada", "cancelada"] })
+      .notNull()
+      .default("borrador"),
+    recipientCount: integer("recipient_count"),
+    senderEmail: text("sender_email"),
+    senderName: text("sender_name"),
+    footer: jsonb("footer").$type<{ address: string; contact: string }>(),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    sentBy: text("sent_by").references(() => user.id, { onDelete: "set null" }),
+    sendConfirmedAt: timestamp("send_confirmed_at"),
+    finishedAt: timestamp("finished_at"),
+    cancelledBy: text("cancelled_by").references(() => user.id, { onDelete: "set null" }),
+    /** Lease del ejecutor: un solo proceso la envía (DV-003). */
+    leaseUntil: timestamp("lease_until"),
+    /** Pausa por el límite del proveedor (`Retry-After`). */
+    pausedUntil: timestamp("paused_until"),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("marketing_campaign_org_created_idx").on(t.organizationId, t.createdAt.desc()),
+    // DV-005 — una campaña enviándose por organización (mismo buzón, mismo cupo).
+    uniqueIndex("marketing_campaign_one_sending_uq")
+      .on(t.organizationId)
+      .where(sql`${t.status} = 'enviando'`),
+    index("marketing_campaign_sending_idx")
+      .on(t.status, t.leaseUntil)
+      .where(sql`${t.status} = 'enviando'`),
+    check(
+      "marketing_campaign_status_valid",
+      sql`${t.status} IN ('borrador','enviando','enviada','cancelada')`
+    ),
+  ]
+);
+
+/** La foto de a quién se le envía, fijada al confirmar (FR-006). */
+export const marketingCampaignRecipient = pgTable(
+  "marketing_campaign_recipient",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    campaignId: text("campaign_id")
+      .notNull()
+      .references(() => marketingCampaign.id, { onDelete: "cascade" }),
+    /** `set null`: la campaña conserva el registro aunque se borre el contacto. */
+    contactId: text("contact_id").references(() => contact.id, { onDelete: "set null" }),
+    /** Normalizado. */
+    email: text("email").notNull(),
+    firstName: text("first_name").notNull(),
+    lastName: text("last_name"),
+    /** Valores de las variables al confirmar (DV-008). */
+    vars: jsonb("vars").$type<Record<string, string>>().notNull().default(sql`'{}'::jsonb`),
+    position: integer("position").notNull(),
+    status: text("status", {
+      enum: ["pendiente", "enviando", "enviado", "fallido", "omitido", "cancelado"],
+    })
+      .notNull()
+      .default("pendiente"),
+    /** `baja` (omitido) · mensaje de error (fallido) · `interrumpido`. */
+    reason: text("reason"),
+    attemptedAt: timestamp("attempted_at"),
+    sentAt: timestamp("sent_at"),
+    unsubscribedAt: timestamp("unsubscribed_at"),
+  },
+  (t) => [
+    // FR-004 — a lo sumo una vez por dirección y campaña.
+    uniqueIndex("marketing_recipient_campaign_email_uq").on(t.campaignId, t.email),
+    index("marketing_recipient_org_campaign_status_idx").on(
+      t.organizationId,
+      t.campaignId,
+      t.status,
+      t.position
+    ),
+    index("marketing_recipient_org_contact_idx").on(t.organizationId, t.contactId),
+    check(
+      "marketing_recipient_status_valid",
+      sql`${t.status} IN ('pendiente','enviando','enviado','fallido','omitido','cancelado')`
+    ),
+  ]
+);
+
+/** Destinos permitidos de los clics (DV-012): sin redirección abierta. */
+export const marketingCampaignLink = pgTable(
+  "marketing_campaign_link",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    campaignId: text("campaign_id")
+      .notNull()
+      .references(() => marketingCampaign.id, { onDelete: "cascade" }),
+    position: integer("position").notNull(),
+    url: text("url").notNull(),
+  },
+  (t) => [uniqueIndex("marketing_link_campaign_url_uq").on(t.campaignId, t.url)]
+);
+
+export const marketingClick = pgTable(
+  "marketing_click",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    campaignId: text("campaign_id")
+      .notNull()
+      .references(() => marketingCampaign.id, { onDelete: "cascade" }),
+    recipientId: text("recipient_id")
+      .notNull()
+      .references(() => marketingCampaignRecipient.id, { onDelete: "cascade" }),
+    linkId: text("link_id")
+      .notNull()
+      .references(() => marketingCampaignLink.id, { onDelete: "cascade" }),
+    clickedAt: timestamp("clicked_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("marketing_click_org_campaign_idx").on(t.organizationId, t.campaignId),
+    index("marketing_click_recipient_link_idx").on(t.recipientId, t.linkId, t.clickedAt),
+  ]
+);
+
+/**
+ * Bajas de marketing (constitución 1.8.0 II.b). "Dado de baja" = fila activa
+ * por `contact_id` O por correo normalizado. Revertir marca, nunca borra. La
+ * leen SOLO `src/server/marketing/*` (FR-014).
+ */
+export const marketingUnsubscribe = pgTable(
+  "marketing_unsubscribe",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** `set null`: la baja sobrevive al borrado del contacto (por correo). */
+    contactId: text("contact_id").references(() => contact.id, { onDelete: "set null" }),
+    email: text("email").notNull(),
+    campaignId: text("campaign_id").references(() => marketingCampaign.id, {
+      onDelete: "set null",
+    }),
+    recipientId: text("recipient_id").references(() => marketingCampaignRecipient.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    revertedAt: timestamp("reverted_at"),
+    revertedBy: text("reverted_by").references(() => user.id, { onDelete: "set null" }),
+  },
+  (t) => [
+    // DV-011 — una baja activa por dirección; registrar dos veces es idempotente.
+    uniqueIndex("marketing_unsub_org_email_active_uq")
+      .on(t.organizationId, t.email)
+      .where(sql`${t.revertedAt} IS NULL`),
+    index("marketing_unsub_org_contact_idx").on(t.organizationId, t.contactId),
+  ]
+);
+
+/** Imágenes subidas a una campaña, servidas por un token público (DV-013). */
+export const marketingImage = pgTable(
+  "marketing_image",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    campaignId: text("campaign_id")
+      .notNull()
+      .references(() => marketingCampaign.id, { onDelete: "cascade" }),
+    /** 32 bytes aleatorios en base64url. */
+    publicToken: text("public_token").notNull(),
+    mimeType: text("mime_type", { enum: ["image/jpeg", "image/png", "image/webp"] }).notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("marketing_image_public_token_uq").on(t.publicToken),
+    index("marketing_image_org_campaign_idx").on(t.organizationId, t.campaignId),
+    check(
+      "marketing_image_mime_type_valid",
+      sql`${t.mimeType} IN ('image/jpeg','image/png','image/webp')`
+    ),
+  ]
+);

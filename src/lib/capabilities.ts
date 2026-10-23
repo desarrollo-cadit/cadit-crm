@@ -105,6 +105,18 @@ export const CAPABILITIES = [
    */
   "grabaciones.ver",
   "grabaciones.gestionar",
+  /**
+   * 045 (DV-014) — Campañas de marketing por correo (constitución 1.8.0).
+   * `.ver`: la sección Marketing, audiencias, campañas, destinatarios y
+   * métricas — lista nombre y correo de cientos de contactos, por eso no es de
+   * soporte ni de administración. `.enviar`: crear y editar audiencias y
+   * campañas, subir imágenes, la prueba, enviar y cancelar (P-02: sin
+   * aprobación previa). `.configurar`: el buzón, el remitente y el pie, y
+   * revertir una baja (deshace una oposición expresa): solo dirección.
+   */
+  "marketing.ver",
+  "marketing.enviar",
+  "marketing.configurar",
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -175,6 +187,18 @@ const sinEmpresas = (c: Capability) => c !== "empresas.editar";
 const sinFacturacion = (c: Capability) => c !== "facturacion.editar";
 
 /**
+ * 045 (DV-014) — Coordinación ve y envía campañas pero no configura el buzón
+ * ni revierte bajas: eso es de quien dirige.
+ */
+const sinConfigurarMarketing = (c: Capability) => c !== "marketing.configurar";
+
+/**
+ * 045 (DV-014) — Soporte no recibe nada de marketing: `marketing.ver` lista
+ * nombre y correo de cientos de contactos. El dueño la reparte si quiere.
+ */
+const sinMarketing = (c: Capability) => !c.startsWith("marketing.");
+
+/**
  * Mapeo rol → capacidades, FIEL al comportamiento actual.
  *
  * Cuidado con `member`: el data-model de la fase lo proyectaba como
@@ -199,7 +223,8 @@ export const ROLE_CAPABILITIES: Record<string, readonly Capability[]> = {
       sinAprobarCorrecciones(c) &&
       sinConfirmarCohortes(c) &&
       sinEmpresas(c) &&
-      sinFacturacion(c)
+      sinFacturacion(c) &&
+      sinMarketing(c)
   ),
 };
 
@@ -237,7 +262,11 @@ export const SYSTEM_ROLES: readonly {
     key: "coordinacion",
     name: "Coordinación",
     capabilities: CAPABILITIES.filter(
-      (c) => c !== "configuracion.editar" && sinAuditoria(c) && sinAreas(c)
+      (c) =>
+        c !== "configuracion.editar" &&
+        sinAuditoria(c) &&
+        sinAreas(c) &&
+        sinConfigurarMarketing(c)
     ),
   },
   {
@@ -252,7 +281,8 @@ export const SYSTEM_ROLES: readonly {
         sinAprobarCorrecciones(c) &&
         sinConfirmarCohortes(c) &&
         sinEmpresas(c) &&
-        sinFacturacion(c)
+        sinFacturacion(c) &&
+        sinMarketing(c)
     ),
   },
   /**
@@ -327,6 +357,9 @@ export const SYSTEM_ROLES: readonly {
       "contactos.ver",
       "inscripciones.ver",
       "empresas.editar",
+      // 045 (P-02) — arma audiencias y campañas y las envía; no configura.
+      "marketing.ver",
+      "marketing.enviar",
     ],
   },
 ];

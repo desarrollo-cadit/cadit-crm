@@ -729,6 +729,10 @@ describe("FR-007/FR-008 — la vista se gobierna con `cobranza.ver` y se declara
       "inscripciones.seguimiento",
       // 042 — `facturacion.editar`, tampoco.
       "facturacion.editar",
+      // 045 — las tres de marketing (campañas por correo), tampoco.
+      "marketing.ver",
+      "marketing.enviar",
+      "marketing.configurar",
     ]);
     expect(CAPABILITIES.filter((c) => !posteriores.has(c))).toHaveLength(17);
     expect(CAPABILITIES).not.toContain("finanzas.ver" as Capability);

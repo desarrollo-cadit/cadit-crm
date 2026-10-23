@@ -202,6 +202,19 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
     que: "sincronizar las grabaciones con Zoom y adjudicarlas a las clases",
     donde: "/grabaciones",
   },
+  // 045 — Campañas de marketing por correo.
+  "marketing.ver": {
+    que: "ver las audiencias, las campañas, a quién se le enviaron y cómo les fue (enviados, bajas y clics). Muestra nombre y correo de muchas personas a la vez: por defecto la tienen Dirección, Coordinación y Ventas",
+    donde: "/marketing",
+  },
+  "marketing.enviar": {
+    que: "armar audiencias, redactar campañas, mandarte una prueba y enviarlas (hasta 500 personas, de a una) o cancelarlas. No hace falta aprobación de nadie: por defecto la tienen Dirección, Coordinación y Ventas",
+    donde: "/marketing",
+  },
+  "marketing.configurar": {
+    que: "elegir el buzón de marketing, el remitente y el pie de los correos y probar el buzón; también reactivar los correos de alguien que se dio de baja, que deshace una oposición expresa de esa persona (Ley 18.331). Por defecto solo la tiene Dirección",
+    donde: "/settings/marketing",
+  },
 };
 
 /**
@@ -230,7 +243,8 @@ export const GRUPOS_CAPACIDADES: readonly {
   {
     titulo: "Comercial y financiero",
     // 040 — `empresas.editar` va con lo comercial.
-    incluye: (c) => /^(contactos|inscripciones|cobranza|empresas|facturacion)\./.test(c),
+    // 045 — `marketing.*` también: convertir leads es trabajo comercial.
+    incluye: (c) => /^(contactos|inscripciones|cobranza|empresas|facturacion|marketing)\./.test(c),
   },
   { titulo: "Conversaciones", incluye: (c) => c.startsWith("inbox.") },
   { titulo: "Plataforma", incluye: (c) => /^(configuracion|accesos|alumnos|areas)\./.test(c) },

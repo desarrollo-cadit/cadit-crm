@@ -86,6 +86,11 @@ externas: el trabajo en segundo plano (agente, Laboratorio) es in-process.
 | **Avisos de nuevos interesados** (cada formulario público: página de curso, formulario de campaña, inscripción a taller → correo al área "Nuevos interesados", con vendedores en copia) | `src/lib/lead-notices.ts` (llave por persona + interés + día, destinatarios, contenido; puro) + `src/server/lead-notices-queue.ts` (`avisarInteresadoNuevo`: encola en un savepoint de la transacción del formulario, con el payload congelado, y manda con `onAfterCommit`; nunca rompe el envío) + `src/server/lead-notices.ts` (envío y reintento en la misma periódica `runInternalNoticesForOrg`); lo llaman SOLO `registerPublicLead` (`src/server/intake-forms.ts`) y `submitPublicWorkshopRegistration` (`src/server/workshops.ts`). Área `interesados` en `CONFIG_AREAS` (migración 0065) |
 | **Seguimiento de leads** (pestaña «Seguimiento» del contacto: cada envío de formulario público, notas y «le escribí por correo / WhatsApp»; abre primero en un lead) | `src/lib/seguimiento.ts` (puro: wa.me, mailto, línea de tiempo, pestaña inicial, body del POST) + `src/server/seguimiento.ts` (`registrarEnvioDeFormulario`, en savepoint, lo llaman SOLO `registerPublicLead` y `submitPublicWorkshopRegistration`) + tablas `contact_form_submission` / `contact_activity` (migración 0066, backfill desde `staff_notice`) + `/api/contacts/[id]/seguimiento` (GET `contactos.ver`, POST `inscripciones.seguimiento`) + `src/components/contacts/seguimiento-client.tsx` |
 | Áreas configurables (Ventas, Soporte, **Administración**, **Nuevos interesados**) vs. áreas a las que deriva el agente (solo Ventas y Soporte) | `CONFIG_AREAS` / `AREAS` en `src/lib/areas.ts` + `src/server/areas/config.ts` (`getAllAreaConfigs` / `getAreaConfigs`) |
+| **Marketing: audiencias** (filtros, excluidos por motivo, tope 500) | `src/lib/marketing/audience.ts` (puro: filtros Zod, partición, dedupe) + `src/server/marketing/audiences.ts` (`candidatosDeAudiencia`, ÚNICA lectura de `contact` que arma destinatarios) + `/api/marketing/audiences*` + `/marketing?tab=audiencias` |
+| **Marketing: campañas** (bloques, imágenes, vista previa, prueba, envío, resultados) | `src/lib/marketing/{body,render-email,transitions,link-token}.ts` (puros) + `src/server/marketing/{campaigns,images,send,runner}.ts` + `/api/marketing/campaigns*` + `/marketing/campanas/[id]` + plantilla `docs/email-templates/campana-marketing.html` |
+| **Marketing: bajas y clics** (públicas, firmadas) | `src/server/marketing/{bajas,unsubscribe}.ts` + `/baja/[token]` + `/api/public/marketing/{unsubscribe,click/[token]/[linkId],images/[token]}` + reactivar en `DELETE /api/contacts/[id]/marketing-unsubscribe` (`marketing.configurar`) |
+| **Marketing: buzón, remitente y pie** | `src/server/marketing/settings.ts` + `/settings/marketing` + `/api/settings/marketing{,/test}` (`marketing.configurar`) |
+| La gramática en línea (negrita, cursiva, enlaces, variables) | `src/lib/markdown-inline.ts` — UNA para cursos offline (`markdown.tsx`) y campañas |
 | UI | `src/components/` + `src/app/(app)/` |
 
 Los mocks del entorno de pruebas viven en `src/app/api/dev/` (wa-mock +
@@ -110,7 +115,10 @@ Ver [.specify/memory/constitution.md](.specify/memory/constitution.md).
 
 - **Soberanía (II, endurecida)**: dependencias de runtime SOLO WhatsApp Cloud
   API, proveedor LLM OpenRouter-compatible opcional, Microsoft Graph para el
-  correo transaccional a alumnos (constitución 1.3.0, tras `src/lib/m365`) y el
+  correo transaccional a alumnos (constitución 1.3.0, tras `src/lib/m365`) y,
+  desde 1.8.0, para campañas de marketing a contactos PROPIOS (buzón de
+  marketing separado, baja obligatoria que no corta el correo operativo, tope
+  de 500 por campaña; spec 045) y el
   reproductor embebido de Vimeo para los videos de cursos offline (constitución
   1.4.0: solo el navegador carga el iframe de `player.vimeo.com`; el servidor no
   llama a Vimeo, sin tokens, sin almacenar video, tras un único componente) y
@@ -120,7 +128,12 @@ Ver [.specify/memory/constitution.md](.specify/memory/constitution.md).
   en un iframe el reproductor oficial de una grabación de Zoom ya adjudicada
   (solo el navegador; el servidor no descarga, retransmite ni guarda video;
   tras `src/components/portal/zoom-recording-player.tsx`; una clase sin
-  enlace de Zoom funciona igual). PROHIBIDO en v1 introducir S3/R2, Stripe, Google u otros servicios externos.
+  enlace de Zoom funciona igual). Desde 1.8.0, campañas de correo a contactos
+  PROPIOS por el mismo `src/lib/m365`, con cuatro condiciones: buzón de
+  marketing SEPARADO de `M365_SENDER` (y en la misma ApplicationAccessPolicy),
+  enlace de baja firmado sin login que toda campaña respeta y que nunca frena
+  el correo operativo, tope de 500 de a uno, e `is_test` jamás.
+  PROHIBIDO en v1 introducir S3/R2, Stripe, Google u otros servicios externos.
   Auth y BD self-hosted.
 - **Seguridad (I)**: secretos cifrados en reposo (AES-256-GCM, `lib/crypto`);
   jamás al cliente ni a logs. El token de WhatsApp solo muestra sus últimos 4.
@@ -455,6 +468,38 @@ no por `id`: la copia crea filas nuevas, así que el `id` nunca coincide.
 - El portal del profesor NO vence.
 - Antes de desplegar algo que toque esto: `scripts/accesos-que-vencen.sql`
   lista a quién le vence a una fecha (solo lectura).
+
+## Campañas de marketing (ciclo 045)
+
+- **Un solo camino arma destinatarios**: `candidatosDeAudiencia`
+  (`src/server/marketing/audiences.ts`), que SIEMPRE trae si el contacto es de
+  prueba (`is_test`) y si tiene baja. `evaluarAudiencia` (vista previa) y
+  `destinatariosDeAudiencia` (confirmar) pasan por ahí; el ejecutor solo lee
+  las filas congeladas de `marketing_campaign_recipient`.
+  `tests/unit/marketing-guard.test.ts` lo fija.
+- **A lo sumo una vez**: cada destinatario se reclama (`pendiente → enviando`)
+  ANTES de llamar a Graph. Lo que quedó `enviando` tras un reinicio pasa a
+  `fallido / interrumpido` y NO se reintenta (decisión P-03). Un 429 vuelve a
+  `pendiente` (Graph no lo aceptó) y se reintenta tras `Retry-After`; un 403
+  detiene la campaña (`last_error`) y la periódica la retoma.
+- **Una campaña `enviando` por organización** (índice único parcial): el cupo
+  de Exchange es por buzón. El lease vive en `lease_until`.
+- **La baja es en dos pasos** (la página LEE, el botón REGISTRA): los
+  escáneres de correo abren los enlaces solos. Es por contacto O por correo
+  normalizado (`whereDeBajaActiva`, `src/server/marketing/bajas.ts`), la MISMA
+  regla para audiencias y ejecutor. Revertir marca, no borra, y pide
+  `marketing.configurar`.
+- **El correo operativo no lee bajas**: nada de `src/server/email/**`, envíos
+  por grupo ni avisos internos importa `@/server/marketing` (test).
+- **Solo `src/server/marketing/send.ts` pasa `sender` a `sendMail`** (el buzón
+  de marketing). Los enlaces de baja y de clic son HMAC por destinatario con
+  propósitos distintos (`src/lib/marketing/link-token.ts`, clave HKDF de
+  `ENCRYPTION_KEY`); un clic solo redirige a una URL guardada de la campaña.
+- **El HTML del correo lo arma una sola función** (`renderCampaignEmail`): la
+  vista previa, la prueba y el envío real pasan por ahí. Las variables se
+  insertan como TEXTO después de interpretar el Markdown.
+- Variables: `MARKETING_SEND_PAUSE_MS` (2000 ≈ 30/min; 0 solo en pruebas) y
+  `MARKETING_TICK_SEC` (60; 0 = solo al arrancar).
 
 ## Variables de entorno
 

@@ -129,3 +129,14 @@ describe("guardas estructurales de Configuración", () => {
     ).toEqual([]);
   });
 });
+
+/** 045 (T091; FR-025) — La pestaña de Marketing, con su propia capacidad. */
+describe("045 — Marketing en Configuración", () => {
+  it("con solo `marketing.configurar` entra a Marketing", () => {
+    expect(primerDestinoDeSettings(["marketing.configurar"])).toBe("/settings/marketing");
+  });
+
+  it("sin ella, la pestaña no es destino de nadie", () => {
+    expect(primerDestinoDeSettings(["marketing.ver", "marketing.enviar"])).toBeNull();
+  });
+});

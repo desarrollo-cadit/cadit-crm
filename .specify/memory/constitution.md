@@ -1,7 +1,32 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Versión: 1.6.0 → 1.7.0
+Versión: 1.7.0 → 1.8.0
+
+Cambios (1.8.0, 2026-10-22, aprobada por el dueño para la spec 045):
+  - Principio II, ítem 3 (Microsoft 365 / Graph): se AMPLÍA el uso a
+    CAMPAÑAS DE CORREO a contactos PROPIOS de la organización (leads y
+    exalumnos llegados por sus formularios, WhatsApp o inscripciones), por el
+    mismo adaptador `src/lib/m365`, desde un buzón de marketing SEPARADO del
+    operativo y acotado por la misma ApplicationAccessPolicy. Condiciones:
+    baja obligatoria en cada correo (enlace firmado, sin login) que toda
+    campaña futura respeta y que NO corta el correo operativo; tope de 500
+    destinatarios por campaña; envío de a uno; `is_test` jamás recibe
+    campañas. Las imágenes de campaña van al almacenamiento propio del
+    servidor. Ninguna dependencia externa nueva.
+  - Principio VIII: se ACOTA "no es plataforma de marketing masivo". Quedan
+    PERMITIDAS las campañas segmentadas a contactos propios cuyo fin es
+    convertir leads y reactivar exalumnos. Siguen PROHIBIDOS la difusión a
+    terceros (listas compradas, scraping), los constructores visuales de
+    flujos genéricos y el broadcast de WhatsApp fuera de plantillas aprobadas.
+  Bump: MINOR — expansión material del uso de una dependencia ya permitida y
+  acotación de una exclusión, sin redefinir principios ni agregar
+  dependencias; mismo criterio que 1.5.0 y 1.7.0.
+
+Plantillas dependientes: plan/spec/tasks — ✅ compatibles (sin secciones
+nuevas). CLAUDE.md — ⚠ actualizar la viñeta de Soberanía al implementar 045.
+
+Versión anterior: 1.6.0 → 1.7.0
 
 Cambios (1.7.0, 2026-10-09):
   - Principio II, ítem 5: el alcance de Zoom se AMPLÍA para que el NAVEGADOR
@@ -163,6 +188,19 @@ dependencias externas en runtime es CERRADA:
      aplicación de correo (`Mail.Send`) sin
      acotar habilitan operar sobre CUALQUIER buzón del tenant. Las
      conversaciones de prueba (`is_test`) JAMÁS envían correo.
+     **Además (1.8.0), campañas de correo a contactos PROPIOS** de la
+     organización (leads y exalumnos que llegaron por sus formularios,
+     WhatsApp o inscripciones), por el mismo adaptador, con estas
+     condiciones NO negociables: (a) salen de un buzón de marketing SEPARADO
+     del buzón de los correos operativos, incluido en la misma
+     `ApplicationAccessPolicy`; (b) cada correo lleva un enlace de baja
+     firmado que funciona sin iniciar sesión, la baja se registra en el
+     contacto y TODA campaña posterior la respeta, y una baja de marketing
+     NUNCA impide el correo operativo; (c) tope de 500 destinatarios por
+     campaña y envío de a uno; (d) los contactos y conversaciones de prueba
+     JAMÁS reciben campañas. Las imágenes de una campaña se guardan en el
+     almacenamiento propio del servidor; no se agrega ningún servicio externo
+     de envío ni de alojamiento.
   4. **El reproductor embebido de Vimeo**, para los videos de los cursos offline
      que la academia ya aloja en Vimeo. ÚNICAMENTE el navegador carga el iframe
      oficial del reproductor (`player.vimeo.com`): el servidor NO llama a Vimeo,
@@ -292,6 +330,13 @@ conversaciones de WhatsApp de UN negocio* se rechaza.
 - WhatsApp Cloud API es el canal; el producto es el CRM. Features de canal que no
   sirvan a atender/organizar/convertir (broadcast masivo, scraping de números,
   flujos visuales genéricos) quedan FUERA del alcance de v1.
+- (1.8.0) Las **campañas segmentadas a contactos propios** del negocio, cuyo fin
+  es convertir leads y reactivar exalumnos, SÍ sirven al foco y están
+  permitidas, con las condiciones del Principio II (baja obligatoria, tope por
+  campaña, buzón separado). Siguen PROHIBIDOS: la difusión a terceros (listas
+  compradas o importadas sin relación previa, scraping), los constructores
+  visuales de flujos genéricos y el envío masivo de WhatsApp fuera de
+  plantillas aprobadas por Meta.
 - Toda feature MUST servir a la agencia que despliega o al negocio que opera UNA
   instancia. Lo que solo sirva a una plataforma centralizada (billing, planes,
   multi-instancia) queda FUERA.
@@ -389,4 +434,4 @@ práctica, convención o preferencia; ante un conflicto, gana la constitución.
 - **Propagación**: al enmendar la constitución se revisan y, si procede, se actualizan
   las plantillas dependientes (plan, spec, tasks).
 
-**Version**: 1.7.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-10-09
+**Version**: 1.8.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-10-22
