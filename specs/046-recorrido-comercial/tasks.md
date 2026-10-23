@@ -183,9 +183,9 @@ convencional por fase.
 
 ## Phase 10: User Story 6 — La pantalla Importar historial (P1)
 
-- [ ] T054 [US6] Pestaña `/settings/historial` en `src/lib/nav.ts` (+ caso en `tests/unit/settings-acceso.test.ts`), `src/app/(app)/settings/historial/page.tsx` (gate `historial.importar`) y `src/components/settings/historial-import-client.tsx`: subir CSV; paso 1 asociaciones (cursos con "Dejar como texto", vendedores con "Sin vendedor"); paso 2 vista previa con cantidades y problemas; paso 3 confirmar con avance por tandas y "Continuar"; lista de importaciones con "Deshacer esta importación"
-- [ ] T055 [US6] Guard en `tests/unit/recorrido-comercial-guard.test.ts`: rutas del importador con `historial.importar`; el importador no lee plata; ningún CSV real en `tests/fixtures` (solo la planilla inventada)
-- [ ] T056 `CLAUDE.md` (fila "Importar historial"), quickstart §5, gate final y marcar tareas
+- [x] T054 [US6] Pestaña `/settings/historial` en `src/lib/nav.ts` (+ caso en `tests/unit/settings-acceso.test.ts`), `src/app/(app)/settings/historial/page.tsx` (gate `historial.importar`) y `src/components/settings/historial-import-client.tsx`: subir CSV; paso 1 asociaciones (cursos con "Dejar como texto", vendedores con "Sin vendedor"); paso 2 vista previa con cantidades y problemas; paso 3 confirmar con avance por tandas y "Continuar"; lista de importaciones con "Deshacer esta importación"
+- [x] T055 [US6] Guard en `tests/unit/recorrido-comercial-guard.test.ts`: rutas del importador con `historial.importar`; el importador no lee plata; ningún CSV real en `tests/fixtures` (solo la planilla inventada)
+- [x] T056 `CLAUDE.md` (fila "Importar historial"), quickstart §5, gate final y marcar tareas
 
 **Checkpoint**: gate verde → commit.
 

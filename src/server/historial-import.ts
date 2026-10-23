@@ -51,6 +51,8 @@ export type AnalisisDto = {
   totalFilas: number;
   filasValidas: number;
   problemas: ProblemaDeFila[];
+  /** Filas que se importan con algo descartado (un correo mal escrito). */
+  avisos: ProblemaDeFila[];
   cursos: { label: string; filas: number; sugerido: string | null }[];
   vendedores: { raw: string; filas: number; sugerido: string | null }[];
   catalogo: { id: string; name: string }[];
@@ -62,6 +64,7 @@ export type VistaPreviaDto = {
   empresas: { crear: number };
   cursadas: { nuevas: number; yaPresentes: number };
   problemas: ProblemaDeFila[];
+  avisos: ProblemaDeFila[];
 };
 
 type Fallo = { ok: false; code: "invalid_csv" | "invalid_mapping"; message: string };
@@ -124,7 +127,7 @@ async function validar(
   organizationId: string,
   csv: string,
   mapeo: Mapeo
-): Promise<Fallo | { ok: true; filas: FilaHistorica[]; problemas: ProblemaDeFila[] }> {
+): Promise<Fallo | { ok: true; filas: FilaHistorica[]; problemas: ProblemaDeFila[]; avisos: ProblemaDeFila[] }> {
   const leida = leerPlanilla(csv);
   if (!leida.ok) return { ok: false, code: "invalid_csv", message: leida.message };
   const { catalogo, sellers } = await opcionesDeAsociacion(organizationId);
@@ -133,7 +136,7 @@ async function validar(
     sellers: new Set(sellers.map((s) => s.id)),
   });
   if (error) return { ok: false, code: "invalid_mapping", message: error };
-  return { ok: true, filas: leida.filas, problemas: leida.problemas };
+  return { ok: true, filas: leida.filas, problemas: leida.problemas, avisos: leida.avisos };
 }
 
 /* ============================================================
@@ -159,6 +162,7 @@ export async function analizarPlanilla(
       totalFilas: leida.total,
       filasValidas: leida.filas.length,
       problemas: leida.problemas,
+      avisos: leida.avisos,
       cursos: contar(leida.filas.map((f) => f.curso)).map(([label, filas]) => ({
         label,
         filas,
@@ -183,7 +187,7 @@ export async function vistaPrevia(
   const v = await validar(organizationId, csv, mapeo);
   if (!v.ok) return v;
   const plan = planDeImportacion(v.filas, mapeo, await estadoParaPlan(organizationId));
-  return { ok: true, vista: { ...plan.conteo, problemas: v.problemas } };
+  return { ok: true, vista: { ...plan.conteo, problemas: v.problemas, avisos: v.avisos } };
 }
 
 /* ============================================================

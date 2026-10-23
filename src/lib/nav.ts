@@ -336,6 +336,11 @@ export const SETTINGS_TABS = [
    * dónde entra nadie.
    */
   { href: "/settings/marketing", label: "Marketing", capability: "marketing.configurar" },
+  /**
+   * 046 US6 — Importar la planilla histórica de cursadas. `historial.importar`,
+   * que solo tiene Dirección. Al final: no cambia a dónde entra nadie.
+   */
+  { href: "/settings/historial", label: "Importar historial", capability: "historial.importar" },
 ] as const;
 
 /**

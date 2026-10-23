@@ -140,3 +140,14 @@ describe("045 — Marketing en Configuración", () => {
     expect(primerDestinoDeSettings(["marketing.ver", "marketing.enviar"])).toBeNull();
   });
 });
+
+/** 046 US6 (FR-022) — Importar historial, con su propia capacidad. */
+describe("046 — Importar historial en Configuración", () => {
+  it("con solo `historial.importar` entra a Importar historial", () => {
+    expect(primerDestinoDeSettings(["historial.importar"])).toBe("/settings/historial");
+  });
+
+  it("sin ella, la pestaña no es destino de nadie", () => {
+    expect(primerDestinoDeSettings(["contactos.ver", "contactos.editar"])).toBeNull();
+  });
+});

@@ -285,6 +285,11 @@ inscripciones. La derivación única (`historialesComerciales`) las cuenta como
   Vendedor: nombre igual, o iniciales del nombre (CP = "Cristina Pérez")
   cuando un único vendedor las tiene.
 
+- **DV-018 Correo mal escrito.** Un correo que no es válido no se adivina. Si la fila
+  tiene teléfono, se importa SIN correo y queda como aviso (la persona se reconoce
+  por el teléfono); sin teléfono, la fila es un problema. Con la planilla real:
+  88 correos inválidos, 87 con teléfono.
+
 ### Source Code (US6)
 
 | Capa | Archivo |

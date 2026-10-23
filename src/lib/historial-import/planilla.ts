@@ -50,7 +50,7 @@ export type FilaHistorica = {
 export type ProblemaDeFila = { fila: number; motivo: string };
 
 export type PlanillaLeida =
-  | { ok: true; total: number; filas: FilaHistorica[]; problemas: ProblemaDeFila[] }
+  | { ok: true; total: number; filas: FilaHistorica[]; problemas: ProblemaDeFila[]; avisos: ProblemaDeFila[] }
   | { ok: false; message: string };
 
 const esCorreo = z.string().email();
@@ -78,6 +78,8 @@ export function leerPlanilla(contenido: string): PlanillaLeida {
 
   const validas: FilaHistorica[] = [];
   const problemas: ProblemaDeFila[] = [];
+  /** Filas que SÍ se importan, pero con algo descartado (p. ej. un correo mal escrito). */
+  const avisos: ProblemaDeFila[] = [];
   const datos = filas.slice(1).filter((f) => f.some((c) => c.trim() !== ""));
 
   datos.forEach((celdas, i) => {
@@ -93,15 +95,25 @@ export function leerPlanilla(contenido: string): PlanillaLeida {
       celdas.map((c) => c.trim());
 
     if (!nombre) return void problema("Falta el nombre.");
-    const correo = normalizarCorreo(correoRaw);
-    if (correo && !esCorreo.safeParse(correo).success) return void problema("El correo no es válido.");
     const telefono = telefonoRaw ? normalizePhoneInput(telefonoRaw) : null;
     if (telefonoRaw && !telefono) return void problema("El teléfono no es válido.");
+    /**
+     * Un correo mal escrito no se adivina. Con teléfono, la persona se
+     * reconoce igual: se importa SIN correo y se avisa. Sin teléfono no hay
+     * con qué reconocerla.
+     */
+    const correoLeido = normalizarCorreo(correoRaw);
+    const correoValido = !correoLeido || esCorreo.safeParse(correoLeido).success;
+    if (!correoValido && !telefono) {
+      return void problema("El correo no es válido y no hay teléfono: no se puede reconocer a la persona.");
+    }
+    const correo = correoValido ? correoLeido : null;
     if (!correo && !telefono) {
       return void problema("Falta el correo y el teléfono: no se puede reconocer a la persona.");
     }
     if (!curso) return void problema("Falta el curso.");
     if (!fecha || !esDia(fecha)) return void problema("La fecha no es un día válido (AAAA-MM-DD).");
+    if (!correoValido) avisos.push({ fila, motivo: "El correo no es válido: se importa sin correo, por el teléfono." });
 
     validas.push({
       fila,
@@ -120,5 +132,5 @@ export function leerPlanilla(contenido: string): PlanillaLeida {
     });
   });
 
-  return { ok: true, total: datos.length, filas: validas, problemas };
+  return { ok: true, total: datos.length, filas: validas, problemas, avisos };
 }

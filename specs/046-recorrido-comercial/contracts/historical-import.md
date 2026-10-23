@@ -17,7 +17,8 @@ Problema = { fila: number; motivo: string }
 {
   totalFilas: number;
   filasValidas: number;
-  problemas: Problema[];
+  problemas: Problema[];   // filas que NO se importan
+  avisos: Problema[];      // filas que se importan sin correo (correo mal escrito, hay teléfono)
   cursos: { label: string; filas: number; sugerido: string | null }[];
   vendedores: { raw: string; filas: number; sugerido: string | null }[];  // sin la clave vacía
   catalogo: { id: string; name: string }[];   // sin talleres
@@ -37,6 +38,7 @@ Problema = { fila: number; motivo: string }
   empresas: { crear: number };
   cursadas: { nuevas: number; yaPresentes: number };
   problemas: Problema[];
+  avisos: Problema[];
 }
 ```
 **422** `invalid_mapping` (falta un curso o un vendedor, o un id que no es de la organización).

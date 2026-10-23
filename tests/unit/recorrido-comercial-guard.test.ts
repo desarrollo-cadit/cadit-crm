@@ -88,3 +88,40 @@ describe("cada ruta nueva pide su capacidad", () => {
     expect(leer(f)).toMatch(new RegExp(`export const ${metodo} = requireCapability\\(\\s*"${cap.replace(".", "\\.")}"`));
   });
 });
+
+describe("046 US6 — el importador del historial", () => {
+  const RUTAS = [
+    ["src/app/api/historial/importaciones/route.ts", "GET"],
+    ["src/app/api/historial/importaciones/route.ts", "POST"],
+    ["src/app/api/historial/importaciones/analizar/route.ts", "POST"],
+    ["src/app/api/historial/importaciones/vista-previa/route.ts", "POST"],
+    ["src/app/api/historial/importaciones/[id]/route.ts", "DELETE"],
+    ["src/app/api/historial/importaciones/[id]/aplicar/route.ts", "POST"],
+  ] as const;
+
+  it.each(RUTAS)("%s %s pide `historial.importar`", (f, metodo) => {
+    expect(leer(f)).toMatch(new RegExp(`export const ${metodo} = requireCapability\\(\\s*"historial\\.importar"`));
+  });
+
+  it.each([
+    "src/server/historial-import.ts",
+    "src/lib/historial-import/plan.ts",
+    "src/lib/historial-import/planilla.ts",
+    "src/components/settings/historial-import-client.tsx",
+  ])("%s no lee plata", (f) => {
+    expect(leer(f)).not.toMatch(/schema\.(installment|payment)\b/);
+    expect(leer(f)).not.toMatch(/\.amount\b/);
+  });
+
+  it("el DTO de una importación no lleva las filas pendientes (datos personales)", () => {
+    const src = leer("src/server/historial-import.ts");
+    const aDto = src.slice(src.indexOf("function aDto("), src.indexOf("async function leerImportacion("));
+    expect(aDto).not.toContain("pendingRows");
+  });
+
+  it("en tests/fixtures solo está la planilla inventada", () => {
+    const csvs = readdirSync(path.join(raiz, "tests", "fixtures")).filter((n) => n.endsWith(".csv"));
+    expect(csvs).toEqual(["historial-planilla.csv"]);
+    expect(leer("tests/fixtures/historial-planilla.csv")).toMatch(/@ejemplo\.test/);
+  });
+});

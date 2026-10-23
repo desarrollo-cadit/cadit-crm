@@ -218,7 +218,7 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
   // 046 US6 — Importar el historial de cursadas.
   "historial.importar": {
     que: "importar la planilla histórica de cursadas (2020–2024): asociar cursos y vendedores, ver la vista previa, aplicarla y deshacerla. Crea y completa contactos en bloque (nunca pisa un dato): por defecto solo la tiene Dirección",
-    donde: "Ajustes → Importar historial",
+    donde: "/settings/historial",
   },
 };
 

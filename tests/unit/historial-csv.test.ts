@@ -90,11 +90,19 @@ describe("leerPlanilla", () => {
     expect(r.filas[0]).toMatchObject({ correo: "ana@ejemplo.test", telefono: "59899123456", fila: 2 });
   });
 
-  it("un correo inválido es un problema, no se adivina", () => {
-    const csv = `${COLUMNAS_PLANILLA.join(",")}\nA,B,no-es-correo,,,Curso,,,,2021-01-01,,,7`;
+  it("un correo inválido no se adivina: sin teléfono es un problema; con teléfono se importa sin correo y se avisa", () => {
+    const csv = [
+      COLUMNAS_PLANILLA.join(","),
+      "A,B,no-es-correo,,,Curso,,,,2021-01-01,,,7",
+      "C,D,con espacio@x.test,099123456,,Curso,,,,2021-01-01,,,8",
+    ].join("\n");
     const r = leerPlanilla(csv);
     if (!r.ok) throw new Error(r.message);
-    expect(r.problemas).toEqual([{ fila: 7, motivo: "El correo no es válido." }]);
+    expect(r.problemas).toEqual([
+      { fila: 7, motivo: "El correo no es válido y no hay teléfono: no se puede reconocer a la persona." },
+    ]);
+    expect(r.filas).toEqual([expect.objectContaining({ fila: 8, correo: null, telefono: "59899123456" })]);
+    expect(r.avisos).toEqual([{ fila: 8, motivo: "El correo no es válido: se importa sin correo, por el teléfono." }]);
   });
 
   it("una fila con otra cantidad de columnas es un problema", () => {
