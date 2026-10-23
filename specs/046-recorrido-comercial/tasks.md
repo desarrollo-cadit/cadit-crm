@@ -224,10 +224,10 @@ convencional por fase.
 
 ## Phase 13: User Story 8 — Agregaciones y ruta (P1)
 
-- [ ] T070 [P] [US8] Test en rojo `tests/unit/reportes.test.ts`: cada agregación pura de `src/lib/reportes.ts` con datos conocidos — top 10 + Otros con y sin gratuitos, alumnos por año y trimestre, empresas top 10, embudo por origen, ventas por año y por vendedor sin gratuitos ("Sin vendedor"), empresas vs particulares, evolución por curso, ingresos por curso y moneda; empresa excluida fuera de todo; período (FR-027…FR-030)
-- [ ] T071 [US8] Implementar `src/lib/reportes.ts`
-- [ ] T072 [P] [US8] Test en rojo `tests/unit/reportes-servidor.test.ts`: sin `cobranza.ver` no consulta pagos y la respuesta no tiene `ingresosPorCurso`; con ella, sí; recompra reusa `metricasDeRecompra` (FR-031)
-- [ ] T073 [US8] `src/server/reportes.ts` + `src/app/api/dashboard/reportes/route.ts` (`reportes.ver`, 422 `invalid_query`)
+- [x] T070 [P] [US8] Test en rojo `tests/unit/reportes.test.ts`: cada agregación pura de `src/lib/reportes.ts` con datos conocidos — top 10 + Otros con y sin gratuitos, alumnos por año y trimestre, empresas top 10, embudo por origen, ventas por año y por vendedor sin gratuitos ("Sin vendedor"), empresas vs particulares, evolución por curso, ingresos por curso y moneda; empresa excluida fuera de todo; período (FR-027…FR-030)
+- [x] T071 [US8] Implementar `src/lib/reportes.ts`
+- [x] T072 [P] [US8] Test en rojo `tests/unit/reportes-servidor.test.ts`: sin `cobranza.ver` no consulta pagos y la respuesta no tiene `ingresosPorCurso`; con ella, sí; recompra reusa `metricasDeRecompra` (FR-031)
+- [x] T073 [US8] `src/server/reportes.ts` + `src/app/api/dashboard/reportes/route.ts` (`reportes.ver`, 422 `invalid_query`)
 
 **Checkpoint**: gate verde → commit.
 
