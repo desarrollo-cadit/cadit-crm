@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-22
 
-**Status**: Aprobada — retomada por el dueño el 2026-10-22; constitución
+**Status**: Implementada e integrada a main el 2026-10-23 (4129c8d); constitución
 enmendada a 1.8.0.
 
 **Input**: User description: "Sección de Marketing: campañas por correo a audiencias construidas con filtros (origen, etapa del pipeline, grupo o curso, curso de interés, empresa, fecha de alta), editor con vista previa y envío de prueba, bajas que toda campaña futura respeta, página de campañas con destinatarios y métricas (enviados, fallidos, bajas, clics). Envío por Microsoft 365 desde un buzón de marketing separado, de a uno, cientos de destinatarios por campaña. WhatsApp, HTML libre y aperturas quedan fuera de esta etapa."
