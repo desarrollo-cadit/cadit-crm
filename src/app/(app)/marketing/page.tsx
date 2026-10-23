@@ -7,6 +7,7 @@ import { withTenantTransaction } from "@/lib/db/with-tenant";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { listarAudiencias } from "@/server/marketing/audiences";
+import { RepurchaseView } from "@/components/marketing/repurchase-view";
 import { listarCampanas, type CampaignStatus } from "@/server/marketing/campaigns";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,8 @@ const ESTADO: Record<CampaignStatus, string> = {
 const PESTANAS = [
   { key: "campanas", label: "Campañas" },
   { key: "audiencias", label: "Audiencias" },
+  // 046 (US5) — cuánto se recompra; misma puerta `marketing.ver`, sin plata.
+  { key: "recompra", label: "Recompra" },
 ] as const;
 
 /**
@@ -37,7 +40,7 @@ export default async function MarketingPage({ searchParams }: Props) {
   if (!caps.includes("marketing.ver")) redirect("/");
   const canEdit = caps.includes("marketing.enviar");
   const { tab } = await searchParams;
-  const activa = tab === "audiencias" ? "audiencias" : "campanas";
+  const activa = tab === "audiencias" || tab === "recompra" ? tab : "campanas";
 
   const scope = { organizationId: session.organizationId, userId: session.userId };
   const campanas =
@@ -76,7 +79,9 @@ export default async function MarketingPage({ searchParams }: Props) {
         ))}
       </nav>
 
-      {activa === "campanas" ? (
+      {activa === "recompra" ? (
+        <RepurchaseView />
+      ) : activa === "campanas" ? (
         <section className="space-y-3">
           {canEdit && (
             <Link href="/marketing/campanas/nueva" className={buttonVariants({ size: "sm" })}>

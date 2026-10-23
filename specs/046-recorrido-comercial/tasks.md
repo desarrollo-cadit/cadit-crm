@@ -126,10 +126,10 @@ convencional por fase.
 
 **Independent Test**: con un historial conocido, las tres cifras coinciden con el cálculo a mano.
 
-- [ ] T031 [P] [US5] Test en rojo `tests/unit/marketing-recompra.test.ts`: 100 personas, 30 con dos o más → 30 %; días promedio; pares consecutivos contados por persona, top 10; el período recalcula; `periodoDeRecompra` valida fechas (FR-011)
-- [ ] T032 [US5] Implementar `src/lib/marketing/recompra.ts` (`metricasDeRecompra`, `periodoDeRecompra`)
-- [ ] T033 [US5] `src/server/marketing/recompra.ts` (`recompraDeLaOrganizacion`) y ruta `src/app/api/marketing/recompra/route.ts` (GET, `marketing.ver`, 422 `invalid_query`) (FR-012)
-- [ ] T034 [US5] `src/components/marketing/repurchase-view.tsx` (período: últimos 12 meses / este año / todo / a medida; tres cifras y tabla de pares) y pestaña "Recompra" en `src/app/(app)/marketing/page.tsx`
+- [x] T031 [P] [US5] Test en rojo `tests/unit/marketing-recompra.test.ts`: 100 personas, 30 con dos o más → 30 %; días promedio; pares consecutivos contados por persona, top 10; el período recalcula; `periodoDeRecompra` valida fechas (FR-011)
+- [x] T032 [US5] Implementar `src/lib/marketing/recompra.ts` (`metricasDeRecompra`, `periodoDeRecompra`)
+- [x] T033 [US5] `src/server/marketing/recompra.ts` (`recompraDeLaOrganizacion`) y ruta `src/app/api/marketing/recompra/route.ts` (GET, `marketing.ver`, 422 `invalid_query`) (FR-012)
+- [x] T034 [US5] `src/components/marketing/repurchase-view.tsx` (período: últimos 12 meses / este año / todo / a medida; tres cifras y tabla de pares) y pestaña "Recompra" en `src/app/(app)/marketing/page.tsx`
 
 **Checkpoint**: gate verde → commit de US5.
 
