@@ -191,8 +191,60 @@ convencional por fase.
 
 ---
 
+## Phase 11: User Story 7 — Tipo de contacto (P1)
+
+**Goal**: lead / alumno activo / exalumno, derivado, en Contactos y en audiencias.
+
+**Independent Test**: grupo no dictado → lead; cursada histórica → exalumno; grupo por empezar → alumno activo aunque haya aprobado otro.
+
+- [ ] T057 [P] [US7] Test en rojo en `tests/unit/recorrido-comercial.test.ts`: `activo` en la entrada (OR al fusionar recursadas) y `tipoDeContacto` — precedencia, grupo nunca dictado no hace alumno, solo histórico = exalumno, sin historial = lead (FR-023)
+- [ ] T058 [US7] `activo` y `tipoDeContacto` en `src/lib/recorrido-comercial.ts`
+- [ ] T059 [P] [US7] Test en rojo `tests/unit/contact-types.test.ts`: `idsPorTipo` (pura) y `condicionDeTipo` (IN / NOT IN) en `src/server/contact-types.ts`; la ruta `GET /api/contacts` acepta `tipo` y devuelve `tipos`
+- [ ] T060 [US7] `src/server/contact-types.ts` y `src/app/api/contacts/route.ts` (filtro en SQL, paginación intacta, `tipo` por fila, cantidades) (FR-024)
+- [ ] T061 [US7] Pestañas Todos / Leads / Alumnos activos / Exalumnos con cantidades e insignia por fila en `src/components/contacts/contacts-client.tsx` (el "Nuevo" de 48 h queda)
+- [ ] T062 [P] [US7] Test en rojo en `tests/unit/marketing-audiencia.test.ts` y `tests/unit/marketing-historial-filtros.test.ts`: `contactTypes` en el esquema y en `cumpleFiltrosDeHistorial` (lead alcanza a quien no tiene historial) (FR-025)
+- [ ] T063 [US7] `contactTypes` en `src/lib/marketing/audience.ts`, `src/lib/marketing/historial-filtros.ts` y `src/components/marketing/audience-builder.tsx`
+
+**Checkpoint**: gate verde → commit.
+
+---
+
+## Phase 12: User Story 8 — Datos de reportes (P1)
+
+- [ ] T064 [P] [US8] Test en rojo `tests/unit/migracion-reportes.test.ts`: `drizzle/0074_reportes.sql` agrega `course.is_free` y `company.exclude_from_reports` con `if not exists` y default false, y `reportes.ver` solo a `direccion` y `coordinacion` (FR-026, FR-029, FR-030)
+- [ ] T065 [US8] Esquema + 0074 a mano; `reportes.ver` en `src/lib/capabilities.ts` (Dirección y Coordinación; fuera de soporte), `guia.ts`, `roles-client.tsx`; ajustar los tests de capacidades y `seed-roles`
+- [ ] T066 [P] [US8] Test en rojo: `isFree` editable en `PATCH /api/courses/[id]` (`academico.editar`) y `excludeFromReports` en `PATCH /api/companies/[id]` (`empresas.editar`) — esquemas Zod en `src/server/courses.ts` y `src/lib/company.ts`
+- [ ] T067 [US8] Casilla "Gratuito: no cuenta como venta" en `src/components/academic/course-form.tsx` y "Excluir de los reportes" en el formulario de empresa (`src/components/companies/`)
+- [ ] T068 [P] [US8] Test en rojo en `tests/unit/recorrido-comercial.test.ts` y `recorrido-comercial-servidor.test.ts`: la entrada lleva `sellerId` y `companyId` de la compra (inscripción o cursada histórica) (DV-022)
+- [ ] T069 [US8] `sellerId`/`companyId` en `CursadaComercial`, `RegistroHistorico`, la derivación y el loader
+
+**Checkpoint**: gate verde → commit.
+
+---
+
+## Phase 13: User Story 8 — Agregaciones y ruta (P1)
+
+- [ ] T070 [P] [US8] Test en rojo `tests/unit/reportes.test.ts`: cada agregación pura de `src/lib/reportes.ts` con datos conocidos — top 10 + Otros con y sin gratuitos, alumnos por año y trimestre, empresas top 10, embudo por origen, ventas por año y por vendedor sin gratuitos ("Sin vendedor"), empresas vs particulares, evolución por curso, ingresos por curso y moneda; empresa excluida fuera de todo; período (FR-027…FR-030)
+- [ ] T071 [US8] Implementar `src/lib/reportes.ts`
+- [ ] T072 [P] [US8] Test en rojo `tests/unit/reportes-servidor.test.ts`: sin `cobranza.ver` no consulta pagos y la respuesta no tiene `ingresosPorCurso`; con ella, sí; recompra reusa `metricasDeRecompra` (FR-031)
+- [ ] T073 [US8] `src/server/reportes.ts` + `src/app/api/dashboard/reportes/route.ts` (`reportes.ver`, 422 `invalid_query`)
+
+**Checkpoint**: gate verde → commit.
+
+---
+
+## Phase 14: User Story 8 — La sección Reportes (P1)
+
+- [ ] T074 [US8] `src/components/dashboard/reports-panel.tsx` con Recharts según la skill `dataviz` (tokens, claro y oscuro, accesible; carga y vacío en cada gráfico) y montaje en `src/app/(app)/page.tsx` con `reportes.ver`
+- [ ] T075 Guard en `tests/unit/recorrido-comercial-guard.test.ts` (rutas nuevas con su capacidad; ingresos solo con `cobranza.ver`), `CLAUDE.md`, quickstart §6, gate final con `NEXT_DIST_DIR=.next-build pnpm build`
+
+**Checkpoint**: gate verde → commit.
+
+---
+
 ## Dependencies & Execution Order
 
+- Phases 11 (US7) y 12 → 13 → 14 (US8) van después de US6.
 - Phases 8 → 9 → 10 (US6) van en orden y dependen de la Phase 1.
 - Phase 1 bloquea todo. US1 → US3 (la tarjeta crece). US2 → US3 (sugerencias usan rutas) y → US4 (atajo de ruta). US5 depende solo de Phase 1.
 - Dentro de cada fase: test en rojo antes de su implementación.

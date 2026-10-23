@@ -194,6 +194,88 @@ de esas personas muestra la cursada con la marca "Registro histórico", y
 
 ---
 
+### User Story 7 - Tipo de contacto (Priority: P1)
+
+*(Agregada el 2026-10-23, aprobada por el dueño.)*
+
+Cada contacto tiene un **tipo derivado** de su historial comercial (la misma
+derivación de US1, nunca guardado): **lead** (nunca cursó en un grupo que se
+dictó y no tiene cursadas históricas), **alumno activo** (tiene un curso en
+curso o por empezar) o **exalumno** (cursó algo, en el sistema o en la
+planilla histórica, y no tiene nada activo). Precedencia: alumno activo >
+exalumno > lead.
+
+**Why this priority**: es la primera pregunta de quien abre Contactos ("¿es
+alumno o lead?") y la base de las campañas a exalumnos.
+
+**Independent Test**: un contacto con solo una inscripción en un grupo que
+nunca se dictó es lead; con una cursada histórica es exalumno; con un grupo
+por empezar es alumno activo aunque también sea exalumno.
+
+**Acceptance Scenarios**:
+
+1. **Given** la lista de Contactos, **When** se elige "Exalumnos", **Then** se
+   ven solo los exalumnos, paginados desde el servidor, con la cantidad de
+   cada tipo en su pestaña y una insignia por fila; el resaltado "Nuevo" de
+   48 h sigue igual.
+2. **Given** una audiencia de Marketing, **When** se filtra "tipo de contacto:
+   exalumno", **Then** trae a los exalumnos y sigue excluyendo bajas,
+   archivados, sin correo y prueba.
+
+---
+
+### User Story 8 - Reportes en el inicio (Priority: P1)
+
+*(Agregada el 2026-10-23, aprobada por el dueño; ampliada con la planilla de
+métricas de la academia.)*
+
+Dirección y Coordinación (capacidad `reportes.ver`) ven en el inicio una
+sección **Reportes**, con un período (por defecto los últimos 12 meses; "todo
+el historial" incluye las cursadas históricas):
+
+1. Cursos más cursados (top 10 + "Otros"), con "incluir cursos gratuitos"
+   (apagado por defecto).
+2. Alumnos por trimestre o por año.
+3. Empresas que más capacitan (top 10).
+4. Embudo de leads por origen (formulario, taller, WhatsApp, importación,
+   carga manual): leads → inscriptos y conversión.
+5. Recompra: la tasa y los 5 pares curso → curso siguiente más frecuentes.
+6. Cursos vendidos por año (sin cursos gratuitos).
+7. Ventas por vendedor y año (sin cursos gratuitos; "Sin vendedor" aparte).
+8. Empresas vs. particulares por año.
+9. Evolución por curso: cursadas por año de los 5 cursos más cursados, con
+   un selector para elegir otros.
+10. Ingresos cobrados por curso, SOLO si la sesión también tiene
+    `cobranza.ver` (si no, ni se consultan ni viajan).
+
+Un curso puede marcarse **"Gratuito: no cuenta como venta"** (Académico,
+`academico.editar`), y una empresa **"Excluir de los reportes"** (convenios
+como ANEP PAEMFE o Humphreys; `empresas.editar`). Las cursadas de una empresa
+excluida no cuentan en ningún reporte, y la sección avisa cuando hay empresas
+excluidas.
+
+**Why this priority**: reemplaza la planilla de métricas que la academia arma
+a mano.
+
+**Independent Test**: con datos conocidos, cada reporte coincide con el
+cálculo a mano; un grupo que nunca se dictó no cuenta; un curso gratuito no
+cuenta como venta; una empresa excluida no aparece; sin `cobranza.ver` la
+respuesta no trae ingresos.
+
+**Acceptance Scenarios**:
+
+1. **Given** el período por defecto, **When** se abre el inicio con
+   `reportes.ver`, **Then** se ven los reportes con estado de carga y estado
+   vacío.
+2. **Given** "todo el historial", **When** se elige, **Then** los cursos
+   vendidos por año 2020–2023 quedan en el orden de la referencia de la
+   academia (2020 = 187, 2021 = 293, 2022 = 327, 2023 = 376), sin coincidir
+   exactamente.
+3. **Given** una sesión sin `reportes.ver`, **Then** la sección no aparece y
+   la ruta responde 403.
+
+---
+
 ### Edge Cases
 
 - Una persona hizo el mismo curso dos veces (recursada): cuenta una vez como
@@ -288,6 +370,35 @@ de esas personas muestra la cursada con la marca "Registro histórico", y
   sugerencias y Recompra, pero nunca como "aprobó" ni "cursó sin aprobar".
 - **FR-022**: Importar MUST requerir la capacidad `historial.importar`, que
   por defecto solo tiene Dirección.
+
+**Tipo de contacto (US7)**
+
+- **FR-023**: El tipo de un contacto (lead, alumno activo, exalumno) MUST
+  derivarse de su historial comercial (FR-001 a FR-003 y FR-021), con
+  precedencia alumno activo > exalumno > lead, y no guardarse.
+- **FR-024**: Contactos MUST permitir filtrar por tipo en el servidor, con la
+  paginación intacta, la cantidad de cada tipo y una insignia por fila.
+- **FR-025**: Las audiencias MUST sumar el filtro "tipo de contacto",
+  evaluado por el mismo camino de la 045 y con sus exclusiones.
+
+**Reportes (US8)**
+
+- **FR-026**: MUST existir la capacidad `reportes.ver`, otorgada por la
+  migración solo a Dirección y Coordinación.
+- **FR-027**: El inicio MUST mostrar los reportes de la US8 con un período
+  (últimos 12 meses por defecto; "todo el historial"), con estados de carga y
+  vacío, en los dos temas.
+- **FR-028**: Todo conteo MUST salir de la derivación única del historial:
+  los grupos no dictados no cuentan y las cursadas históricas sí, cuando el
+  período las cubre.
+- **FR-029**: Un curso MUST poder marcarse "Gratuito: no cuenta como venta"
+  (`academico.editar`); los reportes de ventas lo excluyen, y "Cursos más
+  cursados" lo incluye solo si se pide.
+- **FR-030**: Una empresa MUST poder marcarse "Excluir de los reportes"
+  (`empresas.editar`); sus cursadas no cuentan en ningún reporte y la sección
+  avisa que hay empresas excluidas.
+- **FR-031**: Los ingresos por curso MUST consultarse y viajar solo si la
+  sesión también tiene `cobranza.ver`.
 
 **Datos**
 

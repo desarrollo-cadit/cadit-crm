@@ -62,3 +62,12 @@ En producción, en este orden:
 6. Paso 3: confirmar y esperar a que termine (si se corta, "Continuar").
 7. Verificación humana: dos fichas de exalumnos (Seguimiento) con la insignia
    "Registro histórico"; Marketing → Recompra con "Todo".
+
+## 6. Tipo de contacto y Reportes (US7, US8)
+
+1. Deploy: la 0074 agrega las banderas y da `reportes.ver` a Dirección y
+   Coordinación.
+2. Académico → editar "Revit básico" → tildar "Gratuito: no cuenta como venta".
+3. Empresas → ANEP PAEMFE y Humphreys → tildar "Excluir de los reportes".
+4. Verificación humana: Contactos con las pestañas por tipo; el inicio con la
+   sección Reportes en los dos temas, con "Todo el historial".

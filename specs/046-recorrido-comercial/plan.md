@@ -310,3 +310,80 @@ inscripciones. La derivación única (`historialesComerciales`) las cuenta como
 | **F8 Datos y derivación** | 0073, esquema, capacidad, `curso_historico` en la derivación y el loader, insignia en la ficha |
 | **F9 Importador** | CSV, filas, sugerencias, plan, servidor y rutas |
 | **F10 Pantalla** | Ajustes → Importar historial (tres pasos, continuar, deshacer) |
+
+---
+
+## Ampliación US7 y US8 — Tipo de contacto y Reportes (2026-10-23)
+
+Historias nuevas aprobadas por el dueño. **Migración**:
+`drizzle/0074_reportes.sql` (`course.is_free`, `company.exclude_from_reports`,
+`reportes.ver` a Dirección y Coordinación). **Contratos**:
+[contracts/contact-type.md](./contracts/contact-type.md) ·
+[contracts/reports.md](./contracts/reports.md). **Modelo**: [data-model §9–§11](./data-model.md).
+
+### Constitution Check (US7, US8)
+
+| Principio | Estado | Cómo se cumple |
+|---|---|---|
+| I. Seguridad | ✅ | `reportes.ver` nueva (Dirección y Coordinación). Los ingresos se consultan solo con `cobranza.ver` además: sin ella la clave no existe en la respuesta. Ningún reporte lleva nombres de personas. |
+| II. Soberanía | ✅ | Recharts ya es dependencia; sin servicios nuevos. |
+| III. Multi-tenancy | ✅ | Dos columnas nuevas en tablas que ya tienen RLS; lecturas con `scoped()`. |
+| IV. Idempotencia | ✅ | 0074 re-ejecutable (`add column if not exists`, capacidades con `where not (… @> …)`). |
+| V. Calidad | ✅ | TDD en `tipoDeContacto` y en cada agregación pura de `src/lib/reportes.ts`. |
+| VII. Trazabilidad | ✅ | DV-019..DV-024. |
+| IX. En vivo | ⚠️ diferida por el dueño | Pantallas en quickstart §6 como verificación humana. |
+
+### Decisiones
+
+- **DV-019 Tipo derivado en la derivación única.** La entrada del historial
+  suma `activo` (alguna cursada de ese curso está en curso o por empezar, OR
+  al fusionar). `tipoDeContacto(historial)` en `src/lib/recorrido-comercial.ts`:
+  activo → `alumno_activo`; alguna cursada (`esCursado`) → `exalumno`; si no,
+  `lead`. Un contacto sin historial es lead.
+- **DV-020 Filtro de Contactos por conjuntos.** El servidor arma los
+  historiales de la organización una vez, saca los ids de alumnos activos y
+  de exalumnos, y filtra con `IN` (o `NOT IN` ambos para leads), así la
+  paginación y la búsqueda siguen en SQL. Las cantidades por tipo se cuentan
+  con la misma búsqueda y el mismo filtro de archivados.
+- **DV-021 Audiencias.** `contactTypes` es un filtro de historial más: entra
+  por `cumpleFiltrosDeHistorial` y `condicionDeHistorial` (lead se expresa
+  como exclusión, igual que "no hizo").
+- **DV-022 Ventas en la entrada del historial.** La entrada suma `sellerId` y
+  `companyId` de la compra (la cursada que fija `primerInicio`): de la
+  inscripción (madre) o de la cursada histórica. Gratuito y empresa excluida
+  se aplican en las agregaciones con conjuntos de ids (`cursosGratuitos`,
+  `empresasExcluidas`), no en la derivación.
+- **DV-023 Una ruta agregada.** `GET /api/dashboard/reportes?desde&hasta`
+  devuelve todos los reportes en un viaje (la derivación se lee una vez). Las
+  agregaciones son puras (`src/lib/reportes.ts`). Ingresos: una consulta
+  aparte de pagos (no anulados, por fecha de pago y moneda) solo con
+  `cobranza.ver`.
+- **DV-024 Embudo por origen.** El origen sale de `contact.source`:
+  `formulario:Taller …` → Taller; `formulario:<nombre>` → Formulario
+  <nombre>; `whatsapp` → WhatsApp; `importacion:…` → Importación; vacío u
+  otro → Carga manual. Leads = contactos creados en el período; inscriptos =
+  los que tienen alguna cursada (tipo ≠ lead). Las cursadas históricas de una
+  importación cuentan como inscriptos de "Importación".
+
+### Source Code (US7, US8)
+
+| Capa | Archivo |
+|---|---|
+| Migración | `drizzle/0074_reportes.sql` (+ journal, snapshot) |
+| Esquema | `course.isFree`, `company.excludeFromReports` |
+| Capacidad | `reportes.ver` en `capabilities.ts` (`SYSTEM_ROLES`: Dirección y Coordinación), `guia.ts`, `roles-client.tsx` |
+| Derivación | `src/lib/recorrido-comercial.ts` (`activo`, `sellerId`, `companyId`, `tipoDeContacto`) |
+| Contactos | `src/app/api/contacts/route.ts` (`tipo`, cantidades) · `src/server/contact-types.ts` · `src/components/contacts/contacts-client.tsx` |
+| Audiencias | `src/lib/marketing/audience.ts` (`contactTypes`) · `historial-filtros.ts` · `audience-builder.tsx` |
+| Puro | `src/lib/reportes.ts` |
+| Servidor | `src/server/reportes.ts` · `src/app/api/dashboard/reportes/route.ts` |
+| UI | `src/components/dashboard/reports-panel.tsx` · `src/app/(app)/page.tsx` · casilla "Gratuito" en `course-form.tsx` · "Excluir de los reportes" en el formulario de empresa |
+
+### Entrega por fases
+
+| Fase | Contenido |
+|---|---|
+| **F11 Tipo de contacto** | Derivación, Contactos (pestañas, insignia), filtro de audiencias |
+| **F12 Datos de reportes** | 0074, capacidad, banderas Gratuito / Excluir con su edición, venta en la derivación |
+| **F13 Agregaciones** | `src/lib/reportes.ts`, `src/server/reportes.ts`, ruta |
+| **F14 Pantalla** | Sección Reportes del inicio (Recharts), CLAUDE.md |

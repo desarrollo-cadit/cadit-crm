@@ -192,3 +192,41 @@ entrada `estado: "curso_historico"`, `courseId` = el del catálogo o
 `texto:<label>`, `cohortId: null`, `cohortName` = "Edición N" o null,
 `startDate = primerInicio = ultimoInicioCursado = takenOn`. Se fusiona con
 las demás del mismo curso por rango (DV-012).
+
+## §9 Tipo de contacto (US7, derivado)
+
+```ts
+type TipoDeContacto = "lead" | "alumno_activo" | "exalumno";
+```
+
+Sobre `EntradaDeHistorial` (que suma `activo: boolean`): alguna entrada
+activa → `alumno_activo`; alguna `esCursado` → `exalumno`; si no (o sin
+historial) → `lead`. No se guarda.
+
+Filtro de audiencia nuevo en `AudienceFilters`:
+`contactTypes?: ("lead" | "alumno_activo" | "exalumno")[]` (1..3).
+
+## §10 Columnas nuevas (0074, US8)
+
+| Tabla | Columna | Regla |
+|---|---|---|
+| `course` | `is_free` boolean NOT NULL default false | "Gratuito: no cuenta como venta" (`academico.editar`) |
+| `company` | `exclude_from_reports` boolean NOT NULL default false | "Excluir de los reportes" (`empresas.editar`) |
+
+`EntradaDeHistorial` suma `sellerId` y `companyId` de la compra (DV-022).
+
+## §11 Reportes (US8)
+
+```ts
+type Periodo = { desde: Date | null; hastaExclusivo: Date | null };  // periodoDeRecompra
+type ContextoDeReportes = {
+  cursosGratuitos: ReadonlySet<string>;
+  empresasExcluidas: ReadonlySet<string>;
+  vendedores: ReadonlyMap<string, string>;   // id → nombre
+  empresas: ReadonlyMap<string, string>;     // id → nombre
+};
+```
+
+Una **compra** = una entrada del historial fechada por `primerInicio`
+(como Recompra). Se descartan las de empresas excluidas en todos los
+reportes, y las de cursos gratuitos en los de ventas.
