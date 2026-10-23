@@ -189,6 +189,25 @@ describe("embudoPorOrigen", () => {
       { origen: "Formulario: Landing", leads: 1, inscriptos: 0, conversion: 0 },
     ]);
   });
+
+  /**
+   * 2026-10-23 — Un contacto importado (`importacion:…`) se crea el día de la
+   * importación, pero no es un interesado que llegó ese día: son exalumnos
+   * de años anteriores. Contarlos como leads del período inflaría el embudo
+   * con miles de "altas" de un solo día.
+   */
+  it("los contactos importados no son leads del embudo", () => {
+    const r = embudoPorOrigen(
+      [
+        { id: "a", source: "whatsapp", createdAt: new Date("2025-01-01") },
+        { id: "imp1", source: "importacion:planilla-2020-2024", createdAt: new Date("2025-01-02") },
+        { id: "imp2", source: "importacion:planilla-2020-2024", createdAt: new Date("2025-01-02") },
+      ],
+      () => "exalumno",
+      { desde: new Date("2024-01-01T00:00:00Z"), hastaExclusivo: null, etiqueta: { desde: "2024-01-01", hasta: null } }
+    );
+    expect(r).toEqual([{ origen: "WhatsApp", leads: 1, inscriptos: 1, conversion: 100 }]);
+  });
 });
 
 describe("recompraResumen", () => {

@@ -218,6 +218,9 @@ export function embudoPorOrigen(
   const m = new Map<string, { leads: number; inscriptos: number }>();
   for (const c of contactos) {
     if (!enPeriodo(c.createdAt, periodo)) continue;
+    // Un contacto importado se crea el día de la importación, pero no es un
+    // interesado de ese día: son exalumnos de otros años. No es un lead.
+    if (c.source?.trim().startsWith("importacion:")) continue;
     const origen = origenDeContacto(c.source);
     const fila = m.get(origen) ?? { leads: 0, inscriptos: 0 };
     fila.leads++;
