@@ -1,6 +1,7 @@
 /** DTOs que viajan por la API interna (lado cliente). */
 import type { CourseKind } from "@/lib/course-kind";
 import type { CompanyFields } from "@/lib/company";
+import type { ProgresoDeCursada } from "@/lib/cohort-progress";
 
 export type ConversationDto = {
   id: string;
@@ -220,6 +221,16 @@ export type CohortDto = {
    */
   confirmationFlag: "confirmado" | "sin_confirmar" | "sin_confirmar_vencido";
   software: { id: string; name: string }[];
+  /**
+   * 2026-10-26 — Solo en el LISTADO (`listCohorts`), calculado en lote.
+   * "Clase X de Y" (`progresoDeCursada`): `null` = sin cronograma generado.
+   */
+  progress?: ProgresoDeCursada | null;
+  /**
+   * 2026-10-26 — Solo en el listado: inscriptos activos (contacto sin dar de
+   * baja), el mismo criterio con el que el roster marca a los dados de baja.
+   */
+  enrolledCount?: number;
 };
 
 export type ContactDto = {

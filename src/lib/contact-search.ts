@@ -86,6 +86,56 @@ export type CamposBuscables = {
   telefono?: string | null;
 };
 
+export type TramoResaltado = { texto: string; marca: boolean };
+
+/**
+ * 2026-10-26 (Académico) — Qué partes de `texto` resaltar para la consulta
+ * `q`, con la MISMA normalización que la coincidencia. Se normaliza letra por
+ * letra para poder cortar el texto ORIGINAL (con sus tildes): lo que se ve no
+ * cambia, solo se marca. Devuelve tramos y no HTML: quien dibuja usa
+ * `<mark>` de React, nunca `innerHTML`.
+ */
+export function tramosResaltados(original: string, q: string): TramoResaltado[] {
+  // NFC primero: una tilde suelta (NFD) se normaliza junto con su letra.
+  const texto = original.normalize("NFC");
+  const tokens = tokensDeBusqueda(q);
+  if (tokens.length === 0 || texto.length === 0) return [{ texto, marca: false }];
+
+  // Texto normalizado y, para cada posición suya, de qué letra original vino.
+  const letras = [...texto];
+  let normalizado = "";
+  const origen: number[] = [];
+  let pos = 0;
+  for (const l of letras) {
+    const n = normalizarBusqueda(l);
+    for (let i = 0; i < n.length; i++) origen.push(pos);
+    normalizado += n;
+    pos += l.length;
+  }
+
+  const marcadas = new Array<boolean>(texto.length).fill(false);
+  for (const t of tokens) {
+    let desde = normalizado.indexOf(t);
+    while (desde !== -1) {
+      const ini = origen[desde]!;
+      const ultimo = origen[desde + t.length - 1]!;
+      // La letra original del último carácter puede ocupar dos unidades.
+      const fin = ultimo + (texto.codePointAt(ultimo)! > 0xffff ? 2 : 1);
+      for (let i = ini; i < fin; i++) marcadas[i] = true;
+      desde = normalizado.indexOf(t, desde + 1);
+    }
+  }
+
+  const tramos: TramoResaltado[] = [];
+  for (let i = 0; i < texto.length; i++) {
+    const marca = marcadas[i]!;
+    const ultimo = tramos[tramos.length - 1];
+    if (ultimo && ultimo.marca === marca) ultimo.texto += texto[i];
+    else tramos.push({ texto: texto[i]!, marca });
+  }
+  return tramos;
+}
+
 /** La misma regla que el SQL, para listas que ya están en memoria. */
 export function coincideConBusqueda(q: string, campos: CamposBuscables): boolean {
   const tokens = tokensDeBusqueda(q);

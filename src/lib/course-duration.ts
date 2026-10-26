@@ -117,3 +117,26 @@ export const courseDurationSchema = {
     .nullable()
     .optional(),
 };
+
+/**
+ * 2026-10-26 — La duración en una línea, para el listado de Académico:
+ * "40 horas · 10 clases de 4 h". Lo que no está cargado no se dice; sin nada,
+ * `null`.
+ */
+export function resumenDeDuracion(c: {
+  classCount: number | null;
+  hoursPerClass: number | null;
+  totalHours: number | null;
+}): string | null {
+  const partes: string[] = [];
+  if (c.totalHours !== null && c.totalHours > 0) partes.push(formatHoras(c.totalHours));
+  if (c.classCount !== null && c.classCount > 0) {
+    const clases = `${c.classCount} ${c.classCount === 1 ? "clase" : "clases"}`;
+    partes.push(
+      c.hoursPerClass !== null && c.hoursPerClass > 0
+        ? `${clases} de ${formatNumeroDeHoras(c.hoursPerClass)} h`
+        : clases
+    );
+  }
+  return partes.length > 0 ? partes.join(" · ") : null;
+}

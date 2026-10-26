@@ -8,6 +8,7 @@ import { cn, WEEKDAY_LABELS } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
+import { colorCategorico } from "@/lib/cohort-color";
 import {
   SIN_PROFESOR,
   formatHours,
@@ -116,43 +117,12 @@ export type PositionedSession = {
  *
  * Colores planos y no `bg-brand-*` con opacidad: el acento de la marca es uno
  * solo, y bajarle la opacidad da grises, no variedad.
- */
-/**
- * 020 (T021) — La paleta de cohortes salió a tokens.
  *
- * Eran los colores crudos de la paleta de Tailwind, que en tema oscuro dejan
- * ocho manchas claras sobre una pantalla negra. Ahora cada cohorte es un par
- * fondo/texto que el tema invierte entero, y el contraste del par está
- * cubierto por `tests/unit/tema-oscuro.test.ts`.
- *
- * (El nombre viejo de la clase no se escribe ni en este comentario: Tailwind
- * escanea los archivos enteros y generaba la regla muerta igual.)
- *
- * Sigue siendo una paleta CATEGÓRICA: su trabajo es que dos cohortes seguidas
- * se distingan de un vistazo, no comunicar un estado.
- */
-const COHORT_COLORS = [
-  { bg: "bg-cohort-1", border: "border-cohort-1-fg", text: "text-cohort-1-fg" },
-  { bg: "bg-cohort-2", border: "border-cohort-2-fg", text: "text-cohort-2-fg" },
-  { bg: "bg-cohort-3", border: "border-cohort-3-fg", text: "text-cohort-3-fg" },
-  { bg: "bg-cohort-4", border: "border-cohort-4-fg", text: "text-cohort-4-fg" },
-  { bg: "bg-cohort-5", border: "border-cohort-5-fg", text: "text-cohort-5-fg" },
-  { bg: "bg-cohort-6", border: "border-cohort-6-fg", text: "text-cohort-6-fg" },
-  { bg: "bg-cohort-7", border: "border-cohort-7-fg", text: "text-cohort-7-fg" },
-  { bg: "bg-cohort-8", border: "border-cohort-8-fg", text: "text-cohort-8-fg" },
-] as const;
-
-/**
- * El color se deriva del id de la cohorte, no de su posición en la lista: así
- * una cohorte conserva SU color entre semanas y entre recargas. Si dependiera
- * del orden, cambiaría de color al aparecer una cohorte nueva.
+ * La paleta y la regla viven en `src/lib/cohort-color.ts` (`colorCategorico`),
+ * compartidas con Académico: el color sale del id, no del lugar en la lista.
  */
 export function cohortColor(cohortId: string) {
-  let hash = 0;
-  for (let i = 0; i < cohortId.length; i++) {
-    hash = (hash * 31 + cohortId.charCodeAt(i)) | 0;
-  }
-  return COHORT_COLORS[Math.abs(hash) % COHORT_COLORS.length]!;
+  return colorCategorico(cohortId);
 }
 
 /**

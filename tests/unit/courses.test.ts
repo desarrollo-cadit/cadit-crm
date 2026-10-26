@@ -21,7 +21,7 @@ const selectQueue: unknown[][] = [];
 
 function thenableChain(rows: unknown[]) {
   const chain: Record<string, unknown> = {};
-  for (const m of ["from", "innerJoin", "leftJoin", "where", "orderBy", "limit"]) {
+  for (const m of ["from", "innerJoin", "leftJoin", "where", "orderBy", "limit", "groupBy"]) {
     chain[m] = () => chain;
   }
   (chain as { then: unknown }).then = (resolve: (v: unknown) => void) =>
@@ -393,6 +393,61 @@ describe("courses: createCourse / createCohort (004)", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]!.teacher).toEqual({ id: "tch_1", name: "Ing. Paola Suárez" });
     expect(rows[0]!.software).toEqual([{ id: "sw_1", name: "Revit" }]);
+  });
+
+  it("listCohorts (2026-10-26) trae el progreso de la cursada y los inscriptos activos, en lote", async () => {
+    selectQueue.push(
+      [
+        {
+          cohort: {
+            id: "coh_1",
+            courseId: "crs_revit",
+            startDate: new Date("2026-01-05"),
+            endDate: new Date("2026-02-20"),
+            cost: null,
+            frequency: null,
+            classroom: null,
+            capacity: 16,
+            whatsappGroupLink: null,
+          },
+          course: { id: "crs_revit", name: "Revit", syllabusUrl: null },
+          teacher: null,
+        },
+        {
+          cohort: {
+            id: "coh_2",
+            courseId: "crs_revit",
+            startDate: new Date("2026-08-04"),
+            endDate: null,
+            cost: null,
+            frequency: null,
+            classroom: null,
+            capacity: null,
+            whatsappGroupLink: null,
+          },
+          course: { id: "crs_revit", name: "Revit", syllabusUrl: null },
+          teacher: null,
+        },
+      ],
+      [], // software
+      [{ timezone: "America/Montevideo" }],
+      // Clases: dos dadas (ya pasaron), una cancelada, ninguna de coh_2.
+      [
+        { cohortId: "coh_1", date: new Date("2026-01-05T00:00:00Z"), endTime: "21:00", canceledAt: null },
+        { cohortId: "coh_1", date: new Date("2026-01-07T00:00:00Z"), endTime: "21:00", canceledAt: null },
+        { cohortId: "coh_1", date: new Date("2026-01-09T00:00:00Z"), endTime: "21:00", canceledAt: new Date() },
+      ],
+      [{ cohortId: "coh_1", n: 14 }]
+    );
+
+    const { listCohorts } = await import("@/server/courses");
+    const rows = await listCohorts("org_1");
+
+    expect(rows[0]!.progress).toEqual({ dictadas: 2, total: 2 });
+    expect(rows[0]!.enrolledCount).toBe(14);
+    // Sin cronograma: sin progreso (la pantalla muestra las fechas). Sin filas: 0.
+    expect(rows[1]!.progress).toBeNull();
+    expect(rows[1]!.enrolledCount).toBe(0);
   });
 
   it("listCohorts (006) hereda el temario del curso, no de la cohorte", async () => {

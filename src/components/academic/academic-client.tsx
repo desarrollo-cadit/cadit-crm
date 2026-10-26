@@ -3,16 +3,14 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  CalendarDays,
   ChevronDown,
   ChevronRight,
-  Clock,
+  GraduationCap,
   KeyRound,
-  MapPin,
+  Pencil,
   Plus,
+  Route,
   Trash2,
-  UserRound,
-  Wallet,
 } from "lucide-react";
 import type {
   CohortDto,
@@ -21,7 +19,7 @@ import type {
   SoftwareDto,
   TeacherDto,
 } from "@/lib/types";
-import { formatAmount, formatCalendarDay, WEEKDAY_LABELS } from "@/lib/utils";
+import { cn, formatAmount, formatCalendarDay, WEEKDAY_LABELS } from "@/lib/utils";
 import {
   TODOS_LOS_ANIOS,
   alternarTipo,
@@ -34,6 +32,12 @@ import {
   type FiltroDeAnio,
 } from "@/lib/academic-filters";
 import { COURSE_KINDS, COURSE_KIND_LABEL, type CourseKind } from "@/lib/course-kind";
+import { resumenDeDuracion } from "@/lib/course-duration";
+import {
+  porcentajeDeProgreso,
+  sumarProgresos,
+  type ProgresoDeCursada,
+} from "@/lib/cohort-progress";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -42,6 +46,20 @@ import { CourseForm } from "@/components/academic/course-form";
 import { NextCoursesDialog } from "@/components/academic/next-courses-dialog";
 import { TeacherForm } from "@/components/academic/teacher-form";
 import { RoomsPanel } from "@/components/academic/rooms-panel";
+import {
+  AvatarDeCurso,
+  Buscador,
+  Desplegable,
+  EtiquetaDeTipo,
+  OpcionAccion,
+  OpcionMarcable,
+  OpcionUnica,
+  Resaltado,
+  ResumenDeFiltros,
+  SegmentadoDeEstado,
+  TONO_DE_ESTADO,
+  type FiltroActivo,
+} from "@/components/academic/academic-toolbar";
 import { notify } from "@/lib/notify";
 import type { PestanaAcademico } from "@/lib/pestanas";
 import { usePestanaEnUrl } from "@/components/use-pestana-en-url";
@@ -55,72 +73,47 @@ const TABS: readonly { key: PestanaAcademico; label: string }[] = [
   { key: "aulas", label: "Aulas" },
 ];
 type Tab = PestanaAcademico;
-
-/** Inicio y fin de cohorte: DÍAS (medianoche UTC), no instantes. */
-function formatDate(iso: string | null) {
-  if (!iso) return "—";
-  return formatCalendarDay(
-    iso,
-    { day: "2-digit", month: "short", year: "numeric" },
-    "es-MX"
-  );
-}
+type Estado = CohortDto["status"];
 
 /** Centésimos → "$5.245,32" en la moneda dada (`src/lib/money.ts`). */
 function formatCost(cost: number | null, currency?: string) {
   return formatAmount(cost, currency);
 }
 
-function formatDaysOfWeek(daysOfWeek: string | null) {
-  if (!daysOfWeek) return null;
-  return daysOfWeek
-    .split(",")
-    .map((d) => WEEKDAY_LABELS[Number(d)])
-    .join(", ");
-}
-
-/**
- * 005 iteración 4 (feedback en vivo: "debería ser automático... que muestre
- * distintas badges") — el status ya se calcula solo en el servidor
- * (computeCohortStatus); acá solo se mapea a color + etiqueta.
- */
-const STATUS_BADGE: Record<
-  CohortDto["status"],
-  { label: string; variant: "warning" | "success" | "outline" }
-> = {
-  planificada: { label: "Planificado", variant: "warning" },
-  en_curso: { label: "En curso", variant: "success" },
-  finalizada: { label: "Finalizado", variant: "outline" },
-};
-
-const STATUS_ORDER: CohortDto["status"][] = ["planificada", "en_curso", "finalizada"];
-
-/**
- * 021 — Una pieza de dato con su ícono.
- *
- * Existe para que la ficha de una cohorte se ESCANEE en vez de leerse: cinco
- * datos separados por puntos medios obligan a recorrer la oración entera para
- * encontrar el aula.
- */
-function Dato({
-  icono,
-  children,
-  alerta,
-}: {
-  icono: React.ReactNode;
-  children: React.ReactNode;
-  /** Lo que FALTA se pinta distinto: no es un dato más, es una tarea. */
-  alerta?: boolean;
-}) {
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 ${alerta ? "text-warning" : ""}`}
-    >
-      {icono}
-      <span className="truncate">{children}</span>
-    </span>
+/** Inicio y fin de grupo: DÍAS (medianoche UTC), no instantes. "9 nov." o "9 nov. 2025". */
+function formatDia(iso: string | null, anioActual: number) {
+  if (!iso) return "—";
+  const mismoAnio = new Date(iso).getUTCFullYear() === anioActual;
+  return formatCalendarDay(
+    iso,
+    mismoAnio ? { day: "numeric", month: "short" } : { day: "numeric", month: "short", year: "numeric" }
   );
 }
+
+/** "Lun, Mié · 18:30–21:30": el horario en una pieza del subtítulo. */
+function formatHorario(cohort: CohortDto): string | null {
+  const dias = cohort.daysOfWeek
+    ? cohort.daysOfWeek
+        .split(",")
+        .map((d) => WEEKDAY_LABELS[Number(d)])
+        .filter(Boolean)
+        .join(", ")
+    : cohort.frequency;
+  const hora = cohort.startTime ? `${cohort.startTime}${cohort.endTime ? `–${cohort.endTime}` : ""}` : null;
+  const partes = [dias, hora].filter((p): p is string => Boolean(p));
+  return partes.length > 0 ? partes.join(" · ") : null;
+}
+
+/** El orden de los estados para `nextStatusFilter` (y su conjunto "todos"). */
+const STATUS_ORDER: Estado[] = ["planificada", "en_curso", "finalizada"];
+/** El orden en que se DIBUJAN: lo que está pasando primero. */
+const ORDEN_DE_SECCION: Estado[] = ["en_curso", "planificada", "finalizada"];
+
+const ETIQUETA_DE_ESTADO: Record<Estado, string> = {
+  en_curso: "En curso",
+  planificada: "Planificados",
+  finalizada: "Finalizados",
+};
 
 /**
  * 007 — Qué estados quedan seleccionados al tocar un chip del filtro.
@@ -133,12 +126,17 @@ function Dato({
  * Reglas: desde "todas" seleccionadas, tocar un estado significa "solo
  * este"; después suma/saca de a uno; y quedarse sin ninguno equivale a no
  * filtrar, así que vuelve a todas.
+ *
+ * 2026-10-26 — El control ahora es un segmentado (Todos · En curso ·
+ * Planificados · Finalizados), pero sigue siendo de selección MÚLTIPLE con
+ * estas mismas reglas: el caso diario es ver planificados + en curso a la
+ * vez, sin el archivo de finalizados.
  */
 export function nextStatusFilter(
-  current: ReadonlySet<CohortDto["status"]>,
-  clicked: CohortDto["status"],
-  all: readonly CohortDto["status"][] = STATUS_ORDER
-): Set<CohortDto["status"]> {
+  current: ReadonlySet<Estado>,
+  clicked: Estado,
+  all: readonly Estado[] = STATUS_ORDER
+): Set<Estado> {
   if (current.size === all.length) return new Set([clicked]);
   const next = new Set(current);
   if (next.has(clicked)) next.delete(clicked);
@@ -146,117 +144,61 @@ export function nextStatusFilter(
   return next.size === 0 ? new Set(all) : next;
 }
 
-/**
- * 007 (feedback en vivo: "deberíamos poder filtrar por todos, cursos
- * planificados, en curso y finalizados... que se pueda elegir cuáles
- * mostrar") — filtro por estado, de selección MÚLTIPLE: con 41 cohortes
- * cargadas, la lista completa es casi toda archivo, y lo que se quiere ver
- * día a día es planificadas + en curso.
- *
- * Cada chip lleva su conteo: así se ve cuántas hay de cada estado sin tener
- * que activarlo para descubrirlo.
- */
-function CohortStatusFilter({
-  total,
-  countByStatus,
-  value,
-  onChange,
-}: {
-  /** 032 (FR-014) — los conteos llegan ya calculados con los DEMÁS filtros aplicados. */
-  total: number;
-  countByStatus: Record<CohortDto["status"], number>;
-  value: Set<CohortDto["status"]>;
-  onChange: (next: Set<CohortDto["status"]>) => void;
-}) {
-  const counts = STATUS_ORDER.map((s) => ({ status: s, count: countByStatus[s] }));
-  const allOn = value.size === STATUS_ORDER.length;
-
-  const toggle = (status: CohortDto["status"]) =>
-    onChange(nextStatusFilter(value, status));
-
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span className="text-xs text-muted-foreground">Mostrar:</span>
-      <button
-        type="button"
-        aria-pressed={allOn}
-        className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-          allOn ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent"
-        }`}
-        onClick={() => onChange(new Set(STATUS_ORDER))}
-      >
-        Todas ({total})
-      </button>
-      {counts.map(({ status, count }) => (
-        // El chip se pinta según su estado REAL. Antes se apagaba cuando
-        // estaban las tres activas, así que se veía apagado estando
-        // encendido: al tocarlo hacía lo contrario de lo que parecía.
-        <button
-          key={status}
-          type="button"
-          aria-pressed={value.has(status)}
-          className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-            value.has(status)
-              ? "bg-primary text-primary-foreground"
-              : "text-muted-foreground hover:bg-accent"
-          }`}
-          onClick={() => toggle(status)}
-        >
-          {STATUS_BADGE[status].label} ({count})
-        </button>
-      ))}
-    </div>
-  );
-}
-
-/**
- * 032 (FR-009/FR-013) — Filtro por tipo de curso, de selección múltiple. El
- * mismo en las dos pestañas; cada chip lleva cuántos quedan con los demás
- * filtros aplicados (FR-014). "Todos" enciende los tres.
- */
-function KindFilter({
-  value,
-  counts,
-  onChange,
-}: {
-  value: Set<CourseKind>;
-  counts: Record<CourseKind, number>;
-  onChange: (next: Set<CourseKind>) => void;
-}) {
-  const allOn = value.size === COURSE_KINDS.length;
-  const total = COURSE_KINDS.reduce((n, k) => n + counts[k], 0);
-  const chip = (on: boolean) =>
-    `rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-      on ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent"
-    }`;
-  return (
-    <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Tipo de curso">
-      <span className="text-xs text-muted-foreground">Tipo:</span>
-      <button
-        type="button"
-        aria-pressed={allOn}
-        className={chip(allOn)}
-        onClick={() => onChange(new Set(COURSE_KINDS))}
-      >
-        Todos ({total})
-      </button>
-      {COURSE_KINDS.map((k) => (
-        <button
-          key={k}
-          type="button"
-          aria-pressed={value.has(k)}
-          className={chip(value.has(k))}
-          onClick={() => onChange(alternarTipo(value, k))}
-        >
-          {COURSE_KIND_LABEL[k]} ({counts[k]})
-        </button>
-      ))}
-    </div>
-  );
-}
-
 /** 032 (FR-011) — Dónde se recuerda el último año elegido, por persona y navegador. */
 const CLAVE_FILTRO_ANIO = "academico.cohortes.anio";
+
+const TODOS_LOS_TIPOS: ReadonlySet<CourseKind> = new Set(COURSE_KINDS);
+
+/** "Todos" o "Curso, Taller": el valor visible del filtro de tipo. */
+function etiquetaDeTipos(tipos: ReadonlySet<CourseKind>): string {
+  if (tipos.size === COURSE_KINDS.length) return "Todos";
+  return COURSE_KINDS.filter((k) => tipos.has(k))
+    .map((k) => COURSE_KIND_LABEL[k])
+    .join(", ");
+}
+
+/** "Clase 6 de 10 · 60 %" con su barra. */
+function BarraDeProgreso({ progreso }: { progreso: ProgresoDeCursada }) {
+  const pct = porcentajeDeProgreso(progreso);
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <div className="flex justify-between gap-2 text-xs text-muted-foreground">
+        <span>
+          Clase {progreso.dictadas} de {progreso.total}
+        </span>
+        <span className="tabular-nums">{pct} %</span>
+      </div>
+      <div
+        role="progressbar"
+        aria-label={`Clase ${progreso.dictadas} de ${progreso.total}`}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={pct}
+        className="h-1.5 overflow-hidden rounded-full bg-accent"
+      >
+        <div className="h-full rounded-full bg-success" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+/** "14 / 16 inscriptos", "15 / 15 · completo" (en tono de aviso) o "9 inscriptos". */
+function Cupos({ inscriptos, cupo }: { inscriptos: number; cupo: number | null }) {
+  if (cupo === null || cupo <= 0) {
+    return (
+      <span className="text-[12.5px] text-text-2">
+        {inscriptos} {inscriptos === 1 ? "inscripto" : "inscriptos"}
+      </span>
+    );
+  }
+  const completo = inscriptos >= cupo;
+  return (
+    <span className={cn("text-[12.5px] tabular-nums", completo ? "font-medium text-warning" : "text-text-2")}>
+      {inscriptos} / {cupo}
+      {completo ? " · completo" : " inscriptos"}
+    </span>
+  );
+}
 
 /**
  * 005 (T014, US1) — pantalla de gestión académica. Iteración 2 (feedback en
@@ -272,6 +214,11 @@ const CLAVE_FILTRO_ANIO = "academico.cohortes.anio";
  * `academico.editar` (Ventas, Administración) no se dibujan crear, editar ni
  * borrar —las rutas responderían 403—, y sin `accesos.gestionar` no se ofrece
  * dar acceso a un profesor. La pantalla sigue entera en lectura.
+ *
+ * 2026-10-26 — Cursos y Grupos con buscador y UNA barra de filtros (estado,
+ * año, tipo), resumen "Mostrando N de M" con etiquetas quitables, y listas con
+ * color: avatar por curso (paleta categórica), progreso de la cursada, cupos y
+ * tipo. La lógica de filtrado sigue en `src/lib/academic-filters.ts`.
  */
 export function AcademicClient({
   canEdit = false,
@@ -287,15 +234,11 @@ export function AcademicClient({
 }) {
   const [tab, setTab] = usePestanaEnUrl<Tab>(initialTab);
   /**
-   * 007 (feedback en vivo: "deberíamos poder filtrar por todos, cursos
-   * planificados, en curso y finalizados") — filtro por estado de la cohorte.
-   * Es un conjunto y no un valor único porque el caso más pedido es ver dos
-   * a la vez (planificadas + en curso) y esconder el archivo de finalizadas.
-   * Arranca con los tres marcados: el comportamiento de antes.
+   * 007 — filtro por estado del grupo. Es un conjunto y no un valor único
+   * porque el caso más pedido es ver dos a la vez (planificados + en curso) y
+   * esconder el archivo de finalizados. Arranca con los tres marcados.
    */
-  const [statusFilter, setStatusFilter] = useState<Set<CohortDto["status"]>>(
-    new Set(["planificada", "en_curso", "finalizada"])
-  );
+  const [statusFilter, setStatusFilter] = useState<Set<Estado>>(new Set(STATUS_ORDER));
   /**
    * 032 (FR-009) — Tipo en la pestaña Cursos: arranca en "solo Curso", que es
    * lo que más se consulta; los módulos se gestionan desde su especialización.
@@ -304,12 +247,19 @@ export function AcademicClient({
     new Set(["curso"])
   );
   /**
-   * 032 (FR-013) — Tipo en la pestaña Cohortes. Arranca con los tres: el
-   * listado de cohortes no tiene que perder ninguna el día del despliegue.
+   * 032 (FR-013) — Tipo en la pestaña Grupos. Arranca con los tres: el
+   * listado no tiene que perder ninguno el día del despliegue.
    */
   const [cohortKindFilter, setCohortKindFilter] = useState<Set<CourseKind>>(
     new Set(COURSE_KINDS)
   );
+  /**
+   * 2026-10-26 — El texto de cada buscador. Uno por pestaña: lo que se buscó
+   * en Grupos no tiene por qué vaciar Cursos. No va a la URL: es una consulta
+   * de un momento, no un lugar al que se vuelve.
+   */
+  const [busquedaCursos, setBusquedaCursos] = useState("");
+  const [busquedaGrupos, setBusquedaGrupos] = useState("");
   /**
    * 032 (FR-011) — Año. "Todos los años" la primera vez, para que nadie
    * piense que se perdieron cohortes; después, la última elección de esta
@@ -462,18 +412,34 @@ export function AcademicClient({
    * 028 (seguimiento) — Lo que queda después del filtro, con cada módulo
    * adentro de su especialización (`agruparEspecializaciones`, pura y con
    * tests). Una madre se muestra si ella o alguno de sus módulos coincide.
+   *
+   * 032 (FR-011/FR-013) + 2026-10-26 — estado, año, tipo y búsqueda a la vez
+   * (`filtrarCohortes`, pura); los contadores salen con los DEMÁS aplicados.
    */
   const filtrosDeCohortes = {
     estados: statusFilter,
     anio: yearFilter,
     tipos: cohortKindFilter,
+    busqueda: busquedaGrupos,
   };
-  // 032 (FR-011/FR-013) — estado, año y tipo a la vez (`filtrarCohortes`, pura).
   const grupos = filtrarCohortes(cohorts, filtrosDeCohortes);
   const anioActual = new Date().getFullYear();
   const contadores = contadoresDeCohortes(cohorts, filtrosDeCohortes, anioActual);
-  const cursosVisibles = filtrarCursos(courses, courseKindFilter);
-  const cursosPorTipo = contarCursosPorTipo(courses);
+  /** Todas las filas, sin ningún filtro: el "de M" del resumen y las pastillas del encabezado. */
+  const todasLasFilas = filtrarCohortes(cohorts, {
+    estados: new Set(STATUS_ORDER),
+    anio: TODOS_LOS_ANIOS,
+    tipos: TODOS_LOS_TIPOS,
+  });
+  const filasPorEstado = Object.fromEntries(
+    STATUS_ORDER.map((s) => [s, todasLasFilas.filter((g) => g.seccion === s).length])
+  ) as Record<Estado, number>;
+
+  const cursosVisibles = filtrarCursos(courses, courseKindFilter, busquedaCursos);
+  const cursosPorTipo = contarCursosPorTipo(courses, busquedaCursos);
+  const gruposPorCurso = new Map<string, number>();
+  for (const c of cohorts) gruposPorCurso.set(c.courseId, (gruposPorCurso.get(c.courseId) ?? 0) + 1);
+
   /** Qué especializaciones están desplegadas. Arrancan plegadas. */
   const [desplegadas, setDesplegadas] = useState<Set<string>>(new Set());
   function alternar(id: string) {
@@ -484,6 +450,70 @@ export function AcademicClient({
       return next;
     });
   }
+
+  function limpiarFiltrosDeGrupos() {
+    setBusquedaGrupos("");
+    setStatusFilter(new Set(STATUS_ORDER));
+    elegirAnio(TODOS_LOS_ANIOS);
+    setCohortKindFilter(new Set(COURSE_KINDS));
+  }
+  function limpiarFiltrosDeCursos() {
+    setBusquedaCursos("");
+    setCourseKindFilter(new Set(COURSE_KINDS));
+  }
+
+  const etiquetaDeAnio = (a: FiltroDeAnio) =>
+    a === TODOS_LOS_ANIOS ? "Todos" : a === anioActual ? "Este año" : String(a);
+
+  const filtrosActivosDeGrupos: FiltroActivo[] = [
+    ...(busquedaGrupos.trim()
+      ? [{ clave: "q", etiqueta: `“${busquedaGrupos.trim()}”`, quitar: () => setBusquedaGrupos("") }]
+      : []),
+    ...(statusFilter.size < STATUS_ORDER.length
+      ? [
+          {
+            clave: "estado",
+            etiqueta: ORDEN_DE_SECCION.filter((s) => statusFilter.has(s))
+              .map((s) => ETIQUETA_DE_ESTADO[s])
+              .join(" + "),
+            quitar: () => setStatusFilter(new Set(STATUS_ORDER)),
+          },
+        ]
+      : []),
+    ...(yearFilter !== TODOS_LOS_ANIOS
+      ? [
+          {
+            clave: "anio",
+            etiqueta: `Año: ${etiquetaDeAnio(yearFilter)}`,
+            quitar: () => elegirAnio(TODOS_LOS_ANIOS),
+          },
+        ]
+      : []),
+    ...(cohortKindFilter.size < COURSE_KINDS.length
+      ? [
+          {
+            clave: "tipo",
+            etiqueta: `Tipo: ${etiquetaDeTipos(cohortKindFilter)}`,
+            quitar: () => setCohortKindFilter(new Set(COURSE_KINDS)),
+          },
+        ]
+      : []),
+  ];
+
+  const filtrosActivosDeCursos: FiltroActivo[] = [
+    ...(busquedaCursos.trim()
+      ? [{ clave: "q", etiqueta: `“${busquedaCursos.trim()}”`, quitar: () => setBusquedaCursos("") }]
+      : []),
+    ...(courseKindFilter.size < COURSE_KINDS.length
+      ? [
+          {
+            clave: "tipo",
+            etiqueta: `Tipo: ${etiquetaDeTipos(courseKindFilter)}`,
+            quitar: () => setCourseKindFilter(new Set(COURSE_KINDS)),
+          },
+        ]
+      : []),
+  ];
 
   const refetch = useCallback(async () => {
     setLoading(true);
@@ -527,124 +557,156 @@ export function AcademicClient({
   }
 
   /**
-   * 028 (seguimiento) — La ficha de una cohorte, la misma para la fila suelta
-   * y para el módulo dentro de su especialización: dos copias de esta tarjeta
-   * se desincronizarían en el primer dato nuevo que alguien le agregue.
+   * 028 (seguimiento) — La fila de un grupo, la misma para la fila suelta y
+   * para el módulo dentro de su especialización: dos copias se
+   * desincronizarían en el primer dato nuevo que alguien le agregue.
+   *
+   * 2026-10-26 — Avatar del curso | nombre + profesor · horario | progreso (en
+   * curso) o fecha | cupos | tipo y acciones. En pantallas angostas quedan
+   * avatar, nombre y tipo.
    *
    * El módulo se titula con su ordinal ("Módulo 1 — …", `etiquetaDeModulo`),
    * nunca con la `position` guardada.
    */
-  function ficha(
+  function filaDeGrupo(
     cohort: CohortDto,
     {
       titulo,
-      subtitulo,
-      insignia,
-    }: { titulo: string; subtitulo: string | null; insignia: React.ReactNode }
+      progreso,
+      modulos,
+      estado = cohort.status,
+    }: {
+      titulo: string;
+      /**
+       * El estado que decide la columna del medio. En una especialización es
+       * el de su SECCIÓN: la planificada cuyo módulo 1 ya empezó se lista en
+       * "En curso" y muestra el avance de sus módulos.
+       */
+      estado?: Estado;
+      progreso: ProgresoDeCursada | null;
+      /** Solo en una especialización: cuántos módulos y si están desplegados. */
+      modulos?: { cantidad: number; abierta: boolean };
+    }
   ) {
+    const q = busquedaGrupos;
+    const horario = formatHorario(cohort);
+    const nombreDelCurso =
+      cohort.name && !cohort.name.toLowerCase().includes(cohort.courseName.toLowerCase())
+        ? cohort.courseName
+        : null;
+
+    let medio: React.ReactNode;
+    if (estado === "en_curso" && progreso) {
+      medio = <BarraDeProgreso progreso={progreso} />;
+    } else if (estado === "planificada") {
+      medio = `Empieza el ${formatDia(cohort.startDate, anioActual)}`;
+    } else if (estado === "finalizada") {
+      medio = `Terminó el ${formatDia(cohort.endDate ?? cohort.startDate, anioActual)}`;
+    } else {
+      medio = `${formatDia(cohort.startDate, anioActual)} → ${formatDia(cohort.endDate, anioActual)}`;
+    }
+
     return (
-      <div className="flex items-start justify-between gap-4 px-4 py-3.5">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
+      <div className="grid grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-x-3.5 px-4 py-[11px] transition-colors hover:bg-subtle md:grid-cols-[38px_minmax(0,2.2fr)_minmax(0,1.4fr)_minmax(0,1fr)_auto]">
+        <AvatarDeCurso
+          courseId={cohort.courseId}
+          nombre={cohort.courseName}
+          apagado={estado === "finalizada"}
+        />
+
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <Link
               href={`/cohorts/${cohort.id}`}
-              className="text-[15px] font-semibold leading-tight hover:underline"
+              className="min-w-0 truncate font-medium leading-snug hover:underline"
             >
-              {titulo}
+              <Resaltado texto={titulo} busqueda={q} />
             </Link>
             {/*
-              Llegó el día de inicio y nadie lo confirmó: en lugar de un
-              "En curso" más, la marca roja (`marcaDeConfirmacion`). El estado
-              sigue saliendo de las fechas.
+              Llegó el día de inicio y nadie lo confirmó: la marca roja
+              (`marcaDeConfirmacion`). El estado sigue saliendo de las fechas.
             */}
-            {cohort.confirmationFlag === "sin_confirmar_vencido" ? (
+            {cohort.confirmationFlag === "sin_confirmar_vencido" && (
               <Badge variant="destructive" title="Llegó la fecha de inicio y el grupo no está confirmado">
                 Sin confirmar
               </Badge>
-            ) : (
-              <Badge variant={STATUS_BADGE[cohort.status].variant}>
-                {STATUS_BADGE[cohort.status].label}
-              </Badge>
+            )}
+            {/* 039 — confirmado ("sale"): lo que importa antes de empezar. */}
+            {cohort.confirmedAt && cohort.status === "planificada" && (
+              <Badge variant="success">Confirmado</Badge>
             )}
             {/* 032 (FR-012) — aparece con cualquier año, y se dice por qué. */}
             {sinFechas(cohort) && <Badge variant="warning">sin fechas</Badge>}
-            {/* 039 — confirmada ("sale"): independiente del estado por fechas. */}
-            {cohort.confirmedAt && <Badge variant="success">Confirmado</Badge>}
-            {insignia}
-          </div>
-          {subtitulo && (
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">{subtitulo}</p>
-          )}
-
-          {/* Piezas, no una oración con puntos medios. */}
-          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
-            <Dato icono={<CalendarDays className="h-3.5 w-3.5" />}>
-              {formatDate(cohort.startDate)} → {formatDate(cohort.endDate)}
-            </Dato>
-            {(cohort.daysOfWeek || cohort.frequency || cohort.startTime) && (
-              <Dato icono={<Clock className="h-3.5 w-3.5" />}>
-                {formatDaysOfWeek(cohort.daysOfWeek) ?? cohort.frequency}
-                {cohort.startTime && (
-                  <>
-                    {" "}
-                    {cohort.startTime}
-                    {cohort.endTime && `–${cohort.endTime}`}
-                  </>
+            {modulos && (
+              <button
+                type="button"
+                aria-expanded={modulos.abierta}
+                aria-controls={`modulos-${cohort.id}`}
+                onClick={() => alternar(cohort.id)}
+                className="inline-flex items-center gap-1 rounded-full border border-brand-soft bg-brand-tint px-2 py-0.5 text-[11px] font-medium text-brand-text transition-colors hover:bg-accent"
+              >
+                {modulos.abierta ? (
+                  <ChevronDown className="h-3 w-3" aria-hidden />
+                ) : (
+                  <ChevronRight className="h-3 w-3" aria-hidden />
                 )}
-              </Dato>
+                Especialización · {modulos.cantidad} {modulos.cantidad === 1 ? "módulo" : "módulos"}
+              </button>
+            )}
+          </div>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+            {nombreDelCurso && (
+              <>
+                <Resaltado texto={nombreDelCurso} busqueda={q} />
+                {" · "}
+              </>
             )}
             {/*
               Una especialización no tiene profesor propio: lo tiene cada
-              módulo. Marcarle "sin profesor" como algo que falta sería pedir
-              un dato que ninguna pantalla lee.
+              módulo. Marcarle "sin profesor" sería pedir un dato que ninguna
+              pantalla lee.
             */}
-            {!cohort.isSpecialization && (
-              <Dato
-                icono={<UserRound className="h-3.5 w-3.5" />}
-                /* Sin profesor no es un dato más: es algo que
-                   falta, y hoy le pasa a 8 de las 41. */
-                alerta={!cohort.teacher}
-              >
-                {cohort.teacher?.name ?? "sin profesor"}
-              </Dato>
+            {cohort.isSpecialization ? (
+              "Varios profesores"
+            ) : cohort.teacher ? (
+              <Resaltado texto={cohort.teacher.name} busqueda={q} />
+            ) : (
+              <span className="text-warning">sin profesor</span>
             )}
-            {cohort.classroom && (
-              <Dato icono={<MapPin className="h-3.5 w-3.5" />}>{cohort.classroom}</Dato>
-            )}
-            <Dato icono={<Wallet className="h-3.5 w-3.5" />}>{formatCost(cohort.cost, cohort.currency)}</Dato>
-          </div>
-
-          {cohort.software.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1">
-              {cohort.software.map((s) => (
-                <Badge key={s.id} variant="outline">
-                  {s.name}
-                </Badge>
-              ))}
-            </div>
-          )}
+            {horario && ` · ${horario}`}
+          </p>
         </div>
 
-        <div className="flex shrink-0 items-center gap-1.5">
-          <Link href={`/cohorts/${cohort.id}`}>
-            <Button variant="outline" size="sm">
-              Ver grupo
-            </Button>
-          </Link>
+        <div className="hidden min-w-0 text-[13px] text-text-2 md:block">{medio}</div>
+
+        <div className="hidden md:block">
+          <Cupos inscriptos={cohort.enrolledCount ?? 0} cupo={cohort.capacity} />
+        </div>
+
+        <div className="flex items-center justify-end gap-1">
+          <EtiquetaDeTipo kind={cohort.courseKind} />
           {canEdit && (
             <>
-              <Button variant="ghost" size="sm" onClick={() => setCohortForm({ mode: "edit", cohort })}>
-                Editar
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                aria-label={`Editar ${titulo}`}
+                title="Editar"
+                onClick={() => setCohortForm({ mode: "edit", cohort })}
+              >
+                <Pencil className="h-3.5 w-3.5" strokeWidth={1.8} />
               </Button>
               <Button
                 variant="ghost"
                 size="icon"
-                aria-label={`Borrar ${cohort.name ?? cohort.courseName}`}
+                className="h-8 w-8"
+                aria-label={`Borrar ${titulo}`}
                 title="Borrar"
                 loading={borrando === cohort.id}
                 onClick={() => void borrarCohorte(cohort)}
               >
-                <Trash2 className="h-4 w-4" strokeWidth={1.7} />
+                <Trash2 className="h-3.5 w-3.5" strokeWidth={1.8} />
               </Button>
             </>
           )}
@@ -655,8 +717,37 @@ export function AcademicClient({
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex flex-wrap items-center justify-between gap-4 border-b px-6 py-4">
-        <h2 className="font-semibold">Gestión académica</h2>
+      <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-b px-4 py-4 sm:px-6">
+        <div className="flex items-center gap-3.5">
+          <span
+            aria-hidden
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-brand-soft to-success-soft text-brand"
+          >
+            <GraduationCap className="h-5 w-5" strokeWidth={1.8} />
+          </span>
+          <div>
+            <h2 className="text-lg font-semibold leading-tight">Académico</h2>
+            <p className="text-[13px] text-muted-foreground">Cursos, grupos, profesores y aulas</p>
+          </div>
+        </div>
+        {/* Qué está pasando, de un vistazo: el punto de "en curso" late. */}
+        {!loading && todasLasFilas.length > 0 && (
+          <ul aria-label="Resumen de grupos" className="flex flex-wrap gap-2">
+            <li className="inline-flex items-center gap-2 rounded-full bg-success-soft py-1.5 pl-2.5 pr-3 text-[12.5px] font-medium text-success">
+              <span aria-hidden className="latido h-2 w-2 rounded-full bg-success" />
+              <b className="text-[15px] tabular-nums">{filasPorEstado.en_curso}</b> en curso
+            </li>
+            <li className="inline-flex items-center gap-2 rounded-full bg-brand-soft py-1.5 pl-2.5 pr-3 text-[12.5px] font-medium text-brand-text">
+              <span aria-hidden className="h-2 w-2 rounded-full bg-brand" />
+              <b className="text-[15px] tabular-nums">{filasPorEstado.planificada}</b> por empezar
+            </li>
+            <li className="inline-flex items-center gap-2 rounded-full bg-accent py-1.5 pl-2.5 pr-3 text-[12.5px] font-medium text-text-3">
+              <span aria-hidden className="h-2 w-2 rounded-full bg-text-4" />
+              <b className="text-[15px] tabular-nums">{filasPorEstado.finalizada}</b>{" "}
+              {filasPorEstado.finalizada === 1 ? "finalizado" : "finalizados"}
+            </li>
+          </ul>
+        )}
         <div className="flex items-center gap-2">
           {canEdit && tab === "grupos" && (
             <>
@@ -688,7 +779,7 @@ export function AcademicClient({
       {/* 021 — Un control segmentado en vez de cuatro píldoras sueltas: se ve
           que son opciones de LO MISMO, y la elegida se lee de lejos porque
           está levantada, no porque tenga otro color de relleno. */}
-      <div className="border-b px-6 py-2.5">
+      <div className="border-b px-4 py-2.5 sm:px-6">
         <div className="inline-flex gap-1 rounded-lg bg-secondary p-1">
           {TABS.map((t) => (
             <button
@@ -708,7 +799,7 @@ export function AcademicClient({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         {loading && (
           <div className="space-y-2">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -728,123 +819,170 @@ export function AcademicClient({
             </Button>
           </div>
         )}
+
+        {/* ------------------------------------------------ Grupos */}
         {!loading && tab === "grupos" && cohorts.length > 0 && (
-          <div className="mb-4 space-y-2.5">
-            <CohortStatusFilter
-              total={contadores.todas}
-              countByStatus={contadores.estados}
-              value={statusFilter}
-              onChange={setStatusFilter}
-            />
-            {/* 032 (FR-011/FR-013) — año y tipo, combinables con el estado. */}
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-2.5">
-              <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                Año:
-                <select
-                  aria-label="Año del grupo"
-                  className="h-8 rounded-md border border-input bg-card px-2 text-xs text-foreground"
-                  value={String(yearFilter)}
-                  onChange={(e) => elegirAnio(leerFiltroDeAnio(e.target.value))}
-                >
-                  <option value={TODOS_LOS_ANIOS}>
-                    Todos los años ({contadores.todosLosAnios})
-                  </option>
-                  {contadores.anios.map(({ anio, count }) => (
-                    <option key={anio} value={anio}>
-                      {anio === anioActual ? `Este año (${anio})` : anio} ({count})
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {yearFilter !== anioActual && (
-                <button
-                  type="button"
-                  className="rounded-full border px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent"
-                  onClick={() => elegirAnio(anioActual)}
-                >
-                  Solo este año
-                </button>
-              )}
-              <KindFilter
-                value={cohortKindFilter}
-                counts={contadores.tipos}
-                onChange={setCohortKindFilter}
+          <div className="mb-5 rounded-lg border bg-card shadow-sm">
+            <div className="flex flex-wrap items-center gap-2.5 p-2.5">
+              <Buscador
+                value={busquedaGrupos}
+                onChange={setBusquedaGrupos}
+                placeholder="Buscar grupo por nombre, curso o profesor…"
               />
+              <SegmentadoDeEstado
+                orden={ORDEN_DE_SECCION}
+                etiquetas={ETIQUETA_DE_ESTADO}
+                value={statusFilter}
+                total={contadores.todas}
+                conteos={contadores.estados}
+                onTodos={() => setStatusFilter(new Set(STATUS_ORDER))}
+                onAlternar={(e) => setStatusFilter(nextStatusFilter(statusFilter, e))}
+              />
+              {/* 032 (FR-011) — año: inicio o fin en él; se recuerda por navegador. */}
+              <Desplegable
+                etiqueta="Año"
+                valor={etiquetaDeAnio(yearFilter)}
+                activo={yearFilter !== TODOS_LOS_ANIOS}
+              >
+                {(cerrar) => (
+                  <>
+                    <OpcionUnica
+                      elegida={yearFilter === TODOS_LOS_ANIOS}
+                      cantidad={contadores.todosLosAnios}
+                      onElegir={() => {
+                        elegirAnio(TODOS_LOS_ANIOS);
+                        cerrar();
+                      }}
+                    >
+                      Todos los años
+                    </OpcionUnica>
+                    {contadores.anios.map(({ anio, count }) => (
+                      <OpcionUnica
+                        key={anio}
+                        elegida={yearFilter === anio}
+                        cantidad={count}
+                        onElegir={() => {
+                          elegirAnio(anio);
+                          cerrar();
+                        }}
+                      >
+                        {anio === anioActual ? `Este año (${anio})` : anio}
+                      </OpcionUnica>
+                    ))}
+                  </>
+                )}
+              </Desplegable>
+              {/* 032 (FR-013) — tipo: la madre o alguno de sus módulos. */}
+              <Desplegable
+                etiqueta="Tipo"
+                valor={etiquetaDeTipos(cohortKindFilter)}
+                activo={cohortKindFilter.size < COURSE_KINDS.length}
+                alinear="derecha"
+              >
+                {() => (
+                  <>
+                    {COURSE_KINDS.map((k) => (
+                      <OpcionMarcable
+                        key={k}
+                        marcada={cohortKindFilter.has(k)}
+                        cantidad={contadores.tipos[k]}
+                        onAlternar={() => setCohortKindFilter(alternarTipo(cohortKindFilter, k))}
+                      >
+                        {COURSE_KIND_LABEL[k]}
+                      </OpcionMarcable>
+                    ))}
+                    <OpcionAccion onClick={() => setCohortKindFilter(new Set(COURSE_KINDS))}>
+                      Ver todos los tipos
+                    </OpcionAccion>
+                  </>
+                )}
+              </Desplegable>
             </div>
+            <ResumenDeFiltros
+              mostrando={grupos.length}
+              total={todasLasFilas.length}
+              sustantivo={{ uno: "grupo", varios: "grupos" }}
+              activos={filtrosActivosDeGrupos}
+              onLimpiar={limpiarFiltrosDeGrupos}
+            />
           </div>
         )}
         {!loading && tab === "grupos" &&
           (cohorts.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-              <p className="text-sm font-medium">Sin grupo</p>
+              <p className="text-sm font-medium">Sin grupos todavía</p>
               <p className="max-w-sm text-xs text-muted-foreground">
                 Creá un curso y después un grupo con costo, horario, aula,
                 temario, software y profesor.
               </p>
             </div>
           ) : grupos.length === 0 ? (
-            <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-              Ningún grupo coincide con el filtro.
-            </p>
+            <div className="rounded-lg border border-dashed border-border-strong p-7 text-center text-sm text-muted-foreground">
+              <p>Ningún grupo coincide con la búsqueda y los filtros.</p>
+              <Button size="sm" className="mt-3" onClick={limpiarFiltrosDeGrupos}>
+                Limpiar filtros
+              </Button>
+            </div>
           ) : (
-            <div className="space-y-6">
-              {(["en_curso", "planificada", "finalizada"] as const).map((estado) => {
+            <div className="space-y-5">
+              {ORDEN_DE_SECCION.map((estado) => {
                 const grupo = grupos.filter((g) => g.seccion === estado);
                 if (grupo.length === 0) return null;
+                const tono = TONO_DE_ESTADO[estado];
                 return (
-                  <section key={estado} className="space-y-2.5">
-                    <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      {STATUS_BADGE[estado].label} ({grupo.length})
+                  <section key={estado} aria-labelledby={`seccion-${estado}`}>
+                    <h3
+                      id={`seccion-${estado}`}
+                      className={cn(
+                        "mb-2 flex items-center gap-2.5 text-xs font-semibold uppercase tracking-[0.04em]",
+                        tono.texto
+                      )}
+                    >
+                      {ETIQUETA_DE_ESTADO[estado]}
+                      <span
+                        className={cn(
+                          "rounded-full px-2 py-px text-[11px] font-semibold normal-case tracking-normal tabular-nums",
+                          tono.pastilla
+                        )}
+                      >
+                        {grupo.length}
+                      </span>
+                      <span aria-hidden className="h-px flex-1 bg-border" />
                     </h3>
-                    <ul className="space-y-2.5">
-                      {grupo.map(({ cohort, modules }) => {
+                    <ul className="divide-y overflow-hidden rounded-lg border bg-card">
+                      {grupo.map(({ cohort, modules, seccion }) => {
                         const abierta = desplegadas.has(cohort.id);
+                        // Una especialización dicta por sus módulos: su
+                        // progreso es la suma de los de ellos.
+                        const progreso = cohort.isSpecialization
+                          ? sumarProgresos([cohort.progress, ...modules.map((m) => m.cohort.progress)])
+                          : (cohort.progress ?? null);
                         return (
-                          <li
-                            key={cohort.id}
-                            className="rounded-lg border bg-card transition-colors hover:border-brand-soft"
-                          >
-                            {ficha(cohort, {
-                              titulo: cohort.name || 'Grupo sin nombre',
-                              subtitulo: cohort.courseName,
-                              insignia: cohort.isSpecialization ? (
-                                <button
-                                  type="button"
-                                  aria-expanded={abierta}
-                                  aria-controls={`modulos-${cohort.id}`}
-                                  onClick={() => alternar(cohort.id)}
-                                  className="inline-flex items-center gap-1 rounded-full border border-brand-soft bg-brand-tint px-2 py-0.5 text-[11px] font-medium text-brand-text transition-colors hover:bg-accent"
-                                >
-                                  {abierta ? (
-                                    <ChevronDown className="h-3 w-3" aria-hidden />
-                                  ) : (
-                                    <ChevronRight className="h-3 w-3" aria-hidden />
-                                  )}
-                                  Especialización · {modules.length}{" "}
-                                  {modules.length === 1 ? "módulo" : "módulos"}
-                                </button>
-                              ) : null,
+                          <li key={cohort.id}>
+                            {filaDeGrupo(cohort, {
+                              titulo: cohort.name || cohort.courseName,
+                              progreso,
+                              estado: seccion,
+                              modulos: cohort.isSpecialization
+                                ? { cantidad: modules.length, abierta }
+                                : undefined,
                             })}
                             {cohort.isSpecialization && abierta && (
                               <ul
                                 id={`modulos-${cohort.id}`}
-                                className="space-y-2 border-t px-4 py-3 pl-8"
+                                className="divide-y border-t bg-subtle pl-6"
                               >
                                 {modules.length === 0 && (
-                                  <li className="text-xs text-muted-foreground">
+                                  <li className="px-4 py-3 text-xs text-muted-foreground">
                                     Todavía no tiene módulos. Agregalos desde la
                                     pestaña Especialización del grupo.
                                   </li>
                                 )}
                                 {modules.map((m) => (
-                                  <li
-                                    key={m.cohort.id}
-                                    className="rounded-md border bg-card"
-                                  >
-                                    {ficha(m.cohort, {
+                                  <li key={m.cohort.id}>
+                                    {filaDeGrupo(m.cohort, {
                                       titulo: m.label,
-                                      subtitulo: m.cohort.courseName,
-                                      insignia: null,
+                                      progreso: m.cohort.progress ?? null,
                                     })}
                                   </li>
                                 ))}
@@ -860,12 +998,47 @@ export function AcademicClient({
             </div>
           ))}
 
+        {/* ------------------------------------------------ Cursos */}
         {!loading && tab === "cursos" && courses.length > 0 && (
-          <div className="mb-4">
-            <KindFilter
-              value={courseKindFilter}
-              counts={cursosPorTipo}
-              onChange={setCourseKindFilter}
+          <div className="mb-5 rounded-lg border bg-card shadow-sm">
+            <div className="flex flex-wrap items-center gap-2.5 p-2.5">
+              <Buscador
+                value={busquedaCursos}
+                onChange={setBusquedaCursos}
+                placeholder="Buscar curso por nombre…"
+              />
+              {/* 032 (FR-009) — arranca en "solo Curso". */}
+              <Desplegable
+                etiqueta="Tipo"
+                valor={etiquetaDeTipos(courseKindFilter)}
+                activo={courseKindFilter.size < COURSE_KINDS.length}
+                alinear="derecha"
+              >
+                {() => (
+                  <>
+                    {COURSE_KINDS.map((k) => (
+                      <OpcionMarcable
+                        key={k}
+                        marcada={courseKindFilter.has(k)}
+                        cantidad={cursosPorTipo[k]}
+                        onAlternar={() => setCourseKindFilter(alternarTipo(courseKindFilter, k))}
+                      >
+                        {COURSE_KIND_LABEL[k]}
+                      </OpcionMarcable>
+                    ))}
+                    <OpcionAccion onClick={() => setCourseKindFilter(new Set(COURSE_KINDS))}>
+                      Ver todos los tipos
+                    </OpcionAccion>
+                  </>
+                )}
+              </Desplegable>
+            </div>
+            <ResumenDeFiltros
+              mostrando={cursosVisibles.length}
+              total={courses.length}
+              sustantivo={{ uno: "curso", varios: "cursos" }}
+              activos={filtrosActivosDeCursos}
+              onLimpiar={limpiarFiltrosDeCursos}
             />
           </div>
         )}
@@ -873,61 +1046,87 @@ export function AcademicClient({
           (courses.length === 0 ? (
             <p className="text-sm text-muted-foreground">Sin cursos todavía.</p>
           ) : cursosVisibles.length === 0 ? (
-            <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-              Ningún curso de este tipo.
-            </p>
+            <div className="rounded-lg border border-dashed border-border-strong p-7 text-center text-sm text-muted-foreground">
+              <p>Ningún curso coincide con la búsqueda y los filtros.</p>
+              <Button size="sm" className="mt-3" onClick={limpiarFiltrosDeCursos}>
+                Limpiar filtros
+              </Button>
+            </div>
           ) : (
-            <ul className="space-y-2">
-              {cursosVisibles.map((c) => (
-                <li
-                  key={c.id}
-                  className="flex items-start justify-between gap-4 rounded-lg border bg-card px-4 py-3"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-sm font-medium">{c.name}</p>
+            <ul className="divide-y overflow-hidden rounded-lg border bg-card">
+              {cursosVisibles.map((c) => {
+                const categoria = c.categoryId
+                  ? (categories.find((cat) => cat.id === c.categoryId)?.name ?? null)
+                  : null;
+                const subtitulo = [categoria, c.tagline ?? c.description]
+                  .filter((p): p is string => Boolean(p))
+                  .join(" · ");
+                const siguen = rutas.get(c.id) ?? [];
+                const cantidad = gruposPorCurso.get(c.id) ?? 0;
+                const duracion = resumenDeDuracion(c);
+                return (
+                  <li
+                    key={c.id}
+                    className="grid grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-x-3.5 px-4 py-[11px] transition-colors hover:bg-subtle md:grid-cols-[38px_minmax(0,2.2fr)_minmax(0,1.3fr)_minmax(0,0.7fr)_auto]"
+                  >
+                    <AvatarDeCurso courseId={c.id} nombre={c.name} />
+                    <div className="min-w-0">
+                      <p className="truncate font-medium leading-snug">
+                        <Resaltado texto={c.name} busqueda={busquedaCursos} />
+                      </p>
+                      {subtitulo && (
+                        <p className="mt-0.5 truncate text-xs text-muted-foreground">{subtitulo}</p>
+                      )}
+                      {/* 046 (US2) — qué se le recomienda a quien lo cursó. */}
+                      {siguen.length > 0 && (
+                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                          Siguen: {siguen.map(courseNameFor).join(", ")}
+                        </p>
+                      )}
+                    </div>
+                    <div className="hidden min-w-0 text-[13px] text-text-2 md:block">
+                      {duracion ?? <span className="text-muted-foreground">Sin duración cargada</span>}
+                    </div>
+                    <div className="hidden text-[13px] text-text-2 md:block">
+                      {cantidad === 0 ? (
+                        <span className="text-muted-foreground">Sin grupos</span>
+                      ) : (
+                        `${cantidad} ${cantidad === 1 ? "grupo" : "grupos"}`
+                      )}
+                    </div>
+                    <div className="flex items-center justify-end gap-1">
                       {/* 032 (FR-010) — cada curso dice qué es. */}
-                      <Badge variant={c.kind === "curso" ? "outline" : "secondary"}>
-                        {COURSE_KIND_LABEL[c.kind]}
-                      </Badge>
-                      {c.categoryId && (
-                        <Badge variant="secondary">
-                          {categories.find((cat) => cat.id === c.categoryId)?.name ??
-                            "Categoría"}
-                        </Badge>
+                      <EtiquetaDeTipo kind={c.kind} />
+                      {canEdit && (
+                        <>
+                          {c.kind !== "taller" && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              aria-label={`Cursos siguientes de ${c.name}`}
+                              title="Cursos siguientes"
+                              onClick={() => setRutaDe(c)}
+                            >
+                              <Route className="h-3.5 w-3.5" strokeWidth={1.8} />
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            aria-label={`Editar ${c.name}`}
+                            title="Editar"
+                            onClick={() => setShowCourseForm({ mode: "edit", course: c })}
+                          >
+                            <Pencil className="h-3.5 w-3.5" strokeWidth={1.8} />
+                          </Button>
+                        </>
                       )}
                     </div>
-                    {(c.tagline ?? c.description) && (
-                      <p className="mt-0.5 text-xs text-muted-foreground">
-                        {c.tagline ?? c.description}
-                      </p>
-                    )}
-                    <p className="mt-0.5 text-xs text-muted-foreground">/cursos/{c.slug}</p>
-                    {/* 046 (US2) — qué se le recomienda a quien lo cursó. */}
-                    {(rutas.get(c.id)?.length ?? 0) > 0 && (
-                      <p className="mt-0.5 text-xs text-muted-foreground">
-                        Siguen: {rutas.get(c.id)!.map(courseNameFor).join(", ")}
-                      </p>
-                    )}
-                  </div>
-                  {canEdit && (
-                    <div className="flex shrink-0 items-center gap-1">
-                      {c.kind !== "taller" && (
-                        <Button variant="ghost" size="sm" onClick={() => setRutaDe(c)}>
-                          Cursos siguientes
-                        </Button>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setShowCourseForm({ mode: "edit", course: c })}
-                      >
-                        Editar
-                      </Button>
-                    </div>
-                  )}
-                </li>
-              ))}
+                  </li>
+                );
+              })}
             </ul>
           ))}
 
