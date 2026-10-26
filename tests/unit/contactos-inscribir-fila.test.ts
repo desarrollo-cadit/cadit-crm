@@ -54,3 +54,16 @@ describe("Inscribir desde la fila del listado de contactos", () => {
     expect(src.slice(i, i + 400)).toMatch(/onEnrolled=\{\(\) => void refetch\(\)\}/);
   });
 });
+
+describe("El listado de contactos usa el alto disponible", () => {
+  it("no limita la tabla con un alto calculado sobre el viewport", () => {
+    expect(cliente()).not.toMatch(/100vh/);
+  });
+
+  it("la región de la tabla crece y scrollea sola; la paginación no se encoge", () => {
+    const src = cliente();
+    expect(src).toMatch(/containerClassName="[^"]*md:min-h-0[^"]*md:flex-1/);
+    expect(src).toMatch(/md:flex md:flex-col md:overflow-hidden/);
+    expect(src).toMatch(/className="mt-4 flex shrink-0 /);
+  });
+});
