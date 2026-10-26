@@ -1539,7 +1539,7 @@ async function main() {
     `${portalDesdeStaff.res.status}`
   );
 
-  // SC-001 — toma asistencia y el dato llega al panel de coordinación.
+  // SC-001 — la asistencia la marca coordinación y el profesor la consulta.
   const inscPortal = await api("/api/enrollments", {
     method: "POST",
     body: JSON.stringify({
@@ -1566,63 +1566,53 @@ async function main() {
     JSON.stringify(planilla.json?.students?.[0])
   );
 
-  const marca = await comoProfesor(jarA, `/api/portal/classes/${claseReal?.id}/attendance`, {
+  /**
+   * 2026-10-26 — Pasar lista es de Coordinación. El profesor la CONSULTA: la
+   * ruta del portal no acepta escrituras (405) y lo que marca el staff se ve
+   * en su planilla, con autor.
+   */
+  const marcaProfe = await comoProfesor(jarA, `/api/portal/classes/${claseReal?.id}/attendance`, {
     method: "PUT",
     body: JSON.stringify({
       entries: [{ enrollmentId: enrollmentPortal, status: "presente" }],
     }),
   });
-  ok("el profesor marca asistencia", marca.res.ok, `${marca.res.status}`);
-
-  // **El check que justifica la fase**: el dato cruzó de una puerta a la otra.
-  const panel = await api(`/api/cohorts/${coh13Id}/attendance`);
-  const enPanel = (panel.json?.students ?? []).find(
-    (s) => s.enrollmentId === enrollmentPortal
-  );
   ok(
-    "y APARECE en el panel de coordinación (SC-001)",
-    enPanel?.bySession?.[claseReal?.id] === "presente",
-    JSON.stringify(enPanel?.bySession)
+    "el profesor NO puede marcar asistencia desde el portal (405)",
+    marcaProfe.res.status === 405,
+    `${marcaProfe.res.status}`
   );
 
-  // DV-001 — corregir una clase pasada corrige, no duplica, y deja autor.
-  await comoProfesor(jarA, `/api/portal/classes/${claseReal?.id}/attendance`, {
-    method: "PUT",
+  const marcaStaff = await api(`/api/class-sessions/${claseReal?.id}`, {
+    method: "PATCH",
     body: JSON.stringify({
-      entries: [{ enrollmentId: enrollmentPortal, status: "tarde" }],
+      attendance: [{ enrollmentId: enrollmentPortal, status: "tarde" }],
     }),
   });
+  ok("la coordinación marca la asistencia", marcaStaff.res.ok, `${marcaStaff.res.status}`);
+
   const reabierta = await comoProfesor(jarA, `/api/portal/classes/${claseReal?.id}/attendance`);
-  const corregido = (reabierta.json?.students ?? []).find(
+  const marcado = (reabierta.json?.students ?? []).find(
     (s) => s.enrollmentId === enrollmentPortal
   );
-  ok("la corrección CORRIGE (DV-001)", corregido?.status === "tarde", corregido?.status);
   ok(
-    "y queda registrado quién la dejó así",
-    corregido?.recordedByName === "Profe A E2E",
-    String(corregido?.recordedByName)
+    "y el profesor la VE en su planilla, con quién la dejó así (SC-001)",
+    marcado?.status === "tarde" && typeof marcado?.recordedByName === "string",
+    JSON.stringify(marcado)
+  );
+  ok(
+    "la planilla del portal ya no lleva `editable`: es solo consulta",
+    reabierta.json && !("editable" in reabierta.json),
+    JSON.stringify(Object.keys(reabierta.json ?? {}))
   );
 
-  // El profesor B no puede tocar la clase de A, ni siquiera conociendo su id.
-  const intruso = await comoProfesor(jarB, `/api/portal/classes/${claseReal?.id}/attendance`, {
-    method: "PUT",
-    body: JSON.stringify({
-      entries: [{ enrollmentId: enrollmentPortal, status: "ausente" }],
-    }),
-  });
-  ok("el otro profesor recibe 404 al marcar", intruso.res.status === 404, `${intruso.res.status}`);
-  const intacta = await comoProfesor(jarA, `/api/portal/classes/${claseReal?.id}/attendance`);
-  ok(
-    "y el dato no se movió",
-    (intacta.json?.students ?? []).find((s) => s.enrollmentId === enrollmentPortal)
-      ?.status === "tarde"
-  );
+  // El profesor B no ve la clase de A, ni siquiera conociendo su id.
+  const intruso = await comoProfesor(jarB, `/api/portal/classes/${claseReal?.id}/attendance`);
+  ok("el otro profesor recibe 404 al consultarla", intruso.res.status === 404, `${intruso.res.status}`);
 
   /**
    * Una clase CANCELADA no se dictó: no ofrece enlace ni grabación, y tampoco
-   * asistencia. La planilla ya la marcaba `editable: false`; lo que se conduce
-   * acá es que la ESCRITURA se niegue por esa misma regla y no por rebote de
-   * otra capa.
+   * asistencia. Se sigue VIENDO en el portal, marcada como cancelada.
    *
    * Se cancela una clase PASADA distinta de la que viene usando el arnés: la
    * próxima clase de la cohorte le hace falta intacta al portal del alumno.
@@ -1640,36 +1630,26 @@ async function main() {
     `${cancelada.res.status}`
   );
 
-  const marcaCancelada = await comoProfesor(
-    jarA,
-    `/api/portal/classes/${claseParaCancelar?.id}/attendance`,
-    {
-      method: "PUT",
-      body: JSON.stringify({
-        entries: [{ enrollmentId: enrollmentPortal, status: "presente" }],
-      }),
-    }
-  );
-  ok(
-    "y el profesor NO puede tomar asistencia sobre ella (422 session_canceled)",
-    marcaCancelada.res.status === 422 &&
-      marcaCancelada.json?.error?.code === "session_canceled",
-    `${marcaCancelada.res.status} ${JSON.stringify(marcaCancelada.json?.error)}`
-  );
-
   const planillaCancelada = await comoProfesor(
     jarA,
     `/api/portal/classes/${claseParaCancelar?.id}/attendance`
   );
   ok(
-    "la planilla cancelada se sigue VIENDO, marcada como no editable",
-    planillaCancelada.res.ok &&
-      planillaCancelada.json?.editable === false &&
-      planillaCancelada.json?.classSession?.canceled === true,
-    JSON.stringify({
-      editable: planillaCancelada.json?.editable,
-      canceled: planillaCancelada.json?.classSession?.canceled,
-    })
+    "la planilla cancelada se sigue VIENDO, marcada como cancelada",
+    planillaCancelada.res.ok && planillaCancelada.json?.classSession?.canceled === true,
+    JSON.stringify({ canceled: planillaCancelada.json?.classSession?.canceled })
+  );
+
+  // 2026-10-26 — Tampoco carga grabaciones: la ruta ya no existe.
+  const grabacionProfe = await comoProfesor(
+    jarA,
+    `/api/portal/classes/${claseReal?.id}/recording`,
+    { method: "PUT", body: JSON.stringify({ recordingUrl: "https://drive.example.com/x" }) }
+  );
+  ok(
+    "el profesor NO puede cargar grabaciones desde el portal",
+    grabacionProfe.res.status === 404 || grabacionProfe.res.status === 405,
+    `${grabacionProfe.res.status}`
   );
 
   // FR-006/DV-002 — el profesor no crea evaluaciones: la ruta no existe.

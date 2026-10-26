@@ -93,40 +93,6 @@ type ContentPayload = {
 
 type Tab = PestanaPortalGrupo;
 
-/**
- * 023 — Si esta clase puede recibir una grabación.
- *
- * Tres condiciones, y la tercera es la que faltaba: **la clase tiene que
- * haber OCURRIDO**. Ofrecer "cargar grabación" en la clase del 21 de
- * septiembre un 4 de septiembre es ofrecer algo imposible, y este repo llama
- * a eso "una puerta cerrada con cartel de bienvenida".
- *
- * Una proyección no tiene `id` —todavía no existe la fila— y una clase
- * cancelada no ofrece grabación aunque la tenga cargada (FR-005e de 013).
- *
- * 025 — Se mira `endsAt`, no `date`.
- *
- * `date` es la medianoche UTC del día de la clase, así que compararla contra
- * el reloj del navegador hacía aparecer el botón **el día anterior a las
- * 21:00** en Montevideo. El comentario decía "el día entero cuenta" y lo que
- * pasaba era otra cosa.
- *
- * `endsAt` ya viene resuelto por `classInstant()` en el servidor, que es el
- * único lugar del repo autorizado a componer una fecha de clase. El navegador
- * no tiene por qué saber en qué zona está la academia, y acá estaba
- * adivinándolo.
- *
- * Sin horario cargado no hay instante que comparar —6 de las 41 cohortes
- * están así— y ahí se deja pasar: no saber cuándo terminó no es lo mismo que
- * saber que no terminó, y bloquear al profesor por un dato que falta en la
- * cohorte lo manda de vuelta a pedir la carga por WhatsApp.
- */
-export function puedeCargarGrabacion(c: ClassRow, ahora: number = Date.now()): boolean {
-  if (!c.id || c.canceled) return false;
-  if (!c.endsAt) return true;
-  return new Date(c.endsAt).getTime() <= ahora;
-}
-
 function fecha(iso: string): string {
   return new Date(iso).toLocaleDateString("es-UY", {
     weekday: "short",
@@ -139,7 +105,7 @@ function fecha(iso: string): string {
 /**
  * 014 (T025) — La cohorte, como la ve el profesor.
  *
- * Cuatro pestañas: clases (donde toma asistencia y carga la grabación),
+ * Cuatro pestañas: clases (donde consulta la asistencia y mira las grabaciones),
  * evaluaciones (donde carga resultados), entregas (donde lee y devuelve) y
  * material (donde también publica). Todo lo que no está es deliberado —
  * inscribir, cobrar y emitir certificados son de la academia.
@@ -154,11 +120,6 @@ export function PortalCohortClient({
 }) {
   const [tab, setTab] = usePestanaEnUrl<Tab>(initialTab);
   const [claseAbierta, setClaseAbierta] = useState<string | null>(null);
-  /** 023 — Qué clase se está por cargar/cambiar la grabación. */
-  const [grabacion, setGrabacion] = useState<{
-    classSessionId: string;
-    actual: string | null;
-  } | null>(null);
   const [datos, setDatos] = useState<ClassesPayload | null>(null);
   const [noEncontrada, setNoEncontrada] = useState(false);
   const [fallo, setFallo] = useState(false);
@@ -288,7 +249,6 @@ export function PortalCohortClient({
         <Clases
           datos={datos}
           onAbrir={setClaseAbierta}
-          onGrabacion={(id, actual) => setGrabacion({ classSessionId: id, actual })}
         />
       ) : tab === "evaluaciones" ? (
         <div className="space-y-6">
@@ -300,18 +260,6 @@ export function PortalCohortClient({
       ) : (
         <Material cohortId={cohortId} />
       )}
-
-      {grabacion && (
-        <DialogoGrabacion
-          classSessionId={grabacion.classSessionId}
-          actual={grabacion.actual}
-          onClose={() => setGrabacion(null)}
-          onSaved={() => {
-            setGrabacion(null);
-            void refetch();
-          }}
-        />
-      )}
     </div>
   );
 }
@@ -319,11 +267,9 @@ export function PortalCohortClient({
 function Clases({
   datos,
   onAbrir,
-  onGrabacion,
 }: {
   datos: ClassesPayload;
   onAbrir: (id: string) => void;
-  onGrabacion: (classSessionId: string, actual: string | null) => void;
 }) {
   const filas = datos.classes.classes;
   // 030 — La grabación de Zoom abierta (una a la vez): el iframe se monta
@@ -345,11 +291,11 @@ function Clases({
     <div className="space-y-2">
       {datos.classes.projected && (
         // 013 — Una fila proyectada es un DIBUJO: no existe la clase todavía,
-        // así que no se le puede tomar asistencia. Decirlo evita que el
+        // así que no tiene asistencia que consultar. Decirlo evita que el
         // profesor toque y no pase nada.
         <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
           Estas clases son una proyección según los días previstos. Vas a
-          poder registrar la asistencia cuando la academia genere el
+          poder consultar la asistencia cuando la academia genere el
           cronograma.
         </p>
       )}
@@ -388,7 +334,7 @@ function Clases({
                 </div>
               </button>
 
-              {(c.meetingUrl || c.recordingUrl || puedeCargarGrabacion(c)) && (
+              {(c.meetingUrl || c.recordingUrl) && (
                 <div className="flex flex-wrap items-center gap-3 px-3 pb-3 text-xs">
                   {c.meetingUrl && (
                     <a
@@ -421,23 +367,6 @@ function Clases({
                     >
                       <Video className="h-3.5 w-3.5" /> Grabación
                     </a>
-                  )}
-                  {/*
-                    023 — Resuelve DV-001c de la 013: el que tiene el enlace de
-                    la grabación en el portapapeles es el que ACABA de dar la
-                    clase. Antes solo podía pegarlo coordinación, y eso
-                    convertía cada grabación en un pedido por WhatsApp.
-                    Una clase cancelada no ofrece grabación (FR-005e).
-                  */}
-                  {puedeCargarGrabacion(c) && (
-                    <button
-                      type="button"
-                      onClick={() => onGrabacion(c.id!, c.recordingUrl)}
-                      className="inline-flex items-center gap-1 text-muted-foreground underline hover:text-foreground"
-                    >
-                      <Video className="h-3.5 w-3.5" />
-                      {c.recordingUrl ? "Cambiar grabación" : "Cargar grabación"}
-                    </button>
                   )}
                 </div>
               )}
@@ -744,95 +673,6 @@ function Material({ cohortId }: { cohortId: string }) {
 /* ============================================================
  * 023 — Lo que el profesor CARGA
  * ============================================================ */
-
-/**
- * Diálogo de la grabación de una clase.
- *
- * Vacío = borrar el enlace, y se dice con esas palabras: un campo que se
- * limpia sin avisar qué hace es cómo alguien borra por accidente lo que
- * acababa de pegar.
- */
-function DialogoGrabacion({
-  classSessionId,
-  actual,
-  onClose,
-  onSaved,
-}: {
-  classSessionId: string;
-  actual: string | null;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const [url, setUrl] = useState(actual ?? "");
-  const [guardando, setGuardando] = useState(false);
-  const dirty = useDirty({ url });
-
-  async function guardar(e: React.FormEvent) {
-    e.preventDefault();
-    setGuardando(true);
-    const res = await fetch(`/api/portal/classes/${classSessionId}/recording`, {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ recordingUrl: url.trim() || null }),
-    }).catch(() => null);
-    setGuardando(false);
-
-    if (!res?.ok) {
-      const body = (await res?.json().catch(() => null)) as
-        | { error?: { message?: string } }
-        | null;
-      notify.error(body?.error?.message ?? "No se pudo guardar la grabación.");
-      return;
-    }
-    notify.success("Grabación guardada.");
-    onSaved();
-  }
-
-  return (
-    <Modal
-      onClose={onClose}
-      dirty={dirty}
-      busy={guardando}
-      labelledBy="grabacion-title"
-      overlayClassName="items-end sm:items-center"
-      className="border-border shadow-pop"
-    >
-        <h3 id="grabacion-title" className="text-base font-semibold tracking-tight">Grabación de la clase</h3>
-        <p className="mt-1 text-sm text-muted-foreground">
-          El enlace a la grabación. Guardamos solo el enlace, no el video.
-        </p>
-
-        <form onSubmit={guardar} className="mt-4 space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="grabacion-url">Enlace</Label>
-            <Input
-              id="grabacion-url"
-              type="url"
-              autoFocus
-              className="h-11"
-              placeholder="https://…"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-            />
-            {actual && (
-              <p className="text-xs text-muted-foreground">
-                Si dejás el campo vacío, se eliminará el enlace actual.
-              </p>
-            )}
-          </div>
-
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" className="h-11" onClick={onClose}>
-              Cancelar
-            </Button>
-            <Button type="submit" className="h-11" loading={guardando}>
-              Guardar
-            </Button>
-          </div>
-        </form>
-    </Modal>
-  );
-}
 
 /**
  * 023 — El profesor publica material de SU cohorte.

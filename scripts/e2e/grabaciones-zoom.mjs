@@ -756,12 +756,14 @@ export async function seccionGrabacionesZoom({ api, ok, BASE, getCookie }) {
     `${JSON.stringify(runA1)} u3 desde ${desdeU3} u1 desde ${desdeU1} R7 ${Boolean(r7)}`
   );
 
-  /* ---------- US6-3 (riesgo R6): el profesor pega su enlace en una clase con grabación de Zoom ---------- */
-  // A/3 ofrece R6 desde el check 13 (reemplazo confirmado). El profesor decide otra cosa.
-  const ENLACE_PROFE = `https://drive.example.com/profe-A3-${cola}`;
-  const pega = await portalA.como(`/api/portal/classes/${clA[2].id}/recording`, {
-    method: "PUT",
-    body: JSON.stringify({ recordingUrl: ENLACE_PROFE }),
+  /* ---------- US6-3 (riesgo R6): la coordinación pega un enlace en una clase con grabación de Zoom ---------- */
+  // A/3 ofrece R6 desde el check 13 (reemplazo confirmado). La coordinación decide otra cosa.
+  // 2026-10-26 — Antes lo pegaba el profesor desde el portal; hoy cargar
+  // grabaciones es de Coordinación, y el profesor solo la ve.
+  const ENLACE_MANUAL = `https://drive.example.com/coordinacion-A3-${cola}`;
+  const pega = await api(`/api/class-sessions/${clA[2].id}/links`, {
+    method: "PATCH",
+    body: JSON.stringify({ recordingUrl: ENLACE_MANUAL }),
   });
   await sincronizar();
   const r6Tras = await fila(6);
@@ -769,9 +771,9 @@ export async function seccionGrabacionesZoom({ api, ok, BASE, getCookie }) {
   const a3Staff = ((await api(`/api/cohorts/${cohA}/classes`)).json?.classes ?? []).find((c) => c.id === clA[2].id);
   const a3Alumno = claseDe((await alumnoA.como(`/api/portal/me/cursadas/${insA.id}`)).json?.classes, clA[2].id);
   ok(
-    "US6-3 — gana el enlace del profesor: R6 pasa a manual/sin_clase y una sincronización posterior no lo pisa",
+    "US6-3 — gana el enlace manual de coordinación: R6 pasa a manual/sin_clase, una sincronización posterior no lo pisa y el profesor y el alumno lo ven",
     pega.res.ok && JSON.stringify(estadoDe(r6Tras)) === JSON.stringify(["manual", "sin_clase", null]) &&
-      a3Profe?.recordingUrl === ENLACE_PROFE && a3Staff?.recordingSource === "manual" && a3Alumno?.recordingUrl === ENLACE_PROFE,
+      a3Profe?.recordingUrl === ENLACE_MANUAL && a3Staff?.recordingSource === "manual" && a3Alumno?.recordingUrl === ENLACE_MANUAL,
     `${pega.res.status} ${JSON.stringify(r6Tras?.assignment)} ${a3Profe?.recordingUrl} ${a3Staff?.recordingSource}`
   );
 

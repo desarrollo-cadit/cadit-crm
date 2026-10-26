@@ -44,9 +44,6 @@ const MODULOS = [
   ...walk(PORTAL_API),
 ];
 
-/** La única puerta permitida: liberar la grabación de Zoom cuando el profesor pega la suya (R6). */
-const EXCEPCION = "src/app/api/portal/classes/[id]/recording/route.ts";
-
 describe("030 US6 — los portales no leen las tablas de Zoom", () => {
   it("ningún módulo de portal nombra zoom_recording / zoomRecording ni las demás tablas de Zoom", () => {
     const culpables = MODULOS.filter((f) =>
@@ -57,16 +54,18 @@ describe("030 US6 — los portales no leen las tablas de Zoom", () => {
     expect(culpables).toEqual([]);
   });
 
-  it("ningún módulo de portal importa src/server/zoom/*, salvo releaseForManualLink en la ruta del profesor", () => {
+  /**
+   * 2026-10-26 — Ya no hay excepción: la grabación la carga Coordinación, así
+   * que el portal no tiene a quién liberar (R6 vive en la ruta del staff).
+   */
+  it("ningún módulo de portal importa src/server/zoom/*", () => {
     const imports = MODULOS.flatMap((f) => {
       const src = sinComentarios(readFileSync(f, "utf8"));
       return [...src.matchAll(/import\s+([\s\S]*?)\s+from\s+["']([^"']+)["']/g)]
         .filter(([, , from]) => /server\/zoom|lib\/zoom/.test(from ?? ""))
         .map(([, what, from]) => ({ file: rel(f), what: (what ?? "").replace(/\s+/g, " ").trim(), from }));
     });
-    expect(imports).toEqual([
-      { file: EXCEPCION, what: "{ releaseForManualLink }", from: "@/server/zoom/assignment" },
-    ]);
+    expect(imports).toEqual([]);
   });
 
   it("no hay rutas nuevas bajo api/portal (FR-025): las grabaciones viajan por las vistas de clase de siempre", () => {
@@ -81,7 +80,6 @@ describe("030 US6 — los portales no leen las tablas de Zoom", () => {
         "assessments/[id]/plazo/route.ts",
         "assessments/[id]/results/route.ts",
         "classes/[id]/attendance/route.ts",
-        "classes/[id]/recording/route.ts",
         "classes/[id]/resources/route.ts",
         "cohorts/[id]/classes/route.ts",
         "cohorts/[id]/content/route.ts",
@@ -126,15 +124,15 @@ describe("030 US6 — la respuesta del portal no cambia", () => {
    * Encontrado por el arnés E2E (check 8): `teacherCohortClasses` reusa la
    * lista de STAFF (`listCohortClasses`, `StaffClassRowDto`) y le quita los
    * campos crudos uno por uno. US2 sumó `recordingSource` a la fila de staff
-   * y el descarte no lo conocía: viajaba al portal del profesor. El profesor
-   * solo lo ESCRIBE (al pegar su enlace) y lo DESCARTA al listar.
+   * y el descarte no lo conocía: viajaba al portal del profesor. Desde
+   * 2026-10-26 el profesor ya no lo escribe (la grabación la carga
+   * Coordinación): solo lo DESCARTA al listar.
    */
-  it("el profesor: recording_source solo se escribe al pegar su enlace y se descarta de la lista de staff", () => {
+  it("el profesor: recording_source solo aparece para descartarlo de la lista de staff", () => {
     const profe = sinComentarios(readFileSync(path.join(ROOT, "src", "server", "teacher-portal.ts"), "utf8"));
     const usos = profe.split("\n").filter((l) => /recordingSource|recording_source/.test(l));
-    expect(usos).toHaveLength(2);
-    expect(usos.some((l) => /\.set\(\{\s*recordingUrl,\s*recordingSource:/.test(l))).toBe(true);
-    expect(usos.some((l) => /recordingSource:\s*_\w*/.test(l))).toBe(true);
+    expect(usos).toHaveLength(1);
+    expect(usos[0]).toMatch(/recordingSource:\s*_\w*/);
   });
 
   it("todo campo que StaffClassRowDto agrega sobre ClassRowDto se descarta en teacherCohortClasses", () => {

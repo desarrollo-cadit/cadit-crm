@@ -314,14 +314,19 @@ campo financiero termina en la pantalla equivocada (FR-008). Hay un guard
 estructural que prohíbe nombrar columnas de plata o de contacto en ese módulo.
 
 **El alcance incluye la suplencia**: `cohort.teacher_id` ∪
-`class_session.teacher_id`. Quien cubrió UNA clase tiene que poder cargar su
+`class_session.teacher_id`. Quien cubrió UNA clase tiene que poder ver su
 asistencia.
 
-**`attendance.recorded_by`** (migración 0031) existe porque con el portal la
-asistencia deja de tocarla solo la coordinación. El profesor puede corregir una
-clase pasada —el sistema no discute con lo que pasó en el aula— y una
-corrección sin autor no se puede revisar. Es nullable: las marcas anteriores no
-tienen autor, e inventarles uno sería peor.
+**Asistencia y grabaciones son de Coordinación** (decisión 2026-10-26). El
+portal del profesor las muestra en SOLO LECTURA: la planilla de la clase (quién
+vino, quién dejó la marca y cuándo) y la grabación para mirarla. No hay ruta de
+escritura en `api/portal/classes/` (la de asistencia solo tiene `GET`; la de
+grabación no existe) ni botones en la pantalla;
+`tests/unit/portal-profesor-solo-lectura.test.ts` falla si vuelve alguna.
+Se escribe solo del lado del staff (`PATCH /api/class-sessions/[id]`,
+`.../links`, adjudicación de Zoom). **`attendance.recorded_by`** (migración
+0031) sigue: dice qué persona de coordinación dejó o corrigió cada marca. Es
+nullable: las marcas viejas no tienen autor, e inventarles uno sería peor.
 
 **Un fallo del correo no se lleva puesta la contraseña.** Invitar crea la
 cuenta y RECIÉN DESPUÉS manda el correo. Como devolver una `Response` de error

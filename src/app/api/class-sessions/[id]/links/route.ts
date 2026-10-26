@@ -21,10 +21,9 @@ const patchSchema = z.object({
  * 013 (T015, FR-002/FR-005b, DV-001c) — Enlace de reunión y de grabación de
  * UNA clase.
  *
- * `asistencia.editar` y no un rol: DV-001c resolvió que la grabación la cargue
- * tanto coordinación como el profesor, y esa es justamente la capacidad de
- * quien opera una clase. Cuando llegue el portal del profesor (014) va a
- * tenerla para SUS cohortes y esto va a funcionar sin tocarse.
+ * `asistencia.editar` y no un rol: es la capacidad de quien opera una clase.
+ * Desde 2026-10-26 cargar grabaciones es solo de Coordinación; el portal del
+ * profesor las muestra en solo lectura y no tiene ruta de escritura.
  *
  * Se valida que sea una URL: un enlace roto en la lista de clases es peor que
  * un enlace ausente, porque el alumno lo aprieta y cree que el problema es suyo.
