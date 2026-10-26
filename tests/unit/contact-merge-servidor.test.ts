@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  consultaGeneralVacia,
   datosVacios,
   planDeUnificacion,
   type ContactoAUnificar,
@@ -150,6 +151,42 @@ const moverDe = (table: string) => (o: Op) =>
   o.table === table &&
   o.set?.contactId === "ct_wa" &&
   Object.keys(o.set).every((k) => k === "contactId" || k === "updatedAt");
+
+describe("aplicarUnificacion — dos consultas generales", () => {
+  it("completa la consulta que queda ANTES de borrar la otra, y después mueve", async () => {
+    const { aplicarUnificacion } = await import("@/server/contact-merge");
+    const plan = planDeUnificacion(patricia, whatsapp, {
+      ...datosVacios(),
+      inscripciones: [
+        { id: "en_a", contactId: "ct_pat", cohortId: null, grupo: null, dependientes: 0 },
+        { id: "en_s", contactId: "ct_wa", cohortId: null, grupo: null, dependientes: 0 },
+      ],
+      consultasGenerales: [
+        { ...consultaGeneralVacia(), id: "en_a", contactId: "ct_pat", stageId: "st_1", sellerId: "sl_ana", amount: 500, currency: "USD" },
+        { ...consultaGeneralVacia(), id: "en_s", contactId: "ct_wa", stageId: "st_1" },
+      ],
+    });
+    expect(plan.inscripcionABorrar).toBe("en_a");
+    await aplicarUnificacion("org_1", "usr_1", plan);
+
+    const completar = indice(
+      (o) => o.kind === "update" && o.table === "enrollment" && o.set?.sellerId === "sl_ana"
+    );
+    expect(ops[completar]!.set).toMatchObject({ amount: 500, currency: "USD" });
+    expect(ops[completar]!.set).not.toHaveProperty("contactId");
+    const borrar = indice((o) => o.kind === "delete" && o.table === "enrollment");
+    expect(completar).toBeLessThan(borrar);
+    expect(borrar).toBeLessThan(indice(moverDe("enrollment")));
+  });
+
+  it("sin dos consultas generales no toca ninguna inscripción salvo para moverla", async () => {
+    const { aplicarUnificacion } = await import("@/server/contact-merge");
+    await aplicarUnificacion("org_1", "usr_1", planCompleto());
+    const deInscripcion = ops.filter((o) => o.table === "enrollment");
+    expect(deInscripcion).toHaveLength(1);
+    expect(moverDe("enrollment")(deInscripcion[0]!)).toBe(true);
+  });
+});
 
 describe("aplicarUnificacion — el orden de las escrituras", () => {
   it("vacía correo, secundario y teléfono del absorbido ANTES de completar al que queda", async () => {

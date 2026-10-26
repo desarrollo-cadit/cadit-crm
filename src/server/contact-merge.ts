@@ -1,10 +1,13 @@
-import { eq, inArray, sql, type SQL } from "drizzle-orm";
+import { eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import {
+  COLUMNAS_DE_CONSULTA,
   datosVacios,
   planDeUnificacion,
+  type ColumnaDeConsulta,
+  type ConsultaGeneral,
   TABLAS_SIMPLES,
   type Bloqueo,
   type ContactoAUnificar,
@@ -278,7 +281,57 @@ async function leerDatos(
     }
   }
 
-  const conEmpresa = empresas.filter((e): e is string => Boolean(e));
+  // Las consultas generales (sin grupo), con todas sus columnas propias: si
+  // las dos tienen una, la que se borra completa a la que queda.
+  const columnas = Object.fromEntries(
+    COLUMNAS_DE_CONSULTA.map((c) => [c, schema.enrollment[c]])
+  ) as { [K in ColumnaDeConsulta]: (typeof schema.enrollment)[K] };
+  const consultas = await db
+    .select({ id: schema.enrollment.id, contactId: schema.enrollment.contactId, ...columnas })
+    .from(schema.enrollment)
+    .where(
+      scoped(
+        schema.enrollment.organizationId,
+        organizationId,
+        inArray(schema.enrollment.contactId, ids),
+        isNull(schema.enrollment.cohortId)
+      )
+    );
+  datos.consultasGenerales = consultas.map((c) => ({
+    ...c,
+    amount: c.amount === null ? null : Number(c.amount),
+  })) as ConsultaGeneral[];
+
+  if (datos.consultasGenerales.length > 1) {
+    const unicos = (xs: (string | null)[]) => [...new Set(xs.filter((x): x is string => Boolean(x)))];
+    const etapas = unicos(datos.consultasGenerales.map((c) => c.stageId));
+    const vendedores = unicos(datos.consultasGenerales.map((c) => c.sellerId));
+    const cursos = unicos(datos.consultasGenerales.map((c) => c.interestCourseId));
+    if (etapas.length) {
+      const filas = await db
+        .select({ id: schema.pipelineStage.id, nombre: schema.pipelineStage.name })
+        .from(schema.pipelineStage)
+        .where(scoped(schema.pipelineStage.organizationId, organizationId, inArray(schema.pipelineStage.id, etapas)));
+      datos.nombres.etapas = Object.fromEntries(filas.map((f) => [f.id, f.nombre]));
+    }
+    if (vendedores.length) {
+      const filas = await db
+        .select({ id: schema.seller.id, nombre: schema.seller.name })
+        .from(schema.seller)
+        .where(scoped(schema.seller.organizationId, organizationId, inArray(schema.seller.id, vendedores)));
+      datos.nombres.vendedores = Object.fromEntries(filas.map((f) => [f.id, f.nombre]));
+    }
+    if (cursos.length) {
+      const filas = await db
+        .select({ id: schema.course.id, nombre: schema.course.name })
+        .from(schema.course)
+        .where(scoped(schema.course.organizationId, organizationId, inArray(schema.course.id, cursos)));
+      datos.nombres.cursos = Object.fromEntries(filas.map((f) => [f.id, f.nombre]));
+    }
+    empresas = [...empresas, ...datos.consultasGenerales.map((c) => c.companyId)];
+  }
+
+  const conEmpresa = [...new Set(empresas.filter((e): e is string => Boolean(e)))];
   if (conEmpresa.length > 0) {
     const filas = await db
       .select({ id: schema.company.id, nombre: schema.company.legalName })
@@ -314,7 +367,17 @@ export async function aplicarUnificacion(
     .set({ email: null, secondaryEmail: null, phone: null, updatedAt: now })
     .where(scoped(schema.contact.organizationId, organizationId, eq(schema.contact.id, x)));
 
-  // 2. Inscripciones: la consulta general que sobra se borra (está vacía) y el resto se mueve.
+  // 2. Inscripciones: la consulta general que sobra completa a la que queda
+  //    (solo sus vacíos: completa, nunca pisa), se borra y el resto se mueve.
+  const completarConsulta = plan.consultaGeneral;
+  if (completarConsulta && Object.keys(completarConsulta.set).length > 0) {
+    await db
+      .update(schema.enrollment)
+      .set({ ...completarConsulta.set, updatedAt: now })
+      .where(
+        scoped(schema.enrollment.organizationId, organizationId, eq(schema.enrollment.id, completarConsulta.conservadaId))
+      );
+  }
   if (plan.inscripcionABorrar) {
     await db
       .delete(schema.enrollment)

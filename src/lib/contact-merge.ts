@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { esIdentidadProvisional, normalizarCorreo } from "@/lib/contact-identity";
+import type { Currency } from "@/lib/db/schema";
+import { formatAmountWithCode } from "@/lib/money";
 import { fullName } from "@/lib/utils";
 
 /**
@@ -257,6 +259,14 @@ export type DatosDeUnificacion = {
     activo: boolean;
   }[];
   historial: { id: string; contactId: string; dedupKey: string }[];
+  /** Las consultas generales (sin grupo) de los dos, con TODAS sus columnas propias. */
+  consultasGenerales: ConsultaGeneral[];
+  /** id → nombre de etapas, vendedores y cursos (para mostrar y anotar). */
+  nombres: {
+    etapas: Record<string, string>;
+    vendedores: Record<string, string>;
+    cursos: Record<string, string>;
+  };
   /** Por contacto, cuántas filas tiene en cada tabla simple. */
   simples: Record<string, Partial<Record<TablaSimple, number>>>;
   /** id → razón social, para mostrar y anotar empresas. */
@@ -273,6 +283,8 @@ export function datosVacios(): DatosDeUnificacion {
     intentos: [],
     reconocimientos: [],
     historial: [],
+    consultasGenerales: [],
+    nombres: { etapas: {}, vendedores: {}, cursos: {} },
     simples: {},
     empresas: {},
   };
@@ -339,6 +351,11 @@ export type PlanDeUnificacion = {
   telefonoDescartado: string | null;
   /** Consulta general (sin grupo) que sobra: la vacía de las dos. */
   inscripcionABorrar: string | null;
+  /**
+   * La consulta general que queda, completada con los datos propios de la que
+   * se borra (nunca se pisa un valor que ya tiene). `null` si no hay dos.
+   */
+  consultaGeneral: PlanDeConsultaGeneral | null;
   /** Inscripciones del absorbido que pasan al que queda. */
   inscripcionesMovidas: string[];
   /** Las dos conversaciones reales se unen en la del que queda. */
@@ -465,6 +482,18 @@ export function planDeUnificacion(
       });
   }
   const inscripcionesMovidas = inscX.filter((i) => i.id !== inscripcionABorrar).map((i) => i.id);
+  let consultaGeneral: PlanDeConsultaGeneral | null = null;
+  if (inscripcionABorrar && generalS && generalX) {
+    const conservadaId = inscripcionABorrar === generalX.id ? generalS.id : generalX.id;
+    const conservada = datos.consultasGenerales.find((c) => c.id === conservadaId);
+    const borrada = datos.consultasGenerales.find((c) => c.id === inscripcionABorrar);
+    if (conservada && borrada) {
+      consultaGeneral = planDeConsultaGeneral(conservada, borrada, {
+        ...datos.nombres,
+        empresas: datos.empresas,
+      });
+    }
+  }
 
   // ── Conversaciones ────────────────────────────────────────────────────
   const convX = de(datos.conversaciones, x.id);
@@ -572,6 +601,7 @@ export function planDeUnificacion(
     correosDescartados: correos.descartados,
     empresaDescartada: nombreEmpresa(empresaDescartada),
     telefonoDescartado: tel.descartado,
+    interesDescartado: consultaGeneral?.descartados ?? [],
   });
 
   return {
@@ -586,6 +616,7 @@ export function planDeUnificacion(
     empresaDescartada,
     telefonoDescartado: tel.descartado,
     inscripcionABorrar,
+    consultaGeneral,
     inscripcionesMovidas,
     conversacion,
     accesosARevocar,
@@ -598,6 +629,271 @@ export function planDeUnificacion(
     nota,
     absorbidoNombre,
     survivorNombre: fullName(s),
+  };
+}
+
+/* ============================================================
+ * Dos consultas generales: la que se borra completa a la que queda
+ * ============================================================ */
+
+/**
+ * Las columnas PROPIAS de una inscripción (todas, salvo identidad, dueño,
+ * grupo, orden en el tablero y marcas de tiempo). Un test compara esta lista
+ * con `schema.ts`: una columna nueva sin decidir qué hacer con ella falla.
+ */
+export const COLUMNAS_DE_CONSULTA = [
+  "stageId",
+  "enrolledAt",
+  "lastActivityAt",
+  "amount",
+  "currency",
+  "installments",
+  "paymentNotes",
+  "nationalId",
+  "invoiceNumber",
+  "invoiceRecordedAt",
+  "invoiceRecordedBy",
+  "receiptNumber",
+  "sellerId",
+  "companyId",
+  "licenseEmail",
+  "interestCourseId",
+  "termsEmailSentAt",
+  "softwareInstalledAt",
+  "hadOwnLicense",
+  "academiaOnlineAccessAt",
+  "welcomeEmailSentAt",
+  "attendanceWaiverAt",
+  "attendanceWaiverBy",
+  "attendanceWaiverReason",
+  "attendanceWaiverRevokedAt",
+  "attendanceWaiverRevokedBy",
+  "attendanceWaiverRevokeReason",
+  "accessUntil",
+  "accessUntilSetAt",
+  "accessUntilSetBy",
+] as const;
+export type ColumnaDeConsulta = (typeof COLUMNAS_DE_CONSULTA)[number];
+
+export type ConsultaGeneral = {
+  id: string;
+  contactId: string;
+  stageId: string;
+  enrolledAt: Date | null;
+  lastActivityAt: Date | null;
+  amount: number | null;
+  currency: Currency;
+  installments: number | null;
+  paymentNotes: string | null;
+  nationalId: string | null;
+  invoiceNumber: string | null;
+  invoiceRecordedAt: Date | null;
+  invoiceRecordedBy: string | null;
+  receiptNumber: string | null;
+  sellerId: string | null;
+  companyId: string | null;
+  licenseEmail: string | null;
+  interestCourseId: string | null;
+  termsEmailSentAt: Date | null;
+  softwareInstalledAt: Date | null;
+  hadOwnLicense: boolean;
+  academiaOnlineAccessAt: Date | null;
+  welcomeEmailSentAt: Date | null;
+  attendanceWaiverAt: Date | null;
+  attendanceWaiverBy: string | null;
+  attendanceWaiverReason: string | null;
+  attendanceWaiverRevokedAt: Date | null;
+  attendanceWaiverRevokedBy: string | null;
+  attendanceWaiverRevokeReason: string | null;
+  accessUntil: Date | null;
+  accessUntilSetAt: Date | null;
+  accessUntilSetBy: string | null;
+};
+
+export function consultaGeneralVacia(): ConsultaGeneral {
+  return {
+    id: "",
+    contactId: "",
+    stageId: "",
+    enrolledAt: null,
+    lastActivityAt: null,
+    amount: null,
+    currency: "UYU",
+    installments: null,
+    paymentNotes: null,
+    nationalId: null,
+    invoiceNumber: null,
+    invoiceRecordedAt: null,
+    invoiceRecordedBy: null,
+    receiptNumber: null,
+    sellerId: null,
+    companyId: null,
+    licenseEmail: null,
+    interestCourseId: null,
+    termsEmailSentAt: null,
+    softwareInstalledAt: null,
+    hadOwnLicense: false,
+    academiaOnlineAccessAt: null,
+    welcomeEmailSentAt: null,
+    attendanceWaiverAt: null,
+    attendanceWaiverBy: null,
+    attendanceWaiverReason: null,
+    attendanceWaiverRevokedAt: null,
+    attendanceWaiverRevokedBy: null,
+    attendanceWaiverRevokeReason: null,
+    accessUntil: null,
+    accessUntilSetAt: null,
+    accessUntilSetBy: null,
+  };
+}
+
+export type CambiosDeConsulta = Partial<Omit<ConsultaGeneral, "id" | "contactId">>;
+
+export type PlanDeConsultaGeneral = {
+  conservadaId: string;
+  borradaId: string;
+  /** Lo que se escribe en la que queda ANTES de borrar la otra (solo vacíos). */
+  set: CambiosDeConsulta;
+  /** Lo distinto de la que se borra que se pierde ("etapa Contactado"). */
+  descartados: string[];
+  /** Para la vista previa: `queda` = la que se conserva, `absorbido` = la que se borra. */
+  campos: CampoUnificado[];
+};
+
+type NombresDeConsulta = DatosDeUnificacion["nombres"] & { empresas: Record<string, string> };
+
+/**
+ * Un DATO de la consulta: una o varias columnas que viajan juntas (el monto
+ * con su moneda, la factura con quién y cuándo la registró). La primera
+ * columna decide si está vacío.
+ */
+type DatoDeConsulta = {
+  campo: string;
+  etiqueta: string;
+  columnas: readonly ColumnaDeConsulta[];
+  mostrar: (c: ConsultaGeneral, n: NombresDeConsulta) => string | null;
+};
+
+const fechaCorta = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
+const mismaFecha = (a: Date | null, b: Date | null) =>
+  (a?.getTime() ?? null) === (b?.getTime() ?? null);
+
+function estaVacio(v: unknown): boolean {
+  return v === null || v === undefined || v === "" || v === false;
+}
+
+function dato(
+  campo: string,
+  etiqueta: string,
+  columnas: readonly ColumnaDeConsulta[],
+  mostrar?: (c: ConsultaGeneral, n: NombresDeConsulta) => string | null
+): DatoDeConsulta {
+  const llave = columnas[0]!;
+  return {
+    campo,
+    etiqueta,
+    columnas,
+    mostrar: (c, n) => {
+      const v = c[llave] as unknown;
+      if (estaVacio(v)) return null;
+      if (mostrar) return mostrar(c, n);
+      if (v instanceof Date) return fechaCorta(v);
+      if (v === true) return "Sí";
+      return String(v);
+    },
+  };
+}
+
+const nombre = (mapa: Record<string, string>, id: string | null) => (id ? (mapa[id] ?? id) : null);
+
+const DATOS_DE_CONSULTA: readonly DatoDeConsulta[] = [
+  // La etapa nunca está vacía (NOT NULL): si difiere, queda la de la que se conserva.
+  dato("etapa", "Etapa", ["stageId"], (c, n) => nombre(n.etapas, c.stageId)),
+  dato("monto", "Monto", ["amount", "currency"], (c) => formatAmountWithCode(c.amount, c.currency)),
+  dato("cuotas", "Cuotas", ["installments"]),
+  dato("cedula", "Cédula de la venta", ["nationalId"]),
+  dato("factura", "Factura", ["invoiceNumber", "invoiceRecordedAt", "invoiceRecordedBy"]),
+  dato("recibo", "Recibo", ["receiptNumber"]),
+  dato("vendedor", "Vendedor", ["sellerId"], (c, n) => nombre(n.vendedores, c.sellerId)),
+  dato("empresa", "Empresa de la venta", ["companyId"], (c, n) => nombre(n.empresas, c.companyId)),
+  dato("correo_licencia", "Correo de la licencia", ["licenseEmail"]),
+  dato("curso", "Curso de interés", ["interestCourseId"], (c, n) => nombre(n.cursos, c.interestCourseId)),
+  dato("inscripto", "Fecha de inscripción", ["enrolledAt"]),
+  dato("terminos", "Términos enviados", ["termsEmailSentAt"]),
+  dato("software", "Software instalado", ["softwareInstalledAt"]),
+  dato("licencia_propia", "Tenía licencia propia", ["hadOwnLicense"]),
+  dato("academia_online", "Acceso a Academia Online", ["academiaOnlineAccessAt"]),
+  dato("bienvenida", "Bienvenida enviada", ["welcomeEmailSentAt"]),
+  dato(
+    "dispensa",
+    "Dispensa de asistencia",
+    [
+      "attendanceWaiverAt",
+      "attendanceWaiverBy",
+      "attendanceWaiverReason",
+      "attendanceWaiverRevokedAt",
+      "attendanceWaiverRevokedBy",
+      "attendanceWaiverRevokeReason",
+    ],
+    (c) => `${fechaCorta(c.attendanceWaiverAt)}${c.attendanceWaiverRevokedAt ? " (revocada)" : ""}`
+  ),
+  dato("acceso", "Acceso hasta", ["accessUntil", "accessUntilSetAt", "accessUntilSetBy"]),
+];
+
+/**
+ * Completa, nunca pisa. Para cada dato de la consulta: si la que queda lo
+ * tiene vacío y la que se borra no, se copia (con sus columnas compañeras);
+ * si los dos lo tienen y difieren, queda el de la que se conserva y el otro
+ * se anota. Las notas de pago se juntan (como las del contacto) y la última
+ * actividad se queda con la más reciente.
+ */
+export function planDeConsultaGeneral(
+  conservada: ConsultaGeneral,
+  borrada: ConsultaGeneral,
+  nombres: NombresDeConsulta
+): PlanDeConsultaGeneral {
+  const set: Record<string, unknown> = {};
+  const descartados: string[] = [];
+  const campos: CampoUnificado[] = [];
+
+  for (const d of DATOS_DE_CONSULTA) {
+    const queda = d.mostrar(conservada, nombres);
+    const absorbido = d.mostrar(borrada, nombres);
+    let resultado = queda;
+    if (queda === null && absorbido !== null) {
+      for (const col of d.columnas) set[col] = borrada[col];
+      resultado = absorbido;
+    } else if (queda !== null && absorbido !== null && queda !== absorbido) {
+      descartados.push(`${d.etiqueta.toLowerCase()} ${absorbido}`);
+    }
+    if (queda !== null || absorbido !== null) {
+      campos.push({ campo: d.campo, etiqueta: d.etiqueta, queda, absorbido, resultado });
+    }
+  }
+
+  const notas = juntarNotas(conservada.paymentNotes, borrada.paymentNotes);
+  if (notas !== conservada.paymentNotes) set.paymentNotes = notas;
+  if (conservada.paymentNotes || borrada.paymentNotes) {
+    campos.push({
+      campo: "notas_de_pago",
+      etiqueta: "Notas de pago",
+      queda: conservada.paymentNotes,
+      absorbido: borrada.paymentNotes,
+      resultado: notas,
+    });
+  }
+  const actividad = masTarde(conservada.lastActivityAt, borrada.lastActivityAt);
+  if (!mismaFecha(actividad, conservada.lastActivityAt)) set.lastActivityAt = actividad;
+
+  // En el orden de las columnas de la tabla, para leerlo fácil.
+  const ordenado: Record<string, unknown> = {};
+  for (const col of COLUMNAS_DE_CONSULTA) if (col in set) ordenado[col] = set[col];
+  return {
+    conservadaId: conservada.id,
+    borradaId: borrada.id,
+    set: ordenado as CambiosDeConsulta,
+    descartados,
+    campos,
   };
 }
 
@@ -640,6 +936,7 @@ export function notaDeUnificacion(d: {
   correosDescartados: string[];
   empresaDescartada: string | null;
   telefonoDescartado: string | null;
+  interesDescartado?: string[];
 }): string {
   const c = d.conteos;
   const ident = d.absorbido.email ?? d.absorbido.phone ?? d.absorbido.secondaryEmail ?? "sin correo ni teléfono";
@@ -662,6 +959,9 @@ export function notaDeUnificacion(d: {
   if (d.correosDescartados.length > 0) partes.push(`correos descartados: ${d.correosDescartados.join(", ")}`);
   if (d.empresaDescartada) partes.push(`empresa descartada: ${d.empresaDescartada}`);
   if (d.telefonoDescartado) partes.push(`teléfono descartado: ${d.telefonoDescartado}`);
+  if (d.interesDescartado && d.interesDescartado.length > 0) {
+    partes.push(`Interés descartado: ${d.interesDescartado.join(", ")}`);
+  }
   return `Unificado con ${fullName(d.absorbido)} (${ident}): ${partes.join("; ")}.`;
 }
 

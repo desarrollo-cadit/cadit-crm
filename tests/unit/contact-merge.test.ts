@@ -1,10 +1,15 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  COLUMNAS_DE_CONSULTA,
+  consultaGeneralVacia,
   datosVacios,
   elegirQuienQueda,
   planDeCorreos,
   planDeUnificacion,
   telefonoUnificado,
+  type ConsultaGeneral,
   type ContactoAUnificar,
   type DatosDeUnificacion,
 } from "@/lib/contact-merge";
@@ -562,5 +567,167 @@ describe("la nota en el que queda", () => {
     );
     expect(p.nota).toMatch(/^Unificado con Patricia Gómez \(patricia@ejemplo\.com\): /);
     expect(p.nota).toContain("se movieron 2 inscripciones");
+  });
+});
+
+/**
+ * 2026-10-26 — La consulta general que se borra tiene datos PROPIOS (etapa,
+ * vendedor, monto, curso de interés, fechas del checklist…). Antes de
+ * borrarla se completan los vacíos de la que queda; lo que difiere y se
+ * pierde va a la nota ("Interés descartado: …") y a la vista previa.
+ */
+describe("consulta general: completa, nunca pisa", () => {
+  const lead = (over: Partial<ConsultaGeneral> = {}): ConsultaGeneral => ({
+    ...consultaGeneralVacia(),
+    id: "en_x",
+    contactId: "ct_x",
+    stageId: "st_nuevo",
+    ...over,
+  });
+  const inscripcion = (id: string, contactId: string, dependientes = 0) => ({
+    id,
+    contactId,
+    cohortId: null,
+    grupo: null,
+    dependientes,
+  });
+  const nombres = {
+    etapas: { st_nuevo: "Nuevo", st_contactado: "Contactado" },
+    vendedores: { sl_ana: "Ana", sl_beto: "Beto" },
+    cursos: { cu_revit: "Revit", cu_autocad: "AutoCAD" },
+  };
+
+  it("los vacíos de la que queda se llenan con los de la que se borra", () => {
+    const p = planDeUnificacion(
+      patricia(),
+      whatsapp(),
+      datos({
+        inscripciones: [inscripcion("en_a", "ct_pat"), inscripcion("en_s", "ct_wa")],
+        consultasGenerales: [
+          lead({
+            id: "en_a",
+            contactId: "ct_pat",
+            sellerId: "sl_ana",
+            interestCourseId: "cu_revit",
+            amount: 150000,
+            currency: "USD",
+            installments: 3,
+            paymentNotes: "Paga la empresa",
+            licenseEmail: "lic@x.com",
+            companyId: "co_1",
+            termsEmailSentAt: new Date("2026-04-01Z"),
+            hadOwnLicense: true,
+            lastActivityAt: new Date("2026-06-01Z"),
+          }),
+          lead({ id: "en_s", contactId: "ct_wa", lastActivityAt: new Date("2026-05-01Z") }),
+        ],
+        nombres,
+      })
+    );
+    expect(p.inscripcionABorrar).toBe("en_a");
+    expect(p.consultaGeneral).not.toBeNull();
+    expect(p.consultaGeneral!.conservadaId).toBe("en_s");
+    expect(p.consultaGeneral!.set).toEqual({
+      sellerId: "sl_ana",
+      interestCourseId: "cu_revit",
+      amount: 150000,
+      currency: "USD",
+      installments: 3,
+      paymentNotes: "Paga la empresa",
+      licenseEmail: "lic@x.com",
+      companyId: "co_1",
+      termsEmailSentAt: new Date("2026-04-01Z"),
+      hadOwnLicense: true,
+      lastActivityAt: new Date("2026-06-01Z"),
+    });
+    expect(p.consultaGeneral!.descartados).toEqual([]);
+    expect(p.nota).not.toContain("Interés descartado");
+  });
+
+  it("lo que la que queda ya tiene no se pisa, y lo distinto que se pierde va a la nota", () => {
+    const p = planDeUnificacion(
+      patricia(),
+      whatsapp(),
+      datos({
+        inscripciones: [inscripcion("en_a", "ct_pat"), inscripcion("en_s", "ct_wa")],
+        consultasGenerales: [
+          lead({ id: "en_a", contactId: "ct_pat", stageId: "st_contactado", sellerId: "sl_beto", interestCourseId: "cu_autocad", amount: 1000, currency: "UYU" }),
+          lead({ id: "en_s", contactId: "ct_wa", stageId: "st_nuevo", sellerId: "sl_ana", interestCourseId: "cu_autocad", amount: 2000, currency: "USD" }),
+        ],
+        nombres,
+      })
+    );
+    const c = p.consultaGeneral!;
+    expect(c.set).toEqual({});
+    expect(c.descartados).toEqual(["etapa Contactado", "monto UYU 10", "vendedor Beto"]);
+    expect(p.nota).toContain("Interés descartado: etapa Contactado, monto UYU 10, vendedor Beto");
+    // La vista previa lo muestra, campo por campo.
+    const vendedor = c.campos.find((f) => f.campo === "vendedor");
+    expect(vendedor).toMatchObject({ queda: "Ana", absorbido: "Beto", resultado: "Ana" });
+  });
+
+  it("las notas de pago se juntan; el monto viaja con su moneda", () => {
+    const p = planDeUnificacion(
+      patricia(),
+      whatsapp(),
+      datos({
+        inscripciones: [inscripcion("en_a", "ct_pat"), inscripcion("en_s", "ct_wa")],
+        consultasGenerales: [
+          lead({ id: "en_a", contactId: "ct_pat", paymentNotes: "Transferencia", amount: 500, currency: "USD" }),
+          lead({ id: "en_s", contactId: "ct_wa", paymentNotes: "Pidió descuento" }),
+        ],
+        nombres,
+      })
+    );
+    expect(p.consultaGeneral!.set).toMatchObject({
+      paymentNotes: "Pidió descuento\n\nTransferencia",
+      amount: 500,
+      currency: "USD",
+    });
+  });
+
+  it("si queda la del absorbido (la otra estaba vacía de filas), se completa con la del que queda", () => {
+    const p = planDeUnificacion(
+      patricia(),
+      whatsapp(),
+      datos({
+        inscripciones: [inscripcion("en_a", "ct_pat", 2), inscripcion("en_s", "ct_wa", 0)],
+        consultasGenerales: [
+          lead({ id: "en_a", contactId: "ct_pat" }),
+          lead({ id: "en_s", contactId: "ct_wa", sellerId: "sl_ana" }),
+        ],
+        nombres,
+      })
+    );
+    expect(p.inscripcionABorrar).toBe("en_s");
+    expect(p.consultaGeneral!.conservadaId).toBe("en_a");
+    expect(p.consultaGeneral!.set).toEqual({ sellerId: "sl_ana" });
+  });
+
+  it("las dos con filas: sigue bloqueando y no arma consulta", () => {
+    const p = planDeUnificacion(
+      patricia(),
+      whatsapp(),
+      datos({
+        inscripciones: [inscripcion("en_a", "ct_pat", 1), inscripcion("en_s", "ct_wa", 1)],
+        consultasGenerales: [lead({ id: "en_a", contactId: "ct_pat" }), lead({ id: "en_s", contactId: "ct_wa" })],
+      })
+    );
+    expect(p.bloqueos.map((b) => b.code)).toEqual(["dos_consultas_generales"]);
+    expect(p.consultaGeneral).toBeNull();
+  });
+
+  it("cubre TODAS las columnas propias de la inscripción", () => {
+    const schemaSrc = readFileSync(path.join(process.cwd(), "src/lib/db/schema.ts"), "utf8");
+    const bloque = schemaSrc.split("export const enrollment = pgTable(")[1]!.split("\n  (t) =>")[0]!;
+    const columnas = [...bloque.matchAll(/^    (\w+): (?:text|timestamp|integer|bigint|boolean|numeric|jsonb)\(/gm)].map((m) => m[1]!);
+    // Las que no son datos de la consulta: identidad, dueño, grupo, orden en el tablero y marcas de tiempo.
+    const fuera = ["id", "organizationId", "contactId", "cohortId", "parentEnrollmentId", "position", "createdAt", "updatedAt"];
+    const propias = columnas.filter((c) => !fuera.includes(c));
+    expect(propias.length).toBeGreaterThan(25);
+    expect(Object.keys(consultaGeneralVacia()).sort()).toEqual(
+      [...propias, "id", "contactId"].sort()
+    );
+    for (const c of propias) expect(COLUMNAS_DE_CONSULTA, c).toContain(c);
   });
 });
