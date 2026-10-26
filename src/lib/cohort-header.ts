@@ -49,7 +49,8 @@ export type EncabezadoDeCohorte = {
   partOf: { label: string; href: string; position: string | null } | null;
 };
 
-const ACADEMICO: Miga = { label: "Académico", href: "/academico" };
+// 2026-10-26 — La miga abre Académico en la pestaña de grupos: de ahí vino.
+const ACADEMICO: Miga = { label: "Académico", href: "/academico?tab=grupos" };
 
 export function armarEncabezadoDeCohorte(
   cohorte: CohorteDelEncabezado,

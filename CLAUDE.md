@@ -96,7 +96,9 @@ externas: el trabajo en segundo plano (agente, Laboratorio) es in-process.
 | **Importar historial** (planilla 2020–2024 → cursadas históricas, sin grupos falsos) | `historical_import_batch` + `historical_course_taking` (0073, `dedup_key` único) + `src/lib/historial-import/{csv,planilla,plan}.ts` (puro: lector CSV, filas, sugerencias, `planDeImportacion` — el MISMO para vista previa y tandas; completa, nunca pisa) + `src/server/historial-import.ts` (tandas de 300 en la transacción del pedido, deshacer) + `/api/historial/importaciones*` (`historial.importar`, solo Dirección) + `/settings/historial`. La derivación las cuenta como `curso_historico` (cursó, nunca aprobó) |
 | **Tipo de contacto** (lead / alumno activo / exalumno, derivado, nunca guardado) | `tipoDeContacto` en `src/lib/recorrido-comercial.ts` (sobre `activo` y `esCursado` de la derivación única) + `src/server/contact-types.ts` (conjuntos de ids → `IN`/`NOT IN` en el WHERE de `GET /api/contacts?tipo=`, con cantidades) + pestañas en `contacts-client.tsx` + filtro `contactTypes` de audiencias |
 | **Reportes del inicio** (`reportes.ver`: Dirección y Coordinación) | `src/lib/reportes.ts` (agregaciones puras sobre los historiales: compras por primer inicio; empresas "Excluir de los reportes" fuera de todo, cursos "Gratuito" fuera de las ventas) + `src/server/reportes.ts` + `GET /api/dashboard/reportes` (ingresos SOLO con `cobranza.ver`) + `src/components/dashboard/reports-panel.tsx` (Recharts, colores `--chart-1…5` validados con la skill dataviz). Banderas: `course.is_free` y `company.exclude_from_reports` (0074) |
+| **Tareas de Hoy** (bandeja «Para resolver hoy» del inicio: asistencia sin pasar, grupos por confirmar, pendientes de facturar, interesados sin contactar) | `src/lib/tareas-del-dia.ts` (reglas puras, cada una con SU capacidad; REUSAN `estadoDeClase`, `avisoSinConfirmarQueToca`, `enLaVista`/`pendienteDeFacturar` y `origenDelFormulario`) + `src/server/tareas-del-dia.ts` (lectura en lote, solo de las reglas que la sesión puede ver) + `GET /api/hoy` (`academico.ver`) + `src/components/dashboard/tareas-de-hoy-panel.tsx`. Las tareas son DERIVADAS, nunca guardadas: sin tabla, sin "hecho", sin posponer; se van solas cuando el dato se arregla. Sin montos |
 | La gramática en línea (negrita, cursiva, enlaces, variables) | `src/lib/markdown-inline.ts` — UNA para cursos offline (`markdown.tsx`) y campañas |
+| **Pestañas en la URL** (toda página con pestañas abre en `?tab=<clave>`; enlazable) | `src/lib/tab-param.ts` (`leerPestana`: valida contra las pestañas VISIBLES para esa persona, desconocida/oculta → default; `urlConPestana`) + claves y alias en `src/lib/pestanas.ts` + `usePestanaEnUrl` (`src/components/use-pestana-en-url.ts`: el servidor lee `searchParams` y baja `initialTab`; el clic hace `router.replace` sin scroll) |
 | UI | `src/components/` + `src/app/(app)/` |
 
 Los mocks del entorno de pruebas viven en `src/app/api/dev/` (wa-mock +
@@ -313,14 +315,19 @@ campo financiero termina en la pantalla equivocada (FR-008). Hay un guard
 estructural que prohíbe nombrar columnas de plata o de contacto en ese módulo.
 
 **El alcance incluye la suplencia**: `cohort.teacher_id` ∪
-`class_session.teacher_id`. Quien cubrió UNA clase tiene que poder cargar su
+`class_session.teacher_id`. Quien cubrió UNA clase tiene que poder ver su
 asistencia.
 
-**`attendance.recorded_by`** (migración 0031) existe porque con el portal la
-asistencia deja de tocarla solo la coordinación. El profesor puede corregir una
-clase pasada —el sistema no discute con lo que pasó en el aula— y una
-corrección sin autor no se puede revisar. Es nullable: las marcas anteriores no
-tienen autor, e inventarles uno sería peor.
+**Asistencia y grabaciones son de Coordinación** (decisión 2026-10-26). El
+portal del profesor las muestra en SOLO LECTURA: la planilla de la clase (quién
+vino, quién dejó la marca y cuándo) y la grabación para mirarla. No hay ruta de
+escritura en `api/portal/classes/` (la de asistencia solo tiene `GET`; la de
+grabación no existe) ni botones en la pantalla;
+`tests/unit/portal-profesor-solo-lectura.test.ts` falla si vuelve alguna.
+Se escribe solo del lado del staff (`PATCH /api/class-sessions/[id]`,
+`.../links`, adjudicación de Zoom). **`attendance.recorded_by`** (migración
+0031) sigue: dice qué persona de coordinación dejó o corrigió cada marca. Es
+nullable: las marcas viejas no tienen autor, e inventarles uno sería peor.
 
 **Un fallo del correo no se lleva puesta la contraseña.** Invitar crea la
 cuenta y RECIÉN DESPUÉS manda el correo. Como devolver una `Response` de error

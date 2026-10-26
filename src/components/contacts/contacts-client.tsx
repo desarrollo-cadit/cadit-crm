@@ -33,11 +33,13 @@ import {
 import { EnrollLauncher } from "@/components/enrollments/enroll-launcher";
 import { TIPO_DE_CONTACTO_LABEL, type TipoDeContacto } from "@/lib/recorrido-comercial";
 import { notify } from "@/lib/notify";
+import { PESTANA_POR_FILTRO_DE_CONTACTOS, type FiltroDeContactos } from "@/lib/pestanas";
+import { usePestanaEnUrl } from "@/components/use-pestana-en-url";
 
 const PAGE_SIZE = 20;
 
 /** 046 US7 — Las pestañas por tipo de contacto (derivado del historial). */
-type Pestana = "todos" | TipoDeContacto;
+type Pestana = FiltroDeContactos;
 type CantidadesPorTipo = Record<Pestana, number>;
 const PESTANAS: { key: Pestana; label: string }[] = [
   { key: "todos", label: "Todos" },
@@ -76,7 +78,17 @@ function formatDate(iso: string): string {
   });
 }
 
-export function ContactsClient({ canEnroll = false }: { canEnroll?: boolean }) {
+/** La clave de `?tab=` de cada filtro (leads, alumnos-activos, exalumnos). */
+const enUrl = (p: Pestana) => PESTANA_POR_FILTRO_DE_CONTACTOS[p];
+
+export function ContactsClient({
+  canEnroll = false,
+  initialTab = "todos",
+}: {
+  canEnroll?: boolean;
+  /** 2026-10-26 — De `?tab=`, ya validada y traducida por el servidor. */
+  initialTab?: Pestana;
+}) {
   const [contacts, setContacts] = useState<ContactDto[]>([]);
   /** 014 — Qué pasó al dar de baja: borrado o archivado, y por qué. */
   const [total, setTotal] = useState(0);
@@ -86,7 +98,7 @@ export function ContactsClient({ canEnroll = false }: { canEnroll?: boolean }) {
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<ContactDto | null>(null);
-  const [pestana, setPestana] = useState<Pestana>("todos");
+  const [pestana, setPestana] = usePestanaEnUrl<Pestana>(initialTab, enUrl);
   const [cantidades, setCantidades] = useState<CantidadesPorTipo | null>(null);
 
   const refetch = useCallback(async () => {

@@ -1025,13 +1025,30 @@ describe("FR-032 — la cohorte simple, byte por byte como estaba", () => {
    * siguen colgando de las mismas rutas de siempre: la fase 4 no reemplaza
    * ninguna, agrega una.
    */
-  it("las rutas de la cohorte simple siguen siendo las mismas", () => {
+  it("las rutas de la cohorte simple siguen siendo las mismas", async () => {
+    // 2026-10-26 — Las claves pasaron a slugs en castellano (`?tab=`); las
+    // viejas en inglés quedan como alias. Lo que se fija sigue siendo lo
+    // mismo: la cohorte simple tiene sus cinco pestañas y sus cinco pantallas.
+    const { pestanasDelGrupo } = await import("@/lib/pestanas");
+    expect(pestanasDelGrupo({ esEspecializacion: false, verCursosOffline: false })).toEqual([
+      "alumnos",
+      "clases",
+      "asistencia",
+      "evaluacion",
+      "avisos",
+    ]);
     const src = readFileSync(
       path.join(process.cwd(), "src/components/cohorts/cohort-tabs.tsx"),
       "utf8"
     );
-    for (const clave of ["roster", "classes", "attendance", "grading", "announcements"]) {
-      expect(src).toContain(`"${clave}"`);
+    for (const pantalla of [
+      "<RosterClient",
+      "<ClassesClient",
+      "<AttendanceClient",
+      "<GradingClient",
+      "<AnnouncementsClient",
+    ]) {
+      expect(src).toContain(pantalla);
     }
   });
 });

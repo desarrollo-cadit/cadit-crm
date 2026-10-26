@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { usePestanaEnUrl } from "@/components/use-pestana-en-url";
+import { pestanasDelGrupo, type PestanaDelGrupo } from "@/lib/pestanas";
 import { AttendanceClient } from "@/components/cohorts/attendance-client";
 import { AnnouncementsClient } from "@/components/cohorts/announcements-client";
 import { CohortOfflineCoursesClient } from "@/components/offline-courses/cohort-offline-courses-client";
@@ -11,6 +12,16 @@ import { ProgramClient } from "@/components/cohorts/program-client";
 import { ProgramSheetSwitcher } from "@/components/cohorts/program-sheet-switcher";
 import { RosterClient } from "@/components/cohorts/roster-client";
 import { ModuleRosterClient } from "@/components/cohorts/module-roster-client";
+
+const ETIQUETA: Record<PestanaDelGrupo, string> = {
+  recorrido: "Recorrido",
+  alumnos: "Alumnos",
+  clases: "Clases",
+  asistencia: "Asistencia",
+  evaluacion: "Evaluación",
+  avisos: "Avisos",
+  "cursos-offline": "Cursos offline",
+};
 
 /**
  * 009 — La cohorte pasa a tener dos vistas: el roster de alumnos (005) y la
@@ -32,7 +43,14 @@ export function CohortTabs({
   canInvoice = false,
   esEspecializacion,
   esModulo = false,
+  initialTab,
 }: {
+  /**
+   * 2026-10-26 — Pestaña inicial, de `?tab=`. El servidor la valida contra
+   * `pestanasDelGrupo`: una pestaña que este grupo o esta persona no tiene
+   * llega como `undefined` y abre la default.
+   */
+  initialTab?: PestanaDelGrupo;
   /** 040 (DV-001) — `inscripciones.seguimiento`: checklist y correos del roster. */
   canFollowUp?: boolean;
   /** 042 — `facturacion.editar`: anotar el número de recibo de un pago. */
@@ -76,45 +94,33 @@ export function CohortTabs({
    */
   esEspecializacion: boolean;
 }) {
-  const [tab, setTab] = useState<
-    | "roster"
-    | "program"
-    | "classes"
-    | "attendance"
-    | "grading"
-    | "announcements"
-    | "offline"
-    // 029 — En una especialización se entra por el Recorrido: es la pantalla
-    // que responde "¿cómo va cada uno, módulo por módulo?".
-  >(esEspecializacion ? "program" : "roster");
+  // 029 — En una especialización se entra por el Recorrido: es la pantalla
+  // que responde "¿cómo va cada uno, módulo por módulo?".
+  // 2026-10-26 — La pestaña vive en `?tab=` (la valida el servidor).
+  const [tab, setTab] = usePestanaEnUrl<PestanaDelGrupo>(
+    initialTab ?? (esEspecializacion ? "recorrido" : "alumnos")
+  );
+
+  // El ORDEN y qué pestañas existen los decide `pestanasDelGrupo` (la misma
+  // lista que valida `?tab=` en el servidor):
+  // - 029 — En una especialización, el Recorrido va PRIMERO y es la pestaña
+  //   por defecto: antes de mirar clases o notas, lo que hay que ver es de
+  //   qué está hecha y cómo va cada alumno.
+  // - 013 — Después de saber QUIÉNES cursan, lo que se mira es CUÁNDO.
+  //   Asistencia y evaluación vienen después; Avisos al final: es
+  //   comunicación, no gestión de la cursada.
+  // - cursos-offline — al final: complementa la cursada, no la conduce.
+  //   034 (FR-016) — un módulo no asigna cursos offline: eso es de la
+  //   especialización.
+  const pestanas = pestanasDelGrupo({
+    esEspecializacion,
+    verCursosOffline: canViewAcademic && !esModulo,
+  });
 
   return (
     <div className="flex h-full flex-col">
       <div className="flex gap-2 border-b px-6 pt-4">
-        {(
-          [
-            // 029 — En una especialización, el Recorrido va PRIMERO y es la
-            // pestaña por defecto: antes de mirar clases o notas, lo que hay
-            // que ver es de qué está hecha y cómo va cada alumno.
-            ...(esEspecializacion
-              ? ([{ key: "program", label: "Recorrido" }] as const)
-              : []),
-            { key: "roster", label: "Alumnos" },
-            // 013 — Después de saber QUIÉNES cursan, lo que se mira es CUÁNDO.
-            // Asistencia y evaluación vienen después.
-            { key: "classes", label: "Clases" },
-            { key: "attendance", label: "Asistencia" },
-            { key: "grading", label: "Evaluación" },
-            // 013 — Última: es comunicación, no gestión de la cursada.
-            { key: "announcements", label: "Avisos" },
-            // cursos-offline — Library content assigned to the cohort. Last:
-            // it complements the cursada, it does not run it.
-            // 034 (FR-016) — un módulo no asigna cursos offline: eso es de la especialización.
-            ...(canViewAcademic && !esModulo
-              ? ([{ key: "offline", label: "Cursos offline" }] as const)
-              : []),
-          ] as const
-        ).map((t) => (
+        {pestanas.map((key) => ({ key, label: ETIQUETA[key] })).map((t) => (
           <button
             key={t.key}
             type="button"
@@ -132,13 +138,13 @@ export function CohortTabs({
       </div>
 
       <div className="relative min-h-0 flex-1 overflow-y-auto">
-        {tab === "roster" && esModulo ? (
+        {tab === "alumnos" && esModulo ? (
           <ModuleRosterClient
             cohortId={cohortId}
             canEditEnrollments={canEditEnrollments}
             canEditLicenses={canEditAcademic}
           />
-        ) : tab === "roster" ? (
+        ) : tab === "alumnos" ? (
           <RosterClient
             cohortId={cohortId}
             canEnroll={canEnroll}
@@ -149,35 +155,35 @@ export function CohortTabs({
             canFollowUp={canFollowUp}
             canInvoice={canInvoice}
           />
-        ) : tab === "program" ? (
+        ) : tab === "recorrido" ? (
           <ProgramClient
             cohortId={cohortId}
             canEditAcademic={canEditAcademic}
             canEditEnrollments={canEditEnrollments}
             canEditGrading={canEditGrading}
           />
-        ) : tab === "classes" && esEspecializacion ? (
+        ) : tab === "clases" && esEspecializacion ? (
           <ProgramClassesClient cohortId={cohortId} canEdit={canEditAcademic} />
-        ) : (tab === "attendance" || tab === "grading") && esEspecializacion ? (
+        ) : (tab === "asistencia" || tab === "evaluacion") && esEspecializacion ? (
           <ProgramSheetSwitcher
             key={tab}
             cohortId={cohortId}
-            kind={tab}
+            kind={tab === "asistencia" ? "attendance" : "grading"}
             canEditGrading={canEditGrading}
             canIssueCertificates={canIssueCertificates}
             canEditAttendance={canEditAttendance}
           />
-        ) : tab === "classes" ? (
+        ) : tab === "clases" ? (
           <ClassesClient
             cohortId={cohortId}
             canEdit={canEditAcademic}
             canEditLinks={canEditAttendance}
           />
-        ) : tab === "attendance" ? (
+        ) : tab === "asistencia" ? (
           <AttendanceClient cohortId={cohortId} canEdit={canEditAttendance} />
-        ) : tab === "offline" ? (
+        ) : tab === "cursos-offline" ? (
           <CohortOfflineCoursesClient cohortId={cohortId} canEdit={canEditAcademic} />
-        ) : tab === "grading" ? (
+        ) : tab === "evaluacion" ? (
           <GradingClient
             cohortId={cohortId}
             canEdit={canEditGrading}

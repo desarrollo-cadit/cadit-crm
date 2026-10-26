@@ -43,16 +43,18 @@ import { NextCoursesDialog } from "@/components/academic/next-courses-dialog";
 import { TeacherForm } from "@/components/academic/teacher-form";
 import { RoomsPanel } from "@/components/academic/rooms-panel";
 import { notify } from "@/lib/notify";
+import type { PestanaAcademico } from "@/lib/pestanas";
+import { usePestanaEnUrl } from "@/components/use-pestana-en-url";
 
-const TABS = [
-  { key: "courses", label: "Cursos" },
-  { key: "cohorts", label: "Grupos" },
-  { key: "teachers", label: "Profesores" },
+const TABS: readonly { key: PestanaAcademico; label: string }[] = [
+  { key: "cursos", label: "Cursos" },
+  { key: "grupos", label: "Grupos" },
+  { key: "profesores", label: "Profesores" },
   // 023 — Las salas de reunión. Van acá y no en Configuración porque se tocan
   // armando el cronograma, no una vez al instalar.
-  { key: "rooms", label: "Aulas" },
-] as const;
-type Tab = (typeof TABS)[number]["key"];
+  { key: "aulas", label: "Aulas" },
+];
+type Tab = PestanaAcademico;
 
 /** Inicio y fin de cohorte: DÍAS (medianoche UTC), no instantes. */
 function formatDate(iso: string | null) {
@@ -274,13 +276,16 @@ const CLAVE_FILTRO_ANIO = "academico.cohortes.anio";
 export function AcademicClient({
   canEdit = false,
   canManageAccess = false,
+  initialTab = "cursos",
 }: {
   /** `academico.editar`: cursos, cohortes, profesores y aulas. */
   canEdit?: boolean;
   /** `accesos.gestionar`: el acceso al portal de un profesor. */
   canManageAccess?: boolean;
+  /** Pestaña inicial, de `?tab=` (la valida el servidor con `leerPestana`). */
+  initialTab?: PestanaAcademico;
 }) {
-  const [tab, setTab] = useState<Tab>("courses");
+  const [tab, setTab] = usePestanaEnUrl<Tab>(initialTab);
   /**
    * 007 (feedback en vivo: "deberíamos poder filtrar por todos, cursos
    * planificados, en curso y finalizados") — filtro por estado de la cohorte.
@@ -653,7 +658,7 @@ export function AcademicClient({
       <header className="flex flex-wrap items-center justify-between gap-4 border-b px-6 py-4">
         <h2 className="font-semibold">Gestión académica</h2>
         <div className="flex items-center gap-2">
-          {canEdit && tab === "cohorts" && (
+          {canEdit && tab === "grupos" && (
             <>
               <Button variant="outline" size="sm" onClick={() => setShowCourseForm({ mode: "create" })}>
                 <Plus className="h-4 w-4" /> Nuevo curso
@@ -667,12 +672,12 @@ export function AcademicClient({
               </Button>
             </>
           )}
-          {canEdit && tab === "courses" && (
+          {canEdit && tab === "cursos" && (
             <Button size="sm" onClick={() => setShowCourseForm({ mode: "create" })}>
               <Plus className="h-4 w-4" /> Nuevo curso
             </Button>
           )}
-          {canEdit && tab === "teachers" && (
+          {canEdit && tab === "profesores" && (
             <Button size="sm" onClick={() => setTeacherForm({ mode: "create" })}>
               <Plus className="h-4 w-4" /> Nuevo profesor
             </Button>
@@ -723,7 +728,7 @@ export function AcademicClient({
             </Button>
           </div>
         )}
-        {!loading && tab === "cohorts" && cohorts.length > 0 && (
+        {!loading && tab === "grupos" && cohorts.length > 0 && (
           <div className="mb-4 space-y-2.5">
             <CohortStatusFilter
               total={contadores.todas}
@@ -768,7 +773,7 @@ export function AcademicClient({
             </div>
           </div>
         )}
-        {!loading && tab === "cohorts" &&
+        {!loading && tab === "grupos" &&
           (cohorts.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
               <p className="text-sm font-medium">Sin grupo</p>
@@ -855,7 +860,7 @@ export function AcademicClient({
             </div>
           ))}
 
-        {!loading && tab === "courses" && courses.length > 0 && (
+        {!loading && tab === "cursos" && courses.length > 0 && (
           <div className="mb-4">
             <KindFilter
               value={courseKindFilter}
@@ -864,7 +869,7 @@ export function AcademicClient({
             />
           </div>
         )}
-        {!loading && tab === "courses" &&
+        {!loading && tab === "cursos" &&
           (courses.length === 0 ? (
             <p className="text-sm text-muted-foreground">Sin cursos todavía.</p>
           ) : cursosVisibles.length === 0 ? (
@@ -926,12 +931,12 @@ export function AcademicClient({
             </ul>
           ))}
 
-        {tab === "teachers" && accesoProfesor && (
+        {tab === "profesores" && accesoProfesor && (
           <p className="mb-3 rounded-md border border-warning-border bg-warning-soft px-3 py-2 text-sm">
             {accesoProfesor}
           </p>
         )}
-        {!loading && tab === "teachers" &&
+        {!loading && tab === "profesores" &&
           (teachers.length === 0 ? (
             <p className="text-sm text-muted-foreground">Sin profesores todavía.</p>
           ) : (
@@ -1023,7 +1028,7 @@ export function AcademicClient({
           de `refetch()` ni del `loading` de arriba, así que no se les aplica el
           esqueleto general.
         */}
-        {tab === "rooms" && <RoomsPanel canEdit={canEdit} />}
+        {tab === "aulas" && <RoomsPanel canEdit={canEdit} />}
       </div>
 
       {showCourseForm && (

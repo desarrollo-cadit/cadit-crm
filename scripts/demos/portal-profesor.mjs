@@ -3,8 +3,8 @@
  *
  * Arma un grupo ficticio por la API del staff (sin grabar), le asigna una
  * profesora nueva con acceso al portal y graba, en un contexto de navegador
- * propio, el recorrido completo de la profesora: ingreso, grupos, asistencia,
- * grabación, evaluaciones, entregas, material, horas dictadas y cierre.
+ * propio, el recorrido completo de la profesora: ingreso, grupos, asistencia y
+ * grabación (en consulta), evaluaciones, entregas, material, horas dictadas y cierre.
  *
  * SOLO contra el entorno de pruebas (base `vocero_e2e`). Ver README.md.
  *
@@ -161,9 +161,10 @@ async function armarDatos() {
   exigir("cronograma", await api(`/api/cohorts/${grupoId}/schedule`, { method: "POST" }));
 
   const vendedorId = await asegurarVendedor(api, "Ventas Demo");
+  const inscripciones = [];
   for (const [i, [nombre, apellido]] of ALUMNOS.entries()) {
     const telefono = `5989${String(Math.floor(Math.random() * 1e7)).padStart(7, "0")}`;
-    exigir(
+    const alta = exigir(
       `inscripción de ${nombre}`,
       await api("/api/enrollments", {
         method: "POST",
@@ -182,6 +183,7 @@ async function armarDatos() {
         }),
       })
     );
+    inscripciones.push(alta.enrollment?.id);
   }
 
   for (const nombre of ["Ejercicio práctico 1", "Proyecto final"]) {
@@ -197,6 +199,30 @@ async function armarDatos() {
   const clases = (await api(`/api/cohorts/${grupoId}/classes`)).json?.classes ?? [];
   const primera = clases.find((c) => c.id);
   if (primera) {
+    /**
+     * 2026-10-26 — La asistencia y la grabación las carga la coordinación;
+     * el portal las muestra. Se dejan cargadas en la primera clase (pasada:
+     * el grupo arrancó hace dos semanas) para que el video tenga qué mostrar.
+     */
+    const ESTADOS = ["presente", "presente", "ausente", "presente", "tarde"];
+    exigir(
+      "asistencia de la primera clase",
+      await api(`/api/class-sessions/${primera.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          attendance: inscripciones
+            .filter(Boolean)
+            .map((enrollmentId, i) => ({ enrollmentId, status: ESTADOS[i % ESTADOS.length] })),
+        }),
+      })
+    );
+    exigir(
+      "grabación de la primera clase",
+      await api(`/api/class-sessions/${primera.id}/links`, {
+        method: "PATCH",
+        body: JSON.stringify({ recordingUrl: "https://drive.example.com/autocad-grabacion-clase" }),
+      })
+    );
     exigir(
       "material de la academia",
       await api("/api/resources", {
@@ -307,7 +333,7 @@ async function grabar(datos) {
     await d.clic(tarjeta, { hasta: boton("Evaluaciones") });
 
     /* ---------- 3. Clases y asistencia ---------- */
-    await d.seccion("Clases y asistencia", "Registro de la asistencia de cada clase.");
+    await d.seccion("Clases y asistencia", "Consulta de la asistencia de cada clase.");
     const pestanas = page.locator("div.border-b").filter({ has: boton("Evaluaciones") }).first();
     await d.decir("El grupo se organiza en cuatro pestañas: Clases, Evaluaciones, Entregas y Material.", {
       sostener: false,
@@ -316,65 +342,35 @@ async function grabar(datos) {
     await d.decir("La pestaña Clases lista todas las clases del cronograma, con su fecha y su horario.");
 
     const ingresar = page.getByRole("link", { name: "Ingresar a la clase" }).first();
-    let filaClase;
     if (datos.hayClaseEnVivo && (await ingresar.isVisible().catch(() => false))) {
       await d.decir(
         "El enlace «Ingresar a la clase» aparece poco antes del inicio y permanece disponible durante la clase.",
         { sostener: false }
       );
       await d.resaltar(ingresar, { ms: 3500 });
-      filaClase = page.locator("li").filter({ has: ingresar }).first().getByRole("button").first();
-    } else {
-      filaClase = page.locator("li").filter({ hasText: "Cargar grabación" }).last().getByRole("button").first();
     }
-    await d.decir("Para registrar la asistencia, seleccione la clase correspondiente.", { sostener: false });
-    await d.clic(filaClase, { hasta: boton("Volver a las clases", false) });
 
-    const masivo = page.getByRole("button", { name: /Marcar como presentes/ });
-    await masivo.waitFor({ timeout: 180000 });
-    await d.decir("La planilla muestra a todos los alumnos inscriptos en el grupo.");
+    // La primera clase es la que tiene la grabación cargada por la coordinación.
+    const grabacion = page.getByRole("link", { name: "Grabación", exact: true }).first();
+    const filaClase = page.locator("li").filter({ has: grabacion }).first().getByRole("button").first();
+    await d.decir("Para consultar la asistencia, seleccione la clase correspondiente.", { sostener: false });
+    await d.clic(filaClase, { hasta: boton("Volver a las clases", false) });
+    await sleep(1200);
+    await d.decir("La planilla muestra a todos los alumnos inscriptos y el estado registrado para cada uno.");
     await d.decir(
-      "El botón «Marcar como presentes» registra de una sola vez a todos los alumnos que aún no tienen marca.",
-      { sostener: false }
+      "La asistencia la registra la coordinación. Si encuentra un error, comuníquelo a la coordinación."
     );
-    const [ausente, tarde] = [ALUMNOS[2], ALUMNOS[4]].map(([n, a]) => `${n} ${a}`);
-    await d.clic(masivo, { hasta: page.getByRole("button", { name: `${ausente}: Presente` }).and(page.locator('[aria-pressed="true"]')) });
-    await sleep(1200);
-    await d.decir("Luego, corrija los casos particulares; por ejemplo, un alumno ausente.", { sostener: false });
-    await d.clic(boton(`${ausente}: Ausente`), {
-      hasta: boton(`${ausente}: Ausente`).and(page.locator('[aria-pressed="true"]')),
-    });
-    await sleep(1000);
-    await d.decir("O un alumno que llegó tarde.", { sostener: false });
-    await d.clic(boton(`${tarde}: Tarde`), {
-      hasta: boton(`${tarde}: Tarde`).and(page.locator('[aria-pressed="true"]')),
-    });
-    await sleep(1200);
-    await d.decir("La asistencia se guarda automáticamente con cada selección; no es necesario confirmar.");
-    await d.decir("Debajo de cada alumno queda registrado quién hizo la última marca y en qué fecha.");
+    await d.decir("Debajo de cada alumno consta quién hizo la última marca y en qué fecha.");
     await d.decir("Para regresar al listado, seleccione «Volver a las clases».", { sostener: false });
     await d.clic(boton("Volver a las clases", false), { hasta: boton("Evaluaciones") });
 
     /* ---------- 4. Grabaciones ---------- */
-    await d.seccion("Grabaciones", "Carga del enlace de la grabación de una clase.");
-    const cargar = page.getByRole("button", { name: "Cargar grabación" }).last();
-    await cargar.waitFor({ timeout: 180000 });
-    await d.decir("Una vez finalizada la clase, puede cargar el enlace de su grabación.", { sostener: false });
-    await d.clic(cargar, { hasta: page.locator("#grabacion-url") });
-    await d.decir("Pegue el enlace de la grabación. El sistema guarda solo el enlace, no el video.", {
-      sostener: false,
-    });
-    await d.escribir(page.locator("#grabacion-url"), "https://drive.example.com/autocad-grabacion-clase", {
-      retardo: 16,
-    });
-    await sleep(1000);
-    await d.clic(boton("Guardar"));
-    await page.locator("#grabacion-url").waitFor({ state: "detached", timeout: 180000 });
-    await sleep(800);
-    const grabacion = page.getByRole("link", { name: "Grabación", exact: true }).last();
-    await d.decir("Al guardar, la grabación queda disponible para los alumnos del grupo junto a esa clase.", {
-      sostener: false,
-    });
+    await d.seccion("Grabaciones", "Consulta de la grabación de una clase.");
+    await grabacion.waitFor({ timeout: 180000 });
+    await d.decir(
+      "Cuando la coordinación carga la grabación de una clase, el enlace aparece junto a esa clase, para usted y para los alumnos del grupo.",
+      { sostener: false }
+    );
     await d.resaltar(grabacion, { ms: 3500 });
     await sleep(1000);
 
@@ -507,7 +503,6 @@ async function main() {
     `/api/portal/cohorts/${g}/offline-attempts`,
     `/api/portal/cohorts/${g}/resources`,
     "/api/portal/classes/x/attendance",
-    "/api/portal/classes/x/recording",
     "/api/portal/assessments/x/results",
     "/api/portal/hours",
   ];

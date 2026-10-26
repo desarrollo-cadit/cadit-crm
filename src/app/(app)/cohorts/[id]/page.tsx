@@ -6,15 +6,19 @@ import { CohortTabs } from "@/components/cohorts/cohort-tabs";
 import { CohortHeader } from "@/components/cohorts/cohort-header";
 import { encabezadoDeCohorte } from "@/server/cohort-header";
 import { estadoDeConfirmacion } from "@/server/cohort-confirmation";
+import { leerPestana } from "@/lib/tab-param";
+import { ALIAS_DEL_GRUPO, pestanasDelGrupo } from "@/lib/pestanas";
 
 export const dynamic = "force-dynamic";
 
 export default async function CohortPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ tab?: string | string[] }>;
 }) {
-  const { id } = await params;
+  const [{ id }, { tab }] = await Promise.all([params, searchParams]);
   const session = await getSessionOrNull();
   // 012 (T029) — Por capacidad, no por nombre de rol: inscribir con datos
   // comerciales exige `inscripciones.editar`, que es lo que de verdad separa
@@ -77,6 +81,19 @@ export default async function CohortPage({
           confirmation: await estadoDeConfirmacion(session.organizationId, id),
         }))
       : { isSpecialization: false, header: null, confirmation: null };
+  /**
+   * 2026-10-26 — `?tab=` elige la pestaña, validada contra las que ESTE grupo
+   * le muestra a ESTA persona (la misma `pestanasDelGrupo` que dibuja la
+   * barra): Recorrido fuera de una especialización o Cursos offline sin
+   * `academico.ver` caen a la default, no se abren.
+   */
+  const esModulo = header?.partOf != null;
+  const pestanas = pestanasDelGrupo({
+    esEspecializacion: isSpecialization,
+    verCursosOffline: puedeVerPrograma && !esModulo,
+  });
+  const pestanaPorDefecto = isSpecialization ? "recorrido" : "alumnos";
+  const initialTab = leerPestana(tab, pestanas, pestanaPorDefecto, ALIAS_DEL_GRUPO);
   return (
     <div className="flex h-full flex-col">
       {header ? (
@@ -105,7 +122,8 @@ export default async function CohortPage({
           canInvoice={caps.includes("facturacion.editar")}
           esEspecializacion={isSpecialization}
           // 034 (FR-016) — un módulo es el que tiene especialización arriba.
-          esModulo={header?.partOf != null}
+          esModulo={esModulo}
+          initialTab={initialTab}
         />
       </div>
     </div>

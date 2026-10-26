@@ -181,6 +181,13 @@ const PEDIDAS: Record<string, PestanaDelContacto> = {
   administracion: "admin",
 };
 
+/** La inversa: qué escribe el cliente en `?tab=` al cambiar de pestaña. */
+export const PESTANA_DEL_CONTACTO_EN_URL: Record<PestanaDelContacto, string> = {
+  record: "legajo",
+  seguimiento: "seguimiento",
+  admin: "administracion",
+};
+
 /**
  * Qué pestaña abre el contacto. Un lead —nadie lo inscribió en un grupo
  * (mismo criterio que los cursos del legajo: sin talleres, sin la tarjeta del
