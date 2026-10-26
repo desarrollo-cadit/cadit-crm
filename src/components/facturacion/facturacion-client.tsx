@@ -19,6 +19,8 @@ import {
 } from "@/components/ui/table";
 import { formatAmount } from "@/lib/money";
 import { notify } from "@/lib/notify";
+import type { PestanaFacturacion } from "@/lib/pestanas";
+import { usePestanaEnUrl } from "@/components/use-pestana-en-url";
 import {
   MAX_NUMERO,
   facturacionCsv,
@@ -69,8 +71,15 @@ async function mensajeDeError(res: Response | null, fallback: string): Promise<s
   return body?.error?.message ?? fallback;
 }
 
-export function FacturacionClient({ puedeFacturar }: { puedeFacturar: boolean }) {
-  const [estado, setEstado] = useState<EstadoFacturacion>("pendientes");
+export function FacturacionClient({
+  puedeFacturar,
+  initialTab = "pendientes",
+}: {
+  puedeFacturar: boolean;
+  /** 2026-10-26 — De `?tab=pendientes|facturadas`, validada por el servidor. */
+  initialTab?: PestanaFacturacion;
+}) {
+  const [estado, setEstado] = usePestanaEnUrl<EstadoFacturacion>(initialTab);
   const [filas, setFilas] = useState<FilaFacturacion[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);

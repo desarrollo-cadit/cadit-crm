@@ -6,13 +6,15 @@ import { sessionCapabilities } from "@/lib/capabilities";
 import { withTenantTransaction } from "@/lib/db/with-tenant";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { leerPestana } from "@/lib/tab-param";
+import { PESTANAS_MARKETING, type PestanaMarketing } from "@/lib/pestanas";
 import { listarAudiencias } from "@/server/marketing/audiences";
 import { RepurchaseView } from "@/components/marketing/repurchase-view";
 import { listarCampanas, type CampaignStatus } from "@/server/marketing/campaigns";
 
 export const dynamic = "force-dynamic";
 
-type Props = { searchParams: Promise<{ tab?: string }> };
+type Props = { searchParams: Promise<{ tab?: string | string[] }> };
 
 const ESTADO: Record<CampaignStatus, string> = {
   borrador: "Borrador",
@@ -21,12 +23,12 @@ const ESTADO: Record<CampaignStatus, string> = {
   cancelada: "Cancelada",
 };
 
-const PESTANAS = [
+const PESTANAS: readonly { key: PestanaMarketing; label: string }[] = [
   { key: "campanas", label: "Campañas" },
   { key: "audiencias", label: "Audiencias" },
   // 046 (US5) — cuánto se recompra; misma puerta `marketing.ver`, sin plata.
   { key: "recompra", label: "Recompra" },
-] as const;
+];
 
 /**
  * 045 — Marketing: campañas por correo a los contactos propios y las
@@ -40,7 +42,7 @@ export default async function MarketingPage({ searchParams }: Props) {
   if (!caps.includes("marketing.ver")) redirect("/");
   const canEdit = caps.includes("marketing.enviar");
   const { tab } = await searchParams;
-  const activa = tab === "audiencias" || tab === "recompra" ? tab : "campanas";
+  const activa = leerPestana(tab, PESTANAS_MARKETING, "campanas");
 
   const scope = { organizationId: session.organizationId, userId: session.userId };
   const campanas =

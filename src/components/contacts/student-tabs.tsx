@@ -1,10 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { usePestanaEnUrl } from "@/components/use-pestana-en-url";
 import { StudentRecordClient } from "@/components/contacts/student-record-client";
 import { StudentAdminActivityClient } from "@/components/contacts/student-admin-activity-client";
 import { SeguimientoClient } from "@/components/contacts/seguimiento-client";
-import type { PestanaDelContacto } from "@/lib/seguimiento";
+import { PESTANA_DEL_CONTACTO_EN_URL, type PestanaDelContacto } from "@/lib/seguimiento";
+
+/** La clave que escribe `?tab=` (la inversa de la que lee el servidor). */
+const enUrl = (t: PestanaDelContacto) => PESTANA_DEL_CONTACTO_EN_URL[t];
 
 /**
  * 2026-10-07 — Las pestañas del legajo, con la misma forma que las de la
@@ -46,7 +49,9 @@ export function StudentTabs({
   /** `inscripciones.seguimiento`: escribir notas y registrar contactos. */
   canFollowUp?: boolean;
 }) {
-  const [tab, setTab] = useState<PestanaDelContacto>(initialTab);
+  // 2026-10-26 — Cambiar de pestaña la deja en `?tab=` (legajo, seguimiento,
+  // administracion): recargar o volver abre en la misma.
+  const [tab, setTab] = usePestanaEnUrl<PestanaDelContacto>(initialTab, enUrl);
 
   const tabs = [
     { key: "record", label: "Legajo" },

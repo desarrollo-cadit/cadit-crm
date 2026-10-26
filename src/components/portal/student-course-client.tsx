@@ -1,6 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { urlConPestana } from "@/lib/tab-param";
+import type { PestanaPortalCursada } from "@/lib/pestanas";
 import { useRefrescoDeClases } from "@/components/portal/use-refresco-de-clases";
 import Link from "next/link";
 import {
@@ -166,9 +169,20 @@ const ASISTENCIA: Record<
   justificado: { label: "Justificada", tone: "neutro", Icon: Minus },
 };
 
-type TabKey = "modulos" | "clases" | "evaluaciones" | "material" | "avisos";
+type TabKey = PestanaPortalCursada;
 
-export function StudentCourseClient({ enrollmentId }: { enrollmentId: string }) {
+export function StudentCourseClient({
+  enrollmentId,
+  initialTab = null,
+}: {
+  enrollmentId: string;
+  /**
+   * 2026-10-26 — De `?tab=` (validada por el servidor; `null` si no vino).
+   * «Módulos» pedida en una cursada sin módulos cae a la de arranque.
+   */
+  initialTab?: TabKey | null;
+}) {
+  const router = useRouter();
   const [data, setData] = useState<Detail | null>(null);
   const [error, setError] = useState<string | null>(null);
   /**
@@ -177,7 +191,13 @@ export function StudentCourseClient({ enrollmentId }: { enrollmentId: string }) 
    * fijarla en el `useState` obligaría a pisarla en un efecto, que es cómo se
    * pierde la pestaña que la persona acaba de tocar.
    */
-  const [tab, setTab] = useState<TabKey | null>(null);
+  const [tab, setTabState] = useState<TabKey | null>(initialTab);
+  /** Elegir una pestaña la deja en `?tab=`: recargar o volver abre en la misma. */
+  const setTab = (clave: TabKey) => {
+    setTabState(clave);
+    const { pathname, search } = window.location;
+    router.replace(urlConPestana(pathname, search, clave), { scroll: false });
+  };
 
   const cargar = useCallback(
     async (refresco = false) => {
@@ -229,7 +249,12 @@ export function StudentCourseClient({ enrollmentId }: { enrollmentId: string }) 
   const { course } = data;
   const canceladas = data.classes.filter((c) => c.canceled).length;
   const modulos = course.modules ?? [];
-  const activa: TabKey = tab ?? (modulos.length > 0 ? "modulos" : "clases");
+  const activa: TabKey =
+    tab && (tab !== "modulos" || modulos.length > 0)
+      ? tab
+      : modulos.length > 0
+        ? "modulos"
+        : "clases";
   const ahora = Date.now();
   const siguiente =
     data.classes.find((c) => !c.canceled && new Date(c.startsAt ?? c.date).getTime() >= ahora)

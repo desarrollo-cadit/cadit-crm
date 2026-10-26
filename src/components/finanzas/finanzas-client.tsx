@@ -17,6 +17,8 @@ import {
 import { VentasPorVendedor } from "@/components/finanzas/ventas-por-vendedor";
 import { formatCalendarDay } from "@/lib/utils";
 import { formatMinorNumber } from "@/lib/money";
+import type { PestanaFinanzas } from "@/lib/pestanas";
+import { usePestanaEnUrl } from "@/components/use-pestana-en-url";
 
 /**
  * 026 — Administración y finanzas: el cierre de un mes, para transcribir.
@@ -185,14 +187,19 @@ function mesesDisponibles(): { valor: string; texto: string }[] {
   });
 }
 
-export function FinanzasClient() {
+export function FinanzasClient({
+  initialTab = "caja",
+}: {
+  /** 2026-10-26 — De `?tab=caja|devengado|ventas`, validada por el servidor. */
+  initialTab?: PestanaFinanzas;
+}) {
   const [mes, setMes] = useState<string>("");
   const [cohortId, setCohortId] = useState<string>("");
   const [cohortes, setCohortes] = useState<Cohorte[]>([]);
   const [cierre, setCierre] = useState<Cierre | null>(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [vista, setVista] = useState<"caja" | "devengado" | "ventas">("caja");
+  const [vista, setVista] = usePestanaEnUrl<PestanaFinanzas>(initialTab);
   const [busqueda, setBusqueda] = useState("");
 
   const meses = mesesDisponibles();

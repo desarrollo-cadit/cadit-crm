@@ -19,6 +19,8 @@ import { admiteAtajo, plantillaDe, type Template } from "@/lib/grading-template"
 import { notify } from "@/lib/notify";
 import { Modal, useDirty } from "@/components/ui/modal";
 import { conZona } from "@/lib/schedule-time";
+import type { PestanaPortalGrupo } from "@/lib/pestanas";
+import { usePestanaEnUrl } from "@/components/use-pestana-en-url";
 
 type Cohort = {
   id: string;
@@ -89,7 +91,7 @@ type ContentPayload = {
   resources: { id: string; title: string; url: string; kind: string }[];
 };
 
-type Tab = "clases" | "evaluacion" | "entregas" | "material";
+type Tab = PestanaPortalGrupo;
 
 /**
  * 023 — Si esta clase puede recibir una grabación.
@@ -142,8 +144,15 @@ function fecha(iso: string): string {
  * material (donde también publica). Todo lo que no está es deliberado —
  * inscribir, cobrar y emitir certificados son de la academia.
  */
-export function PortalCohortClient({ cohortId }: { cohortId: string }) {
-  const [tab, setTab] = useState<Tab>("clases");
+export function PortalCohortClient({
+  cohortId,
+  initialTab = "clases",
+}: {
+  cohortId: string;
+  /** 2026-10-26 — De `?tab=clases|evaluaciones|entregas|material`. */
+  initialTab?: Tab;
+}) {
+  const [tab, setTab] = usePestanaEnUrl<Tab>(initialTab);
   const [claseAbierta, setClaseAbierta] = useState<string | null>(null);
   /** 023 — Qué clase se está por cargar/cambiar la grabación. */
   const [grabacion, setGrabacion] = useState<{
@@ -252,7 +261,7 @@ export function PortalCohortClient({ cohortId }: { cohortId: string }) {
         {(
           [
             { key: "clases", label: "Clases" },
-            { key: "evaluacion", label: "Evaluaciones" },
+            { key: "evaluaciones", label: "Evaluaciones" },
             // 016 — Entregas va ANTES de Material: es trabajo pendiente del
             // profesor, y Material es consulta. Lo que hay que hacer primero.
             { key: "entregas", label: "Entregas" },
@@ -281,7 +290,7 @@ export function PortalCohortClient({ cohortId }: { cohortId: string }) {
           onAbrir={setClaseAbierta}
           onGrabacion={(id, actual) => setGrabacion({ classSessionId: id, actual })}
         />
-      ) : tab === "evaluacion" ? (
+      ) : tab === "evaluaciones" ? (
         <div className="space-y-6">
           <Evaluacion cohortId={cohortId} />
           <PortalOfflineAttempts cohortId={cohortId} />

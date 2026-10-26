@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import { getSessionOrNull } from "@/lib/auth/session";
 import { sessionCapabilities } from "@/lib/capabilities";
 import { FinanzasClient } from "@/components/finanzas/finanzas-client";
+import { leerPestana } from "@/lib/tab-param";
+import { PESTANAS_FINANZAS } from "@/lib/pestanas";
 
 export const dynamic = "force-dynamic";
 
@@ -19,14 +21,19 @@ export const dynamic = "force-dynamic";
  * Toda la superficie es de STAFF: no aparece en ningún portal ni se expone
  * bajo `/api/portal/`.
  */
-export default async function FinanzasPage() {
+export default async function FinanzasPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string | string[] }>;
+}) {
   const session = await getSessionOrNull();
   if (!session) redirect("/login");
   if (!sessionCapabilities(session).includes("cobranza.ver")) redirect("/");
+  const { tab } = await searchParams;
 
   return (
     <div className="h-full overflow-y-auto">
-      <FinanzasClient />
+      <FinanzasClient initialTab={leerPestana(tab, PESTANAS_FINANZAS, "caja")} />
     </div>
   );
 }
