@@ -12,11 +12,10 @@ import { describe, expect, it } from "vitest";
  * escribe la columna:
  *
  *  - la carga manual del staff (`PATCH /api/class-sessions/[id]/links`),
- *  - la carga manual del profesor (`teacherSetRecording`, que usa
- *    `PUT /api/portal/classes/[id]/recording`),
  *  - la adjudicación (`src/server/zoom/assignment.ts`).
  *
- * Y que las dos cargas manuales escriben también `recordingSource`.
+ * Y que la carga manual escribe también `recordingSource`. Desde 2026-10-26
+ * el profesor no carga grabaciones: es tarea de Coordinación.
  */
 
 const SRC = path.join(process.cwd(), "src");
@@ -52,7 +51,6 @@ function bloquesSet(src: string): string[] {
 
 const ESCRIBEN = [
   "src/app/api/class-sessions/[id]/links/route.ts",
-  "src/server/teacher-portal.ts",
   "src/server/zoom/assignment.ts",
 ];
 
@@ -67,11 +65,11 @@ describe("quién escribe class_session.recording_url", () => {
     if (bloques.length > 0 || sqlCrudo) escritores.set(r, bloques);
   }
 
-  it("solo las dos cargas manuales y la adjudicación", () => {
+  it("solo la carga manual del staff y la adjudicación", () => {
     expect([...escritores.keys()].sort()).toEqual([...ESCRIBEN].sort());
   });
 
-  it.each(ESCRIBEN.slice(0, 2))("%s escribe también recordingSource", (archivo) => {
+  it.each(ESCRIBEN.slice(0, 1))("%s escribe también recordingSource", (archivo) => {
     const bloques = escritores.get(archivo) ?? [];
     expect(bloques.length).toBeGreaterThan(0);
     for (const b of bloques) expect(b, b).toMatch(/recordingSource/);

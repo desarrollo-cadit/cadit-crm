@@ -2,7 +2,7 @@ import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
 import { cohorteNoEsDeTaller } from "@/server/workshop-scope";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
-import { markAttendance, type AttendanceStatus } from "@/server/attendance";
+import type { AttendanceStatus } from "@/server/attendance";
 import { listCohortClasses, type ClassRowDto, type CohortClassesDto } from "@/server/classes";
 import { computeCohortStatus } from "@/lib/cohort-status";
 import { ACADEMY_TIME_ZONE } from "@/lib/schedule-time";
@@ -498,7 +498,6 @@ export type TeacherAttendanceSheetDto = {
     canceled: boolean;
   };
   cohort: TeacherCohortDto;
-  editable: boolean;
   students: (TeacherStudentDto & {
     status: AttendanceStatus | null;
     /** DV-001 — quién dejó la marca así, y cuándo. */
@@ -508,11 +507,10 @@ export type TeacherAttendanceSheetDto = {
 };
 
 /**
- * La planilla de UNA clase: la pantalla que el profesor usa de pie, en el
- * medio de la clase, con una mano.
+ * La asistencia de UNA clase, para CONSULTA: quién vino y quién dejó la marca.
  *
- * Trae el estado actual de cada alumno porque corregir es el caso normal
- * (DV-001), no la excepción: el profesor marca, se equivoca, y vuelve.
+ * Desde 2026-10-26 pasar lista es de Coordinación; el profesor la ve pero no
+ * la escribe. Por eso no hay `editable`: no hay nada que habilitar.
  */
 export async function teacherAttendanceSheet(
   organizationId: string,
@@ -573,7 +571,6 @@ export async function teacherAttendanceSheet(
       canceled: Boolean(sesion.canceledAt),
     },
     cohort: detalle.cohort,
-    editable: detalle.editable && !sesion.canceledAt,
     students: detalle.students.map((s) => {
       const m = porInscripcion.get(s.enrollmentId);
       return {
@@ -589,57 +586,6 @@ export async function teacherAttendanceSheet(
 export type PortalResult<T> =
   | { ok: true; data: T }
   | { ok: false; status: 404 | 422; code: string; message: string };
-
-/**
- * El profesor marca asistencia de SU clase (DV-003), y puede corregir una
- * clase pasada (DV-001) — el sistema no discute con la realidad de un aula.
- *
- * Lo que NO puede es escribir sobre algo que la planilla ya marcó como no
- * editable: una cohorte finalizada (DV-005), donde los porcentajes ya se
- * usaron para decidir quién aprobó, y una clase cancelada, que no se dictó.
- *
- * La puerta es el MISMO `editable` que calcula la planilla. Antes la lectura
- * lo sabía y la escritura no: solo se salvaba porque `markAttendance` repetía
- * la regla por su cuenta. Dos lugares que tienen que coincidir terminan, con
- * el tiempo, no coincidiendo.
- */
-export async function teacherMarkAttendance(
-  organizationId: string,
-  teacherId: string,
-  userId: string,
-  classSessionId: string,
-  entries: { enrollmentId: string; status: AttendanceStatus }[]
-): Promise<PortalResult<{ marked: number }>> {
-  const planilla = await teacherAttendanceSheet(organizationId, teacherId, classSessionId);
-  if (!planilla) {
-    return { ok: false, status: 404, code: "not_found", message: "No encontramos esta clase" };
-  }
-  if (planilla.cohort.status === "finalizada") {
-    return {
-      ok: false,
-      status: 422,
-      code: "cohorte_finalizada",
-      message: "Este grupo ya terminó, así que su asistencia quedó cerrada",
-    };
-  }
-  // Descartada la cohorte, lo único que queda no editable es la cancelación.
-  if (!planilla.editable) {
-    return {
-      ok: false,
-      status: 422,
-      code: "session_canceled",
-      message: "Esta clase se canceló, así que no lleva asistencia",
-    };
-  }
-
-  // Solo los alumnos de ESTA cohorte: un `enrollmentId` de otra no entra.
-  const propios = new Set(planilla.students.map((s) => s.enrollmentId));
-  const validos = entries.filter((e) => propios.has(e.enrollmentId));
-
-  const r = await markAttendance(organizationId, classSessionId, validos, userId);
-  if (!r.ok) return { ok: false, status: 422, code: r.code, message: r.message };
-  return { ok: true, data: r.data };
-}
 
 export type TeacherGradingDto = {
   cohort: TeacherCohortDto;
@@ -821,86 +767,6 @@ export async function teacherOwnHours(
 /* ============================================================
  * 023 — Lo que el profesor puede CARGAR de su clase
  * ============================================================ */
-
-/**
- * 023 (013/DV-001c, resuelta) — El profesor carga la grabación de SU clase.
- *
- * DV-001c de la 013 preguntaba si esto lo hace el profesor o solo
- * coordinación, y quedó sin resolver. La respuesta llegó de la operación: el
- * que acaba de terminar la clase tiene el enlace de la grabación en el
- * portapapeles, y el que no lo tiene es el que hoy está autorizado a pegarlo.
- * Eso convierte cada grabación en un pedido por WhatsApp.
- *
- * Se resuelve como la asistencia en 014: el profesor puede sobre lo SUYO, y el
- * alcance lo decide `teacherReachesCohort()` — la misma regla, incluida la
- * suplencia. Nada de capacidades de staff.
- *
- * **No toca el enlace de la reunión.** Ese sale de la clase o de la cohorte
- * (025 — el aula no participa de esa cadena) y es
- * decisión de coordinación: si el profesor pudiera cambiarlo, el alumno
- * entraría a una sala que la academia no eligió y el detector de choques
- * dejaría de significar algo.
- */
-export async function teacherSetRecording(
-  organizationId: string,
-  teacherId: string,
-  classSessionId: string,
-  recordingUrl: string | null
-): Promise<PortalResult<{ recordingUrl: string | null }>> {
-  const db = getDb();
-
-  const filas = await db
-    .select({
-      id: schema.classSession.id,
-      cohortId: schema.classSession.cohortId,
-      canceledAt: schema.classSession.canceledAt,
-    })
-    .from(schema.classSession)
-    .where(
-      scoped(
-        schema.classSession.organizationId,
-        organizationId,
-        eq(schema.classSession.id, classSessionId)
-      )
-    )
-    .limit(1);
-
-  const clase = filas[0];
-  // Ausencia = "no la encontré", y la ruta lo traduce a 404. Distinguir
-  // "no existe" de "no es tuya" le diría a un profesor ajeno que existe.
-  if (!clase) return { ok: false, status: 404, code: "not_found", message: "No encontramos esta clase" };
-  if (!(await teacherReachesCohort(organizationId, teacherId, clase.cohortId))) {
-    return { ok: false, status: 404, code: "not_found", message: "No encontramos esta clase" };
-  }
-
-  /**
-   * FR-005e de 013 — Una clase cancelada no ofrece grabación. Dejar cargar una
-   * acá crearía una fila que ninguna pantalla va a mostrar: el profesor
-   * pegaría el enlace, no pasaría nada visible, y volvería a pegarlo.
-   */
-  if (clase.canceledAt && recordingUrl) {
-    return {
-      ok: false,
-      status: 422,
-      code: "class_canceled",
-      message: "Esta clase se canceló, así que no lleva grabación",
-    };
-  }
-
-  await db
-    .update(schema.classSession)
-    // 030 (DV-007) — Lo que pega el profesor es manual; borrar deja sin origen.
-    .set({ recordingUrl, recordingSource: recordingUrl ? "manual" : null, updatedAt: new Date() })
-    .where(
-      scoped(
-        schema.classSession.organizationId,
-        organizationId,
-        eq(schema.classSession.id, classSessionId)
-      )
-    );
-
-  return { ok: true, data: { recordingUrl } };
-}
 
 /**
  * 023 — El profesor publica material de SU cohorte.

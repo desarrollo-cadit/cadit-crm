@@ -1,16 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * 014 (T027, DV-001/DV-005) — La toma de asistencia desde el portal.
+ * 014 (T027, DV-001) — La asistencia de una clase, vista desde el portal.
  *
- * Dos reglas que tiran para lados opuestos y por eso conviene fijarlas juntas:
- *
- * - El profesor **sí** puede corregir una clase pasada. Un sistema que se
- *   niega a registrar lo que pasó en el aula no hace que el dato sea correcto:
- *   hace que quede mal para siempre. Lo que sí exige es saber **quién** lo
- *   dejó así y **cuándo**.
- * - El profesor **no** puede tocar una cohorte finalizada. Ahí los porcentajes
- *   ya se usaron para decidir quién aprobó.
+ * Desde 2026-10-26 pasar lista es de Coordinación: el profesor la CONSULTA.
+ * Lo que se fija acá es qué ve —cada alumno con su estado, quién dejó la
+ * marca y cuándo— y que sin alcance no ve nada. Que no pueda escribir lo
+ * guarda `portal-profesor-solo-lectura.test.ts`.
  */
 
 const colas = new Map<string, unknown[][]>();
@@ -58,19 +54,8 @@ vi.mock("@/lib/db", () => ({
   ),
 }));
 
-/**
- * `markAttendance` se espía en vez de ejecutarse: lo que este archivo tiene
- * que probar no es que el `insert` funcione —eso ya está cubierto en 009— sino
- * QUÉ se le manda. Sobre todo el autor.
- */
-const markAttendance = vi.fn(async () => ({ ok: true as const, data: { marked: 0 } }));
-vi.mock("@/server/attendance", () => ({
-  markAttendance: (...a: unknown[]) => markAttendance(...(a as [])),
-}));
-
 const ORG = "org_1";
 const PROFE = "tch_a";
-const USUARIO = "usr_profe";
 const CLASE = "cls_3";
 const COHORTE = "coh_1";
 
@@ -119,7 +104,6 @@ function prepararClase(opts: { finalizada?: boolean; cancelada?: boolean } = {})
 
 beforeEach(() => {
   colas.clear();
-  markAttendance.mockClear();
   vi.resetModules();
 });
 
@@ -180,55 +164,8 @@ describe("T027 — la planilla dice quién marcó y cuándo", () => {
   });
 });
 
-describe("T027 — corregir una clase pasada SÍ se puede, y queda el autor", () => {
-  /**
-   * **El caso que justifica la regla (DV-001).** La clase fue el 15 y el
-   * profesor corrige el 20. El sistema no discute con lo que pasó en el aula.
-   */
-  it("marca una clase de hace días y registra al usuario que la tocó", async () => {
-    prepararClase();
-    responder("attendance", []);
-
-    const { teacherMarkAttendance } = await import("@/server/teacher-portal");
-    const r = await teacherMarkAttendance(ORG, PROFE, USUARIO, CLASE, [
-      { enrollmentId: "enr_1", status: "tarde" },
-    ]);
-
-    expect(r.ok).toBe(true);
-    expect(markAttendance).toHaveBeenCalledWith(
-      ORG,
-      CLASE,
-      [{ enrollmentId: "enr_1", status: "tarde" }],
-      // El cuarto argumento es el autor: sin esto, una corrección no se puede
-      // revisar después.
-      USUARIO
-    );
-  });
-
-  /**
-   * Un `enrollmentId` de otra cohorte no entra. No es paranoia: el cuerpo del
-   * pedido lo arma el navegador, y el servidor es el único que sabe quiénes
-   * son los alumnos de esta clase.
-   */
-  it("descarta las inscripciones que no son de esta cohorte", async () => {
-    prepararClase();
-    responder("attendance", []);
-
-    const { teacherMarkAttendance } = await import("@/server/teacher-portal");
-    await teacherMarkAttendance(ORG, PROFE, USUARIO, CLASE, [
-      { enrollmentId: "enr_2", status: "presente" },
-      { enrollmentId: "enr_de_otra_cohorte", status: "presente" },
-    ]);
-
-    expect(markAttendance).toHaveBeenCalledWith(
-      ORG,
-      CLASE,
-      [{ enrollmentId: "enr_2", status: "presente" }],
-      USUARIO
-    );
-  });
-
-  it("una clase que no alcanza responde 404 y no marca nada", async () => {
+describe("T027 — sin alcance, no hay planilla", () => {
+  it("una clase de un grupo ajeno devuelve null (la ruta responde 404)", async () => {
     responder("classSession", [
       {
         id: CLASE,
@@ -241,38 +178,14 @@ describe("T027 — corregir una clase pasada SÍ se puede, y queda el autor", ()
     ]);
     responder("cohort", []); // no la alcanza
 
-    const { teacherMarkAttendance } = await import("@/server/teacher-portal");
-    const r = await teacherMarkAttendance(ORG, PROFE, USUARIO, CLASE, [
-      { enrollmentId: "enr_1", status: "presente" },
-    ]);
-
-    expect(r.ok).toBe(false);
-    if (r.ok) return;
-    expect(r.status).toBe(404);
-    expect(markAttendance).not.toHaveBeenCalled();
+    const { teacherAttendanceSheet } = await import("@/server/teacher-portal");
+    expect(await teacherAttendanceSheet(ORG, PROFE, CLASE)).toBeNull();
   });
 });
 
-describe("T027 — la cohorte finalizada se ve, no se edita (DV-005)", () => {
-  it("responde 422 con el motivo y no marca nada", async () => {
-    prepararClase({ finalizada: true });
-    responder("attendance", []);
-
-    const { teacherMarkAttendance } = await import("@/server/teacher-portal");
-    const r = await teacherMarkAttendance(ORG, PROFE, USUARIO, CLASE, [
-      { enrollmentId: "enr_1", status: "presente" },
-    ]);
-
-    expect(r.ok).toBe(false);
-    if (r.ok) return;
-    expect(r.status).toBe(422);
-    expect(r.code).toBe("cohorte_finalizada");
-    expect(r.message).toContain("ya terminó");
-    expect(markAttendance).not.toHaveBeenCalled();
-  });
-
-  /** Pero la planilla se PUEDE ver: la cohorte finalizada no desaparece. */
-  it("la planilla igual se ve, marcada como no editable", async () => {
+describe("T027 — lo cerrado se sigue viendo", () => {
+  /** La cohorte finalizada no desaparece del portal. */
+  it("la planilla de un grupo finalizado se ve", async () => {
     prepararClase({ finalizada: true });
     responder("attendance", []);
 
@@ -280,12 +193,10 @@ describe("T027 — la cohorte finalizada se ve, no se edita (DV-005)", () => {
     const planilla = await teacherAttendanceSheet(ORG, PROFE, CLASE);
 
     expect(planilla?.cohort.status).toBe("finalizada");
-    expect(planilla?.editable).toBe(false);
     expect(planilla?.students).toHaveLength(2);
   });
 
-  /** Una clase cancelada tampoco se edita, aunque la cohorte esté viva. */
-  it("una clase cancelada no es editable", async () => {
+  it("una clase cancelada se ve, marcada como cancelada", async () => {
     prepararClase({ cancelada: true });
     responder("attendance", []);
 
@@ -293,32 +204,7 @@ describe("T027 — la cohorte finalizada se ve, no se edita (DV-005)", () => {
     const planilla = await teacherAttendanceSheet(ORG, PROFE, CLASE);
 
     expect(planilla?.classSession.canceled).toBe(true);
-    expect(planilla?.editable).toBe(false);
-  });
-
-  /**
-   * El caso que justifica la puerta. La planilla YA decía `editable: false`,
-   * pero la escritura miraba solo el estado de la cohorte: que una clase
-   * cancelada no se escribiera dependía de que `markAttendance` repitiera la
-   * regla por su cuenta, allá abajo.
-   *
-   * Acá `markAttendance` está espiado y SIEMPRE dice que sí, así que lo único
-   * que puede hacer fallar este test es que el portal deje de negarse por sí
-   * mismo — que es exactamente la regresión que interesa.
-   */
-  it("marcar una clase cancelada responde 422 y no llega a la escritura", async () => {
-    prepararClase({ cancelada: true });
-    responder("attendance", []);
-
-    const { teacherMarkAttendance } = await import("@/server/teacher-portal");
-    const r = await teacherMarkAttendance(ORG, PROFE, USUARIO, CLASE, [
-      { enrollmentId: "enr_1", status: "presente" },
-    ]);
-
-    expect(r.ok).toBe(false);
-    if (r.ok) return;
-    expect(r.status).toBe(422);
-    expect(r.code).toBe("session_canceled");
-    expect(markAttendance).not.toHaveBeenCalled();
+    // Solo consulta: la planilla ya no lleva `editable`.
+    expect(planilla).not.toHaveProperty("editable");
   });
 });
