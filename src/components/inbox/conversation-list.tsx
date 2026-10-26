@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Search, Sparkles, UserRound } from "lucide-react";
 import type { ConversationDto } from "@/lib/types";
+import { coincideConBusqueda } from "@/lib/contact-search";
 import { cn } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
@@ -111,13 +112,15 @@ export function ConversationList({
 
   const loading = conversationsProp === null;
   const conversations = conversationsProp ?? [];
-  const q = query.trim().toLowerCase();
+  // 2026-10-26 — La misma regla que la búsqueda de contactos: cada palabra en
+  // algún campo, sin tildes ni mayúsculas, y el teléfono por sus dígitos.
+  const q = query.trim();
   const searched = q
-    ? conversations.filter(
-        (c) =>
-          c.contact.name.toLowerCase().includes(q) ||
-          (c.contact.phone ?? "").includes(q) ||
-          (c.preview ?? "").toLowerCase().includes(q)
+    ? conversations.filter((c) =>
+        coincideConBusqueda(q, {
+          texto: [c.contact.name, c.preview],
+          telefono: c.contact.phone,
+        })
       )
     : conversations;
   const unreadCount = searched.filter((c) => c.unreadCount > 0).length;

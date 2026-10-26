@@ -17,6 +17,7 @@ import {
 import { VentasPorVendedor } from "@/components/finanzas/ventas-por-vendedor";
 import { formatCalendarDay } from "@/lib/utils";
 import { formatMinorNumber } from "@/lib/money";
+import { coincideConBusqueda } from "@/lib/contact-search";
 
 /**
  * 026 — Administración y finanzas: el cierre de un mes, para transcribir.
@@ -232,11 +233,9 @@ export function FinanzasClient() {
     })();
   }, []);
 
-  const filtra = (fila: { alumno: string; cohorte: string; curso: string }) => {
-    const q = busqueda.trim().toLowerCase();
-    if (!q) return true;
-    return `${fila.alumno} ${fila.cohorte} ${fila.curso}`.toLowerCase().includes(q);
-  };
+  // 2026-10-26 — Cada palabra en alumno, grupo o curso, sin tildes ni mayúsculas.
+  const filtra = (fila: { alumno: string; cohorte: string; curso: string }) =>
+    coincideConBusqueda(busqueda, { texto: [fila.alumno, fila.cohorte, fila.curso] });
 
   return (
     <div className="space-y-5 p-6">

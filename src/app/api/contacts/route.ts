@@ -1,5 +1,6 @@
-import { and, desc, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, isNull, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
+import { condicionDeBusqueda } from "@/lib/contact-search-sql";
 import {
   contactoNuevoCampos,
   exigirTelefonoOCorreo,
@@ -45,14 +46,14 @@ export const GET = requireCapability(
   const includeArchived = query.data.archived === "true";
 
   const db = getDb();
+  // 2026-10-26 — Cada palabra en algún campo, sin tildes ni mayúsculas
+  // ("Juan Pérez" = "perez juan"): la regla única de `src/lib/contact-search.ts`.
+  // 2026-10-21 — un contacto sin teléfono se encuentra por su correo.
   const searchCondition = q
-    ? or(
-        ilike(schema.contact.firstName, `%${q}%`),
-        ilike(schema.contact.lastName, `%${q}%`),
-        ilike(schema.contact.phone, `%${q}%`),
-        // 2026-10-21 — un contacto sin teléfono se encuentra por su correo.
-        ilike(schema.contact.email, `%${q}%`)
-      )
+    ? condicionDeBusqueda(q, {
+        texto: [schema.contact.firstName, schema.contact.lastName, schema.contact.email],
+        telefono: schema.contact.phone,
+      })
     : undefined;
   const archivedCondition = includeArchived
     ? undefined

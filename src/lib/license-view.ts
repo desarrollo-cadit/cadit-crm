@@ -1,3 +1,4 @@
+import { coincideConBusqueda } from "./contact-search";
 import { licenciaOcupada } from "./license-rules";
 import type { LicenseSource } from "./license-source";
 
@@ -121,23 +122,20 @@ export function faltantesDelGrupo(
   return salida;
 }
 
-const normalizar = (s: string) =>
-  s
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .trim();
-
-/** FR-014 — Filtro por cohorte y origen, búsqueda por alumno. */
+/**
+ * FR-014 — Filtro por cohorte y origen, búsqueda por alumno. La búsqueda es
+ * la regla única de `src/lib/contact-search.ts` (2026-10-26): cada palabra en
+ * el nombre, en cualquier orden, sin tildes ni mayúsculas.
+ */
 export function filtrarFilas<T extends Pick<FilaDeLicenciaVista, "cohortId" | "source" | "contactName">>(
   filas: readonly T[],
   filtro: { cohortId?: string | null; source?: LicenseSource | null; q?: string }
 ): T[] {
-  const q = filtro.q ? normalizar(filtro.q) : "";
+  const q = filtro.q ?? "";
   return filas.filter(
     (f) =>
       (!filtro.cohortId || f.cohortId === filtro.cohortId) &&
       (!filtro.source || f.source === filtro.source) &&
-      (!q || normalizar(f.contactName).includes(q))
+      coincideConBusqueda(q, { texto: [f.contactName] })
   );
 }

@@ -168,6 +168,10 @@ describe("filtrarFilas (FR-014)", () => {
     expect(filtrarFilas(filas, { q: "  LUCIA " }).map((f) => f.licenseId)).toEqual(["c"]);
   });
 
+  it("apellido y nombre en cualquier orden (regla de contact-search)", () => {
+    expect(filtrarFilas(filas, { q: "nunez jose" }).map((f) => f.licenseId)).toEqual(["b"]);
+  });
+
   it("los filtros se combinan", () => {
     expect(filtrarFilas(filas, { source: "individual", q: "ana" })).toEqual([]);
   });
