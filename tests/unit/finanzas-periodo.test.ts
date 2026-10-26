@@ -739,6 +739,8 @@ describe("FR-007/FR-008 — la vista se gobierna con `cobranza.ver` y se declara
       "reportes.ver",
       // 2026-10-26 — asignar y quitar licencias (soporte), tampoco.
       "licencias.gestionar",
+      // 2026-10-26 — unificar contactos duplicados, tampoco.
+      "contactos.unificar",
     ]);
     expect(CAPABILITIES.filter((c) => !posteriores.has(c))).toHaveLength(17);
     expect(CAPABILITIES).not.toContain("finanzas.ver" as Capability);

@@ -41,6 +41,7 @@ const CAPABILITY_LABELS: Record<string, string> = {
   "cohortes.confirmar": "Confirmar grupos (avisa a Soporte y a Administración)",
   "contactos.ver": "Ver contactos",
   "contactos.editar": "Crear y editar contactos",
+  "contactos.unificar": "Unificar contactos duplicados",
   "inscripciones.ver": "Ver inscripciones",
   "inscripciones.seguimiento": "Seguir inscripciones: mover leads, checklist y correos",
   "inscripciones.editar": "Inscribir y editar datos comerciales",

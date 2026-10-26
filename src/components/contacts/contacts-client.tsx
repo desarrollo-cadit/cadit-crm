@@ -31,6 +31,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EnrollLauncher } from "@/components/enrollments/enroll-launcher";
+import { MergeContactsDialog } from "@/components/contacts/merge-contacts-dialog";
 import { TIPO_DE_CONTACTO_LABEL, type TipoDeContacto } from "@/lib/recorrido-comercial";
 import { notify } from "@/lib/notify";
 
@@ -76,7 +77,14 @@ function formatDate(iso: string): string {
   });
 }
 
-export function ContactsClient({ canEnroll = false }: { canEnroll?: boolean }) {
+export function ContactsClient({
+  canEnroll = false,
+  canMerge = false,
+}: {
+  canEnroll?: boolean;
+  /** 2026-10-26 — `contactos.unificar`: ofrecer "Unificar con…" ante un duplicado. */
+  canMerge?: boolean;
+}) {
   const [contacts, setContacts] = useState<ContactDto[]>([]);
   /** 014 — Qué pasó al dar de baja: borrado o archivado, y por qué. */
   const [total, setTotal] = useState(0);
@@ -86,6 +94,11 @@ export function ContactsClient({ canEnroll = false }: { canEnroll?: boolean }) {
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<ContactDto | null>(null);
+  /** El duplicado del 409, para abrir "Unificar contactos" ya elegido. */
+  const [merging, setMerging] = useState<{
+    contactId: string;
+    otro: { id: string; name: string };
+  } | null>(null);
   const [pestana, setPestana] = useState<Pestana>("todos");
   const [cantidades, setCantidades] = useState<CantidadesPorTipo | null>(null);
 
@@ -461,10 +474,29 @@ export function ContactsClient({ canEnroll = false }: { canEnroll?: boolean }) {
         <EditDialog
           contact={editing}
           onClose={() => setEditing(null)}
+          onMerge={
+            canMerge
+              ? (otro) => {
+                  setMerging({ contactId: editing.id, otro });
+                  setEditing(null);
+                }
+              : undefined
+          }
           onSave={async (patchBody) => {
             const error = await patch(editing.id, patchBody);
             if (!error) setEditing(null);
             return error;
+          }}
+        />
+      )}
+
+      {merging && (
+        <MergeContactsDialog
+          contactId={merging.contactId}
+          otro={merging.otro}
+          onClose={() => {
+            setMerging(null);
+            void refetch();
           }}
         />
       )}
@@ -485,9 +517,15 @@ function EditDialog({
   contact,
   onClose,
   onSave,
+  onMerge,
 }: {
   contact: ContactDto;
   onClose: () => void;
+  /**
+   * 2026-10-26 — El caso Patricia: el 409 nombra al contacto que ya tiene el
+   * teléfono o el correo. Con `contactos.unificar`, se ofrece unificarlos.
+   */
+  onMerge?: (otro: { id: string; name: string }) => void;
   onSave: (patch: {
     firstName: string;
     lastName: string | null;
@@ -686,6 +724,18 @@ function EditDialog({
                 >
                   Ver a {error.contact.name}
                 </Link>
+                {onMerge && (
+                  <>
+                    {" · "}
+                    <button
+                      type="button"
+                      className="underline underline-offset-2"
+                      onClick={() => onMerge(error.contact!)}
+                    >
+                      Unificar con {error.contact.name}
+                    </button>
+                  </>
+                )}
               </>
             )}
           </p>

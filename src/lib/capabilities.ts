@@ -52,6 +52,14 @@ export const CAPABILITIES = [
   // Comercial y financiero
   "contactos.ver",
   "contactos.editar",
+  /**
+   * 2026-10-26 (decisión del dueño) — Unificar dos contactos que son la misma
+   * persona (`src/lib/contact-merge.ts`): todo lo del absorbido pasa al que
+   * queda y el absorbido se BORRA. Es irreversible, por eso no cuelga de
+   * `contactos.editar`. La reciben dirección, coordinación y soporte (los
+   * filtros de esos roles la dejan pasar); ventas y administración no.
+   */
+  "contactos.unificar",
   "inscripciones.ver",
   /**
    * 040 (DV-001) — Las escrituras del SEGUIMIENTO de una inscripción: mover

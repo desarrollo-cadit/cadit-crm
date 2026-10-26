@@ -116,6 +116,10 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
     que: "dar de alta a una persona, corregir sus datos de contacto (incluida su empresa) y darla de baja",
     donde: "/contacts",
   },
+  "contactos.unificar": {
+    que: "unificar dos contactos que son la misma persona: todo lo del duplicado (inscripciones, conversaciones, portal, seguimiento) pasa al que queda y el duplicado se borra. No se puede deshacer, por eso siempre muestra antes qué va a pasar. Por defecto la tienen Dirección, Coordinación y Soporte",
+    donde: "Contactos → el alumno → Unificar con…",
+  },
   "inscripciones.ver": {
     que: "mirar el embudo de interesados y quiénes están anotados en cada grupo, sin cambiar nada",
     donde: "/pipeline",

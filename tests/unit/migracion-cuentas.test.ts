@@ -40,6 +40,8 @@ const POSTERIORES: readonly Capability[] = [
   "historial.importar",
   // 2026-10-26 — `licencias.gestionar`: nació después; dirección y soporte, no coordinación.
   "licencias.gestionar",
+  // 2026-10-26 — `contactos.unificar`: nació después; dirección, coordinación y soporte.
+  "contactos.unificar",
 ];
 const deEntonces = (caps: readonly Capability[]) =>
   caps.filter((c) => !POSTERIORES.includes(c));

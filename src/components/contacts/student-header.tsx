@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Mail, Phone } from "lucide-react";
 import type { StudentHeaderDto } from "@/server/student-header";
 import { Badge } from "@/components/ui/badge";
@@ -21,14 +22,21 @@ const ACCESO: Record<
  * borde abajo) para que las dos pantallas que se alternan desde el roster se
  * lean igual. Server component: llega armado desde la página.
  */
-export function StudentHeader({ header }: { header: StudentHeaderDto }) {
+export function StudentHeader({
+  header,
+  actions = null,
+}: {
+  header: StudentHeaderDto;
+  /** 2026-10-26 — Acciones a la derecha (hoy, "Unificar con…"). */
+  actions?: ReactNode;
+}) {
   const acceso = ACCESO[header.portalAccess];
   return (
     <header className="space-y-3 border-b px-6 pb-3 pt-4">
       <Breadcrumb items={header.crumbs} />
       <div className="flex items-center gap-3">
         <ContactAvatar name={header.name} seed={header.contactId} size="lg" />
-        <div className="min-w-0 space-y-1">
+        <div className="min-w-0 flex-1 space-y-1">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <h1 className="truncate text-lg font-semibold text-foreground">{header.name}</h1>
             <Badge variant={acceso.variant}>{acceso.label}</Badge>
@@ -66,6 +74,7 @@ export function StudentHeader({ header }: { header: StudentHeaderDto }) {
             )}
           </p>
         </div>
+        {actions ? <div className="shrink-0">{actions}</div> : null}
       </div>
     </header>
   );
