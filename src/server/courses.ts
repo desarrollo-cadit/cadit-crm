@@ -1,4 +1,4 @@
-import { asc, desc, eq, inArray, like, ne } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull, like, ne } from "drizzle-orm";
 import { z } from "zod";
 import { minorAmount } from "@/lib/money-schema";
 import { httpUrl } from "@/lib/url-schema";
@@ -9,6 +9,7 @@ import { scoped } from "@/lib/db/tenant";
 import { slugify } from "@/lib/utils";
 import { computeCohortStatus } from "@/lib/cohort-status";
 import { ACADEMY_TIME_ZONE } from "@/lib/schedule-time";
+import { progresoDeCursada, type ProgresoDeCursada } from "@/lib/cohort-progress";
 import { decidirBorradoDeClases } from "@/lib/recess";
 import { marcaDeConfirmacion } from "@/lib/marca-de-confirmacion";
 import { organizationTimezone } from "@/server/finanzas-periodo";
@@ -1243,15 +1244,90 @@ export async function listCohorts(
   );
 
   const timeZone = rows.length > 0 ? await organizationTimezone(organizationId) : ACADEMY_TIME_ZONE;
-  return rows.map((r) =>
-    serializeCohort(
+  const ids = rows.map((r) => r.cohort.id);
+  const [progresos, inscriptos] = await Promise.all([
+    progresoPorCohorte(db, organizationId, ids, timeZone),
+    inscriptosActivosPorCohorte(db, organizationId, ids),
+  ]);
+  return rows.map((r) => ({
+    ...serializeCohort(
       r.cohort,
       r.course,
       r.teacher,
       softwareByCohort.get(r.cohort.id) ?? [],
       timeZone
+    ),
+    progress: progresos.get(r.cohort.id) ?? null,
+    enrolledCount: inscriptos.get(r.cohort.id) ?? 0,
+  }));
+}
+
+/**
+ * 2026-10-26 — "Clase X de Y" de cada cohorte del listado, en UNA consulta
+ * (no una por fila). Lo que cuenta lo decide `progresoDeCursada` con la
+ * regla única de la clase dictada (`estadoDeClase` → `classHasEnded`).
+ */
+async function progresoPorCohorte(
+  db: DbOrTx,
+  organizationId: string,
+  cohortIds: string[],
+  timeZone: string,
+  now: Date = new Date()
+): Promise<Map<string, ProgresoDeCursada | null>> {
+  const out = new Map<string, ProgresoDeCursada | null>();
+  if (cohortIds.length === 0) return out;
+  const clases = await db
+    .select({
+      cohortId: schema.classSession.cohortId,
+      date: schema.classSession.date,
+      endTime: schema.classSession.endTime,
+      canceledAt: schema.classSession.canceledAt,
+    })
+    .from(schema.classSession)
+    .where(
+      scoped(
+        schema.classSession.organizationId,
+        organizationId,
+        inArray(schema.classSession.cohortId, cohortIds)
+      )
+    );
+  const porCohorte = new Map<string, { sessionDate: Date; endTime: string | null; canceled: boolean }[]>();
+  for (const c of clases) {
+    const lista = porCohorte.get(c.cohortId) ?? [];
+    lista.push({ sessionDate: c.date, endTime: c.endTime, canceled: c.canceledAt !== null });
+    porCohorte.set(c.cohortId, lista);
+  }
+  for (const [id, lista] of porCohorte) out.set(id, progresoDeCursada(lista, { timeZone, now }));
+  return out;
+}
+
+/**
+ * 2026-10-26 — Inscriptos ACTIVOS de cada cohorte del listado ("14 / 16
+ * inscriptos"), en una consulta agrupada. Activo = el contacto no está dado
+ * de baja (`contact.archived_at` nulo): el roster lista a los de baja
+ * marcados como tales, y no ocupan un lugar.
+ */
+async function inscriptosActivosPorCohorte(
+  db: DbOrTx,
+  organizationId: string,
+  cohortIds: string[]
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (cohortIds.length === 0) return out;
+  const filas = await db
+    .select({ cohortId: schema.enrollment.cohortId, n: count() })
+    .from(schema.enrollment)
+    .innerJoin(schema.contact, eq(schema.contact.id, schema.enrollment.contactId))
+    .where(
+      scoped(
+        schema.enrollment.organizationId,
+        organizationId,
+        and(inArray(schema.enrollment.cohortId, cohortIds), isNull(schema.contact.archivedAt))
+      )
     )
-  );
+    .groupBy(schema.enrollment.cohortId);
+  for (const f of filas) if (f.cohortId) out.set(f.cohortId, Number(f.n));
+  return out;
 }
 
 /** 005 (T008) — Una cohorte puntual, con `teacher`/`software` resueltos. */

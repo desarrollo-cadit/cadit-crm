@@ -555,6 +555,21 @@
   [data-world="campus"] .portal-contenido {
     max-width: 1440px;
   }
+
+  /*
+    Académico: el punto de "en curso" late despacio. Es lo único que se mueve
+    en la pantalla y dice "esto está pasando ahora". El halo sale del token de
+    éxito con color-mix: la opacidad sobre una var() no existe en Tailwind.
+  */
+  .latido {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 25%, transparent);
+    animation: latido 2.4s ease-in-out infinite;
+  }
+  @keyframes latido {
+    50% {
+      box-shadow: 0 0 0 6px color-mix(in srgb, var(--success) 0%, transparent);
+    }
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -566,6 +581,9 @@
   }
   /* El retardo escalonado también se va: si no, el segmento queda oculto un rato. */
   .progreso-tramo {
+    animation: none;
+  }
+  .latido {
     animation: none;
   }
 }

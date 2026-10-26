@@ -12,6 +12,7 @@ import {
   type GrupoDelListado,
 } from "@/lib/program-order";
 import { COURSE_KINDS, type CourseKind } from "@/lib/course-kind";
+import { coincideConBusqueda } from "@/lib/contact-search";
 
 type Estado = CohorteAgrupable["status"];
 const ESTADOS: readonly Estado[] = ["planificada", "en_curso", "finalizada"];
@@ -90,18 +91,32 @@ export function alternarTipo(
   return next.size === 0 ? new Set(current) : next;
 }
 
-export function filtrarCursos<T extends { kind: CourseKind }>(
-  courses: readonly T[],
-  tipos: ReadonlySet<CourseKind>
-): T[] {
-  return courses.filter((c) => tipos.has(c.kind));
+type CursoFiltrable = { kind: CourseKind; name?: string };
+
+/**
+ * 2026-10-26 — El buscador de Cursos: por nombre, con la regla de la búsqueda
+ * de contactos (`coincideConBusqueda`: cada palabra, cualquier orden, sin
+ * tildes ni mayúsculas). Una sola regla de "coincide" en todo el panel.
+ */
+function cursoCoincide(c: CursoFiltrable, busqueda: string | undefined): boolean {
+  return !busqueda || coincideConBusqueda(busqueda, { texto: [c.name] });
 }
 
+export function filtrarCursos<T extends CursoFiltrable>(
+  courses: readonly T[],
+  tipos: ReadonlySet<CourseKind>,
+  busqueda?: string
+): T[] {
+  return courses.filter((c) => tipos.has(c.kind) && cursoCoincide(c, busqueda));
+}
+
+/** Cuántos cursos de cada tipo, con la búsqueda aplicada (FR-014). */
 export function contarCursosPorTipo(
-  courses: readonly { kind: CourseKind }[]
+  courses: readonly CursoFiltrable[],
+  busqueda?: string
 ): Record<CourseKind, number> {
   const out = Object.fromEntries(COURSE_KINDS.map((k) => [k, 0])) as Record<CourseKind, number>;
-  for (const c of courses) out[c.kind] += 1;
+  for (const c of courses) if (cursoCoincide(c, busqueda)) out[c.kind] += 1;
   return out;
 }
 
@@ -112,13 +127,32 @@ export function contarCursosPorTipo(
 export type CohorteFiltrable = CohorteAgrupable & {
   endDate: string | null;
   courseKind: CourseKind;
+  /** Para el buscador; una especialización no tiene profesor propio. */
+  teacher?: { name: string } | null;
 };
 
 export type FiltrosDeCohortes = {
   estados: ReadonlySet<Estado>;
   anio: FiltroDeAnio;
   tipos: ReadonlySet<CourseKind>;
+  /** 2026-10-26 — Texto del buscador; vacío o ausente no filtra. */
+  busqueda?: string;
 };
+
+/**
+ * 2026-10-26 — Un grupo coincide con el buscador por su nombre, el de su
+ * curso o el de su profesor (`coincideConBusqueda`, la regla de contactos:
+ * cada palabra en ALGÚN campo, en cualquier orden).
+ */
+export function coincideCohorteConBusqueda(
+  c: Pick<CohorteFiltrable, "name" | "courseName" | "teacher">,
+  busqueda: string | undefined
+): boolean {
+  if (!busqueda) return true;
+  return coincideConBusqueda(busqueda, {
+    texto: [c.name, c.courseName, c.teacher?.name],
+  });
+}
 
 /**
  * 032 (FR-011/FR-013) — Estado, año y tipo, los tres a la vez.
@@ -133,6 +167,11 @@ export type FiltrosDeCohortes = {
  *   tipo elegido, igual que el estado: filtrar "Módulo" tiene que mostrar las
  *   especializaciones que los contienen.
  *
+ * - la **búsqueda** (2026-10-26) acepta la fila si la madre o alguno de sus
+ *   módulos coincide, igual que el tipo: buscar al profesor de un módulo
+ *   tiene que traer la especialización. Los módulos se siguen mostrando
+ *   TODOS: son la estructura del programa.
+ *
  * Filtrar la lista ANTES de agrupar no sirve: un módulo cuya madre quedó
  * afuera se dibujaría suelto.
  */
@@ -144,7 +183,9 @@ export function filtrarCohortes<T extends CohorteFiltrable>(
     (g) =>
       coincideAnio(g.cohort, filtros.anio) &&
       (filtros.tipos.has(g.cohort.courseKind) ||
-        g.modules.some((m) => filtros.tipos.has(m.cohort.courseKind)))
+        g.modules.some((m) => filtros.tipos.has(m.cohort.courseKind))) &&
+      (coincideCohorteConBusqueda(g.cohort, filtros.busqueda) ||
+        g.modules.some((m) => coincideCohorteConBusqueda(m.cohort, filtros.busqueda)))
   );
 }
 
@@ -161,7 +202,7 @@ export type ContadoresDeCohortes = {
 
 /**
  * 032 (FR-014) — Cuántas filas quedarían con cada opción, con los DEMÁS
- * filtros aplicados. Se cuentan filas del listado (una especialización con
+ * filtros aplicados (la búsqueda incluida). Se cuentan filas del listado (una especialización con
  * sus módulos es una), que es lo que la persona ve.
  */
 export function contadoresDeCohortes<T extends CohorteFiltrable>(
