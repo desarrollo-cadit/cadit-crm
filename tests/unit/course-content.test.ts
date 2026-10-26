@@ -177,8 +177,9 @@ describe("createCourse — slug (006)", () => {
       tagline: "Automatizá tu negocio con IA",
       level: "inicial",
       modality: "en_vivo",
-      durationWeeks: 12,
-      hoursPerWeek: 4,
+      classCount: 15,
+      hoursPerClass: 2.5,
+      totalHours: 37.5,
       learningObjectives: ["Armar agentes", "Conectar APIs"],
       targetAudience: "Sin conocimientos previos de programación",
       syllabusUrl: "https://example.com/temario.pdf",
@@ -188,8 +189,13 @@ describe("createCourse — slug (006)", () => {
     expect(values.tagline).toBe("Automatizá tu negocio con IA");
     expect(values.level).toBe("inicial");
     expect(values.modality).toBe("en_vivo");
-    expect(values.durationWeeks).toBe(12);
-    expect(values.hoursPerWeek).toBe(4);
+    // numeric de Postgres: viaja como texto, con los decimales intactos.
+    expect(values.classCount).toBe(15);
+    expect(values.hoursPerClass).toBe("2.5");
+    expect(values.totalHours).toBe("37.5");
+    // Las columnas viejas (semanas × horas por semana) ya no se escriben.
+    expect(values).not.toHaveProperty("durationWeeks");
+    expect(values).not.toHaveProperty("hoursPerWeek");
     expect(values.learningObjectives).toEqual(["Armar agentes", "Conectar APIs"]);
     expect(values.targetAudience).toBe("Sin conocimientos previos de programación");
     expect(values.syllabusUrl).toBe("https://example.com/temario.pdf");

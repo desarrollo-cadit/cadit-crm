@@ -51,8 +51,11 @@ Respuesta real:
       },
       "level": "inicial",                    // inicial | intermedio | avanzado | null
       "modality": "en_vivo",                 // en_vivo | asincronico | presencial | null
-      "durationWeeks": 12,
-      "hoursPerWeek": 4,
+      "classCount": 15,                      // cantidad de clases (entero) | null
+      "hoursPerClass": 2.5,                  // horas por clase, con decimales | null
+      "totalHours": 37.5,                    // duración total en horas, con decimales | null
+      "durationWeeks": 12,                   // DEPRECADO: ver más abajo
+      "hoursPerWeek": 4,                     // DEPRECADO: ver más abajo
       "nextCohorts": [
         { "id": "coh_1asacyuvben71bhoisz8", "startDate": "2026-09-15T00:00:00.000Z" }
       ]
@@ -118,7 +121,23 @@ Errores:
 | `category` | Chip/etiqueta + filtro del catálogo |
 | `level` | Badge "Nivel: Inicial" |
 | `modality` | Badge "En vivo" / "Asincrónico" / "Presencial" |
-| `durationWeeks` + `hoursPerWeek` | "12 semanas · 4 h/semana" |
+| `totalHours` | "37,5 horas" — la duración del curso; es lo que dice el certificado |
+| `classCount` + `hoursPerClass` | "15 clases de 2,5 h" |
+| `durationWeeks` + `hoursPerWeek` | **DEPRECADOS.** Ver la nota de abajo |
+
+**Duración: `totalHours`, `classCount`, `hoursPerClass` (desde 2026-10-26).**
+El CRM pasó de "semanas × horas por semana" a cantidad de clases, horas por
+clase y duración total. Los tres pueden venir `null` y son **números en horas
+con decimales** (`2.5` = dos horas y media; no son plata ni centésimos).
+`totalHours` se carga aparte y puede no ser exactamente `classCount ×
+hoursPerClass` (un examen, una última clase más corta): para mostrar la
+duración usá `totalHours`, no la multiplicación. Con coma decimal en pantalla:
+`totalHours.toLocaleString("es-UY")`.
+
+`durationWeeks` y `hoursPerWeek` siguen viniendo **solo por compatibilidad**:
+son los valores que quedaron guardados antes del cambio, el CRM ya no los
+edita y se van a quitar de la respuesta cuando el sitio deje de leerlos.
+Migrá el sitio a `totalHours`.
 | `learningObjectives` | Sección "Qué vas a aprender" (lista de bullets) |
 | `targetAudience` | Sección "A quién está dirigido" |
 | `modules` | Temario, ideal como acordeón: `title` es el módulo, `topics` sus temas |
@@ -151,6 +170,9 @@ mismo catálogo:
   "category": null,
   "level": null,
   "modality": null,
+  "classCount": null,
+  "hoursPerClass": null,
+  "totalHours": null,
   "durationWeeks": null,
   "hoursPerWeek": null,
   "nextCohorts": []
@@ -279,7 +301,15 @@ export type CursoListado = {
   category: Categoria | null;
   level: "inicial" | "intermedio" | "avanzado" | null;
   modality: "en_vivo" | "asincronico" | "presencial" | null;
+  /** Cantidad de clases. */
+  classCount: number | null;
+  /** Horas por clase, con decimales (2.5 = dos horas y media). */
+  hoursPerClass: number | null;
+  /** Duración total en horas, con decimales. Es la que se muestra. */
+  totalHours: number | null;
+  /** @deprecated Usá `totalHours`. Valor viejo, solo lectura; se va a quitar. */
   durationWeeks: number | null;
+  /** @deprecated Usá `totalHours`. Valor viejo, solo lectura; se va a quitar. */
   hoursPerWeek: number | null;
   nextCohorts: Cohorte[];
 };

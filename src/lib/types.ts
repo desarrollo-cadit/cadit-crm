@@ -92,8 +92,10 @@ export type CourseDto = {
   categoryId: string | null;
   level: CourseLevel | null;
   modality: CourseModality | null;
-  durationWeeks: number | null;
-  hoursPerWeek: number | null;
+  /** Duración del curso (`src/lib/course-duration.ts`); horas con decimales. */
+  classCount: number | null;
+  hoursPerClass: number | null;
+  totalHours: number | null;
   imageUrl: string | null;
   learningObjectives: string[];
   targetAudience: string | null;

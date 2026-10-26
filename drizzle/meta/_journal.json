@@ -526,6 +526,13 @@
       "when": 1792775653955,
       "tag": "0074_reportes",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1793027024892,
+      "tag": "0075_duracion_del_curso",
+      "breakpoints": true
     }
   ]
 }

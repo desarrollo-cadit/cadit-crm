@@ -432,8 +432,27 @@ export const course = pgTable(
     }),
     level: text("level", { enum: ["inicial", "intermedio", "avanzado"] }),
     modality: text("modality", { enum: ["en_vivo", "asincronico", "presencial"] }),
+    /**
+     * DEPRECADAS (0075) — "semanas × horas por semana" no describía bien un
+     * curso de 15 clases de 2,5 horas. La app ya no las escribe ni las lee,
+     * salvo el catálogo público, que las devuelve tal cual (solo lectura) para
+     * no romper la web mientras migra a `totalHours`. Se borran en una
+     * migración posterior.
+     */
     durationWeeks: integer("duration_weeks"),
+    /** DEPRECADA (0075) — ver `durationWeeks`. */
     hoursPerWeek: integer("hours_per_week"),
+    /**
+     * 0075 — Duración del CURSO (`src/lib/course-duration.ts`). Las tres son
+     * opcionales. El total se GUARDA y no se deriva: un examen o una última
+     * clase más corta lo pueden hacer distinto de clases × horas por clase.
+     * Es lo que dice el certificado ("37,5 horas"). `numeric` llega como texto.
+     */
+    classCount: integer("class_count"),
+    /** Horas por clase, de a cuartos de hora (2, 2,5, 4). */
+    hoursPerClass: numeric("hours_per_class", { precision: 4, scale: 2 }),
+    /** Duración total en horas, hasta dos decimales. */
+    totalHours: numeric("total_hours", { precision: 7, scale: 2 }),
     imageUrl: text("image_url"),
     /** Bullets de "qué vas a aprender" — jsonb, mismo criterio que lab.transcript. */
     learningObjectives: jsonb("learning_objectives").$type<string[]>(),
