@@ -1,5 +1,6 @@
 import {
   Award,
+  BarChart3,
   BookOpen,
   Building2,
   CalendarClock,
@@ -66,6 +67,11 @@ export const NAV_GROUPS = [
     label: "Inicio",
     items: [
       { href: "/", label: "Dashboard", icon: Kanban, capability: null },
+      /**
+       * 2026-10-26 — Los reportes se mudaron del pie del inicio a su pantalla.
+       * Mismo permiso que antes: `reportes.ver` (Dirección y Coordinación).
+       */
+      { href: "/reportes", label: "Reportes", icon: BarChart3, capability: "reportes.ver" },
     ],
   },
   {

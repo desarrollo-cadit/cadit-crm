@@ -228,10 +228,10 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
     que: "importar la planilla histórica de cursadas (2020–2024): asociar cursos y vendedores, ver la vista previa, aplicarla y deshacerla. Crea y completa contactos en bloque (nunca pisa un dato): por defecto solo la tiene Dirección",
     donde: "/settings/historial",
   },
-  // 046 US8 — Reportes del inicio.
+  // 046 US8 — Reportes (2026-10-26: en su propia pantalla, ya no al pie del inicio).
   "reportes.ver": {
-    que: "ver la sección Reportes del inicio: cursos más cursados, alumnos por período, empresas, embudo de leads por origen, recompra y ventas por año y por vendedor. Los ingresos por curso aparecen solo si además tiene ver cobranza. Por defecto la tienen Dirección y Coordinación",
-    donde: "/",
+    que: "ver la pantalla Reportes: cursos más cursados, alumnos por período, empresas, embudo de leads por origen, recompra y ventas por año y por vendedor. Los ingresos por curso aparecen solo si además tiene ver cobranza. Por defecto la tienen Dirección y Coordinación",
+    donde: "/reportes",
   },
 };
 

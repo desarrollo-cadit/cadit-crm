@@ -5,6 +5,7 @@ import { TrendingDown, TrendingUp } from "lucide-react";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { cn, formatAmount } from "@/lib/utils";
 import { useCssVar } from "@/components/use-css-var";
+import { Skeleton } from "@/components/ui/skeleton";
 
 type CurrencyTotal = { currency: string; total: number };
 type MonthTotals = { month: string; totals: CurrencyTotal[] };
@@ -60,6 +61,7 @@ function totalOf(month: MonthTotals | undefined, currency: string): number {
 export function FinancePanel() {
   const [data, setData] = useState<FinanceDashboard | null>(null);
   const [forbidden, setForbidden] = useState(false);
+  const [fallo, setFallo] = useState(false);
   const [currency, setCurrency] = useState<string | null>(null);
   const acento = useCssVar("--accent", "#3f5972");
 
@@ -70,14 +72,19 @@ export function FinancePanel() {
         setForbidden(true);
         return;
       }
-      if (!res?.ok) return;
+      if (!res?.ok) {
+        setFallo(true);
+        return;
+      }
       const json = (await res.json()) as FinanceDashboard;
       setData(json);
       setCurrency(json.currencies[0] ?? "UYU");
     })();
   }, []);
 
-  if (forbidden || !data || !currency) return null;
+  if (forbidden || fallo) return null;
+  // Mientras carga, el lugar de la tarjeta: que la grilla del mes no salte.
+  if (!data || !currency) return <Skeleton className="h-36 w-full" />;
 
   const current = totalOf(data.currentMonth, currency);
   const previous = totalOf(data.previousMonth, currency);
@@ -89,12 +96,15 @@ export function FinancePanel() {
     total: totalOf(point, currency),
   }));
 
+  /**
+   * 2026-10-26 — Tarjeta callada de "Este mes": la cifra del mes, lo cobrado
+   * y la diferencia con el anterior, y la tendencia de 6 meses en chico. Es
+   * información de lectura; lo que hay que hacer vive arriba, en Para resolver.
+   */
   return (
-    <div className="rounded-lg border bg-card p-5">
+    <div className="min-w-0 rounded-md border bg-muted px-4 py-3.5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Facturación
-        </p>
+        <h3 className="text-[13px] font-semibold text-text-2">Facturación</h3>
         {data.currencies.length > 1 && (
           <div className="flex gap-1" role="tablist" aria-label="Moneda">
             {data.currencies.map((code) => (
@@ -107,8 +117,8 @@ export function FinancePanel() {
                 className={cn(
                   "rounded-md px-2 py-0.5 text-xs font-medium transition-colors",
                   code === currency
-                    ? "bg-brand-tint text-primary"
-                    : "text-muted-foreground hover:bg-muted"
+                    ? "bg-brand-soft text-brand-text"
+                    : "text-muted-foreground hover:bg-accent"
                 )}
               >
                 {code}
@@ -117,45 +127,40 @@ export function FinancePanel() {
           </div>
         )}
       </div>
-      <div className="mt-2 flex flex-wrap items-end gap-x-6 gap-y-3">
-        <div>
-          <p className="text-2xl font-semibold">{formatAmount(current, currency)}</p>
-          <p className="text-xs text-muted-foreground capitalize">
-            facturado · {formatMonth(data.currentMonth.month)}
-          </p>
-        </div>
-        {collected !== null && (
-          <div>
-            <p className="text-2xl font-semibold text-primary">
-              {formatAmount(collected, currency)}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              cobrado{" "}
-              {current > 0 ? `(${Math.round((collected / current) * 100)}% de lo facturado)` : ""}
-            </p>
-          </div>
+      <p className="mt-2 text-[22px] font-semibold leading-tight tabular-nums">
+        {formatAmount(current, currency)}{" "}
+        <span className="text-xs font-normal text-muted-foreground">facturado</span>
+      </p>
+      <p className="text-xs capitalize text-muted-foreground">{formatMonth(data.currentMonth.month)}</p>
+      {collected !== null && (
+        <p className="mt-1.5 text-sm">
+          <span className="font-medium tabular-nums text-brand-text">{formatAmount(collected, currency)}</span>{" "}
+          <span className="text-xs text-muted-foreground">
+            cobrado
+            {current > 0 ? ` (${Math.round((collected / current) * 100)}% de lo facturado)` : ""}
+          </span>
+        </p>
+      )}
+      <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-xs">
+        {up ? (
+          <TrendingUp className="h-3.5 w-3.5 text-success" aria-hidden />
+        ) : (
+          <TrendingDown className="h-3.5 w-3.5 text-destructive" aria-hidden />
         )}
-        <div className="flex items-center gap-1.5 text-sm">
-          {up ? (
-            <TrendingUp className="h-4 w-4 text-success" />
-          ) : (
-            <TrendingDown className="h-4 w-4 text-destructive" />
-          )}
-          <span className={up ? "text-success" : "text-destructive"}>
-            {up ? "+" : ""}
-            {formatAmount(diff, currency)}
-          </span>
-          <span className="text-muted-foreground">
-            vs. {formatAmount(previous, currency)} en {formatMonth(data.previousMonth.month)}
-          </span>
-        </div>
-      </div>
+        <span className={up ? "text-success" : "text-destructive"}>
+          {up ? "+" : ""}
+          {formatAmount(diff, currency)}
+        </span>
+        <span className="text-muted-foreground">
+          frente a {formatMonth(data.previousMonth.month)}
+        </span>
+      </p>
 
       {/* 005 iteración 2 — tendencia de los últimos 6 meses (recharts, pedido explícito del dueño). */}
       {chartData.length > 0 && (
-        <div className="mt-4 h-40">
+        <div className="mt-3 h-24">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
+            <BarChart data={chartData} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
               <XAxis
                 dataKey="month"
                 tickFormatter={formatMonthShort}
@@ -170,10 +175,9 @@ export function FinancePanel() {
                 contentStyle={{ fontSize: 12 }}
               />
               {/* 021 — Era `#25D366`, el verde de WhatsApp, escrito a mano.
-                  En el elemento más visible del inicio, y sin relación con la
-                  marca de la academia ni con el tema. Recharts recibe un
-                  color, no una clase, así que se lee la variable en runtime. */}
-              <Bar dataKey="total" fill={acento} radius={[4, 4, 0, 0]} />
+                  Recharts recibe un color, no una clase, así que se lee la
+                  variable en runtime. */}
+              <Bar dataKey="total" fill={acento} radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>

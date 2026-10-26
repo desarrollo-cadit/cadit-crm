@@ -2,23 +2,25 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { CheckCircle2, ChevronDown, ChevronRight } from "lucide-react";
+import { Check, ChevronRight } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { GrupoDeTareas, Urgencia } from "@/lib/tareas-del-dia";
+import type { GrupoDeTareas, ReglaDeTarea, Urgencia } from "@/lib/tareas-del-dia";
+import { cn } from "@/lib/utils";
 
 /**
- * 2026-10-26 — "Para resolver hoy": la bandeja de tareas del inicio.
+ * 2026-10-26 — "Para resolver": la bandeja de tareas del inicio, y la zona con
+ * presencia de la pantalla (encabezado propio con el tinte del acento y el
+ * total de pendientes).
  *
- * Va al lado de "Hoy" (las clases del día, `today-panel.tsx`) y no adentro:
- * aquel dice qué PASA hoy, esta qué hay que HACER. Las tareas son derivadas
- * (`src/lib/tareas-del-dia.ts`): no hay "hecho" que tildar, se van solas
- * cuando el dato se arregla. Cada regla es una fila plegable con su cantidad;
- * cada item, un enlace al lugar exacto donde se resuelve.
+ * Va al lado de la agenda y no adentro: aquella dice qué PASA hoy, esta qué
+ * hay que HACER. Las tareas son derivadas (`src/lib/tareas-del-dia.ts`): no
+ * hay "hecho" que tildar, se van solas cuando el dato se arregla. Cada regla
+ * es una fila plegable con su cantidad; cada item, un enlace al lugar exacto
+ * donde se resuelve, con la acción dicha en palabras.
  */
 export function TareasDeHoyPanel() {
   const [grupos, setGrupos] = useState<GrupoDeTareas[] | null>(null);
   const [error, setError] = useState(false);
-  const [abiertos, setAbiertos] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     void (async () => {
@@ -32,10 +34,41 @@ export function TareasDeHoyPanel() {
     })();
   }, []);
 
+  return <ParaResolver grupos={grupos} error={error} />;
+}
+
+/** Lo que dice el enlace de cada item: el verbo de lo que se hace allá. */
+export const ACCION_DE_REGLA: Record<ReglaDeTarea, string> = {
+  asistencia: "Pasar asistencia",
+  confirmar: "Confirmar o cancelar",
+  facturar: "Ir a facturación",
+  leads: "Abrir seguimiento",
+};
+
+/** Presentacional: `null` = cargando. */
+export function ParaResolver({ grupos, error = false }: { grupos: GrupoDeTareas[] | null; error?: boolean }) {
+  // La primera regla (la más urgente) abre desplegada: la pantalla arranca
+  // mostrando QUÉ hacer, no solo cuánto.
+  const [abiertos, setAbiertos] = useState<Record<string, boolean>>({});
+  const total = grupos?.reduce((s, g) => s + g.items.length, 0) ?? null;
+
   return (
-    <section className="rounded-lg border bg-card">
-      <div className="border-b px-5 py-3">
-        <h2 className="text-sm font-semibold">Para resolver hoy</h2>
+    <section
+      aria-labelledby="para-resolver"
+      className="min-w-0 overflow-hidden rounded-lg border border-brand-soft bg-card shadow-sm"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-brand-soft bg-brand-tint px-5 py-3.5">
+        <h2 id="para-resolver" className="flex items-center gap-2.5 text-base font-semibold text-brand-text">
+          Para resolver
+          {total !== null && !error && (
+            <span className="inline-grid h-[26px] min-w-[26px] place-items-center rounded-full bg-brand px-2 text-[13px] font-semibold tabular-nums text-on-accent">
+              {total}
+            </span>
+          )}
+        </h2>
+        <span className="text-xs text-muted-foreground">
+          Lo más urgente primero. Cada fila lleva a donde se resuelve.
+        </span>
       </div>
 
       {grupos === null ? (
@@ -50,50 +83,80 @@ export function TareasDeHoyPanel() {
         </p>
       ) : grupos.length === 0 ? (
         /* Un vacío tranquilo: que no haya nada es la buena noticia. */
-        <p className="flex items-center justify-center gap-2 px-5 py-8 text-sm text-muted-foreground">
-          <CheckCircle2 className="h-4 w-4 text-success" aria-hidden />
-          Nada pendiente por hoy.
-        </p>
+        <div className="flex items-center gap-3 px-5 py-6">
+          <span className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border border-success-border bg-success-soft text-success">
+            <Check className="h-4 w-4" aria-hidden />
+          </span>
+          <div>
+            <p className="text-sm font-medium">Nada pendiente por hoy.</p>
+            <p className="text-xs text-muted-foreground">Cuando haya algo para resolver, aparece acá.</p>
+          </div>
+        </div>
       ) : (
         <ul className="divide-y">
-          {grupos.map((g) => {
-            const abierto = abiertos[g.ruleId] ?? false;
+          {grupos.map((g, indice) => {
+            const abierto = abiertos[g.ruleId] ?? indice === 0;
+            const urgente = g.urgencia === "alta";
+            // Dentro de una regla urgente, se marca CUÁL item lo es; si todos
+            // lo son, la marca de la regla ya lo dijo.
+            const mixta = urgente && g.items.some((t) => t.urgencia !== "alta");
             return (
               <li key={g.ruleId}>
                 <button
                   type="button"
                   onClick={() => setAbiertos((a) => ({ ...a, [g.ruleId]: !abierto }))}
                   aria-expanded={abierto}
-                  className="flex w-full items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-accent"
+                  className="grid w-full grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                 >
-                  {abierto ? (
-                    <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-                  ) : (
-                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-                  )}
-                  <span className="min-w-0 flex-1">
+                  <span
+                    className={cn(
+                      "text-center text-[22px] font-semibold leading-none tabular-nums",
+                      urgente && "text-warning"
+                    )}
+                  >
+                    {g.items.length}
+                  </span>
+                  <span className="min-w-0">
                     <span className="block truncate text-sm font-medium">{g.titulo}</span>
                     <span className="block truncate text-xs text-muted-foreground">{g.resumen}</span>
                   </span>
-                  <MarcaDeUrgencia urgencia={g.urgencia} />
+                  <span className="flex items-center gap-1.5">
+                    <MarcaDeUrgencia urgencia={g.urgencia} />
+                    <ChevronRight
+                      className={cn(
+                        "h-4 w-4 text-muted-foreground transition-transform motion-reduce:transition-none",
+                        abierto && "rotate-90"
+                      )}
+                      aria-hidden
+                    />
+                  </span>
                 </button>
                 {abierto && (
-                  <ul className="border-t bg-subtle">
+                  <ul className="divide-y border-t bg-subtle">
                     {g.items.map((t, i) => (
                       <li key={`${t.href}-${i}`}>
                         <Link
                           href={t.href}
-                          className="flex items-center gap-3 py-2 pl-12 pr-5 transition-colors hover:bg-accent"
+                          className="group grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-2.5 pl-5 pr-5 transition-colors hover:bg-accent sm:pl-[76px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                         >
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm">{t.titulo}</span>
+                          <span className="min-w-0">
+                            <span className="flex items-center gap-1.5">
+                              <span className="truncate text-sm">{t.titulo}</span>
+                              {mixta && t.urgencia === "alta" && (
+                                <span className="shrink-0 rounded-full border border-warning-border bg-warning-soft px-1.5 text-[10px] font-medium text-warning">
+                                  urgente
+                                </span>
+                              )}
+                            </span>
                             {t.detalle && (
                               <span className="block truncate text-xs text-muted-foreground">
                                 {t.detalle}
                               </span>
                             )}
                           </span>
-                          {t.urgencia === "alta" && <MarcaDeUrgencia urgencia="alta" />}
+                          <span className="whitespace-nowrap text-xs font-medium text-brand-text group-hover:underline">
+                            {ACCION_DE_REGLA[t.ruleId]} →
+                          </span>
                         </Link>
                       </li>
                     ))}
@@ -108,12 +171,15 @@ export function TareasDeHoyPanel() {
   );
 }
 
-/** Solo lo urgente lleva marca: si todo se destaca, nada se destaca. */
+/** Urgente lleva el color de advertencia; lo de la semana, un gris quieto. */
 function MarcaDeUrgencia({ urgencia }: { urgencia: Urgencia }) {
-  if (urgencia !== "alta") return null;
-  return (
-    <span className="shrink-0 rounded-full border border-warning-border bg-warning-soft px-2 py-0.5 text-[10px] font-medium text-warning">
-      urgente
+  return urgencia === "alta" ? (
+    <span className="whitespace-nowrap rounded-full border border-warning-border bg-warning-soft px-2 py-0.5 text-[11px] font-medium text-warning">
+      Urgente
+    </span>
+  ) : (
+    <span className="whitespace-nowrap rounded-full border bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+      Esta semana
     </span>
   );
 }
