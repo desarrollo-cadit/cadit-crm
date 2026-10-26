@@ -162,8 +162,39 @@ export function destinoDeWhatsApp(
  * Duplicados
  * ============================================================ */
 
-export type CampoDuplicado = "telefono" | "correo";
+export type CampoDuplicado = "telefono" | "correo" | "correo_secundario";
 
 export function mensajeDeDuplicado(campo: CampoDuplicado, nombre: string): string {
-  return `Ya existe un contacto con ese ${campo === "correo" ? "correo" : "teléfono"}: ${nombre}`;
+  return `Ya existe un contacto con ese ${campo === "telefono" ? "teléfono" : "correo"}: ${nombre}`;
+}
+
+/** El campo del cuerpo del pedido que chocó, para que la pantalla lo marque. */
+export function campoDeDuplicado(campo: CampoDuplicado): "phone" | "email" | "secondaryEmail" {
+  if (campo === "telefono") return "phone";
+  return campo === "correo_secundario" ? "secondaryEmail" : "email";
+}
+
+/* ============================================================
+ * Correo secundario (2026-10-26)
+ * ============================================================ */
+
+/**
+ * El laboral y el personal, en cualquier orden. Se normaliza igual que el
+ * principal (`correoNullable`), se BUSCA y se chequea contra duplicados, pero
+ * NUNCA es un destino: no recibe correos operativos ni campañas, no es el
+ * correo de la licencia (`correoDeLicencia` no lo mira), no es login del
+ * portal ni identidad de WhatsApp. Tampoco cuenta como canal en
+ * `quedaSinCanal`: un contacto con solo el secundario no tiene a dónde
+ * escribirle.
+ */
+export const CORREO_SECUNDARIO_IGUAL = "El correo secundario tiene que ser distinto del principal.";
+
+/** ¿El secundario repite el principal del MISMO contacto? */
+export function correoSecundarioRepetido(
+  principal: string | null | undefined,
+  secundario: string | null | undefined
+): boolean {
+  const p = normalizarCorreo(principal);
+  const s = normalizarCorreo(secundario);
+  return p !== null && p === s;
 }

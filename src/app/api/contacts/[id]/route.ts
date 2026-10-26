@@ -11,7 +11,9 @@ import {
 } from "@/server/contacts";
 import { empresaExiste } from "@/server/contact-company";
 import {
+  CORREO_SECUNDARIO_IGUAL,
   correoNullable,
+  correoSecundarioRepetido,
   FALTA_TELEFONO_O_CORREO,
   planDeTelefono,
   quedaSinCanal,
@@ -61,6 +63,8 @@ const patchSchema = z.object({
   firstName: z.string().trim().min(1).max(120).optional(),
   lastName: z.string().trim().max(120).nullable().optional(),
   email: correoNullable,
+  /** 2026-10-26 — Se busca y se chequea contra duplicados; nunca es un destino. */
+  secondaryEmail: correoNullable,
   phone: telefonoOpcional,
   nationalId: z.string().trim().max(60).nullable().optional(),
   source: z.string().trim().max(200).nullable().optional(),
@@ -85,13 +89,19 @@ export const PATCH = requireCapability(
   const set: Record<string, unknown> = { updatedAt: new Date() };
   if (body.data.firstName !== undefined) set.firstName = body.data.firstName;
   if (body.data.lastName !== undefined) set.lastName = body.data.lastName;
-  if (body.data.email !== undefined || body.data.phone !== undefined) {
+  if (
+    body.data.email !== undefined ||
+    body.data.secondaryEmail !== undefined ||
+    body.data.phone !== undefined
+  ) {
     const actual = await getContactById(session.organizationId, id);
     if (!actual) return apiError(404, "not_found", "Contacto no encontrado");
     let phone = actual.phone;
     let email = actual.email;
+    let secondaryEmail = actual.secondaryEmail;
     let telefonoNuevo: string | null = null;
     let correoNuevo: string | null = null;
+    let secundarioNuevo: string | null = null;
 
     if (body.data.phone !== undefined) {
       const plan = planDeTelefono(actual, body.data.phone);
@@ -110,13 +120,25 @@ export const PATCH = requireCapability(
         correoNuevo = body.data.email;
       }
     }
+    if (body.data.secondaryEmail !== undefined) {
+      secondaryEmail = body.data.secondaryEmail;
+      set.secondaryEmail = body.data.secondaryEmail;
+      if (body.data.secondaryEmail && body.data.secondaryEmail !== actual.secondaryEmail) {
+        secundarioNuevo = body.data.secondaryEmail;
+      }
+    }
+    // El secundario no es un canal: con solo él no hay a dónde escribirle.
     if (quedaSinCanal({ phone, email })) {
       return apiError(422, "sin_canal", FALTA_TELEFONO_O_CORREO);
     }
-    if (telefonoNuevo || correoNuevo) {
+    if (correoSecundarioRepetido(email, secondaryEmail)) {
+      return apiError(422, "correo_secundario_igual", CORREO_SECUNDARIO_IGUAL);
+    }
+    if (telefonoNuevo || correoNuevo || secundarioNuevo) {
       const duplicado = await buscarContactoDuplicado(session.organizationId, {
         phone: telefonoNuevo,
         email: correoNuevo,
+        secondaryEmail: secundarioNuevo,
         excluirId: id,
       });
       if (duplicado) return respuestaDeDuplicado(duplicado);

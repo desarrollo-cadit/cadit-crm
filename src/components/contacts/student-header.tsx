@@ -39,12 +39,19 @@ export function StudentHeader({ header }: { header: StudentHeaderDto }) {
             </Badge>
           </div>
           <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-            {header.email || header.phone ? (
+            {header.email || header.secondaryEmail || header.phone ? (
               <>
                 {header.email ? (
                   <span className="flex items-center gap-1.5">
                     <Mail className="h-3.5 w-3.5" aria-hidden />
                     {header.email}
+                  </span>
+                ) : null}
+                {header.secondaryEmail ? (
+                  <span className="flex items-center gap-1.5" title="Correo secundario">
+                    <Mail className="h-3.5 w-3.5" aria-hidden />
+                    {header.secondaryEmail}
+                    <span className="sr-only">(correo secundario)</span>
                   </span>
                 ) : null}
                 {header.phone ? (

@@ -1,8 +1,12 @@
-import { eq, ne, or, sql } from "drizzle-orm";
+import { eq, ne, or, sql, type SQL } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { fullName } from "@/lib/utils";
-import { mensajeDeDuplicado, type CampoDuplicado } from "@/lib/contact-identity";
+import {
+  campoDeDuplicado,
+  mensajeDeDuplicado,
+  type CampoDuplicado,
+} from "@/lib/contact-identity";
 
 /**
  * Contactos sin teléfono (2026-10-21) — ¿ya hay alguien con ese teléfono o
@@ -18,6 +22,10 @@ import { mensajeDeDuplicado, type CampoDuplicado } from "@/lib/contact-identity"
  * - Correo: sin mayúsculas (`lower(email)`). Lo que se guarda ya va en
  *   minúsculas, pero puede quedar algún correo viejo sin normalizar (ver
  *   `drizzle/0068_correo_de_licencia.sql`).
+ * - 2026-10-26 — Correo secundario: un correo (principal o secundario) que
+ *   otro contacto ya usa como principal O como secundario es un duplicado.
+ *   La regla vale en las dos direcciones, así que un mismo correo nunca
+ *   apunta a dos personas.
  */
 
 export type ContactoDuplicado = {
@@ -25,9 +33,23 @@ export type ContactoDuplicado = {
   contacto: { id: string; name: string };
 };
 
+/** ¿Algún contacto usa `correo` (ya normalizado) como principal o secundario? */
+export function condicionDeCorreoTomado(correo: string): SQL {
+  const c = correo.toLowerCase();
+  return or(
+    sql`lower(${schema.contact.email}) = ${c}`,
+    eq(schema.contact.secondaryEmail, c)
+  ) as SQL;
+}
+
 export async function buscarContactoDuplicado(
   organizationId: string,
-  datos: { phone?: string | null; email?: string | null; excluirId?: string }
+  datos: {
+    phone?: string | null;
+    email?: string | null;
+    secondaryEmail?: string | null;
+    excluirId?: string;
+  }
 ): Promise<ContactoDuplicado | null> {
   const db = getDb();
   const otro = datos.excluirId ? ne(schema.contact.id, datos.excluirId) : undefined;
@@ -53,20 +75,20 @@ export async function buscarContactoDuplicado(
     if (rows[0]) return { campo: "telefono", contacto: { id: rows[0].id, name: fullName(rows[0]) } };
   }
 
-  if (datos.email) {
+  const correos: [CampoDuplicado, string | null | undefined][] = [
+    ["correo", datos.email],
+    ["correo_secundario", datos.secondaryEmail],
+  ];
+  for (const [campo, correo] of correos) {
+    if (!correo) continue;
     const rows = await db
       .select(columnas)
       .from(schema.contact)
       .where(
-        scoped(
-          schema.contact.organizationId,
-          organizationId,
-          sql`lower(${schema.contact.email}) = ${datos.email.toLowerCase()}`,
-          otro
-        )
+        scoped(schema.contact.organizationId, organizationId, condicionDeCorreoTomado(correo), otro)
       )
       .limit(1);
-    if (rows[0]) return { campo: "correo", contacto: { id: rows[0].id, name: fullName(rows[0]) } };
+    if (rows[0]) return { campo, contacto: { id: rows[0].id, name: fullName(rows[0]) } };
   }
 
   return null;
@@ -82,7 +104,7 @@ export function respuestaDeDuplicado(d: ContactoDuplicado): Response {
       error: {
         code: "duplicate",
         message: mensajeDeDuplicado(d.campo, d.contacto.name),
-        field: d.campo === "correo" ? "email" : "phone",
+        field: campoDeDuplicado(d.campo),
         contact: d.contacto,
       },
     },

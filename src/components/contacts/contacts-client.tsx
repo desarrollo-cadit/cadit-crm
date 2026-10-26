@@ -492,6 +492,7 @@ function EditDialog({
     firstName: string;
     lastName: string | null;
     email: string | null;
+    secondaryEmail: string | null;
     nationalId: string | null;
     source: string | null;
     utmCampaign: string | null;
@@ -520,6 +521,7 @@ function EditDialog({
   }, []);
   const [lastName, setLastName] = useState(contact.lastName ?? "");
   const [email, setEmail] = useState(contact.email ?? "");
+  const [secondaryEmail, setSecondaryEmail] = useState(contact.secondaryEmail ?? "");
   const [nationalId, setNationalId] = useState(contact.nationalId ?? "");
   const [source, setSource] = useState(contact.source ?? "");
   const [utmCampaign, setUtmCampaign] = useState(contact.utmCampaign ?? "");
@@ -529,6 +531,7 @@ function EditDialog({
     lastName,
     phone,
     email,
+    secondaryEmail,
     nationalId,
     source,
     utmCampaign,
@@ -599,6 +602,20 @@ function EditDialog({
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium" htmlFor="edit-secondary-email">
+              Correo secundario
+            </label>
+            <Input
+              id="edit-secondary-email"
+              type="email"
+              value={secondaryEmail}
+              onChange={(e) => setSecondaryEmail(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Sirve para encontrar al contacto. No se le envía nada a este correo.
+            </p>
           </div>
           <div className="space-y-1.5">
             <label className="text-sm font-medium" htmlFor="edit-national-id">
@@ -686,6 +703,7 @@ function EditDialog({
                 firstName: firstName.trim(),
                 lastName: lastName.trim() || null,
                 email: email.trim() || null,
+                secondaryEmail: secondaryEmail.trim() || null,
                 nationalId: nationalId.trim() || null,
                 source: source.trim() || null,
                 utmCampaign: utmCampaign.trim() || null,

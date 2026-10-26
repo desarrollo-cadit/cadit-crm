@@ -12,6 +12,8 @@ export function serializeContact(c: typeof schema.contact.$inferSelect) {
     source: c.source,
     utmCampaign: c.utmCampaign,
     email: c.email,
+    /** 2026-10-26 — Solo staff (`contactos.ver`, como el principal); nunca es un destino. */
+    secondaryEmail: c.secondaryEmail,
     nationalId: c.nationalId,
     /** 043 — La empresa de la persona (no la de una venta). */
     companyId: c.companyId,

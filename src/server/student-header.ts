@@ -24,6 +24,8 @@ export type StudentHeaderDto = {
   contactId: string;
   name: string;
   email: string | null;
+  /** 2026-10-26 — El encabezado ya pide `contactos.ver`, igual que el principal. */
+  secondaryEmail: string | null;
   phone: string | null;
   crumbs: MigaDelLegajo[];
   portalAccess: PortalAccessState;
@@ -43,6 +45,7 @@ export async function studentHeader(
       firstName: schema.contact.firstName,
       lastName: schema.contact.lastName,
       email: schema.contact.email,
+      secondaryEmail: schema.contact.secondaryEmail,
       phone: schema.contact.phone,
     })
     .from(schema.contact)
@@ -102,6 +105,7 @@ export async function studentHeader(
     contactId,
     name,
     email: contact.email,
+    secondaryEmail: contact.secondaryEmail,
     phone: contact.phone,
     crumbs: migasDelLegajo(
       name,

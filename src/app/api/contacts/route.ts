@@ -2,7 +2,10 @@ import { and, desc, isNull, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { condicionDeBusqueda } from "@/lib/contact-search-sql";
 import {
+  CORREO_SECUNDARIO_IGUAL,
   contactoNuevoCampos,
+  correoOpcional,
+  correoSecundarioRepetido,
   exigirTelefonoOCorreo,
   identidadProvisional,
 } from "@/lib/contact-identity";
@@ -51,7 +54,12 @@ export const GET = requireCapability(
   // 2026-10-21 — un contacto sin teléfono se encuentra por su correo.
   const searchCondition = q
     ? condicionDeBusqueda(q, {
-        texto: [schema.contact.firstName, schema.contact.lastName, schema.contact.email],
+        texto: [
+          schema.contact.firstName,
+          schema.contact.lastName,
+          schema.contact.email,
+          schema.contact.secondaryEmail,
+        ],
         telefono: schema.contact.phone,
       })
     : undefined;
@@ -122,6 +130,8 @@ export const GET = requireCapability(
 const createSchema = z
   .object({
     ...contactoNuevoCampos,
+    /** 2026-10-26 — Se busca y se chequea contra duplicados; nunca es un destino. */
+    secondaryEmail: correoOpcional,
     notes: z.string().max(4000).optional(),
   })
   .superRefine(exigirTelefonoOCorreo);
@@ -137,7 +147,15 @@ export const POST = requireCapability(
   // El duplicado se NOMBRA: 409 con el contacto que ya existe.
   const phone = body.data.phone ?? null;
   const email = body.data.email ?? null;
-  const duplicado = await buscarContactoDuplicado(session.organizationId, { phone, email });
+  const secondaryEmail = body.data.secondaryEmail ?? null;
+  if (correoSecundarioRepetido(email, secondaryEmail)) {
+    return apiError(422, "correo_secundario_igual", CORREO_SECUNDARIO_IGUAL);
+  }
+  const duplicado = await buscarContactoDuplicado(session.organizationId, {
+    phone,
+    email,
+    secondaryEmail,
+  });
   if (duplicado) return respuestaDeDuplicado(duplicado);
 
   const db = getDb();
@@ -153,6 +171,7 @@ export const POST = requireCapability(
       waIdentity: phone ?? identidadProvisional(id),
       notes: body.data.notes ?? null,
       email,
+      secondaryEmail,
       nationalId: body.data.nationalId ?? null,
     })
     .onConflictDoNothing({

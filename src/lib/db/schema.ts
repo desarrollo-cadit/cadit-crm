@@ -200,6 +200,13 @@ export const contact = pgTable(
     utmCampaign: text("utm_campaign"),
     /** 005 — único por organización cuando no es NULL (DV-003). */
     email: text("email"),
+    /**
+     * 2026-10-26 — Segundo correo (laboral / personal), en minúsculas. Se
+     * busca y se chequea contra duplicados (principal O secundario de otro
+     * contacto), pero NUNCA es un destino: ni envíos, ni licencia, ni login,
+     * ni identidad de WhatsApp (`src/lib/contact-identity.ts`).
+     */
+    secondaryEmail: text("secondary_email"),
     /** 005 — cédula/identificación, sin constraint de unicidad (spec.md). */
     nationalId: text("national_id"),
     /**
@@ -229,6 +236,11 @@ export const contact = pgTable(
     uniqueIndex("contact_org_phone_uq")
       .on(t.organizationId, t.phone)
       .where(sql`${t.phone} IS NOT NULL`),
+    // 2026-10-26 — red de seguridad y búsqueda del chequeo de duplicados del
+    // correo secundario (el cruce con `email` lo hace `buscarContactoDuplicado`).
+    uniqueIndex("contact_org_secondary_email_uq")
+      .on(t.organizationId, t.secondaryEmail)
+      .where(sql`${t.secondaryEmail} IS NOT NULL`),
   ]
 );
 

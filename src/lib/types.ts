@@ -237,6 +237,8 @@ export type ContactDto = {
   utmCampaign: string | null;
   /** 005 — único por organización cuando no es null (DV-003). */
   email: string | null;
+  /** 2026-10-26 — Segundo correo: se busca y se chequea, nunca es un destino. */
+  secondaryEmail: string | null;
   /** 005 — cédula/identificación. */
   nationalId: string | null;
   /** 043 — La empresa de la persona (`contact.company_id`), no la de una venta. */
