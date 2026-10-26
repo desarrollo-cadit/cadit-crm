@@ -1,5 +1,4 @@
-import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
-import { necesitaLicencia } from "@/lib/terminos-licencia";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { getDb, schema } from "@/lib/db";
 import type { Currency } from "@/lib/db/schema";
@@ -998,11 +997,11 @@ export { csvField };
 export type ExportVariant = "comun" | "licenciamiento";
 
 /**
- * 2026-10-23 — `licenciamiento`: las MISMAS columnas, pero solo las
- * inscripciones que necesitan una licencia prestada (`necesitaLicencia`, la
- * misma regla que los términos) y con el correo de la LICENCIA
- * (`correoDeLicencia`) en la columna del correo. Lo que se agrega acá son
- * datos que el roster ya muestra a quien puede exportar (`inscripciones.ver`).
+ * 2026-10-23 — `licenciamiento`: las MISMAS columnas, con el correo de la
+ * LICENCIA (`correoDeLicencia`) en la columna del correo. 2026-10-26: todo el
+ * grupo salvo quien tenía licencia propia, la tenga asignada o no. Lo que se
+ * agrega acá son datos que el roster ya muestra a quien puede exportar
+ * (`inscripciones.ver`).
  */
 export async function exportCohortRosterCsv(
   organizationId: string,
@@ -1082,39 +1081,15 @@ export async function exportCohortRosterCsv(
         )
     : [];
   const madrePorId = new Map(madres.map((m) => [m.id, m]));
-  const ids = rows.map((r) => r.id);
-  const asignadas = ids.length
-    ? await db
-        .select({
-          enrollmentId: schema.license.enrollmentId,
-          parentEnrollmentId: schema.enrollment.parentEnrollmentId,
-        })
-        .from(schema.license)
-        .innerJoin(schema.enrollment, eq(schema.license.enrollmentId, schema.enrollment.id))
-        .where(
-          scoped(
-            schema.license.organizationId,
-            organizationId,
-            eq(schema.license.assigned, true),
-            or(
-              inArray(schema.license.enrollmentId, ids),
-              inArray(schema.enrollment.parentEnrollmentId, ids)
-            )
-          )
-        )
-    : [];
-  const conLicencia = new Set(
-    asignadas.flatMap((a) => [a.enrollmentId, ...(a.parentEnrollmentId ? [a.parentEnrollmentId] : [])])
-  );
 
+  // 2026-10-26 — Entra quien tiene licencia asignada Y quien todavía no la
+  // tiene: solo queda afuera quien tenía la propia (suya o de la madre).
+  // Autodesk descarta los usuarios repetidos. Los términos siguen con
+  // `necesitaLicencia` (solo licencias asignadas); esta lista es para pedirlas.
   const lineas: string[] = [];
   for (const r of rows) {
     const madre = r.parentEnrollmentId ? madrePorId.get(r.parentEnrollmentId) : undefined;
-    const necesita = necesitaLicencia({
-      licenseAssigned: conLicencia.has(r.id),
-      hadOwnLicense: r.hadOwnLicense || Boolean(madre?.hadOwnLicense),
-    });
-    if (!necesita) continue;
+    if (r.hadOwnLicense || madre?.hadOwnLicense) continue;
     const correo = correoDeLicencia({
       licenseEmail: r.licenseEmail ?? null,
       parentLicenseEmail: madre?.licenseEmail ?? null,
