@@ -282,3 +282,162 @@ describe("buildRosterEntry — correo de la licencia", () => {
     });
   });
 });
+
+/**
+ * 2026-10-23 — La hija de un módulo no es una venta: la venta (monto, cuotas,
+ * vendedor, empresa, factura…) es la MADRE. El roster del módulo la trae
+ * para mostrarla y editarla desde ahí, con el MISMO gate que los campos
+ * financieros de la fila: sin `cobranza.ver`, no viaja.
+ */
+describe("buildRosterEntry — la venta de la especialización en la fila del módulo", () => {
+  const hija = {
+    ...baseEnrollment,
+    id: "enr_hija",
+    cohortId: "coh_modulo",
+    parentEnrollmentId: "enr_madre",
+    amount: null,
+    installments: null,
+    nationalId: null,
+    invoiceNumber: null,
+    sellerId: null,
+    companyId: null,
+    currency: "UYU",
+  };
+  const madre = {
+    licenseEmail: null,
+    hadOwnLicense: false,
+    venta: {
+      id: "enr_madre",
+      cohortId: "coh_espec",
+      parentEnrollmentId: null,
+      amount: 12000000,
+      currency: "USD",
+      installments: 10,
+      paymentNotes: "contado",
+      nationalId: "4.444.444-4",
+      invoiceNumber: "F-77",
+      receiptNumber: "R-9",
+      sellerId: "sel_1",
+      companyId: "cia_9",
+      seller: { id: "sel_1", name: "Ana Vendedora", archivedAt: null },
+    },
+  };
+
+  it("con `cobranza.ver`: trae la venta de la madre, con su id para editarla", async () => {
+    const { buildRosterEntry } = await import("@/server/enrollments");
+    const entry = buildRosterEntry(
+      ["cobranza.ver"] as never,
+      hija as never,
+      baseContact as never,
+      null,
+      null,
+      null,
+      "curso",
+      madre as never
+    );
+    expect(entry.sellerRequired).toBe(false);
+    expect(entry.parentSale).toEqual({
+      enrollmentId: "enr_madre",
+      amount: 12000000,
+      currency: "USD",
+      installments: 10,
+      paymentNotes: "contado",
+      nationalId: "4.444.444-4",
+      invoiceNumber: "F-77",
+      receiptNumber: "R-9",
+      sellerId: "sel_1",
+      seller: { id: "sel_1", name: "Ana Vendedora", archived: false },
+      sellerRequired: true,
+      companyId: "cia_9",
+    });
+  });
+
+  it("sin `cobranza.ver`: la venta de la madre NO viaja", async () => {
+    const { buildRosterEntry } = await import("@/server/enrollments");
+    const entry = buildRosterEntry(
+      capabilitiesFor("soporte"),
+      hija as never,
+      baseContact as never,
+      null,
+      null,
+      null,
+      "curso",
+      madre as never
+    );
+    expect("parentSale" in entry).toBe(false);
+    expect(JSON.stringify(entry)).not.toContain("12000000");
+    expect(JSON.stringify(entry)).not.toContain("Ana Vendedora");
+  });
+
+  it("una inscripción sin madre no lleva venta de especialización", async () => {
+    const { buildRosterEntry } = await import("@/server/enrollments");
+    const entry = buildRosterEntry(
+      CAPABILITIES,
+      baseEnrollment as never,
+      baseContact as never,
+      null
+    );
+    expect(entry.parentSale ?? null).toBeNull();
+  });
+});
+
+describe("ventaDeLaFila — qué venta muestra y edita cada fila del roster", () => {
+  const fila = {
+    id: "enr_hija",
+    contact: { id: "ct_1", name: "Diego Fernández", phone: null, email: null, archived: false },
+    amount: null,
+    currency: "UYU",
+    installments: null,
+    sellerId: null,
+    seller: null,
+    sellerRequired: false,
+    companyId: null,
+  };
+
+  it("fila común: la propia, sin marca", async () => {
+    const { ventaDeLaFila } = await import("@/lib/roster-venta");
+    const v = ventaDeLaFila({ ...fila, id: "enr_1", sellerRequired: true } as never);
+    expect(v.enrollmentId).toBe("enr_1");
+    expect(v.deLaEspecializacion).toBe(false);
+    expect(v.entry.id).toBe("enr_1");
+  });
+
+  it("fila de módulo con la venta de la madre: muestra y edita la madre", async () => {
+    const { ventaDeLaFila } = await import("@/lib/roster-venta");
+    const v = ventaDeLaFila({
+      ...fila,
+      parentSale: {
+        enrollmentId: "enr_madre",
+        amount: 12000000,
+        currency: "USD",
+        installments: 10,
+        paymentNotes: null,
+        nationalId: "4.444.444-4",
+        invoiceNumber: "F-77",
+        receiptNumber: null,
+        sellerId: null,
+        seller: null,
+        sellerRequired: true,
+        companyId: "cia_9",
+      },
+    } as never);
+    expect(v.enrollmentId).toBe("enr_madre");
+    expect(v.deLaEspecializacion).toBe(true);
+    expect(v.entry.amount).toBe(12000000);
+    expect(v.entry.currency).toBe("USD");
+    expect(v.entry.invoiceNumber).toBe("F-77");
+    expect(v.entry.companyId).toBe("cia_9");
+    // La madre ES la venta: sin vendedor se ve "Sin vendedor", no "—".
+    expect(v.entry.sellerRequired).toBe(true);
+    expect(v.entry.seller).toBeNull();
+    // El alumno sigue siendo el de la fila.
+    expect(v.entry.contact.name).toBe("Diego Fernández");
+  });
+
+  it("fila de módulo sin la venta (sin `cobranza.ver`): queda la propia", async () => {
+    const { ventaDeLaFila } = await import("@/lib/roster-venta");
+    const v = ventaDeLaFila(fila as never);
+    expect(v.deLaEspecializacion).toBe(false);
+    expect(v.enrollmentId).toBe("enr_hija");
+  });
+});

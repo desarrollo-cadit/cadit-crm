@@ -28,9 +28,17 @@ export function EnrollmentCommercialForm({
   sellersLoaded,
   onClose,
   onSaved,
+  deLaEspecializacion = false,
 }: {
   enrollmentId: string;
   entry: RosterEntryDto;
+  /**
+   * 2026-10-23 — Desde la fila de un módulo se edita la venta de la
+   * especialización: `enrollmentId` es el de la madre y `entry` trae sus
+   * datos (`ventaDeLaFila`). El diálogo lo dice, para que nadie crea que
+   * está cargando una venta aparte por el módulo.
+   */
+  deLaEspecializacion?: boolean;
   companies: CompanyDto[];
   sellers: SellerOption[];
   sellersLoaded: boolean;
@@ -100,8 +108,18 @@ export function EnrollmentCommercialForm({
       labelledBy="ec-title"
       className="max-h-[90vh] max-w-lg overflow-y-auto"
     >
-        <h3 id="ec-title" className="mb-1 font-semibold">Editar datos comerciales</h3>
-        <p className="mb-4 text-xs text-muted-foreground">{entry.contact.name}</p>
+        <h3 id="ec-title" className="mb-1 font-semibold">
+          {deLaEspecializacion ? "Editar la venta de la especialización" : "Editar datos comerciales"}
+        </h3>
+        <p className="mb-4 text-xs text-muted-foreground">
+          {entry.contact.name}
+          {deLaEspecializacion && (
+            <span className="block">
+              La venta es la inscripción a la especialización: lo que guardes acá vale para todos
+              sus módulos.
+            </span>
+          )}
+        </p>
 
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">

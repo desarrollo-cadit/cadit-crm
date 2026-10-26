@@ -475,7 +475,48 @@ export type RosterEntryDto = {
   /** Falso en la hija de un módulo: el vendedor lo lleva la madre. */
   sellerRequired?: boolean;
   companyId?: string | null;
+  /**
+   * 2026-10-23 — Solo en la hija de un módulo, y solo con `cobranza.ver`: la
+   * VENTA es la madre (la especialización), así que el roster del módulo trae
+   * la de ella para mostrarla y editarla desde ahí. Mismo gate que los campos
+   * financieros de arriba: sin la capacidad, no viaja.
+   */
+  parentSale?: ParentSaleDto;
 };
+
+/** 2026-10-23 — La venta de la especialización, vista desde la fila de un módulo. */
+export type ParentSaleDto = {
+  /** La inscripción MADRE: la que se edita (`PATCH /api/enrollments/[id]`). */
+  enrollmentId: string;
+  amount: number | null;
+  currency: Currency;
+  installments: number | null;
+  paymentNotes: string | null;
+  nationalId: string | null;
+  invoiceNumber: string | null;
+  receiptNumber: string | null;
+  sellerId: string | null;
+  seller: { id: string; name: string; archived: boolean } | null;
+  sellerRequired: boolean;
+  companyId: string | null;
+};
+
+/** 2026-10-23 — Lo que hace falta leer de la madre para armar `ParentSaleDto`. */
+export type ParentSaleSource = Pick<
+  typeof schema.enrollment.$inferSelect,
+  | "id"
+  | "cohortId"
+  | "parentEnrollmentId"
+  | "amount"
+  | "currency"
+  | "installments"
+  | "paymentNotes"
+  | "nationalId"
+  | "invoiceNumber"
+  | "receiptNumber"
+  | "sellerId"
+  | "companyId"
+> & { seller: Pick<typeof schema.seller.$inferSelect, "id" | "name" | "archivedAt"> | null };
 
 /**
  * 005 (T022, FR-014/FR-016/FR-017) — DTO por CAPACIDAD: sin `cobranza.ver`
@@ -510,8 +551,13 @@ export function buildRosterEntry(
   /**
    * 2026-10-23 — La madre, si es la hija de un módulo: su correo de licencia
    * se hereda (`correoDeLicencia`) y su "Tenía licencia propia" también.
+   * `venta` = sus datos comerciales; solo se arman con `cobranza.ver`.
    */
-  parent: { licenseEmail: string | null; hadOwnLicense: boolean } | null = null
+  parent: {
+    licenseEmail: string | null;
+    hadOwnLicense: boolean;
+    venta?: ParentSaleSource | null;
+  } | null = null
 ): RosterEntryDto {
   const licencias = resumirLicencias(
     license === null ? [] : "softwareId" in license ? [license] : license
@@ -567,6 +613,29 @@ export function buildRosterEntry(
       : null,
     sellerRequired: exigeVendedor({ ...enrollment, courseKind }),
     companyId: enrollment.companyId,
+    ...(enrollment.parentEnrollmentId && parent?.venta
+      ? { parentSale: ventaDeLaMadre(parent.venta) }
+      : {}),
+  };
+}
+
+/** 2026-10-23 — La madre ES la venta: lleva vendedor como cualquier venta. */
+function ventaDeLaMadre(v: ParentSaleSource): ParentSaleDto {
+  return {
+    enrollmentId: v.id,
+    amount: v.amount,
+    currency: v.currency,
+    installments: v.installments,
+    paymentNotes: v.paymentNotes,
+    nationalId: v.nationalId,
+    invoiceNumber: v.invoiceNumber,
+    receiptNumber: v.receiptNumber,
+    sellerId: v.sellerId,
+    seller: v.seller
+      ? { id: v.seller.id, name: v.seller.name, archived: v.seller.archivedAt !== null }
+      : null,
+    sellerRequired: exigeVendedor(v),
+    companyId: v.companyId,
   };
 }
 
@@ -613,6 +682,7 @@ export async function getCohortRoster(
 
   // 2026-10-23 — La madre (especialización) de una hija de módulo, en un join.
   const inscripcionMadre = alias(schema.enrollment, "inscripcion_madre");
+  const vendedorMadre = alias(schema.seller, "vendedor_madre");
   const rows = await db
     .select({
       enrollment: schema.enrollment,
@@ -630,6 +700,24 @@ export async function getCohortRoster(
         id: inscripcionMadre.id,
         licenseEmail: inscripcionMadre.licenseEmail,
         hadOwnLicense: inscripcionMadre.hadOwnLicense,
+        // La venta de la especialización (monto, vendedor, empresa…): se lee
+        // como la de la fila, y `buildRosterEntry` la arma SOLO con `cobranza.ver`.
+        cohortId: inscripcionMadre.cohortId,
+        parentEnrollmentId: inscripcionMadre.parentEnrollmentId,
+        amount: inscripcionMadre.amount,
+        currency: inscripcionMadre.currency,
+        installments: inscripcionMadre.installments,
+        paymentNotes: inscripcionMadre.paymentNotes,
+        nationalId: inscripcionMadre.nationalId,
+        invoiceNumber: inscripcionMadre.invoiceNumber,
+        receiptNumber: inscripcionMadre.receiptNumber,
+        sellerId: inscripcionMadre.sellerId,
+        companyId: inscripcionMadre.companyId,
+      },
+      parentSeller: {
+        id: vendedorMadre.id,
+        name: vendedorMadre.name,
+        archivedAt: vendedorMadre.archivedAt,
       },
     })
     .from(schema.enrollment)
@@ -637,6 +725,7 @@ export async function getCohortRoster(
     .leftJoin(schema.license, eq(schema.license.enrollmentId, schema.enrollment.id))
     .leftJoin(schema.seller, eq(schema.seller.id, schema.enrollment.sellerId))
     .leftJoin(inscripcionMadre, eq(inscripcionMadre.id, schema.enrollment.parentEnrollmentId))
+    .leftJoin(vendedorMadre, eq(vendedorMadre.id, inscripcionMadre.sellerId))
     // 012 — el acceso al portal es del CONTACTO, no de la inscripción: la
     // misma persona puede cursar tres veces y entra con una sola cuenta. Va
     // como join y no como consulta por fila para no volver la lista un N+1.
@@ -682,7 +771,15 @@ export async function getCohortRoster(
       r.seller,
       cohort.courseKind,
       r.parent?.id
-        ? { licenseEmail: r.parent.licenseEmail, hadOwnLicense: r.parent.hadOwnLicense }
+        ? {
+            licenseEmail: r.parent.licenseEmail,
+            hadOwnLicense: r.parent.hadOwnLicense,
+            venta: {
+              ...r.parent,
+              id: r.parent.id,
+              seller: r.parentSeller?.id ? r.parentSeller : null,
+            },
+          }
         : null
     )
   );

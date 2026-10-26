@@ -42,6 +42,7 @@ import { CHECKLIST_ITEMS, checklistProgress } from "@/lib/onboarding-checklist";
 import { formatSentAt } from "@/lib/schedule-time";
 import type { SellerOption } from "@/lib/vendedores";
 import { notify } from "@/lib/notify";
+import { ventaDeLaFila, type VentaDeFila } from "@/lib/roster-venta";
 import {
   AccessUntilLine,
   resumenDeAcceso,
@@ -145,7 +146,11 @@ export function RosterClient({
   const [temporaryPassword, setTemporaryPassword] = useState<
     { enrollmentId: string; password: string; emailError: string | null } | null
   >(null);
-  const [editingCommercial, setEditingCommercial] = useState<RosterEntryDto | null>(null);
+  /**
+   * 2026-10-23 — La venta que se edita: la de la fila o, en la hija de un
+   * módulo, la de la especialización (`ventaDeLaFila`).
+   */
+  const [editingCommercial, setEditingCommercial] = useState<VentaDeFila | null>(null);
   const [confirmChecklist, setConfirmChecklist] = useState<{
     enrollmentId: string;
     key: (typeof CHECKLIST_ITEMS)[number]["key"];
@@ -516,6 +521,9 @@ export function RosterClient({
                       Boolean(e.moduleLicenses?.some((l) => l.licenseAssigned))
                     );
                     const open = expanded === e.id;
+                    // 2026-10-23 — En la hija de un módulo, la venta es la de la especialización.
+                    const venta = ventaDeLaFila(e);
+                    const ventaRow = venta.entry;
                     // 2026-10-23 — Licencia propia (suya o de la madre del
                     // módulo): no se asigna licencia ni van los términos.
                     const licenciaPropia = e.checklist.hadOwnLicense || e.parentHadOwnLicense;
@@ -579,21 +587,23 @@ export function RosterClient({
                           </TableCell>
                           {showFinance && (
                             <TableCell className="whitespace-nowrap text-right">
-                              {formatAmount(e.amount, e.currency)}
-                              {e.installments ? (
+                              {formatAmount(ventaRow.amount, ventaRow.currency)}
+                              {ventaRow.installments ? (
                                 <span className="block text-xs text-muted-foreground">
-                                  {e.installments} cuotas
+                                  {ventaRow.installments} cuotas
                                 </span>
                               ) : null}
+                              {venta.deLaEspecializacion && <DeLaEspecializacion />}
                             </TableCell>
                           )}
                           {showFinance && (
                             <TableCell className="text-xs">
                               <SellerCell
-                                entry={e}
+                                entry={ventaRow}
                                 canEdit={canEnroll}
-                                onEdit={() => setEditingCommercial(e)}
+                                onEdit={() => setEditingCommercial(venta)}
                               />
+                              {venta.deLaEspecializacion && <DeLaEspecializacion />}
                             </TableCell>
                           )}
                           <TableCell className="text-xs">
@@ -945,36 +955,51 @@ export function RosterClient({
                               {/* Sección financiera — SOLO si el DTO la trae (rol con acceso completo). */}
                               {isFullAccess(e) && (
                                 <div className="mt-3 border-t pt-3">
+                                  {venta.deLaEspecializacion && (
+                                    <p className="mb-1 text-xs font-medium text-muted-foreground">
+                                      Venta de la especialización: el monto, el vendedor y la
+                                      facturación son los de la inscripción a la especialización.
+                                    </p>
+                                  )}
                                   <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground sm:grid-cols-4">
-                                    <span>Cédula: {e.nationalId ?? "—"}</span>
-                                    <span>Factura: {e.invoiceNumber ?? "—"}</span>
-                                    <span>Recibo: {e.receiptNumber ?? "—"}</span>
+                                    <span>Cédula: {ventaRow.nationalId ?? "—"}</span>
+                                    <span>Factura: {ventaRow.invoiceNumber ?? "—"}</span>
+                                    <span>Recibo: {ventaRow.receiptNumber ?? "—"}</span>
                                     <span>
                                       Empresa:{" "}
-                                      {e.companyId
-                                        ? (companies.find((c) => c.id === e.companyId)?.legalName ?? "…")
+                                      {ventaRow.companyId
+                                        ? (companies.find((c) => c.id === ventaRow.companyId)?.legalName ?? "…")
                                         : "—"}
                                     </span>
-                                    {e.paymentNotes && (
+                                    {ventaRow.paymentNotes && (
                                       <span className="col-span-2 sm:col-span-4">
-                                        Notas: {e.paymentNotes}
+                                        Notas: {ventaRow.paymentNotes}
                                       </span>
                                     )}
                                   </div>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="mt-1.5 h-auto p-0 text-xs underline"
-                                    onClick={() => setEditingCommercial(e)}
-                                  >
-                                    Editar datos comerciales
-                                  </Button>
+                                  {/* Guardar pide `inscripciones.editar`: sin ella el botón no aparece. */}
+                                  {canEnroll && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="mt-1.5 h-auto p-0 text-xs underline"
+                                      onClick={() => setEditingCommercial(venta)}
+                                    >
+                                      {venta.deLaEspecializacion
+                                        ? "Editar la venta de la especialización"
+                                        : "Editar datos comerciales"}
+                                    </Button>
+                                  )}
 
                                   {/* 008 — Cuotas y pagos. Va dentro del bloque
                                       financiero: es la misma sección y el mismo
                                       gate de rol (FR-016). */}
                                   <div className="mt-3 border-t pt-3">
-                                    <BillingPanel enrollmentId={e.id} puedeAnotarRecibo={canInvoice} />
+                                    {/* 2026-10-23 — Las cuotas y los pagos son de la venta: en un módulo, de la madre. */}
+                                    <BillingPanel
+                                      enrollmentId={venta.enrollmentId}
+                                      puedeAnotarRecibo={canInvoice}
+                                    />
                                   </div>
                                 </div>
                               )}
@@ -1053,8 +1078,9 @@ export function RosterClient({
 
       {editingCommercial && (
         <EnrollmentCommercialForm
-          enrollmentId={editingCommercial.id}
-          entry={editingCommercial}
+          enrollmentId={editingCommercial.enrollmentId}
+          entry={editingCommercial.entry}
+          deLaEspecializacion={editingCommercial.deLaEspecializacion}
           companies={companies}
           sellers={sellers}
           sellersLoaded={sellersLoaded}
@@ -1239,6 +1265,21 @@ function ModuleLicenses({
  * vista y, para quien puede editar datos comerciales, abre la edición: es la
  * pantalla donde se corrige.
  */
+/**
+ * 2026-10-23 — La marca de que el dato de la fila de un módulo es el de la
+ * venta de la especialización (la madre), no de la inscripción al módulo.
+ */
+function DeLaEspecializacion() {
+  return (
+    <span
+      className="block text-xs font-normal text-muted-foreground"
+      title="La venta es la inscripción a la especialización: se ve y se edita desde acá, pero es una sola."
+    >
+      de la especialización
+    </span>
+  );
+}
+
 function SellerCell({
   entry,
   canEdit,
@@ -1256,11 +1297,24 @@ function SellerCell({
     );
   }
   if (entry.seller) {
-    return (
-      <span className="whitespace-nowrap">
+    const nombre = (
+      <>
         {entry.seller.name}
         {entry.seller.archived && <span className="ml-1 text-muted-foreground">(archivado)</span>}
-      </span>
+      </>
+    );
+    if (!canEdit) return <span className="whitespace-nowrap">{nombre}</span>;
+    // Con vendedor también se corrige desde acá: un vendedor mal cargado es
+    // tan común como uno que falta.
+    return (
+      <button
+        type="button"
+        onClick={onEdit}
+        title="Cambiar el vendedor de esta venta"
+        className="whitespace-nowrap rounded-sm text-left underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {nombre}
+      </button>
     );
   }
   if (!canEdit) return <Badge variant="warning">Sin vendedor</Badge>;
