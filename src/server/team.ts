@@ -195,6 +195,55 @@ export async function changeMemberRole(
   return { ok: true, data: { id: member.id, role: target.key } };
 }
 
+/**
+ * Enciende o apaga "Recibir avisos internos por correo" de una cuenta del
+ * equipo (`member.receives_internal_notices`, que lee `correosConCapacidad`).
+ *
+ * No es un permiso, así que no aplica "siempre alguien a cargo" ni "no a uno
+ * mismo": cada quien puede apagarse los suyos. Sí aplica no tocar a alguien
+ * que puede más que quien actúa, como el resto de la pantalla de Equipo.
+ */
+export async function setMemberInternalNotices(
+  organizationId: string,
+  actor: { userId: string; capabilities: readonly Capability[] },
+  memberId: string,
+  receivesInternalNotices: boolean
+): Promise<RolesResult<{ id: string; receivesInternalNotices: boolean }>> {
+  const db = getDb();
+  const [member] = await db
+    .select({ id: schema.member.id, userId: schema.member.userId, role: schema.member.role })
+    .from(schema.member)
+    .where(scoped(schema.member.organizationId, organizationId, eq(schema.member.id, memberId)))
+    .limit(1);
+  if (!member) return { ok: false, status: 404, code: "not_found", message: "Cuenta no encontrada" };
+
+  if (member.userId !== actor.userId) {
+    const roles = await candidateRoles(organizationId);
+    if (exceeds(capabilitiesOfKey(roles, member.role), actor.capabilities)) {
+      return {
+        ok: false,
+        status: 403,
+        code: "escalation",
+        message:
+          "No podés cambiarle los avisos a una cuenta que puede hacer cosas que tu rol no puede: que lo cambie esa persona.",
+      };
+    }
+  }
+
+  const [updated] = await db
+    .update(schema.member)
+    .set({ receivesInternalNotices })
+    .where(scoped(schema.member.organizationId, organizationId, eq(schema.member.id, memberId)))
+    .returning({
+      id: schema.member.id,
+      receivesInternalNotices: schema.member.receivesInternalNotices,
+    });
+  if (!updated) {
+    return { ok: false, status: 409, code: "not_updated", message: "No se pudo guardar el cambio" };
+  }
+  return { ok: true, data: updated };
+}
+
 /* ============================================================
  * 030 (addendum) — Un profesor que también es del equipo
  * ============================================================ */

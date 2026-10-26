@@ -554,6 +554,13 @@
       "when": 1793036201768,
       "tag": "0078_contactos_unificar",
       "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1793046948137,
+      "tag": "0079_avisos_internos_por_persona",
+      "breakpoints": true
     }
   ]
 }

@@ -48,7 +48,11 @@ async function correosDeQuienesConfirman(organizationId: string): Promise<string
   // `member` y `role` están fuera de RLS a propósito (responden "¿de quién es esto?").
   const [miembros, roles] = await Promise.all([
     db
-      .select({ email: schema.user.email, role: schema.member.role })
+      .select({
+        email: schema.user.email,
+        role: schema.member.role,
+        receivesInternalNotices: schema.member.receivesInternalNotices,
+      })
       .from(schema.member)
       .innerJoin(schema.user, eq(schema.member.userId, schema.user.id))
       .where(eq(schema.member.organizationId, organizationId)),

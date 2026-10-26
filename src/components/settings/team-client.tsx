@@ -5,6 +5,7 @@ import { UserMinus, UserPlus } from "lucide-react";
 import { ContactAvatar } from "@/components/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,6 +21,8 @@ type Member = {
   isSelf?: boolean;
   /** 030 (addendum) — También es profesor con acceso al portal. */
   isTeacher?: boolean;
+  /** Recibe los avisos internos por correo (hoy: grupos sin confirmar). */
+  receivesInternalNotices?: boolean;
 };
 
 /** Crear-roles — Lo que devuelve `/api/settings/team/roles`. */
@@ -159,6 +162,30 @@ export function TeamClient() {
       return;
     }
     notify.success(`Rol de ${member.name} actualizado.`);
+    void refetch();
+  }
+
+  /** Enciende o apaga los avisos internos por correo de una cuenta. */
+  async function changeNotices(member: Member, receivesInternalNotices: boolean) {
+    setChanging(member.id);
+    const res = await fetch(`/api/settings/team/${member.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ receivesInternalNotices }),
+    }).catch(() => null);
+    setChanging(null);
+    if (!res?.ok) {
+      const data = (await res?.json().catch(() => null)) as {
+        error?: { message?: string };
+      } | null;
+      notify.error(data?.error?.message ?? "No se pudo guardar el cambio");
+      return;
+    }
+    notify.success(
+      receivesInternalNotices
+        ? `${member.name} va a recibir los avisos internos por correo.`
+        : `${member.name} ya no va a recibir avisos internos por correo.`
+    );
     void refetch();
   }
 
@@ -320,6 +347,24 @@ export function TeamClient() {
                 </Button>
               )}
             </div>
+            <label className="flex items-start gap-2 pl-11 text-xs">
+              <Checkbox
+                className="mt-0.5"
+                checked={m.receivesInternalNotices !== false}
+                disabled={changing === m.id}
+                onChange={(e) => void changeNotices(m, e.target.checked)}
+              />
+              <span>
+                <span className="font-medium">Recibir avisos internos por correo</span>
+                <span className="block text-muted-foreground">
+                  Por ejemplo, grupos sin confirmar. Las copias por área se configuran en{" "}
+                  <a href="/settings/areas" className="underline">
+                    Áreas
+                  </a>
+                  .
+                </span>
+              </span>
+            </label>
           </div>
         ))}
       </div>

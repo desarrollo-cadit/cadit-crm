@@ -18,6 +18,7 @@ export const GET = requireCapability(
       id: schema.member.id,
       userId: schema.member.userId,
       role: schema.member.role,
+      receivesInternalNotices: schema.member.receivesInternalNotices,
       createdAt: schema.member.createdAt,
       name: schema.user.name,
       email: schema.user.email,
@@ -61,6 +62,7 @@ export const GET = requireCapability(
       // persona (`changeMemberRole` lo rechaza igual).
       isSelf: m.userId === session.userId,
       isTeacher: profesores.has(m.userId),
+      receivesInternalNotices: m.receivesInternalNotices,
     })),
   });
 });
