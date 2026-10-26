@@ -12,6 +12,7 @@ import {
   type GrupoParaConfirmar,
   type VentaParaFacturar,
 } from "@/lib/tareas-del-dia";
+import { SYSTEM_ROLES } from "@/lib/capabilities";
 
 const TZ = "America/Montevideo"; // UTC-3, sin horario de verano
 /** Lunes 26/10/2026, 10:00 en Montevideo. */
@@ -22,21 +23,33 @@ const dia = (iso: string) => new Date(`${iso}T00:00:00Z`);
 const HORA = 60 * 60 * 1000;
 
 describe("reglasPermitidas — cada regla pide SU capacidad", () => {
-  it("las capacidades son de la lista cerrada y cada regla declara una", () => {
-    expect(REGLAS_DE_TAREAS.map((r) => [r.id, r.capacidad])).toEqual([
-      ["asistencia", "asistencia.editar"],
-      ["confirmar", "cohortes.confirmar"],
-      ["facturar", "cobranza.ver"],
-      ["leads", "inscripciones.seguimiento"],
+  it("las capacidades son de la lista cerrada y cada regla declara las suyas", () => {
+    expect(REGLAS_DE_TAREAS.map((r) => [r.id, r.capacidades])).toEqual([
+      ["asistencia", ["asistencia.editar", "grabaciones.gestionar"]],
+      ["confirmar", ["cohortes.confirmar"]],
+      ["facturar", ["cobranza.ver"]],
+      ["leads", ["inscripciones.seguimiento"]],
     ]);
   });
 
-  it("sin la capacidad la regla no corre", () => {
+  it("sin TODAS sus capacidades la regla no corre", () => {
     expect(reglasPermitidas(["academico.ver", "contactos.ver"])).toEqual([]);
     expect(reglasPermitidas(["academico.ver", "cobranza.ver"])).toEqual(["facturar"]);
     expect(
-      reglasPermitidas(["asistencia.editar", "cohortes.confirmar", "inscripciones.seguimiento"])
+      reglasPermitidas([
+        "asistencia.editar",
+        "grabaciones.gestionar",
+        "cohortes.confirmar",
+        "inscripciones.seguimiento",
+      ])
     ).toEqual(["asistencia", "confirmar", "leads"]);
+  });
+
+  it("Soporte pasa asistencia pero no la recibe como tarea; Coordinación sí", () => {
+    const capacidadesDe = (key: string) => SYSTEM_ROLES.find((r) => r.key === key)!.capabilities;
+    expect(capacidadesDe("soporte")).toContain("asistencia.editar");
+    expect(reglasPermitidas(capacidadesDe("soporte"))).not.toContain("asistencia");
+    expect(reglasPermitidas(capacidadesDe("coordinacion"))).toContain("asistencia");
   });
 });
 

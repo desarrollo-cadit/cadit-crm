@@ -45,46 +45,52 @@ export type GrupoDeTareas = {
 };
 
 /**
- * Las reglas, en el orden en que se muestran a igual urgencia, con la
- * capacidad que pide cada una. Es la MISMA capacidad que la acción que la
+ * Las reglas, en el orden en que se muestran a igual urgencia, con las
+ * capacidades que pide cada una (TODAS). Incluyen la de la acción que la
  * resuelve: quien ve la tarea puede resolverla (o, en Facturación, ver la
  * pantalla donde se resuelve).
+ *
+ * Asistencia pide además `grabaciones.gestionar`: Soporte puede pasar lista,
+ * pero la responsabilidad es de Coordinación (2026-10-26), así que la tarea
+ * le llega solo a quien coordina las clases.
  */
 export const REGLAS_DE_TAREAS = [
   {
     id: "asistencia",
-    capacidad: "asistencia.editar",
+    capacidades: ["asistencia.editar", "grabaciones.gestionar"],
     titulo: "Asistencia sin pasar",
     unidad: ["clase sin pasar", "clases sin pasar"],
   },
   {
     id: "confirmar",
-    capacidad: "cohortes.confirmar",
+    capacidades: ["cohortes.confirmar"],
     titulo: "Grupos por confirmar",
     unidad: ["grupo por confirmar", "grupos por confirmar"],
   },
   {
     id: "facturar",
-    capacidad: "cobranza.ver",
+    capacidades: ["cobranza.ver"],
     titulo: "Pendientes de facturar",
     unidad: ["grupo con ventas sin factura", "grupos con ventas sin factura"],
   },
   {
     id: "leads",
-    capacidad: "inscripciones.seguimiento",
+    capacidades: ["inscripciones.seguimiento"],
     titulo: "Interesados sin contactar",
     unidad: ["interesado sin contactar", "interesados sin contactar"],
   },
 ] as const satisfies readonly {
   id: ReglaDeTarea;
-  capacidad: Capability;
+  capacidades: readonly Capability[];
   titulo: string;
   unidad: readonly [string, string];
 }[];
 
 /** Las reglas que la sesión puede ver; las demás ni se consultan. */
 export function reglasPermitidas(capacidades: readonly Capability[]): ReglaDeTarea[] {
-  return REGLAS_DE_TAREAS.filter((r) => capacidades.includes(r.capacidad)).map((r) => r.id);
+  return REGLAS_DE_TAREAS.filter((r) => r.capacidades.every((c) => capacidades.includes(c))).map(
+    (r) => r.id
+  );
 }
 
 /* ============================================================ utilidades */
