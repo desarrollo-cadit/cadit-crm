@@ -7,6 +7,7 @@ import {
   ArchiveRestore,
   ChevronLeft,
   ChevronRight,
+  GraduationCap,
   MessageSquareText,
   Search,
   Trash2,
@@ -30,7 +31,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { EnrollLauncher } from "@/components/enrollments/enroll-launcher";
+import { EnrollDialog, EnrollLauncher } from "@/components/enrollments/enroll-launcher";
 import { MergeContactsDialog } from "@/components/contacts/merge-contacts-dialog";
 import { TIPO_DE_CONTACTO_LABEL, type TipoDeContacto } from "@/lib/recorrido-comercial";
 import { notify } from "@/lib/notify";
@@ -107,6 +108,8 @@ export function ContactsClient({
     contactId: string;
     otro: { id: string; name: string };
   } | null>(null);
+  /** 2026-10-26 — La persona de la fila que se está inscribiendo en un grupo. */
+  const [enrolling, setEnrolling] = useState<{ id: string; name: string } | null>(null);
   const [pestana, setPestana] = usePestanaEnUrl<Pestana>(initialTab, enUrl);
   const [cantidades, setCantidades] = useState<CantidadesPorTipo | null>(null);
 
@@ -405,6 +408,20 @@ export function ContactsClient({
                         >
                           Editar
                         </Button>
+                        {/* 2026-10-26 — Inscribir a ESTA persona: el mismo
+                            formulario del legajo y la bandeja, con el
+                            contacto ya elegido. Solo con inscripciones.editar. */}
+                        {canEnroll && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Inscribir en un grupo"
+                            aria-label={`Inscribir a ${fullName(c)} en un grupo`}
+                            onClick={() => setEnrolling({ id: c.id, name: fullName(c) })}
+                          >
+                            <GraduationCap className="h-4 w-4" />
+                          </Button>
+                        )}
                         <Link href={`/inbox?contact=${c.id}`}>
                           <Button
                             variant="ghost"
@@ -495,6 +512,15 @@ export function ContactsClient({
             if (!error) setEditing(null);
             return error;
           }}
+        />
+      )}
+
+      {enrolling && (
+        <EnrollDialog
+          key={enrolling.id}
+          initialContact={enrolling}
+          onClose={() => setEnrolling(null)}
+          onEnrolled={() => void refetch()}
         />
       )}
 
