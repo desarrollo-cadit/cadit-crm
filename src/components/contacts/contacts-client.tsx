@@ -7,6 +7,7 @@ import {
   ArchiveRestore,
   ChevronLeft,
   ChevronRight,
+  GraduationCap,
   MessageSquareText,
   Search,
   Trash2,
@@ -30,7 +31,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { EnrollLauncher } from "@/components/enrollments/enroll-launcher";
+import { EnrollDialog, EnrollLauncher } from "@/components/enrollments/enroll-launcher";
 import { MergeContactsDialog } from "@/components/contacts/merge-contacts-dialog";
 import { TIPO_DE_CONTACTO_LABEL, type TipoDeContacto } from "@/lib/recorrido-comercial";
 import { notify } from "@/lib/notify";
@@ -107,6 +108,8 @@ export function ContactsClient({
     contactId: string;
     otro: { id: string; name: string };
   } | null>(null);
+  /** 2026-10-26 — La persona de la fila que se está inscribiendo en un grupo. */
+  const [enrolling, setEnrolling] = useState<{ id: string; name: string } | null>(null);
   const [pestana, setPestana] = usePestanaEnUrl<Pestana>(initialTab, enUrl);
   const [cantidades, setCantidades] = useState<CantidadesPorTipo | null>(null);
 
@@ -224,7 +227,7 @@ export function ContactsClient({
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center justify-between gap-4 border-b px-6 py-4">
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-4 border-b px-6 py-4">
         {/*
           021 — El total estaba SOLO al pie: había que recorrer las 340 filas
           para saber cuántas eran. Arriba, junto al título, es donde se busca.
@@ -241,7 +244,7 @@ export function ContactsClient({
             </span>
           )}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
             <input
               type="checkbox"
@@ -251,13 +254,13 @@ export function ContactsClient({
             />
             Ver archivados
           </label>
-          <div className="relative">
+          <div className="relative w-full sm:w-auto">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Buscar por nombre, apellido o teléfono…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="w-72 pl-8"
+              className="w-full pl-8 sm:w-72"
             />
           </div>
           {canEnroll && (
@@ -272,7 +275,7 @@ export function ContactsClient({
       </header>
 
       {/* 046 US7 — Todos / Leads / Alumnos activos / Exalumnos: el filtro lo hace el servidor. */}
-      <nav className="flex gap-1 border-b px-6" aria-label="Tipo de contacto">
+      <nav className="flex shrink-0 gap-1 overflow-x-auto border-b px-6" aria-label="Tipo de contacto">
         {PESTANAS.map((p) => (
           <button
             key={p.key}
@@ -292,7 +295,15 @@ export function ContactsClient({
         ))}
       </nav>
 
-      <div className="flex-1 overflow-y-auto p-6">
+      {/*
+        2026-10-26 — La tabla usa TODO el alto que queda. Antes tenía un tope
+        alto máximo calculado a ojo sobre la ventana y sobraba pantalla. Desde
+        `md` esta región es una columna: la tabla crece (`flex-1 min-h-0`) y
+        scrollea sola (así el encabezado sticky se ancla a ella) y la
+        paginación queda al pie. En pantallas angostas scrollea la región
+        entera, como siempre.
+      */}
+      <div className="min-h-0 flex-1 overflow-y-auto p-6 md:flex md:flex-col md:overflow-hidden">
         {loading ? (
           <div className="space-y-2">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -300,7 +311,7 @@ export function ContactsClient({
             ))}
           </div>
         ) : contacts.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
+          <div className="flex h-full flex-1 flex-col items-center justify-center gap-2 text-center">
             <p className="text-sm font-medium">Sin alumnos</p>
             <p className="max-w-sm text-xs text-muted-foreground">
               Cada persona que escriba a tu WhatsApp (o llene un formulario de
@@ -309,7 +320,7 @@ export function ContactsClient({
           </div>
         ) : (
           <>
-            <Table containerClassName="max-h-[calc(100vh-15rem)] rounded-lg border">
+            <Table containerClassName="rounded-lg border md:min-h-0 md:flex-1">
               {/*
                 021 — Encabezado FIJO. Con 340 filas paginadas de a decenas,
                 bajar media pantalla y quedarse sin saber qué columna es cuál
@@ -405,6 +416,20 @@ export function ContactsClient({
                         >
                           Editar
                         </Button>
+                        {/* 2026-10-26 — Inscribir a ESTA persona: el mismo
+                            formulario del legajo y la bandeja, con el
+                            contacto ya elegido. Solo con inscripciones.editar. */}
+                        {canEnroll && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Inscribir en un grupo"
+                            aria-label={`Inscribir a ${fullName(c)} en un grupo`}
+                            onClick={() => setEnrolling({ id: c.id, name: fullName(c) })}
+                          >
+                            <GraduationCap className="h-4 w-4" />
+                          </Button>
+                        )}
                         <Link href={`/inbox?contact=${c.id}`}>
                           <Button
                             variant="ghost"
@@ -449,7 +474,7 @@ export function ContactsClient({
               </TableBody>
             </Table>
 
-            <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
+            <div className="mt-4 flex shrink-0 items-center justify-between text-xs text-muted-foreground">
               <p>
                 Página {page} de {totalPages}
               </p>
@@ -495,6 +520,15 @@ export function ContactsClient({
             if (!error) setEditing(null);
             return error;
           }}
+        />
+      )}
+
+      {enrolling && (
+        <EnrollDialog
+          key={enrolling.id}
+          initialContact={enrolling}
+          onClose={() => setEnrolling(null)}
+          onEnrolled={() => void refetch()}
         />
       )}
 
