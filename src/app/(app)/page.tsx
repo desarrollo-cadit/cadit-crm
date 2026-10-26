@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { portalTeacherId, resolvePortalSession } from "@/lib/auth/portal";
@@ -10,8 +11,7 @@ import { TodayPanel } from "@/components/dashboard/today-panel";
 import { TareasDeHoyPanel } from "@/components/dashboard/tareas-de-hoy-panel";
 import { reglasPermitidas } from "@/lib/tareas-del-dia";
 import { LicenseInventoryPanel } from "@/components/dashboard/license-inventory-panel";
-import { OverduePanel } from "@/components/finance/overdue-panel";
-import { ReportsPanel } from "@/components/dashboard/reports-panel";
+import { MorosidadResumen } from "@/components/dashboard/morosidad-resumen";
 
 export const dynamic = "force-dynamic";
 
@@ -56,7 +56,7 @@ export default async function HomePage() {
 
   const verReportes = session ? sessionCapabilities(session).includes("reportes.ver") : false;
 
-  // 2026-10-26 — La bandeja "Para resolver hoy" solo aparece si la persona
+  // 2026-10-26 — La bandeja "Para resolver" solo aparece si la persona
   // puede ver al menos una de sus reglas (cada una pide SU capacidad).
   const verTareas = session ? reglasPermitidas(sessionCapabilities(session)).length > 0 : false;
 
@@ -73,36 +73,40 @@ export default async function HomePage() {
    * El orden también cambió: primero qué pasa HOY, después la plata del mes.
    * Lo financiero es importante y no es urgente; las clases de las próximas
    * horas son las dos cosas.
+   *
+   * 2026-10-26 — Rediseño: tres franjas con peso distinto. Arriba ACTUAR
+   * ("Para resolver", con presencia) junto a HOY (la agenda con la línea de
+   * ahora); abajo EL MES, en tarjetas calladas. Los reportes se mudaron a
+   * `/reportes` y acá queda una fila que lleva. Los permisos no cambian:
+   * nada de plata sin `cobranza.ver`.
    */
   return (
     <div className="flex h-full flex-col">
-      <div className="mx-auto w-full flex-1 space-y-6 overflow-y-auto p-6">
-        <TodayPanel nombre={authSession?.user.name ?? "que tal"} />
+      <div className="mx-auto flex w-full max-w-[1240px] flex-1 flex-col gap-[22px] overflow-y-auto px-4 pb-12 pt-[22px] md:px-7">
+        <TodayPanel
+          nombre={authSession?.user.name ?? "que tal"}
+          paraResolver={verTareas ? <TareasDeHoyPanel /> : undefined}
+        />
 
-        {verTareas && <TareasDeHoyPanel />}
-
-        {fullAccess && (
-          <section className="space-y-3">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Este mes
-            </h2>
-            <div className="grid gap-4 lg:grid-cols-2">
-              <FinancePanel />
-              {/* 008 — la morosidad va junto a las finanzas y con el mismo gate. */}
-              <OverduePanel />
-            </div>
-          </section>
-        )}
-
-        {/* 046 US8 (FR-026) — Reportes: con `reportes.ver` (Dirección y Coordinación). */}
-        {verReportes && <ReportsPanel />}
-
-        <section className="space-y-3">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Licencias
-          </h2>
+        <h2 className="flex items-center gap-3 text-[11.5px] font-semibold uppercase tracking-[0.1em] text-muted-foreground after:h-px after:flex-1 after:bg-border after:content-['']">
+          Este mes
+        </h2>
+        <section className="grid items-start gap-3.5 min-[1100px]:grid-cols-3">
+          {/* 008 — la morosidad va junto a las finanzas y con el mismo gate. */}
+          {fullAccess && <FinancePanel />}
+          {fullAccess && <MorosidadResumen />}
           <LicenseInventoryPanel />
         </section>
+
+        {/* 046 US8 (FR-026) — Reportes: con `reportes.ver` (Dirección y Coordinación), en su pantalla. */}
+        {verReportes && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-dashed border-border-strong px-4 py-3 text-sm text-text-2">
+            <span>Reportes: cursos más vendidos, embudo de leads, recompra y más.</span>
+            <Link href="/reportes" className="font-medium text-brand-text hover:underline">
+              Abrir reportes →
+            </Link>
+          </div>
+        )}
       </div>
     </div>
   );

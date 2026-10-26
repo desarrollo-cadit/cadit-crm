@@ -144,7 +144,13 @@ describe("046 US8 — reportes", () => {
     expect(leer("src/lib/reportes.ts")).toContain("metricasDeRecompra(");
   });
 
-  it("el inicio muestra la sección solo con `reportes.ver`", () => {
+  it("el inicio muestra el acceso a los reportes solo con `reportes.ver`", () => {
     expect(leer("src/app/(app)/page.tsx")).toContain('includes("reportes.ver")');
+  });
+
+  // 2026-10-26 — Los reportes se mudaron a su pantalla, con el gate en el servidor.
+  it("la pantalla /reportes pide `reportes.ver` en el servidor y el menú la muestra solo con eso", () => {
+    expect(leer("src/app/(app)/reportes/page.tsx")).toContain('includes("reportes.ver")) redirect("/")');
+    expect(leer("src/lib/nav.ts")).toMatch(/href: "\/reportes",[^}]*capability: "reportes\.ver"/);
   });
 });

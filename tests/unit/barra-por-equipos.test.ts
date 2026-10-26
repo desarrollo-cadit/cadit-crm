@@ -12,7 +12,7 @@ describe("la barra lateral por equipos", () => {
     expect(
       NAV_GROUPS.map((g) => ({ grupo: g.label, items: g.items.map((i) => i.label as string) }))
     ).toEqual([
-      { grupo: "Inicio", items: ["Dashboard"] },
+      { grupo: "Inicio", items: ["Dashboard", "Reportes"] },
       { grupo: "Comercial", items: ["Bandeja", "Pipeline", "Contactos", "Empresas"] },
       { grupo: "Marketing", items: ["Marketing", "Talleres"] },
       { grupo: "Académico", items: ["Académico", "Calendario", "Correcciones", "Cursos offline"] },

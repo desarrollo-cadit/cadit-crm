@@ -20,7 +20,7 @@ import { cn, formatAmount } from "@/lib/utils";
 import type { ReportesDto } from "@/server/reportes";
 
 /**
- * 046 US8 (FR-027…FR-031) — La sección Reportes del inicio.
+ * 046 US8 (FR-027…FR-031) — Los reportes (pantalla /reportes desde 2026-10-26; antes, al pie del inicio).
  *
  * Las cifras las arma el servidor con la derivación única del historial
  * (`/api/dashboard/reportes`); acá solo se dibujan. Gráficos según la skill
@@ -109,7 +109,8 @@ export function ReportsPanel() {
   return (
     <section className="space-y-3" aria-label="Reportes" aria-busy={cargando}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Reportes</h2>
+        {/* 2026-10-26 — El título lo pone la pantalla /reportes. */}
+        <p className="text-xs font-medium text-muted-foreground">Período</p>
         <div className="flex flex-wrap gap-1" role="group" aria-label="Período de los reportes">
           {PRESETS.map((p) => (
             <button

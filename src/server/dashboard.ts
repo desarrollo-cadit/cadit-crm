@@ -3,6 +3,8 @@ import { cohorteNoEsDeTaller } from "@/server/workshop-scope";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { listCalendarClasses, type CalendarClassDto } from "@/server/classes";
+import { organizationTimezone } from "@/server/finanzas-periodo";
+import { diaDeHoyGuardado } from "@/lib/agenda-de-hoy";
 
 /**
  * 021 — El resumen que ve el dueño al entrar.
@@ -27,6 +29,11 @@ export type DashboardSummary = {
   teachers: number;
   /** Las clases de hoy, ordenadas por hora. Puede venir vacía y está bien. */
   today: CalendarClassDto[];
+  /**
+   * 2026-10-26 — La zona de la academia: la agenda del inicio decide qué
+   * terminó y qué está en curso en ESTA zona, no en la del navegador.
+   */
+  timeZone: string;
 };
 
 export async function dashboardSummary(
@@ -37,11 +44,16 @@ export async function dashboardSummary(
 
   const inicioDelDia = new Date(now);
   inicioDelDia.setHours(0, 0, 0, 0);
-  const finDelDia = new Date(inicioDelDia);
-  finDelDia.setHours(23, 59, 59, 999);
 
   const en30dias = new Date(inicioDelDia);
   en30dias.setDate(en30dias.getDate() + 30);
+
+  // 2026-10-26 — "Hoy" es el día de la academia, con la forma en que se
+  // guarda `class_session.date` (medianoche UTC). Con la medianoche del
+  // servidor, a las 22:00 de Montevideo la agenda ya mostraba mañana.
+  const timeZone = await organizationTimezone(organizationId);
+  const hoyGuardado = diaDeHoyGuardado(now, timeZone);
+  const finDeHoyGuardado = new Date(hoyGuardado.getTime() + 24 * 60 * 60 * 1000 - 1);
 
   const [inscriptos, activas, proximas, docentes, clases] = await Promise.all([
     /**
@@ -90,7 +102,7 @@ export async function dashboardSummary(
       .select({ n: count() })
       .from(schema.teacher)
       .where(scoped(schema.teacher.organizationId, organizationId)),
-    listCalendarClasses(organizationId, inicioDelDia, finDelDia),
+    listCalendarClasses(organizationId, hoyGuardado, finDeHoyGuardado),
   ]);
 
   return {
@@ -101,5 +113,6 @@ export async function dashboardSummary(
     today: [...clases]
       .filter((c) => !c.canceled)
       .sort((a, b) => (a.startTime ?? "").localeCompare(b.startTime ?? "")),
+    timeZone,
   };
 }
