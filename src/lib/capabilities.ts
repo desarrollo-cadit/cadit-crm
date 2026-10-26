@@ -29,6 +29,18 @@ export const CAPABILITIES = [
   "correcciones.aprobar",
   "certificados.emitir",
   /**
+   * 2026-10-26 (decisión del dueño) — Asignar y quitar licencias de software:
+   * las individuales de cada alumno, las de todo el grupo y el correo al que
+   * va la licencia. Es tarea de SOPORTE, que instala y da de alta las
+   * licencias; hasta acá colgaba de `academico.editar` y la operaba
+   * coordinación. Coordinación sigue VIENDO qué licencia tiene cada alumno
+   * (`academico.ver`) pero no la cambia (ver `sinGestionarLicencias`).
+   * El catálogo de programas sigue en `academico.editar`: es catálogo, no
+   * asignación. Las sincronizaciones automáticas (inscribir, módulos, mudar,
+   * baja) tampoco la piden: son consecuencia de otra acción.
+   */
+  "licencias.gestionar",
+  /**
    * 039 — Confirmar (y quitar la confirmación de) una cohorte: "esta cohorte
    * sale". Dispara el aviso por correo a Soporte y habilita los avisos de
    * facturación a Administración 7 y 2 días antes del inicio. La reciben
@@ -223,6 +235,12 @@ const sinImportarHistorial = (c: Capability) => c !== "historial.importar";
 const sinReportes = (c: Capability) => c !== "reportes.ver";
 
 /**
+ * 2026-10-26 (decisión del dueño) — Coordinación no asigna ni quita
+ * licencias: es tarea de soporte. Las sigue viendo en el roster.
+ */
+const sinGestionarLicencias = (c: Capability) => c !== "licencias.gestionar";
+
+/**
  * Mapeo rol → capacidades, FIEL al comportamiento actual.
  *
  * Cuidado con `member`: el data-model de la fase lo proyectaba como
@@ -293,7 +311,8 @@ export const SYSTEM_ROLES: readonly {
         sinAuditoria(c) &&
         sinAreas(c) &&
         sinConfigurarMarketing(c) &&
-        sinImportarHistorial(c)
+        sinImportarHistorial(c) &&
+        sinGestionarLicencias(c)
     ),
   },
   {

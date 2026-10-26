@@ -533,6 +533,13 @@
       "when": 1793027024892,
       "tag": "0075_duracion_del_curso",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1793029330689,
+      "tag": "0076_licencias_gestionar",
+      "breakpoints": true
     }
   ]
 }

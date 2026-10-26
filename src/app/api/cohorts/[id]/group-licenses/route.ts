@@ -37,11 +37,12 @@ const postSchema = z.object({
  * licencia por miembro activo, todo o nada. Sin stock para todos, 409
  * `no_stock` diciendo cuántas faltan y no se asigna ninguna.
  *
- * `academico.editar`: la misma capacidad que asignar una licencia por alumno
- * (FR-021).
+ * `licencias.gestionar` (2026-10-26): la misma capacidad que asignar una
+ * licencia por alumno (FR-021). Si quedara en `academico.editar`, coordinación
+ * asignaría por el grupo lo que ya no puede asignar por alumno.
  */
 export const POST = requireCapability(
-  "academico.editar",
+  "licencias.gestionar",
   async (session, req: Request, ctx: Params) => {
     const { id } = await ctx.params;
     const body = await parseBody(req, postSchema);

@@ -141,7 +141,9 @@ describe("SYSTEM_ROLES — la semilla de la fase 4", () => {
     expect(coord?.capabilities).not.toContain("marketing.configurar");
     // 046 US6 — ni importar el historial (crea contactos en bloque).
     expect(coord?.capabilities).not.toContain("historial.importar");
-    expect(CAPABILITIES.length - coord!.capabilities.length).toBe(5);
+    // 2026-10-26 — ni asignar licencias: es de soporte (`licencias.gestionar`).
+    expect(coord?.capabilities).not.toContain("licencias.gestionar");
+    expect(CAPABILITIES.length - coord!.capabilities.length).toBe(6);
   });
 
   /**

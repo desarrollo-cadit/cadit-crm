@@ -103,6 +103,8 @@ export default async function CohortPage({
           canFollowUp={caps.includes("inscripciones.seguimiento")}
           // 042 — anotar el número de recibo de un pago, sin tocar la plata.
           canInvoice={caps.includes("facturacion.editar")}
+          // 2026-10-26 — asignar y quitar licencias es de soporte; coordinación las ve.
+          canManageLicenses={caps.includes("licencias.gestionar")}
           esEspecializacion={isSpecialization}
           // 034 (FR-016) — un módulo es el que tiene especialización arriba.
           esModulo={header?.partOf != null}

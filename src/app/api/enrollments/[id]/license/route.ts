@@ -34,9 +34,12 @@ const putSchema = z.object({
  *
  * 035 (FR-008) — Un programa asignado al grupo de la cohorte responde 409
  * `asignado_al_grupo`: se asigna desde la cohorte (`assignLicense` lo chequea).
+ *
+ * 2026-10-26 — `licencias.gestionar` (soporte y dirección), ya no
+ * `academico.editar`: asignar licencias es tarea de soporte.
  */
 export const PUT = requireCapability(
-  "academico.editar",
+  "licencias.gestionar",
   async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const body = await parseBody(req, putSchema);
@@ -60,7 +63,7 @@ const deleteQuerySchema = z.object({ softwareId: z.string().min(1).optional() })
  * `asignado_al_grupo`, y "todas" deja las del grupo (`unassignLicense`).
  */
 export const DELETE = requireCapability(
-  "academico.editar",
+  "licencias.gestionar",
   async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const query = parseQuery(new URL(req.url), deleteQuerySchema);

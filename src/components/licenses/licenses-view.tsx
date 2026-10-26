@@ -65,9 +65,19 @@ const vence = (iso: string | null) => {
  * programa" y "Editar" (nombre, foto, total) con `SoftwareForm` y las
  * mismas rutas `/api/software`. Antes era la pestaña Software de Académico.
  * `canEdit` lo decide el servidor con `academico.editar`, la capacidad que
- * exigen POST/PATCH de esas rutas y el desasignar de acá.
+ * exigen POST/PATCH de esas rutas.
+ *
+ * 2026-10-26 — Desasignar es `canManage` (`licencias.gestionar`, la de
+ * `DELETE /api/enrollments/[id]/license`): asignar y quitar licencias es de
+ * soporte. Sin ella, la fila se ve sin botón.
  */
-export function LicensesView({ canEdit }: { canEdit: boolean }) {
+export function LicensesView({
+  canEdit,
+  canManage,
+}: {
+  canEdit: boolean;
+  canManage: boolean;
+}) {
   const [data, setData] = useState<VistaDeLicenciasDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [elegido, setElegido] = useState<string | null>(null);
@@ -401,7 +411,7 @@ export function LicensesView({ canEdit }: { canEdit: boolean }) {
                                 ) : (
                                   <span className="text-muted-foreground">Se quita desde el grupo</span>
                                 )
-                              ) : canEdit ? (
+                              ) : canManage ? (
                                 <Button
                                   variant="outline"
                                   size="sm"

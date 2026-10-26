@@ -57,7 +57,7 @@ export function ModuleRosterClient({
   cohortId: string;
   /** `inscripciones.editar` — sacar del módulo. */
   canEditEnrollments: boolean;
-  /** `academico.editar` — asignar y liberar licencias. */
+  /** `licencias.gestionar` (2026-10-26) — asignar y liberar licencias. */
   canEditLicenses: boolean;
 }) {
   const [data, setData] = useState<Roster | null>(null);
