@@ -145,6 +145,11 @@ export const member = pgTable("member", {
     .notNull()
     .references(() => user.id, { onDelete: "cascade" }),
   role: text("role").notNull().default("member"),
+  /**
+   * Avisos internos por correo (hoy: grupos sin confirmar). Se apaga por
+   * persona desde Equipo; las copias por área se configuran aparte (Áreas).
+   */
+  receivesInternalNotices: boolean("receives_internal_notices").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

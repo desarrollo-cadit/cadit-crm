@@ -284,7 +284,8 @@ function AreaCard({
               onChange={(e) => patch({ ccEmails: e.target.value })}
             />
             <p id={`${idBase}-cc-hint`} className="text-xs text-text-3">
-              Separados por coma. Hasta {AREA_LIMITS.ccEmails}.
+              Separados por coma. Hasta {AREA_LIMITS.ccEmails}. Cada correo de esta lista recibe
+              todos los avisos de esta área.
             </p>
             <FieldError id={`${idBase}-cc-error`} message={errors.ccEmails} />
           </div>

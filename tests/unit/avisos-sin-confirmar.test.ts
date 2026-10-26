@@ -216,6 +216,36 @@ describe("destinatarios: quien TIENE la capacidad, según la base o el código",
     expect(r).toEqual(["Dire@Academia.test"]);
   });
 
+  it("quien apagó los avisos internos no los recibe, aunque tenga la capacidad", () => {
+    const r = correosConCapacidad(
+      [
+        { email: "dire@academia.test", role: "direccion", receivesInternalNotices: false },
+        { email: "coord@academia.test", role: "rol_x1", receivesInternalNotices: true },
+        { email: "otra@academia.test", role: "direccion" },
+      ],
+      roles,
+      "cohortes.confirmar"
+    );
+    expect(r).toEqual(["coord@academia.test", "otra@academia.test"]);
+  });
+
+  it("apagado en una fila no saca el mismo correo si otra fila lo tiene encendido", () => {
+    const r = correosConCapacidad(
+      [
+        { email: "dire@academia.test", role: "direccion", receivesInternalNotices: false },
+        { email: "Dire@academia.test", role: "direccion", receivesInternalNotices: true },
+      ],
+      roles,
+      "cohortes.confirmar"
+    );
+    expect(r).toEqual(["Dire@academia.test"]);
+  });
+
+  it("el servidor lee la preferencia de cada miembro", () => {
+    const src = readFileSync("src/server/avisos-sin-confirmar.ts", "utf8");
+    expect(src).toMatch(/receivesInternalNotices:\s*schema\.member\.receivesInternalNotices/);
+  });
+
   it("no compara nombres de rol en el código", () => {
     const src = readFileSync("src/lib/avisos-sin-confirmar.ts", "utf8");
     expect(src).not.toMatch(/role\s*===\s*["']/);

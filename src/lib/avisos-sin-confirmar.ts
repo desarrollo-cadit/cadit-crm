@@ -103,10 +103,18 @@ export function avisoSinConfirmarQueTocaHoy(
  * organización si existe, y si no el mapeo de código (`capabilitiesFor`).
  * Nunca se mira el nombre del rol.
  *
+ * Quien apagó "Recibir avisos internos por correo" (`member.receives_internal_notices`,
+ * que se cambia en Equipo) queda afuera aunque tenga la capacidad. Sin el campo
+ * cuenta como encendido.
+ *
  * Sin repetidos (sin distinguir mayúsculas), en el orden de llegada.
  */
 export function correosConCapacidad(
-  miembros: readonly { email: string | null; role: string }[],
+  miembros: readonly {
+    email: string | null;
+    role: string;
+    receivesInternalNotices?: boolean;
+  }[],
   roles: readonly { key: string; capabilities: unknown }[],
   capacidad: Capability
 ): string[] {
@@ -116,6 +124,7 @@ export function correosConCapacidad(
   for (const m of miembros) {
     const email = m.email?.trim();
     if (!email) continue;
+    if (m.receivesInternalNotices === false) continue;
     const caps = porLlave.get(m.role) ?? capabilitiesFor(m.role);
     if (!caps.includes(capacidad)) continue;
     const key = email.toLowerCase();
