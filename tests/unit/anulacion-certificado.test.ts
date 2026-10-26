@@ -301,8 +301,7 @@ describe("024 SC-004 — qué dice la verificación PÚBLICA de un anulado", () 
         contact: { firstName: "Ana", lastName: "Pérez" },
         courseName: "AutoCAD",
         cohortName: "AC-12",
-        durationWeeks: 10,
-        hoursPerWeek: 4,
+        totalHours: "37.50",
       },
     ]);
 
@@ -312,6 +311,8 @@ describe("024 SC-004 — qué dice la verificación PÚBLICA de un anulado", () 
     expect(pub).not.toBeNull();
     expect(pub!.valid).toBe(false);
     expect(pub!.revokedAt).toBe("2026-09-10T12:00:00.000Z");
+    // Las horas del CURSO (duración total), con coma decimal.
+    expect(pub!.hours).toBe("37,5 horas");
     expect(Object.keys(pub!).sort()).toEqual(
       ["code", "cohort", "course", "hours", "issuedAt", "revokedAt", "student", "valid"].sort()
     );

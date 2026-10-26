@@ -8,10 +8,11 @@ type Params = { params: Promise<{ id: string; softwareId: string }> };
 /**
  * 035 (FR-005) — Quita el programa del grupo y libera las licencias DEL
  * GRUPO de ese programa en la cohorte; las individuales no se tocan.
- * `academico.editar`, como liberar una licencia por alumno (FR-021).
+ * `licencias.gestionar` (2026-10-26), como liberar una licencia por alumno
+ * (FR-021).
  */
 export const DELETE = requireCapability(
-  "academico.editar",
+  "licencias.gestionar",
   async (session, _req: Request, ctx: Params) => {
     const { id, softwareId } = await ctx.params;
     const result = await quitarDelGrupo(session.organizationId, id, softwareId);

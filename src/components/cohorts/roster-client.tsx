@@ -98,7 +98,7 @@ export function RosterClient({
   canViewOfflineCourses = false,
   canEditOfflineCourses = false,
   canManageAccess = false,
-  canEditLicenses = true,
+  canEditLicenses = false,
   canFollowUp = false,
   canInvoice = false,
 }: {
@@ -112,7 +112,8 @@ export function RosterClient({
    */
   canFollowUp?: boolean;
   /**
-   * 034 — `academico.editar`, la capacidad de `PUT/DELETE
+   * 034 — `licencias.gestionar` (2026-10-26; antes `academico.editar`), la
+   * capacidad de `PUT/DELETE
    * /api/enrollments/[id]/license`. Sin ella, las licencias se ven y no se
    * ofrecen botones que devolverían 403.
    */
@@ -1218,7 +1219,7 @@ function ModuleLicenses({
   bloqueo = null,
 }: {
   lines: ModuleLicenseLine[];
-  /** `academico.editar` — la capacidad de la ruta de licencias. */
+  /** `licencias.gestionar` — la capacidad de la ruta de licencias. */
   canEdit: boolean;
   onChanged: () => void;
   /** 2026-10-23 — "Tenía licencia propia" en la madre: tampoco en los módulos. */

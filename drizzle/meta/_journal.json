@@ -526,6 +526,34 @@
       "when": 1792775653955,
       "tag": "0074_reportes",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1793027024892,
+      "tag": "0075_duracion_del_curso",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1793029330689,
+      "tag": "0076_licencias_gestionar",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1793034527238,
+      "tag": "0077_correo_secundario",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1793036201768,
+      "tag": "0078_contactos_unificar",
+      "breakpoints": true
     }
   ]
 }

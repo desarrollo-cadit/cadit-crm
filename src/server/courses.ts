@@ -26,6 +26,7 @@ import {
 } from "@/server/program-modules";
 import { planDeReorden, siguientePosicion } from "@/lib/program-order";
 import { COURSE_KINDS, type CourseKind } from "@/lib/course-kind";
+import { courseDurationSchema, horasParaDb } from "@/lib/course-duration";
 import { MAX_DESCRIPCION_CERTIFICADO } from "@/lib/certificado";
 
 
@@ -73,8 +74,10 @@ export type CourseContentInput = {
   categoryId?: string | null;
   level?: "inicial" | "intermedio" | "avanzado" | null;
   modality?: "en_vivo" | "asincronico" | "presencial" | null;
-  durationWeeks?: number | null;
-  hoursPerWeek?: number | null;
+  /** Duración del curso (`src/lib/course-duration.ts`); horas con decimales. */
+  classCount?: number | null;
+  hoursPerClass?: number | null;
+  totalHours?: number | null;
   imageUrl?: string | null;
   learningObjectives?: string[] | null;
   targetAudience?: string | null;
@@ -138,8 +141,7 @@ export const courseContentSchema = {
   categoryId: z.string().min(1).nullable().optional(),
   level: z.enum(["inicial", "intermedio", "avanzado"]).nullable().optional(),
   modality: z.enum(["en_vivo", "asincronico", "presencial"]).nullable().optional(),
-  durationWeeks: z.number().int().min(1).max(520).nullable().optional(),
-  hoursPerWeek: z.number().int().min(1).max(168).nullable().optional(),
+  ...courseDurationSchema,
   imageUrl: httpUrl.nullable().optional(),
   learningObjectives: z.array(z.string().trim().min(1).max(300)).max(30).nullable().optional(),
   targetAudience: z.string().max(4000).nullable().optional(),
@@ -202,8 +204,9 @@ export async function createCourse(
       categoryId: input.categoryId ?? null,
       level: input.level ?? null,
       modality: input.modality ?? null,
-      durationWeeks: input.durationWeeks ?? null,
-      hoursPerWeek: input.hoursPerWeek ?? null,
+      classCount: input.classCount ?? null,
+      hoursPerClass: horasParaDb(input.hoursPerClass ?? null),
+      totalHours: horasParaDb(input.totalHours ?? null),
       imageUrl: input.imageUrl ?? null,
       learningObjectives: input.learningObjectives ?? null,
       targetAudience: input.targetAudience ?? null,
@@ -289,8 +292,11 @@ export async function updateCourse(
       ...(input.categoryId !== undefined ? { categoryId: input.categoryId } : {}),
       ...(input.level !== undefined ? { level: input.level } : {}),
       ...(input.modality !== undefined ? { modality: input.modality } : {}),
-      ...(input.durationWeeks !== undefined ? { durationWeeks: input.durationWeeks } : {}),
-      ...(input.hoursPerWeek !== undefined ? { hoursPerWeek: input.hoursPerWeek } : {}),
+      ...(input.classCount !== undefined ? { classCount: input.classCount } : {}),
+      ...(input.hoursPerClass !== undefined
+        ? { hoursPerClass: horasParaDb(input.hoursPerClass) }
+        : {}),
+      ...(input.totalHours !== undefined ? { totalHours: horasParaDb(input.totalHours) } : {}),
       ...(input.imageUrl !== undefined ? { imageUrl: input.imageUrl } : {}),
       ...(input.learningObjectives !== undefined
         ? { learningObjectives: input.learningObjectives }

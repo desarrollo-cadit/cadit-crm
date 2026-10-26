@@ -1,6 +1,7 @@
 import { and, asc, eq, gt, inArray, ne, or, type SQL } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
+import { horasDesdeDb } from "@/lib/course-duration";
 
 /**
  * 032 (FR-004) — Qué cursos salen en las puertas públicas: los publicados
@@ -74,7 +75,20 @@ export type PublicCourseDto = {
   category: PublicCategoryDto | null;
   level: string | null;
   modality: string | null;
+  /**
+   * Duración del curso, en HORAS (unidades mayores; no es plata): números con
+   * decimales, p. ej. `hoursPerClass: 2.5`, `totalHours: 37.5`.
+   */
+  classCount: number | null;
+  hoursPerClass: number | null;
+  totalHours: number | null;
+  /**
+   * DEPRECADOS (0075): lo guardado antes de pasar a clases/horas, de solo
+   * lectura, para que la web no se rompa mientras migra a `totalHours`. El
+   * CRM ya no los edita; se quitan cuando la web deje de leerlos.
+   */
   durationWeeks: number | null;
+  /** DEPRECADO (0075) — ver `durationWeeks`. */
   hoursPerWeek: number | null;
   nextCohorts: PublicCohortDto[];
 };
@@ -102,6 +116,9 @@ const publicCourseColumns = {
   modality: schema.course.modality,
   durationWeeks: schema.course.durationWeeks,
   hoursPerWeek: schema.course.hoursPerWeek,
+  classCount: schema.course.classCount,
+  hoursPerClass: schema.course.hoursPerClass,
+  totalHours: schema.course.totalHours,
   learningObjectives: schema.course.learningObjectives,
   targetAudience: schema.course.targetAudience,
   syllabusUrl: schema.course.syllabusUrl,
@@ -126,6 +143,10 @@ type PublicCourseRow = {
   modality: string | null;
   durationWeeks: number | null;
   hoursPerWeek: number | null;
+  classCount: number | null;
+  /** `numeric` de Postgres: llega como texto. */
+  hoursPerClass: string | null;
+  totalHours: string | null;
   learningObjectives: string[] | null;
   targetAudience: string | null;
   syllabusUrl: string | null;
@@ -163,6 +184,9 @@ function toPublicCourse(row: PublicCourseRow, nextCohorts: PublicCohortDto[]): P
     category: toCategory(row),
     level: row.level,
     modality: row.modality,
+    classCount: row.classCount,
+    hoursPerClass: horasDesdeDb(row.hoursPerClass),
+    totalHours: horasDesdeDb(row.totalHours),
     durationWeeks: row.durationWeeks,
     hoursPerWeek: row.hoursPerWeek,
     nextCohorts,

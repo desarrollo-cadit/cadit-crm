@@ -94,6 +94,10 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
     que: "revisar las correcciones que mandan los profesores y publicarlas o devolverlas con un comentario",
     donde: "/correcciones",
   },
+  "licencias.gestionar": {
+    que: "asignarle o quitarle una licencia de software a un alumno o a todo un grupo, cambiar el correo al que va la licencia y desasignarla desde Licencias. Por defecto la tienen Soporte y Dirección; sin ella las licencias se ven pero no se cambian",
+    donde: "Académico → el grupo → Alumnos",
+  },
   "cohortes.confirmar": {
     que: "confirmar que un grupo sale (o quitarle la confirmación): al confirmarlo le llega a Soporte la lista de alumnos con sus licencias, y a Administración los que todavía no tienen factura, 7 y 2 días antes del inicio",
     donde: "Académico → el grupo",
@@ -111,6 +115,10 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
   "contactos.editar": {
     que: "dar de alta a una persona, corregir sus datos de contacto (incluida su empresa) y darla de baja",
     donde: "/contacts",
+  },
+  "contactos.unificar": {
+    que: "unificar dos contactos que son la misma persona: todo lo del duplicado (inscripciones, conversaciones, portal, seguimiento) pasa al que queda y el duplicado se borra. No se puede deshacer, por eso siempre muestra antes qué va a pasar. Por defecto la tienen Dirección, Coordinación y Soporte",
+    donde: "Contactos → el alumno → Unificar con…",
   },
   "inscripciones.ver": {
     que: "mirar el embudo de interesados y quiénes están anotados en cada grupo, sin cambiar nada",
@@ -247,8 +255,11 @@ export const GRUPOS_CAPACIDADES: readonly {
     titulo: "Académico",
     // 030 — Las grabaciones son de la cursada: van con lo académico.
     // 031 — Las correcciones también.
+    // 2026-10-26 — Y asignar licencias: son de la cursada del alumno.
     incluye: (c) =>
-      /^(academico|asistencia|evaluacion|correcciones|certificados|grabaciones|cohortes)\./.test(c),
+      /^(academico|asistencia|evaluacion|correcciones|certificados|grabaciones|cohortes|licencias)\./.test(
+        c
+      ),
   },
   {
     titulo: "Comercial y financiero",

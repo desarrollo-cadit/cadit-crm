@@ -8,12 +8,19 @@ export const dynamic = "force-dynamic";
 /**
  * 035 (US3) — Licencias por programa. Gate en el servidor y no solo en el
  * menú: un enlace oculto sigue siendo una URL que se puede escribir a mano.
- * Desasignar se ofrece sólo con `academico.editar`, la capacidad de la ruta.
+ * El catálogo (alta y edición de programas) sigue con `academico.editar`.
+ * Desasignar se ofrece sólo con `licencias.gestionar` (2026-10-26: es de
+ * soporte), la capacidad de la ruta.
  */
 export default async function LicenciasPage() {
   const session = await getSessionOrNull();
   if (!session) redirect("/login");
   const caps = sessionCapabilities(session);
   if (!caps.includes("academico.ver")) redirect("/");
-  return <LicensesView canEdit={caps.includes("academico.editar")} />;
+  return (
+    <LicensesView
+      canEdit={caps.includes("academico.editar")}
+      canManage={caps.includes("licencias.gestionar")}
+    />
+  );
 }

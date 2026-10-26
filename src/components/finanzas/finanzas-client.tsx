@@ -19,6 +19,7 @@ import { formatCalendarDay } from "@/lib/utils";
 import { formatMinorNumber } from "@/lib/money";
 import type { PestanaFinanzas } from "@/lib/pestanas";
 import { usePestanaEnUrl } from "@/components/use-pestana-en-url";
+import { coincideConBusqueda } from "@/lib/contact-search";
 
 /**
  * 026 — Administración y finanzas: el cierre de un mes, para transcribir.
@@ -239,11 +240,9 @@ export function FinanzasClient({
     })();
   }, []);
 
-  const filtra = (fila: { alumno: string; cohorte: string; curso: string }) => {
-    const q = busqueda.trim().toLowerCase();
-    if (!q) return true;
-    return `${fila.alumno} ${fila.cohorte} ${fila.curso}`.toLowerCase().includes(q);
-  };
+  // 2026-10-26 — Cada palabra en alumno, grupo o curso, sin tildes ni mayúsculas.
+  const filtra = (fila: { alumno: string; cohorte: string; curso: string }) =>
+    coincideConBusqueda(busqueda, { texto: [fila.alumno, fila.cohorte, fila.curso] });
 
   return (
     <div className="space-y-5 p-6">

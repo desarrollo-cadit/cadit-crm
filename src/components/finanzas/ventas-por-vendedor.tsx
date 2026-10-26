@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { formatMinorNumber } from "@/lib/money";
+import { coincideConBusqueda } from "@/lib/contact-search";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -96,9 +97,9 @@ export function VentasPorVendedor({
     };
   }, [mes]);
 
-  const q = busqueda.trim().toLowerCase();
+  // 2026-10-26 — Cada palabra en alumno, grupo o curso, sin tildes ni mayúsculas.
   const filtra = (f: Fila) =>
-    !q || `${f.alumno} ${f.cohorte} ${f.curso}`.toLowerCase().includes(q);
+    coincideConBusqueda(busqueda, { texto: [f.alumno, f.cohorte, f.curso] });
 
   if (error) {
     return (

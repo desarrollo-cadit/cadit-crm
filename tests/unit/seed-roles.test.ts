@@ -65,6 +65,10 @@ const GRANTS = [
   migracion("0073_historial_importado.sql"),
   // 046 US8 — `reportes.ver` (dirección y coordinación).
   migracion("0074_reportes.sql"),
+  // 2026-10-26 — `licencias.gestionar` (dirección y soporte).
+  migracion("0076_licencias_gestionar.sql"),
+  // 2026-10-26 — `contactos.unificar` (dirección, coordinación y soporte).
+  migracion("0078_contactos_unificar.sql"),
 ].join("\n");
 
 /**

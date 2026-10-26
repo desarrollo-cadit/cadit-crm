@@ -64,6 +64,9 @@ function courseRow(overrides: Record<string, unknown> = {}) {
     modality: null,
     durationWeeks: null,
     hoursPerWeek: null,
+    classCount: null,
+    hoursPerClass: null,
+    totalHours: null,
     learningObjectives: null,
     targetAudience: null,
     syllabusUrl: null,
@@ -109,6 +112,9 @@ describe("listPublicCourses (T041/006, FR-020/FR-021/FR-022)", () => {
           modality: "en_vivo",
           durationWeeks: 12,
           hoursPerWeek: 4,
+          classCount: 15,
+          hoursPerClass: "2.50",
+          totalHours: "37.50",
           imageUrl: "https://x/portada.jpg",
           categoryId: "cat_1",
           categoryName: "BIM",
@@ -131,6 +137,11 @@ describe("listPublicCourses (T041/006, FR-020/FR-021/FR-022)", () => {
         category: { id: "cat_1", name: "BIM", slug: "bim" },
         level: "inicial",
         modality: "en_vivo",
+        // Nuevos: numeric llega como texto y sale como número (horas, no plata).
+        classCount: 15,
+        hoursPerClass: 2.5,
+        totalHours: 37.5,
+        // Deprecados: lo guardado, de solo lectura, para no romper la web.
         durationWeeks: 12,
         hoursPerWeek: 4,
         nextCohorts: [

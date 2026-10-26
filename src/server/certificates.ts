@@ -4,6 +4,7 @@ import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { cursadaTermino, fechaCorta, finDeEspecializacion } from "@/lib/certificado";
 import { fullName } from "@/lib/utils";
+import { formatHoras, horasDesdeDb } from "@/lib/course-duration";
 import { snapshotActual } from "@/server/certificate-pdf";
 import {
   cohortGrading,
@@ -577,8 +578,7 @@ export async function verifyCertificate(code: string): Promise<PublicCertificate
       contact: schema.contact,
       courseName: schema.course.name,
       cohortName: schema.cohort.name,
-      durationWeeks: schema.course.durationWeeks,
-      hoursPerWeek: schema.course.hoursPerWeek,
+      totalHours: schema.course.totalHours,
     })
     .from(schema.certificate)
     .innerJoin(schema.enrollment, eq(schema.certificate.enrollmentId, schema.enrollment.id))
@@ -592,11 +592,10 @@ export async function verifyCertificate(code: string): Promise<PublicCertificate
   if (!row) return null;
 
   // DV-005 — las horas del CURSO (lo que figura en la web y lo que el alumno
-  // compró), no las efectivamente dictadas.
-  const hours =
-    row.durationWeeks && row.hoursPerWeek
-      ? `${row.durationWeeks * row.hoursPerWeek} horas`
-      : null;
+  // compró), no las efectivamente dictadas. Desde 0075 es la duración total
+  // guardada en el curso ("37,5 horas"), no semanas × horas por semana.
+  const totalHours = horasDesdeDb(row.totalHours);
+  const hours = totalHours !== null && totalHours > 0 ? formatHoras(totalHours) : null;
 
   return {
     code: row.certificate.code,

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { apiError, parseBody, requireCapability } from "@/lib/api";
 import { errorDeDescripcionDeCertificado } from "@/lib/certificado-pdf";
+import { horasDesdeDb } from "@/lib/course-duration";
 import {
   courseContentSchema,
   createCourseWithModules,
@@ -26,8 +27,10 @@ export const GET = requireCapability(
       categoryId: c.categoryId,
       level: c.level,
       modality: c.modality,
-      durationWeeks: c.durationWeeks,
-      hoursPerWeek: c.hoursPerWeek,
+      // Duración del curso: el editor se precarga de acá (sin el campo, guardar lo borraría).
+      classCount: c.classCount,
+      hoursPerClass: horasDesdeDb(c.hoursPerClass),
+      totalHours: horasDesdeDb(c.totalHours),
       imageUrl: c.imageUrl,
       learningObjectives: c.learningObjectives ?? [],
       targetAudience: c.targetAudience,

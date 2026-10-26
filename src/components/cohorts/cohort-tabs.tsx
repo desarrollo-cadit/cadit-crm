@@ -41,6 +41,7 @@ export function CohortTabs({
   canManageAccess,
   canFollowUp = false,
   canInvoice = false,
+  canManageLicenses = false,
   esEspecializacion,
   esModulo = false,
   initialTab,
@@ -51,6 +52,12 @@ export function CohortTabs({
    * llega como `undefined` y abre la default.
    */
   initialTab?: PestanaDelGrupo;
+  /**
+   * 2026-10-26 — `licencias.gestionar`: asignar y quitar licencias (por
+   * alumno, del grupo y el correo de la licencia). Sin ella se ven, sin
+   * controles.
+   */
+  canManageLicenses?: boolean;
   /** 040 (DV-001) — `inscripciones.seguimiento`: checklist y correos del roster. */
   canFollowUp?: boolean;
   /** 042 — `facturacion.editar`: anotar el número de recibo de un pago. */
@@ -142,7 +149,7 @@ export function CohortTabs({
           <ModuleRosterClient
             cohortId={cohortId}
             canEditEnrollments={canEditEnrollments}
-            canEditLicenses={canEditAcademic}
+            canEditLicenses={canManageLicenses}
           />
         ) : tab === "alumnos" ? (
           <RosterClient
@@ -151,7 +158,7 @@ export function CohortTabs({
             canViewOfflineCourses={canViewAcademic}
             canEditOfflineCourses={canEditAcademic}
             canManageAccess={canManageAccess}
-            canEditLicenses={canEditAcademic}
+            canEditLicenses={canManageLicenses}
             canFollowUp={canFollowUp}
             canInvoice={canInvoice}
           />

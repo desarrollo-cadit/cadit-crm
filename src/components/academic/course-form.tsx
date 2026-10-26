@@ -5,6 +5,14 @@ import { Plus, Trash2 } from "lucide-react";
 import type { CourseCategoryDto, CourseDto } from "@/lib/types";
 import { COURSE_KINDS, COURSE_KIND_LABEL, type CourseKind } from "@/lib/course-kind";
 import { MAX_DESCRIPCION_CERTIFICADO } from "@/lib/certificado";
+import {
+  autocompletarTotal,
+  formatHoras,
+  formatNumeroDeHoras,
+  parseHoras,
+  totalNoCoincide,
+  totalSugerido,
+} from "@/lib/course-duration";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -105,12 +113,39 @@ export function CourseForm({
   const [categoryId, setCategoryId] = useState(initial?.categoryId ?? "");
   const [level, setLevel] = useState(initial?.level ?? "");
   const [modality, setModality] = useState(initial?.modality ?? "");
-  const [durationWeeks, setDurationWeeks] = useState(
-    initial?.durationWeeks?.toString() ?? ""
+  // Duración del curso: clases, horas por clase y total (`src/lib/course-duration.ts`).
+  const [classCount, setClassCount] = useState(initial?.classCount?.toString() ?? "");
+  const [hoursPerClass, setHoursPerClass] = useState(
+    initial?.hoursPerClass != null ? formatNumeroDeHoras(initial.hoursPerClass) : ""
   );
-  const [hoursPerWeek, setHoursPerWeek] = useState(
-    initial?.hoursPerWeek?.toString() ?? ""
+  const [totalHours, setTotalHours] = useState(
+    initial?.totalHours != null ? formatNumeroDeHoras(initial.totalHours) : ""
   );
+  /**
+   * Al cambiar las clases o las horas por clase, el total sigue a clases ×
+   * horas mientras nadie lo haya escrito a mano; lo escrito a mano no se pisa.
+   */
+  function cambiarClases(texto: string) {
+    setTotalHours((total) =>
+      autocompletarTotal(
+        total,
+        totalSugerido(numberOrNull(classCount), parseHoras(hoursPerClass)),
+        totalSugerido(numberOrNull(texto), parseHoras(hoursPerClass))
+      )
+    );
+    setClassCount(texto);
+  }
+  function cambiarHorasPorClase(texto: string) {
+    setTotalHours((total) =>
+      autocompletarTotal(
+        total,
+        totalSugerido(numberOrNull(classCount), parseHoras(hoursPerClass)),
+        totalSugerido(numberOrNull(classCount), parseHoras(texto))
+      )
+    );
+    setHoursPerClass(texto);
+  }
+  const totalSugeridoActual = totalSugerido(numberOrNull(classCount), parseHoras(hoursPerClass));
   const [imageUrl, setImageUrl] = useState(initial?.imageUrl ?? "");
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [syllabusUrl, setSyllabusUrl] = useState(initial?.syllabusUrl ?? "");
@@ -152,7 +187,7 @@ export function CourseForm({
   const dirty = useDirty(
     {
       name, kind, slug, tagline, description, categoryId, level, modality,
-      durationWeeks, hoursPerWeek, imageUrl, imageFile, syllabusUrl, objectives,
+      classCount, hoursPerClass, totalHours, imageUrl, imageFile, syllabusUrl, objectives,
       targetAudience, newCategory, published, grantsCertificate, isFree,
       certificateDescription, minAttendancePct,
       modules: modules.map((m) => ({ title: m.title, topics: m.topics })),
@@ -265,8 +300,9 @@ export function CourseForm({
       categoryId: categoryId || null,
       level: level || null,
       modality: modality || null,
-      durationWeeks: numberOrNull(durationWeeks),
-      hoursPerWeek: numberOrNull(hoursPerWeek),
+      classCount: numberOrNull(classCount),
+      hoursPerClass: parseHoras(hoursPerClass),
+      totalHours: parseHoras(totalHours),
       imageUrl: imageUrl.trim() || null,
       syllabusUrl: syllabusUrl.trim() || null,
       learningObjectives: textToTopics(objectives),
@@ -565,22 +601,50 @@ export function CourseForm({
               </select>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="course-weeks">Duración (semanas)</Label>
+              <Label htmlFor="course-classes">Cantidad de clases</Label>
               <Input
-                id="course-weeks"
+                id="course-classes"
                 inputMode="numeric"
-                value={durationWeeks}
-                onChange={(e) => setDurationWeeks(e.target.value)}
+                placeholder="ej. 15"
+                value={classCount}
+                onChange={(e) => cambiarClases(e.target.value)}
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="course-hours">Horas por semana</Label>
+              <Label htmlFor="course-hours-per-class">Horas por clase</Label>
               <Input
-                id="course-hours"
-                inputMode="numeric"
-                value={hoursPerWeek}
-                onChange={(e) => setHoursPerWeek(e.target.value)}
+                id="course-hours-per-class"
+                inputMode="decimal"
+                placeholder="ej. 2,5"
+                value={hoursPerClass}
+                onChange={(e) => cambiarHorasPorClase(e.target.value)}
               />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="course-total-hours">Duración total (horas)</Label>
+              <Input
+                id="course-total-hours"
+                inputMode="decimal"
+                placeholder="ej. 37,5"
+                value={totalHours}
+                onChange={(e) => setTotalHours(e.target.value)}
+                aria-describedby="course-total-hours-help"
+              />
+              <p id="course-total-hours-help" className="text-xs text-muted-foreground">
+                Es lo que dice el certificado. Se calcula solo con las clases y las horas
+                por clase; podés corregirlo si hay un examen o una clase más corta.
+              </p>
+              {totalSugeridoActual !== null &&
+                totalNoCoincide(
+                  numberOrNull(classCount),
+                  parseHoras(hoursPerClass),
+                  parseHoras(totalHours)
+                ) && (
+                  <p className="text-xs text-warning" role="status">
+                    No coincide con {classCount} clases de {hoursPerClass} horas (
+                    {formatHoras(totalSugeridoActual)}). Si es a propósito, dejalo así.
+                  </p>
+                )}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="course-minasist">Asistencia mínima (%)</Label>

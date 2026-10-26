@@ -35,7 +35,7 @@ export function LicenseEmailText({
 
 /**
  * El correo de la licencia en la sección de licencias de una inscripción,
- * editable con `academico.editar` (`PATCH /api/enrollments/[id]/license-email`).
+ * editable con `licencias.gestionar` (`PATCH /api/enrollments/[id]/license-email`).
  * Vacío = usar el correo del alumno.
  */
 export function LicenseEmailField({

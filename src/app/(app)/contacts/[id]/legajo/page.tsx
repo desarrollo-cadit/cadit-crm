@@ -4,6 +4,7 @@ import { withTenantTransaction } from "@/lib/db/with-tenant";
 import { studentHeader } from "@/server/student-header";
 import { StudentHeader } from "@/components/contacts/student-header";
 import { StudentTabs } from "@/components/contacts/student-tabs";
+import { MergeContactsLauncher } from "@/components/contacts/merge-contacts-dialog";
 import { pestanaInicialDelContacto } from "@/lib/seguimiento";
 
 export const dynamic = "force-dynamic";
@@ -33,6 +34,8 @@ export const dynamic = "force-dynamic";
  * - «Seguimiento» abre primero cuando la persona es un lead (ninguna cursada
  *   con grupo, sin contar talleres: `cohortEnrollments` del encabezado).
  *   `?tab=seguimiento|legajo|administracion` elige a mano.
+ * - 2026-10-26 — «Unificar con…» se dibuja con `contactos.unificar`; la
+ *   barrera real son las rutas `merge-preview` y `merge`.
  */
 export default async function LegajoPage({
   params,
@@ -64,7 +67,14 @@ export default async function LegajoPage({
 
   return (
     <div className="flex h-full flex-col">
-      {header ? <StudentHeader header={header} /> : null}
+      {header ? (
+        <StudentHeader
+          header={header}
+          actions={
+            caps.includes("contactos.unificar") ? <MergeContactsLauncher contactId={id} /> : null
+          }
+        />
+      ) : null}
       <div className="min-h-0 flex-1">
         <StudentTabs
           contactId={id}

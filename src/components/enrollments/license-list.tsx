@@ -47,7 +47,7 @@ export function LicenseList({
   assignedIds: readonly string[];
   /** Los programas que se pueden asignar acá (los de la cohorte, o el catálogo). */
   options: readonly Programa[];
-  /** `academico.editar`, la capacidad de `PUT/DELETE /api/enrollments/[id]/license`. */
+  /** `licencias.gestionar`, la capacidad de `PUT/DELETE /api/enrollments/[id]/license`. */
   canEdit: boolean;
   onChanged: () => void;
   label?: string;

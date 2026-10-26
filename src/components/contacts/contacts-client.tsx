@@ -31,6 +31,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EnrollLauncher } from "@/components/enrollments/enroll-launcher";
+import { MergeContactsDialog } from "@/components/contacts/merge-contacts-dialog";
 import { TIPO_DE_CONTACTO_LABEL, type TipoDeContacto } from "@/lib/recorrido-comercial";
 import { notify } from "@/lib/notify";
 import { PESTANA_POR_FILTRO_DE_CONTACTOS, type FiltroDeContactos } from "@/lib/pestanas";
@@ -83,9 +84,12 @@ const enUrl = (p: Pestana) => PESTANA_POR_FILTRO_DE_CONTACTOS[p];
 
 export function ContactsClient({
   canEnroll = false,
+  canMerge = false,
   initialTab = "todos",
 }: {
   canEnroll?: boolean;
+  /** 2026-10-26 — `contactos.unificar`: ofrecer "Unificar con…" ante un duplicado. */
+  canMerge?: boolean;
   /** 2026-10-26 — De `?tab=`, ya validada y traducida por el servidor. */
   initialTab?: Pestana;
 }) {
@@ -98,6 +102,11 @@ export function ContactsClient({
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<ContactDto | null>(null);
+  /** El duplicado del 409, para abrir "Unificar contactos" ya elegido. */
+  const [merging, setMerging] = useState<{
+    contactId: string;
+    otro: { id: string; name: string };
+  } | null>(null);
   const [pestana, setPestana] = usePestanaEnUrl<Pestana>(initialTab, enUrl);
   const [cantidades, setCantidades] = useState<CantidadesPorTipo | null>(null);
 
@@ -473,10 +482,29 @@ export function ContactsClient({
         <EditDialog
           contact={editing}
           onClose={() => setEditing(null)}
+          onMerge={
+            canMerge
+              ? (otro) => {
+                  setMerging({ contactId: editing.id, otro });
+                  setEditing(null);
+                }
+              : undefined
+          }
           onSave={async (patchBody) => {
             const error = await patch(editing.id, patchBody);
             if (!error) setEditing(null);
             return error;
+          }}
+        />
+      )}
+
+      {merging && (
+        <MergeContactsDialog
+          contactId={merging.contactId}
+          otro={merging.otro}
+          onClose={() => {
+            setMerging(null);
+            void refetch();
           }}
         />
       )}
@@ -497,13 +525,20 @@ function EditDialog({
   contact,
   onClose,
   onSave,
+  onMerge,
 }: {
   contact: ContactDto;
   onClose: () => void;
+  /**
+   * 2026-10-26 — El caso Patricia: el 409 nombra al contacto que ya tiene el
+   * teléfono o el correo. Con `contactos.unificar`, se ofrece unificarlos.
+   */
+  onMerge?: (otro: { id: string; name: string }) => void;
   onSave: (patch: {
     firstName: string;
     lastName: string | null;
     email: string | null;
+    secondaryEmail: string | null;
     nationalId: string | null;
     source: string | null;
     utmCampaign: string | null;
@@ -532,6 +567,7 @@ function EditDialog({
   }, []);
   const [lastName, setLastName] = useState(contact.lastName ?? "");
   const [email, setEmail] = useState(contact.email ?? "");
+  const [secondaryEmail, setSecondaryEmail] = useState(contact.secondaryEmail ?? "");
   const [nationalId, setNationalId] = useState(contact.nationalId ?? "");
   const [source, setSource] = useState(contact.source ?? "");
   const [utmCampaign, setUtmCampaign] = useState(contact.utmCampaign ?? "");
@@ -541,6 +577,7 @@ function EditDialog({
     lastName,
     phone,
     email,
+    secondaryEmail,
     nationalId,
     source,
     utmCampaign,
@@ -613,6 +650,20 @@ function EditDialog({
             />
           </div>
           <div className="space-y-1.5">
+            <label className="text-sm font-medium" htmlFor="edit-secondary-email">
+              Correo secundario
+            </label>
+            <Input
+              id="edit-secondary-email"
+              type="email"
+              value={secondaryEmail}
+              onChange={(e) => setSecondaryEmail(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Sirve para encontrar al contacto. No se le envía nada a este correo.
+            </p>
+          </div>
+          <div className="space-y-1.5">
             <label className="text-sm font-medium" htmlFor="edit-national-id">
               Cédula / identificación
             </label>
@@ -681,6 +732,18 @@ function EditDialog({
                 >
                   Ver a {error.contact.name}
                 </Link>
+                {onMerge && (
+                  <>
+                    {" · "}
+                    <button
+                      type="button"
+                      className="underline underline-offset-2"
+                      onClick={() => onMerge(error.contact!)}
+                    >
+                      Unificar con {error.contact.name}
+                    </button>
+                  </>
+                )}
               </>
             )}
           </p>
@@ -698,6 +761,7 @@ function EditDialog({
                 firstName: firstName.trim(),
                 lastName: lastName.trim() || null,
                 email: email.trim() || null,
+                secondaryEmail: secondaryEmail.trim() || null,
                 nationalId: nationalId.trim() || null,
                 source: source.trim() || null,
                 utmCampaign: utmCampaign.trim() || null,

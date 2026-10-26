@@ -14,14 +14,14 @@ export default async function ContactsPage({
   // Inscribir desde el contacto — "Inscribir alumno" (contacto nuevo + cohorte)
   // se dibuja solo con `inscripciones.editar`, resuelta en el servidor.
   const [{ tab }, session] = await Promise.all([searchParams, getSessionOrNull()]);
-  const canEnroll = session
-    ? sessionCapabilities(session).includes("inscripciones.editar")
-    : false;
+  const caps = session ? sessionCapabilities(session) : [];
   // 2026-10-26 — `?tab=todos|leads|alumnos-activos|exalumnos`.
   const pestana = leerPestana(tab, PESTANAS_CONTACTOS, "todos");
+  // 2026-10-26 — "Unificar con…" en el 409 de duplicado, solo con `contactos.unificar`.
   return (
     <ContactsClient
-      canEnroll={canEnroll}
+      canEnroll={caps.includes("inscripciones.editar")}
+      canMerge={caps.includes("contactos.unificar")}
       initialTab={FILTRO_POR_PESTANA_DE_CONTACTOS[pestana]}
     />
   );

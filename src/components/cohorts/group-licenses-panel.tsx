@@ -45,7 +45,7 @@ export function GroupLicensesPanel({
   onChanged,
 }: {
   cohortId: string;
-  /** `academico.editar`, la capacidad de `POST/DELETE .../group-licenses`. */
+  /** `licencias.gestionar`, la capacidad de `POST/DELETE .../group-licenses`. */
   canEdit: boolean;
   esEspecializacion?: boolean;
   onChanged: () => void;

@@ -14,12 +14,13 @@ const patchSchema = z.object({
 
 /**
  * 2026-10-21 — El correo para la licencia de una inscripción, editado desde
- * la sección de licencias. `academico.editar`, la misma capacidad que asigna
- * y libera licencias (`/api/enrollments/[id]/license`). Responde el correo
+ * la sección de licencias. `licencias.gestionar` (2026-10-26), la misma
+ * capacidad que asigna y libera licencias (`/api/enrollments/[id]/license`):
+ * a ese correo van los términos, y eso es de soporte. Responde el correo
  * resuelto (`correoDeLicencia`), que quien edita ya veía en el roster.
  */
 export const PATCH = requireCapability(
-  "academico.editar",
+  "licencias.gestionar",
   async (session, req: Request, ctx: Params) => {
     const { id } = await ctx.params;
     const body = await parseBody(req, patchSchema);
