@@ -9,9 +9,11 @@ import type { LicenseSource } from "./license-source";
  * correo sale a `correoDeLicencia` (`src/lib/license-email.ts`), nunca
  * directo al del alumno.
  *
- * Una sola regla para las tres puertas: el envío individual
- * (`sendEnrollmentEmail`), el envío al grupo (`partitionRecipients`) y la
- * exportación para licenciamiento (`exportCohortRosterCsv`).
+ * Una sola regla para las dos puertas: el envío individual
+ * (`sendEnrollmentEmail`) y el envío al grupo (`partitionRecipients`). La
+ * exportación para licenciamiento (`exportCohortRosterCsv`) ya NO la usa
+ * (2026-10-26): sirve para pedir las licencias, así que entra también quien
+ * todavía no tiene una asignada; solo se excluye la licencia propia.
  *
  * "Licencia asignada" = alguna fila de `license` con `assigned = true` de la
  * inscripción o, en una especialización, de sus inscripciones hijas (los

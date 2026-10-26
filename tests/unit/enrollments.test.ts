@@ -494,40 +494,33 @@ describe("exportCohortRosterCsv (005 iteración 6)", () => {
   });
 
   /**
-   * 2026-10-23 — "Exportar para licenciamiento": las mismas columnas, solo
-   * quien necesita una licencia prestada (`necesitaLicencia`: asignada, propia
-   * o de sus módulos, y sin "Tenía licencia propia") y con el correo de la
-   * LICENCIA (`correoDeLicencia`) en la columna del correo.
+   * 2026-10-23 — "Exportar para licenciamiento": las mismas columnas y con el
+   * correo de la LICENCIA (`correoDeLicencia`) en la columna del correo.
+   * 2026-10-26 — Entra todo el grupo salvo quien tenía licencia propia (suya
+   * o de la madre): con licencia asignada o sin ella todavía. Autodesk ya
+   * descarta los usuarios repetidos, así que no hace falta filtrar más.
    */
-  it("para licenciamiento: solo quien necesita licencia, con el correo de la licencia", async () => {
+  it("para licenciamiento: todos menos quien tenía licencia propia, con el correo de la licencia", async () => {
     selectQueue.push(
       [{ id: "coh_1" }],
       [
-        // Licencia asignada, correo de licencia distinto → entra con ese correo.
+        // Correo de licencia distinto → entra con ese correo.
         { id: "enr_1", firstName: "Ana", lastName: "A", email: "ana@x.com", licenseEmail: "empresa@x.com", hadOwnLicense: false, parentEnrollmentId: null },
-        // Licencia asignada pero tenía la propia → fuera.
+        // Tenía la propia → fuera.
         { id: "enr_2", firstName: "Beto", lastName: "B", email: "beto@x.com", licenseEmail: null, hadOwnLicense: true, parentEnrollmentId: null },
-        // Sin licencia asignada → fuera.
+        // Sin licencia asignada todavía → entra igual: la necesita.
         { id: "enr_3", firstName: "Ceci", lastName: "C", email: "ceci@x.com", licenseEmail: null, hadOwnLicense: false, parentEnrollmentId: null },
-        // Madre de especialización: la licencia es de un módulo → entra.
+        // Madre de especialización → entra.
         { id: "enr_4", firstName: "Dani", lastName: "D", email: "dani@x.com", licenseEmail: null, hadOwnLicense: false, parentEnrollmentId: null },
-        // Hija de módulo con licencia, cuya madre la tenía propia → fuera.
+        // Hija de módulo cuya madre la tenía propia → fuera.
         { id: "enr_5", firstName: "Eva", lastName: "E", email: "eva@x.com", licenseEmail: null, hadOwnLicense: false, parentEnrollmentId: "enr_m" },
-        // Hija de módulo con licencia: hereda el correo de licencia de la madre.
+        // Hija de módulo: hereda el correo de licencia de la madre.
         { id: "enr_6", firstName: "Fede", lastName: "F", email: "fede@x.com", licenseEmail: null, hadOwnLicense: false, parentEnrollmentId: "enr_m2" },
       ],
       // Las madres de las hijas.
       [
         { id: "enr_m", licenseEmail: null, hadOwnLicense: true },
         { id: "enr_m2", licenseEmail: "madre@x.com", hadOwnLicense: false },
-      ],
-      // Licencias asignadas: de la inscripción o de una hija suya.
-      [
-        { enrollmentId: "enr_1", parentEnrollmentId: null },
-        { enrollmentId: "enr_2", parentEnrollmentId: null },
-        { enrollmentId: "enr_h4", parentEnrollmentId: "enr_4" },
-        { enrollmentId: "enr_5", parentEnrollmentId: "enr_m" },
-        { enrollmentId: "enr_6", parentEnrollmentId: "enr_m2" },
       ]
     );
 
@@ -538,10 +531,13 @@ describe("exportCohortRosterCsv (005 iteración 6)", () => {
       [
         "nombre,apellido,correo,correo_licencia",
         "Ana,A,empresa@x.com,empresa@x.com",
+        "Ceci,C,ceci@x.com,ceci@x.com",
         "Dani,D,dani@x.com,dani@x.com",
         "Fede,F,madre@x.com,madre@x.com",
       ].join("\r\n")
     );
+    // Ya no consulta licencias asignadas.
+    expect(selectQueue).toHaveLength(0);
   });
 
   it("la exportación común no consulta licencias ni madres", async () => {

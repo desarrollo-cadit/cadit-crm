@@ -11,8 +11,8 @@ import {
  * solo a quien tiene una licencia asignada que no trajo de afuera, y al
  * correo de la licencia (`correoDeLicencia`), no al del alumno.
  *
- * Una sola regla para el envío individual, el envío al grupo y la
- * exportación para licenciamiento.
+ * Una sola regla para el envío individual y el envío al grupo. La
+ * exportación para licenciamiento tiene la suya (`enrollments.test.ts`).
  */
 describe("necesitaLicencia", () => {
   it("solo con licencia asignada y sin licencia propia", () => {

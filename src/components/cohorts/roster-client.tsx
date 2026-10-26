@@ -406,7 +406,7 @@ export function RosterClient({
         </div>
         <div className="flex items-center gap-2">
           {/* 2026-10-23 — Dos exportaciones: la común y la de licenciamiento
-              (solo quien necesita licencia, con el correo de la licencia). */}
+              (todo el grupo salvo licencia propia, con el correo de la licencia). */}
           <Button
             size="sm"
             variant="outline"
@@ -435,7 +435,7 @@ export function RosterClient({
                 Exportación común
               </ItemDeMenu>
               <ItemDeMenu
-                hint="Solo quienes tienen una licencia asignada (no propia), con el correo de la licencia"
+                hint="Todo el grupo salvo quien tenía licencia propia, con el correo de la licencia"
                 onSelect={() => {
                   setMenuExportar(null);
                   window.location.href = `/api/cohorts/${cohortId}/export?variante=licenciamiento`;
