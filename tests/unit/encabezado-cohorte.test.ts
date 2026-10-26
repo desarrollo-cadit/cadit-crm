@@ -29,7 +29,7 @@ describe("armarEncabezadoDeCohorte", () => {
     const e = armarEncabezadoDeCohorte(comun, null, []);
     expect(e.title).toBe("Revit — lunes");
     expect(e.crumbs).toEqual([
-      { label: "Académico", href: "/academico" },
+      { label: "Académico", href: "/academico?tab=grupos" },
       { label: "Revit — lunes", href: null },
     ]);
     expect(e.badge).toBeNull();
@@ -70,7 +70,7 @@ describe("armarEncabezadoDeCohorte", () => {
         hermanos
       );
       expect(e.crumbs).toEqual([
-        { label: "Académico", href: "/academico" },
+        { label: "Académico", href: "/academico?tab=grupos" },
         { label: "EBIM 13", href: "/cohorts/coh_ebim" },
         { label: "Módulo 2 — Revit MEP", href: null },
       ]);

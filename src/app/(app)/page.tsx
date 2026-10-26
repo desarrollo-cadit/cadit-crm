@@ -7,6 +7,8 @@ import { getSessionOrNull } from "@/lib/auth/session";
 import { sessionCapabilities } from "@/lib/capabilities";
 import { FinancePanel } from "@/components/dashboard/finance-panel";
 import { TodayPanel } from "@/components/dashboard/today-panel";
+import { TareasDeHoyPanel } from "@/components/dashboard/tareas-de-hoy-panel";
+import { reglasPermitidas } from "@/lib/tareas-del-dia";
 import { LicenseInventoryPanel } from "@/components/dashboard/license-inventory-panel";
 import { OverduePanel } from "@/components/finance/overdue-panel";
 import { ReportsPanel } from "@/components/dashboard/reports-panel";
@@ -54,6 +56,10 @@ export default async function HomePage() {
 
   const verReportes = session ? sessionCapabilities(session).includes("reportes.ver") : false;
 
+  // 2026-10-26 — La bandeja "Para resolver hoy" solo aparece si la persona
+  // puede ver al menos una de sus reglas (cada una pide SU capacidad).
+  const verTareas = session ? reglasPermitidas(sessionCapabilities(session)).length > 0 : false;
+
   const authSession = await getAuth().api.getSession({ headers: await headers() });
 
   /**
@@ -72,6 +78,8 @@ export default async function HomePage() {
     <div className="flex h-full flex-col">
       <div className="mx-auto w-full flex-1 space-y-6 overflow-y-auto p-6">
         <TodayPanel nombre={authSession?.user.name ?? "que tal"} />
+
+        {verTareas && <TareasDeHoyPanel />}
 
         {fullAccess && (
           <section className="space-y-3">
