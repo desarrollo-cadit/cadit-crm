@@ -604,3 +604,106 @@ export function planDeAprendizaje(input: {
 function unir(a: string[], b: string[]): string[] {
   return [...new Set([...a, ...b])];
 }
+
+/* ============================================================
+ * Confirmar
+ * ============================================================ */
+
+export type EstadoDeMarca = "presente" | "tarde" | "ausente" | "justificado";
+
+export type CuerpoDeConfirmacion = {
+  decisions: { enrollmentId: string; status: EstadoDeMarca; personaKeys: string[] }[];
+  ignore: string[];
+  rejected: string[];
+  overwrite: string[];
+};
+
+export type FilaAEscribir = { enrollmentId: string; status: EstadoDeMarca; zoomMinutes: number };
+
+export type PlanDeConfirmacion =
+  | { ok: false; code: "fuera_del_grupo" | "persona_desconocida" | "persona_repetida"; message: string }
+  | {
+      ok: true;
+      /** Sin marca previa: se escriben SOLO si siguen sin marca (ON CONFLICT DO NOTHING). */
+      nuevas: FilaAEscribir[];
+      /** Con marca previa y tildadas para pisar. */
+      pisadas: FilaAEscribir[];
+      /** Con marca previa, sin tilde: no se tocan. */
+      salteadas: number;
+      aprender: OperacionDeAlias[];
+    };
+
+/**
+ * Qué escribir y qué aprender al confirmar. Pura: la verdad es la del
+ * servidor (se recalcula la sugerencia), no la de la pantalla. Nunca escribe
+ * a alguien fuera del grupo ni pisa una marca sin tilde.
+ */
+export function planDeConfirmacion(input: {
+  segmentos: SegmentoZoom[];
+  ventana: Ventana;
+  alumnos: AlumnoDelGrupo[];
+  aliases: AliasAprendido[];
+  exclusiones: Exclusiones;
+  umbrales: Umbrales;
+  /** Inscripciones que ya tienen marca en la clase. */
+  conMarca: ReadonlySet<string>;
+  cuerpo: CuerpoDeConfirmacion;
+}): PlanDeConfirmacion {
+  const { cuerpo } = input;
+  const s = armarSugerencia(input);
+  const personas = agruparPersonas(input.segmentos);
+  const porLlave = new Map(personas.map((p) => [p.key, p]));
+  const porInscripcion = new Map(input.alumnos.map((a) => [a.enrollmentId, a]));
+
+  const usadas = new Set<string>();
+  for (const d of cuerpo.decisions) {
+    if (!porInscripcion.has(d.enrollmentId)) {
+      return { ok: false, code: "fuera_del_grupo", message: "Una de las personas no es de este grupo." };
+    }
+    for (const k of d.personaKeys) {
+      if (!porLlave.has(k)) {
+        return { ok: false, code: "persona_desconocida", message: "Un nombre de Zoom ya no está en el reporte." };
+      }
+      if (usadas.has(k)) {
+        return { ok: false, code: "persona_repetida", message: "Un nombre de Zoom quedó asignado a dos personas." };
+      }
+      usadas.add(k);
+    }
+  }
+  for (const k of [...cuerpo.ignore, ...cuerpo.rejected]) {
+    if (!porLlave.has(k)) {
+      return { ok: false, code: "persona_desconocida", message: "Un nombre de Zoom ya no está en el reporte." };
+    }
+  }
+
+  const pisar = new Set(cuerpo.overwrite);
+  const filas = cuerpo.decisions.map((d) => ({
+    enrollmentId: d.enrollmentId,
+    status: d.status,
+    zoomMinutes: minutosConectado(d.personaKeys.flatMap((k) => porLlave.get(k)!.segmentos), input.ventana).minutos,
+  }));
+  const nuevas = filas.filter((f) => !input.conMarca.has(f.enrollmentId));
+  const pisadas = filas.filter((f) => input.conMarca.has(f.enrollmentId) && pisar.has(f.enrollmentId));
+
+  const sugeridas: Record<string, string> = {};
+  for (const a of s.alumnos) for (const k of a.personas) sugeridas[k] = a.contactId;
+  const finales: Record<string, string | null> = {};
+  for (const d of cuerpo.decisions) {
+    const contacto = porInscripcion.get(d.enrollmentId)!.contactId;
+    for (const k of d.personaKeys) finales[k] = contacto;
+  }
+  for (const k of cuerpo.rejected) if (!(k in finales)) finales[k] = null;
+  const asignadasAMano = Object.entries(finales)
+    .filter(([k, c]) => c !== null && sugeridas[k] !== c)
+    .map(([k]) => k);
+  const aprender = planDeAprendizaje({
+    personas: personas.filter((p) => p.key in finales || cuerpo.ignore.includes(p.key)),
+    sugeridas,
+    finales,
+    asignadasAMano,
+    ignorar: cuerpo.ignore,
+    existentes: input.aliases,
+  });
+
+  return { ok: true, nuevas, pisadas, salteadas: filas.length - nuevas.length - pisadas.length, aprender };
+}

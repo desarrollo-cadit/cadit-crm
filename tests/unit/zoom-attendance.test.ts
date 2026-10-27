@@ -7,6 +7,7 @@ import {
   minutosConectado,
   normalizarNombre,
   planDeAprendizaje,
+  planDeConfirmacion,
   umbralPresente,
   UMBRALES_DE_FABRICA,
   type AliasAprendido,
@@ -391,5 +392,85 @@ describe("planDeAprendizaje", () => {
     expect(
       planDeAprendizaje({ personas, sugeridas: {}, finales: {}, asignadasAMano: [], ignorar: [], existentes: [] })
     ).toEqual([]);
+  });
+});
+
+describe("planDeConfirmacion", () => {
+  const segs = () => [
+    seg("Ana Lucía Pérez", 0, 110, { email: "ana.perez@gmail.com", participantId: "a" }),
+    seg("iPhone de Juan Rodriguez", 0, 100, { participantId: "j" }),
+    seg("Pedro Gómez", 0, 100, { participantId: "p" }),
+    seg("Otter.ai", 0, 120, { participantId: "o" }),
+  ];
+  const base = (cuerpo: Parameters<typeof planDeConfirmacion>[0]["cuerpo"], conMarca: string[] = []) =>
+    planDeConfirmacion({
+      segmentos: segs(),
+      ventana,
+      alumnos: ROSTER,
+      aliases: [],
+      exclusiones: SIN_EXCLUSIONES,
+      umbrales: UMBRALES_DE_FABRICA,
+      conMarca: new Set(conMarca),
+      cuerpo,
+    });
+
+  it("escribe solo a quien no tenía marca; pisar pide la tilde", () => {
+    const decisions = [
+      { enrollmentId: "enr_ana", status: "presente" as const, personaKeys: ["correo:ana.perez@gmail.com"] },
+      { enrollmentId: "enr_juan", status: "presente" as const, personaKeys: ["nombre:juan rodriguez"] },
+      { enrollmentId: "enr_seba", status: "ausente" as const, personaKeys: [] },
+    ];
+    const sinTilde = base({ decisions, ignore: [], rejected: [], overwrite: [] }, ["enr_juan"]);
+    expect(sinTilde.ok && sinTilde.nuevas.map((f) => f.enrollmentId)).toEqual(["enr_ana", "enr_seba"]);
+    expect(sinTilde.ok && sinTilde.pisadas).toEqual([]);
+    expect(sinTilde.ok && sinTilde.salteadas).toBe(1);
+
+    const conTilde = base({ decisions, ignore: [], rejected: [], overwrite: ["enr_juan"] }, ["enr_juan"]);
+    expect(conTilde.ok && conTilde.pisadas).toEqual([{ enrollmentId: "enr_juan", status: "presente", zoomMinutes: 100 }]);
+  });
+
+  it("los minutos guardados son los de las personas que quedaron asignadas", () => {
+    const r = base({
+      decisions: [{ enrollmentId: "enr_ana", status: "presente", personaKeys: ["correo:ana.perez@gmail.com"] }],
+      ignore: [],
+      rejected: [],
+      overwrite: [],
+    });
+    expect(r.ok && r.nuevas[0]!.zoomMinutes).toBe(110);
+  });
+
+  it("asignar un nombre sin identificar, ignorar un bot y rechazar aprende las tres cosas", () => {
+    const r = base({
+      decisions: [{ enrollmentId: "enr_seba", status: "presente", personaKeys: ["nombre:pedro gomez"] }],
+      ignore: ["nombre:otter ai"],
+      rejected: ["nombre:juan rodriguez"],
+      overwrite: [],
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const porLlave = Object.fromEntries(r.aprender.map((o) => [o.key, o]));
+    expect(porLlave["pedro gomez"]).toMatchObject({ contactId: "ct_seba", confirmations: 2 });
+    expect(porLlave["otter ai"]).toMatchObject({ ignorar: true, contactId: null });
+    expect(porLlave["juan rodriguez"]).toMatchObject({ contactId: null, rejectedContactIds: ["ct_juan"] });
+  });
+
+  it("rechaza alguien fuera del grupo, un nombre que no está y uno asignado dos veces", () => {
+    expect(
+      base({ decisions: [{ enrollmentId: "enr_otro", status: "presente", personaKeys: [] }], ignore: [], rejected: [], overwrite: [] })
+    ).toMatchObject({ ok: false, code: "fuera_del_grupo" });
+    expect(
+      base({ decisions: [{ enrollmentId: "enr_ana", status: "presente", personaKeys: ["nombre:nadie"] }], ignore: [], rejected: [], overwrite: [] })
+    ).toMatchObject({ ok: false, code: "persona_desconocida" });
+    expect(
+      base({
+        decisions: [
+          { enrollmentId: "enr_ana", status: "presente", personaKeys: ["nombre:pedro gomez"] },
+          { enrollmentId: "enr_seba", status: "presente", personaKeys: ["nombre:pedro gomez"] },
+        ],
+        ignore: [],
+        rejected: [],
+        overwrite: [],
+      })
+    ).toMatchObject({ ok: false, code: "persona_repetida" });
   });
 });

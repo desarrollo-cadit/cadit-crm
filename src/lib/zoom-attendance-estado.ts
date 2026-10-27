@@ -102,3 +102,30 @@ export function mensajeDeEstado(input: {
         : `No se pudo leer Zoom (${input.detalle ?? "error"}). Probá «Traer de Zoom» más tarde.`;
   }
 }
+
+export type ProgresoDeTraidas = {
+  /** En cola o reintentando. */
+  pendientes: number;
+  /** Con sugerencia lista para revisar. */
+  listas: number;
+  /** Zoom no encontró la reunión, era ambigua o la clase es muy vieja. */
+  noEncontradas: number;
+  /** Sin permiso o error que no se reintenta. */
+  conProblemas: number;
+  confirmadas: number;
+};
+
+/** El avance de "clases pasadas" que muestra Configuración › Zoom. */
+export function progresoDeTraidas(
+  filas: readonly { status: EstadoDeTraida; confirmada: boolean; n: number }[]
+): ProgresoDeTraidas {
+  const p: ProgresoDeTraidas = { pendientes: 0, listas: 0, noEncontradas: 0, conProblemas: 0, confirmadas: 0 };
+  for (const r of filas) {
+    if (r.confirmada) p.confirmadas += r.n;
+    else if (r.status === "pendiente" || r.status === "no_lista") p.pendientes += r.n;
+    else if (r.status === "lista") p.listas += r.n;
+    else if (r.status === "sin_reunion" || r.status === "ambigua" || r.status === "fuera_de_plazo") p.noEncontradas += r.n;
+    else p.conProblemas += r.n;
+  }
+  return p;
+}
