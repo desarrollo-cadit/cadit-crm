@@ -147,6 +147,14 @@ Ver [.specify/memory/constitution.md](.specify/memory/constitution.md).
   marketing SEPARADO de `M365_SENDER` (y en la misma ApplicationAccessPolicy),
   enlace de baja firmado sin login que toda campaña respeta y que nunca frena
   el correo operativo, tope de 500 de a uno, e `is_test` jamás.
+  Desde 1.9.0, Zoom también para LEER el reporte de participantes de una
+  reunión YA TERMINADA y PROPONER la asistencia de la clase (mismo adaptador,
+  solo lectura): la sugerencia jamás escribe asistencia sola —la confirma
+  alguien con `asistencia.editar` y la marca guarda su autor—, se guarda lo
+  mínimo (nombre visible, correo si viene, ids de Zoom, entrada/salida; nunca
+  IP ni dispositivo) y el crudo se purga a los 180 días, los nombres
+  aprendidos son de la organización y se pueden olvidar, nada viaja a los
+  portales, es opcional y los tests jamás llaman a Zoom real.
   PROHIBIDO en v1 introducir S3/R2, Stripe, Google u otros servicios externos.
   Auth y BD self-hosted.
 - **Seguridad (I)**: secretos cifrados en reposo (AES-256-GCM, `lib/crypto`);
