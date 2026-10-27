@@ -82,3 +82,7 @@ demos-build.log
 demos-server.log
 
 backups
+
+# Respaldos de producción copiados a local (datos personales: nunca a git)
+.respaldos/
+*.dump
