@@ -11,6 +11,7 @@ import { Select } from "@/components/ui/select";
 import { notify } from "@/lib/notify";
 import { Modal, useDirty } from "@/components/ui/modal";
 import { MoneyInput } from "@/components/ui/money-input";
+import type { CronogramaAutomatico } from "@/lib/cronograma-automatico";
 import { COURSE_KIND_LABEL, MODULE_NAME_MAX, cursosParaSelector } from "@/lib/course-kind";
 
 /** 023 — Lo mínimo del aula para poder elegirla: nombre e id. */
@@ -329,8 +330,15 @@ export function CohortForm({
       licenseWarnings?: { softwareName: string; capacity: number; available: number }[];
       scheduleWarnings?: { courseName: string; startDate: string; endDate: string | null }[];
       autoEnrolled?: number;
+      /** 2026-10-27 — Completar un grupo confirmado genera su cronograma solo. */
+      schedule?: CronogramaAutomatico | null;
     } | null;
     const messages = [
+      // Inline y no en toast: al cerrar, la página se recarga y el toast se perdería.
+      ...(body?.schedule?.estado === "generado" ? [body.schedule.mensaje] : []),
+      ...(body?.schedule?.estado === "faltan_datos"
+        ? [`Todavía no se generaron las clases. ${body.schedule.mensaje}`]
+        : []),
       ...(body?.licenseWarnings ?? []).map(
         (w) =>
           `Licencias insuficientes de ${w.softwareName}: cupo ${w.capacity}, disponibles ${w.available}.`

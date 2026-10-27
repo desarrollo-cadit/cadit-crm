@@ -13,3 +13,17 @@ export const MINUTOS_MINIMOS_GRABACION = 5;
 export function esGrabacionCorta(durationMin: number | null): boolean {
   return durationMin !== null && durationMin < MINUTOS_MINIMOS_GRABACION;
 }
+
+/**
+ * 2026-10-27 — Por debajo de `ZOOM_MIN_RECORDING_MIN` (default 15) la
+ * grabación ni se GUARDA: una clase real nunca dura 15 minutos (pruebas,
+ * arranques por error). Es otra regla que la de arriba: aquella decide qué no
+ * se adjudica entre lo guardado; esta, qué no entra. Sin duración conocida se
+ * guarda (no se descarta lo que no se puede juzgar) y `minimo` 0 apaga el
+ * filtro.
+ */
+export const MINIMO_PARA_GUARDAR_POR_DEFECTO = 15;
+
+export function seGuardaLaGrabacion(durationMin: number | null, minimo: number): boolean {
+  return minimo <= 0 || durationMin === null || durationMin >= minimo;
+}

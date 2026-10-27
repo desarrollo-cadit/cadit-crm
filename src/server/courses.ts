@@ -12,6 +12,7 @@ import { ACADEMY_TIME_ZONE } from "@/lib/schedule-time";
 import { progresoDeCursada, type ProgresoDeCursada } from "@/lib/cohort-progress";
 import { decidirBorradoDeClases } from "@/lib/recess";
 import { marcaDeConfirmacion } from "@/lib/marca-de-confirmacion";
+import { confirmacionEfectiva } from "@/lib/cronograma-automatico";
 import { organizationTimezone } from "@/server/finanzas-periodo";
 import { availableLicenses } from "@/server/licenses";
 import { inscribirEnModulos } from "@/server/module-enrollment";
@@ -1107,8 +1108,13 @@ function serializeCohort(
   software: SoftwareRef[],
   /** Zona de la academia: decide si el día de inicio ya llegó (marca de confirmación). */
   timeZone: string = ACADEMY_TIME_ZONE,
-  now: Date = new Date()
+  now: Date = new Date(),
+  /** 2026-10-27 — La confirmación de la especialización, si es un módulo (`confirmacionesDeMadres`). */
+  confirmacionDeLaMadre: Date | null = null
 ) {
+  // Un módulo sin confirmación propia se muestra confirmado si lo está su
+  // especialización. Se LEE: no hay nada escrito en el módulo.
+  const confirmedAt = confirmacionEfectiva(cohort.confirmedAt, confirmacionDeLaMadre);
   return {
     id: cohort.id,
     courseId: cohort.courseId,
@@ -1168,7 +1174,7 @@ function serializeCohort(
      * 039 — Confirmada ("sale"): ortogonal a `status`, que sale de las fechas.
      * Quién la confirmó lo trae `/api/cohorts/[id]/confirmation`.
      */
-    confirmedAt: cohort.confirmedAt?.toISOString() ?? null,
+    confirmedAt: confirmedAt?.toISOString() ?? null,
     /**
      * Lo que se DIBUJA de la confirmación (`marcaDeConfirmacion`): en rojo
      * cuando llegó el día de inicio y nadie confirmó. `status` no cambia.
@@ -1177,7 +1183,7 @@ function serializeCohort(
       {
         startDate: cohort.startDate,
         endDate: cohort.endDate,
-        confirmedAt: cohort.confirmedAt,
+        confirmedAt,
         courseKind: course.kind,
         parentCohortId: cohort.parentCohortId,
       },
@@ -1218,6 +1224,24 @@ async function resolveSoftwareByCohort(
   return map;
 }
 
+/**
+ * 2026-10-27 — La confirmación de las especializaciones de estos módulos, en
+ * una consulta. La madre puede no estar en el listado (filtro por curso).
+ */
+async function confirmacionesDeMadres(
+  db: DbOrTx,
+  organizationId: string,
+  parentIds: (string | null)[]
+): Promise<Map<string, Date | null>> {
+  const ids = [...new Set(parentIds.filter((x): x is string => !!x))];
+  if (ids.length === 0) return new Map();
+  const rows = await db
+    .select({ id: schema.cohort.id, confirmedAt: schema.cohort.confirmedAt })
+    .from(schema.cohort)
+    .where(scoped(schema.cohort.organizationId, organizationId, inArray(schema.cohort.id, ids)));
+  return new Map(rows.map((r) => [r.id, r.confirmedAt]));
+}
+
 export async function listCohorts(
   organizationId: string,
   filters?: { courseId?: string }
@@ -1245,17 +1269,21 @@ export async function listCohorts(
 
   const timeZone = rows.length > 0 ? await organizationTimezone(organizationId) : ACADEMY_TIME_ZONE;
   const ids = rows.map((r) => r.cohort.id);
-  const [progresos, inscriptos] = await Promise.all([
+  const [progresos, inscriptos, madres] = await Promise.all([
     progresoPorCohorte(db, organizationId, ids, timeZone),
     inscriptosActivosPorCohorte(db, organizationId, ids),
+    confirmacionesDeMadres(db, organizationId, rows.map((r) => r.cohort.parentCohortId)),
   ]);
+  const ahora = new Date();
   return rows.map((r) => ({
     ...serializeCohort(
       r.cohort,
       r.course,
       r.teacher,
       softwareByCohort.get(r.cohort.id) ?? [],
-      timeZone
+      timeZone,
+      ahora,
+      r.cohort.parentCohortId ? (madres.get(r.cohort.parentCohortId) ?? null) : null
     ),
     progress: progresos.get(r.cohort.id) ?? null,
     enrolledCount: inscriptos.get(r.cohort.id) ?? 0,
@@ -1350,12 +1378,15 @@ export async function getCohort(organizationId: string, cohortId: string) {
   if (!row) return null;
 
   const softwareByCohort = await resolveSoftwareByCohort(db, organizationId, [cohortId]);
+  const madres = await confirmacionesDeMadres(db, organizationId, [row.cohort.parentCohortId]);
   return serializeCohort(
     row.cohort,
     row.course,
     row.teacher,
     softwareByCohort.get(cohortId) ?? [],
-    await organizationTimezone(organizationId)
+    await organizationTimezone(organizationId),
+    new Date(),
+    row.cohort.parentCohortId ? (madres.get(row.cohort.parentCohortId) ?? null) : null
   );
 }
 

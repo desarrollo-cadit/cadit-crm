@@ -19,6 +19,11 @@ type Params = { params: Promise<{ id: string }> };
  * regenerar** sobre una cohorte que ya tiene cronograma, así que llamarlo dos
  * veces no duplica clases (constitución IV).
  *
+ * 2026-10-27 — Ya no es el ÚNICO camino: confirmar un grupo (o completar los
+ * datos de uno confirmado) llama a este mismo `generateSchedule` solo
+ * (`src/server/cronograma-automatico.ts`). El botón sigue para los grupos
+ * anteriores a esa regla, que nunca generan solos.
+ *
  * `academico.editar`: dar de alta cuarenta clases es editar el curso, no
  * tomar asistencia.
  */

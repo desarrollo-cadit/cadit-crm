@@ -49,6 +49,16 @@ const tx: MissingTx = {
       throw new Error("check violation: asignada ⇔ clase");
     }
   },
+  async releaseConflicts(classId, exceptId) {
+    let n = 0;
+    for (const r of recs.values()) {
+      if (r.id !== exceptId && r.assignmentMode === "auto" && r.assignmentState === "conflicto" && r.conflictClassSessionId === classId) {
+        Object.assign(r, { assignmentState: "sin_clase", conflictClassSessionId: null });
+        n++;
+      }
+    }
+    return n;
+  },
   async updateClass(id, patch) {
     Object.assign(classes.get(id)!, patch);
   },

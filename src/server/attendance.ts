@@ -255,6 +255,13 @@ export type AttendanceResult<T> =
 /**
  * Genera el cronograma de una cohorte. Es una acción EXPLÍCITA (DV-003): dar
  * de alta cuarenta clases que nadie pidió es difícil de deshacer.
+ *
+ * 2026-10-27 — Hay un segundo disparo, también pedido: CONFIRMAR el grupo (o
+ * completar los datos de uno ya confirmado) la llama sola
+ * (`generarCronogramaAutomatico`, regla en `src/lib/cronograma-automatico.ts`).
+ * Confirmar es la decisión explícita de que el grupo sale. Las negativas de
+ * acá (`schedule_exists`, `camada_con_modulos`, datos faltantes) siguen
+ * valiendo igual para los dos caminos: nunca se pisa un cronograma existente.
  */
 export async function generateSchedule(
   organizationId: string,

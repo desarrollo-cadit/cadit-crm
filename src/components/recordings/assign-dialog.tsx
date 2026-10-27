@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarSearch, RotateCcw, Search, Unlink, X } from "lucide-react";
+import { Ban, CalendarSearch, RotateCcw, Search, Unlink, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -109,6 +109,22 @@ export function AssignDialog({
     else void cargar();
   }
 
+  /**
+   * 2026-10-27 — Una en conflicto o ambigua que no es de ninguna clase: la
+   * persona dice "esta no va". Es el mismo DELETE de desasignar (`unassign`):
+   * queda `manual/sin_clase`, la sincronización la respeta y no toca ninguna
+   * clase (no tiene). "Volver a automático" la deshace.
+   */
+  async function descartar() {
+    const r = await accion(`/api/recordings/${row.id}/assignment`, { method: "DELETE" });
+    if (!r.ok) {
+      notify.error(r.error.message ?? "No pudimos descartar la grabación.");
+      return;
+    }
+    notify.success("Grabación descartada: queda sin clase.");
+    onClose();
+  }
+
   async function volverAAutomatico() {
     const r = await accion(`/api/recordings/${row.id}/assignment/reset`, { method: "POST" });
     if (!r.ok) notify.error(r.error.message ?? "No pudimos volver a la asignación automática.");
@@ -116,6 +132,7 @@ export function AssignDialog({
   }
 
   const actual = row.assignment.classSession;
+  const descartable = !actual && (row.assignment.state === "conflicto" || row.assignment.state === "ambigua");
 
   function opcion(c: ClassOptionDto) {
     const esLaActual = actual?.id === c.id;
@@ -166,6 +183,11 @@ export function AssignDialog({
           {actual && (
             <Button size="sm" variant="outline" disabled={busy} onClick={() => void desasignar()}>
               <Unlink className="h-3.5 w-3.5" /> Desasignar
+            </Button>
+          )}
+          {descartable && (
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => void descartar()}>
+              <Ban className="h-3.5 w-3.5" /> Descartar
             </Button>
           )}
           {row.assignment.mode === "manual" && (

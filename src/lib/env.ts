@@ -123,6 +123,12 @@ const envSchema = z.object({
   ZOOM_VERIFY_DAYS: z.coerce.number().int().min(7).max(180).default(180),
   /** Días que una grabación faltante se conserva antes de borrarla del CRM. */
   ZOOM_MISSING_PURGE_DAYS: z.coerce.number().int().min(1).default(30),
+  /**
+   * 2026-10-27 — Grabaciones más cortas que esto (minutos) no se guardan: una
+   * clase real nunca dura 15 minutos (pruebas, arranques por error). 0 apaga
+   * el filtro. Sin duración conocida se guarda igual.
+   */
+  ZOOM_MIN_RECORDING_MIN: z.coerce.number().int().min(0).default(15),
   /** Tolerancia de adjudicación: minutos antes del inicio de la clase. */
   ZOOM_MATCH_BEFORE_MIN: z.coerce.number().int().min(0).default(30),
   /** Fin supuesto de una clase sin `end_time`, en minutos desde el inicio. */

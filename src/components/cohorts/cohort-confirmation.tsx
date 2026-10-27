@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { CheckCircle2 } from "lucide-react";
 import { formatSentAt } from "@/lib/schedule-time";
 import {
@@ -10,6 +11,8 @@ import {
   type ConfirmacionDto,
 } from "@/lib/staff-notices";
 import { avisarAlConfirmarPorDefecto } from "@/lib/marca-de-confirmacion";
+import type { CronogramaAutomatico } from "@/lib/cronograma-automatico";
+import { avisarQueCambiaronLasClases } from "@/lib/clases-cambiaron";
 import { notify } from "@/lib/notify";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -80,7 +83,10 @@ export function CohortConfirmation({
         notify.error(await mensajeDeError(res, "No se pudo guardar. Probá de nuevo en un momento."));
         return;
       }
-      const body = (await res.json()) as { confirmation: ConfirmacionDto };
+      const body = (await res.json()) as {
+        confirmation: ConfirmacionDto;
+        schedule?: CronogramaAutomatico | null;
+      };
       setEstado(body.confirmation);
       setDialogo(null);
       notify.success(
@@ -90,6 +96,15 @@ export function CohortConfirmation({
             : "Grupo confirmado, sin enviar correos."
           : "Se quitó la confirmación."
       );
+      // 2026-10-27 — Confirmar genera el cronograma solo, o dice qué le falta.
+      if (body.schedule?.estado === "generado") {
+        // Especialización: algún módulo quedó sin clases por falta de datos.
+        if (body.schedule.conFaltantes) notify.warning(body.schedule.mensaje);
+        else notify.success(body.schedule.mensaje);
+        avisarQueCambiaronLasClases(cohortId);
+      } else if (body.schedule?.estado === "faltan_datos") {
+        notify.warning(`Todavía no se generaron las clases. ${body.schedule.mensaje}`);
+      }
     } finally {
       setEnVuelo(false);
     }
@@ -98,6 +113,14 @@ export function CohortConfirmation({
   const confirmada = estado.confirmedAt !== null;
   // Llegó el día de inicio sin confirmar: rojo, con las salidas (`marcaDeConfirmacion`).
   const vencido = !confirmada && estado.marca === "sin_confirmar_vencido";
+  /*
+    2026-10-27 — Un módulo no se confirma por separado (el servidor responde
+    422): lo confirma su especialización. Una confirmación que viene de ella
+    se quita desde ella. Un módulo con confirmación PROPIA (de antes) sí puede
+    quitársela.
+  */
+  const puedeConfirmar = canConfirm && !estado.esModulo;
+  const puedeQuitar = canConfirm && !estado.deLaEspecializacion;
 
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
@@ -121,9 +144,22 @@ export function CohortConfirmation({
       ) : null}
       {confirmada ? (
         <span className="text-muted-foreground">
+          {estado.deLaEspecializacion ? (
+            <>
+              desde la especialización{" "}
+              <Link
+                href={`/cohorts/${estado.deLaEspecializacion.id}`}
+                className="font-medium text-foreground underline underline-offset-2 hover:no-underline"
+              >
+                {estado.deLaEspecializacion.name}
+              </Link>{" "}
+            </>
+          ) : null}
           {estado.confirmedBy ? `por ${estado.confirmedBy.name} ` : ""}
           el {formatSentAt(estado.confirmedAt!)}
         </span>
+      ) : estado.esModulo ? (
+        <span className="text-muted-foreground">Se confirma desde su especialización.</span>
       ) : null}
       {estado.avisos.length > 0 ? (
         <ul className="flex flex-wrap items-center gap-2" aria-label="Avisos internos">
@@ -139,20 +175,22 @@ export function CohortConfirmation({
           ))}
         </ul>
       ) : null}
-      {canConfirm || (vencido && canEdit) ? (
+      {(confirmada ? puedeQuitar : puedeConfirmar) || (vencido && canEdit) ? (
         <div className="ml-auto flex flex-wrap items-center gap-2">
           {vencido && canEdit ? (
             <UnconfirmedExits cohortId={cohortId} startDate={startDate} endDate={endDate} />
           ) : null}
-          {!canConfirm ? null : confirmada ? (
-            <Button variant="ghost" size="sm" onClick={() => setDialogo("quitar")}>
-              Quitar confirmación
-            </Button>
-          ) : (
+          {confirmada ? (
+            puedeQuitar ? (
+              <Button variant="ghost" size="sm" onClick={() => setDialogo("quitar")}>
+                Quitar confirmación
+              </Button>
+            ) : null
+          ) : puedeConfirmar ? (
             <Button size="sm" onClick={() => setDialogo("confirmar")}>
               Confirmar grupo
             </Button>
-          )}
+          ) : null}
         </div>
       ) : null}
 

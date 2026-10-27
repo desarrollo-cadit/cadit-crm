@@ -212,6 +212,16 @@ export type ConfirmacionDto = {
   confirmedAt: string | null;
   confirmedBy: { id: string; name: string } | null;
   /**
+   * 2026-10-27 — Un módulo se confirma desde su especialización: la pantalla
+   * no ofrece confirmarlo por separado.
+   */
+  esModulo: boolean;
+  /**
+   * La confirmación que se muestra es la de la especialización (el módulo no
+   * tiene propia): cuál, para decirlo y enlazarla. `null` = es la propia.
+   */
+  deLaEspecializacion: { id: string; name: string } | null;
+  /**
    * Lo que se dibuja (`marcaDeConfirmacion`): `sin_confirmar_vencido` = llegó
    * el día de inicio sin confirmar (rojo, con las salidas).
    */
