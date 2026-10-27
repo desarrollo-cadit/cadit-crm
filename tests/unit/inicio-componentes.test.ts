@@ -108,6 +108,55 @@ describe("Agenda de hoy", () => {
   });
 });
 
+describe("Para resolver y Agenda de hoy: mismo alto, scroll adentro", () => {
+  const panel = readFileSync(join(process.cwd(), "src", "components", "dashboard", "today-panel.tsx"), "utf8");
+  const ALTO = "clamp(22rem,60vh,38rem)";
+
+  it("lado a lado comparten UN alto acotado por la ventana; sola, la agenda lo usa de máximo", () => {
+    expect(panel).toContain(`min-[1100px]:h-[${ALTO}]`);
+    expect(panel).toContain("min-[1100px]:grid-rows-[minmax(0,1fr)]");
+    expect(panel).toContain("min-[1100px]:items-stretch");
+    expect(panel).toContain(`min-[1100px]:max-h-[${ALTO}]`);
+  });
+
+  it("la lista de tareas se desplaza adentro y el encabezado queda afuera", () => {
+    const h = html(createElement(ParaResolver, { grupos: GRUPOS }));
+    expect(h).toContain("scroll-con-borde");
+    expect(h.indexOf("Para resolver")).toBeLessThan(h.indexOf("scroll-con-borde"));
+  });
+
+  it("el scroll interno es solo desde 1100px: apiladas, alto natural (sin scroll dentro de scroll)", () => {
+    const zona = readFileSync(join(process.cwd(), "src", "components", "dashboard", "zona-con-scroll.tsx"), "utf8");
+    expect(zona).toContain("min-[1100px]:overflow-y-auto");
+    expect(zona).not.toMatch(/(^|[\s"])overflow-y-auto/);
+    // Con movimiento reducido, salta.
+    expect(zona).toContain("prefers-reduced-motion: reduce");
+  });
+
+  it("la agenda marca la línea de ahora para traerla a la vista", () => {
+    const AHORA = new Date("2026-10-26T18:42:00Z");
+    const h = html(
+      createElement(AgendaDeHoy, {
+        clases: [
+          {
+            date: "2026-10-26T00:00:00.000Z",
+            cohortId: "x",
+            projected: false,
+            cohortName: "Tarde",
+            courseName: "Revit",
+            startTime: "19:00",
+            endTime: "21:00",
+          },
+        ],
+        timeZone: "America/Montevideo",
+        now: AHORA,
+      })
+    );
+    expect(h).toContain("data-ahora");
+    expect(panel).toContain('enfocar="[data-ahora]"');
+  });
+});
+
 describe("Morosidad en el inicio", () => {
   const fila = (i: number): FilaDeMorosidad => ({
     enrollmentId: `e${i}`,

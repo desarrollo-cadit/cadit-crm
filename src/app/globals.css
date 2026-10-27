@@ -587,3 +587,15 @@
     animation: none;
   }
 }
+
+@layer components {
+  /* 2026-10-27 — Zona con scroll del inicio: cuando hay más abajo, el borde
+     inferior se desvanece. Es una máscara (solo alfa), así que no lleva color
+     y vale igual en los dos temas. */
+  @media (min-width: 1100px) {
+    .scroll-con-borde[data-hay-mas="true"] {
+      -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 2.5rem), transparent);
+      mask-image: linear-gradient(to bottom, #000 calc(100% - 2.5rem), transparent);
+    }
+  }
+}

@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { agendaDeHoy, type ClaseDeLaAgenda } from "@/lib/agenda-de-hoy";
 import { ACADEMY_TIME_ZONE } from "@/lib/schedule-time";
 import { cn } from "@/lib/utils";
+import { ZonaConScroll } from "./zona-con-scroll";
 
 export type ClaseDeHoy = ClaseDeLaAgenda & {
   cohortId: string;
@@ -34,6 +35,11 @@ type Summary = {
  * derecha. Si la persona no tiene ninguna regla, la agenda ocupa la fila.
  *
  * Una sola lectura de `/api/dashboard/summary` alimenta el pulso y la agenda.
+ *
+ * 2026-10-27 — Lado a lado (desde 1100px) las dos tarjetas tienen el MISMO
+ * alto, acotado por la ventana (`clamp`: ~6–7 filas en una notebook, más en
+ * un monitor grande), y cada una se desplaza por dentro con el encabezado
+ * quieto. Apiladas, alto natural. Sola, la agenda usa ese alto como máximo.
  */
 export function TodayPanel({ nombre, paraResolver }: { nombre: string; paraResolver?: ReactNode }) {
   const [datos, setDatos] = useState<Summary | null>(null);
@@ -79,12 +85,18 @@ export function TodayPanel({ nombre, paraResolver }: { nombre: string; paraResol
       <section
         className={cn(
           "grid items-start gap-[18px]",
-          paraResolver && "min-[1100px]:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]"
+          paraResolver &&
+            "min-[1100px]:h-[clamp(22rem,60vh,38rem)] min-[1100px]:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] min-[1100px]:grid-rows-[minmax(0,1fr)] min-[1100px]:items-stretch"
         )}
       >
         {paraResolver}
-        <div className="min-w-0 rounded-lg border bg-card">
-          <div className="flex items-baseline justify-between gap-3 px-5 pb-2.5 pt-3.5">
+        <div
+          className={cn(
+            "flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border bg-card",
+            !paraResolver && "min-[1100px]:max-h-[clamp(22rem,60vh,38rem)]"
+          )}
+        >
+          <div className="flex shrink-0 items-baseline justify-between gap-3 px-5 pb-2.5 pt-3.5">
             <h2 className="text-sm font-semibold">Agenda de hoy</h2>
             <Link
               href="/calendar"
@@ -93,14 +105,16 @@ export function TodayPanel({ nombre, paraResolver }: { nombre: string; paraResol
               Ver el calendario →
             </Link>
           </div>
-          {datos === null ? (
-            <div className="space-y-2 px-5 pb-5">
-              <Skeleton className="h-5 w-2/3" />
-              <Skeleton className="h-5 w-1/2" />
-            </div>
-          ) : (
-            <AgendaDeHoy clases={datos.today} timeZone={timeZone} now={ahora} />
-          )}
+          <ZonaConScroll enfocar="[data-ahora]" listo={datos !== null}>
+            {datos === null ? (
+              <div className="space-y-2 px-5 pb-5">
+                <Skeleton className="h-5 w-2/3" />
+                <Skeleton className="h-5 w-1/2" />
+              </div>
+            ) : (
+              <AgendaDeHoy clases={datos.today} timeZone={timeZone} now={ahora} />
+            )}
+          </ZonaConScroll>
         </div>
       </section>
     </>
@@ -170,7 +184,7 @@ export function AgendaDeHoy({
 
   const agenda = agendaDeHoy(clases, { timeZone, now });
   const lineaDeAhora = (
-    <li key="ahora" aria-hidden className="grid grid-cols-[52px_minmax(0,1fr)] items-center gap-2.5 py-0.5">
+    <li key="ahora" aria-hidden data-ahora className="grid grid-cols-[52px_minmax(0,1fr)] items-center gap-2.5 py-0.5">
       <span className="text-[11px] font-semibold tabular-nums text-text-2">{agenda.horaActual}</span>
       <i className="block h-0.5 rounded-full bg-barra-rotulo" />
     </li>
