@@ -352,3 +352,21 @@ describe("freno de borrado masivo", () => {
     expect(verified.zc_2!.error).toBeNull();
   });
 });
+
+/**
+ * 2026-10-27 — En producción, "marcar faltantes" fallaba siempre con
+ * `The "string" argument must be of type string … Received an instance of
+ * Date`: el conteo previo interpolaba la fecha CRUDA en un `sql` armado a
+ * mano, y ahí el driver no sabe que es un timestamp. La comparación tiene que
+ * pasar por los operadores de drizzle (`lt(columna, fecha)`), que la codifican
+ * con el tipo de la columna. Falló cerrado (no marcó ni borró nada), pero las
+ * grabaciones borradas en Zoom nunca se detectaban.
+ */
+describe("el conteo de faltantes no mete fechas crudas en SQL a mano", () => {
+  it("la condición del filter usa lt(columna, fecha)", async () => {
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync("src/server/zoom/verify.ts", "utf8");
+    expect(src).not.toMatch(/\$\{\s*args\.seenBefore\s*\}/);
+    expect(src).toMatch(/filter \(where \$\{lt\(r\.lastSeenAt, args\.seenBefore\)\}\)/);
+  });
+});

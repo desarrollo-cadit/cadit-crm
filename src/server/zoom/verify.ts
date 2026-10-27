@@ -281,7 +281,9 @@ export const dbVerifyStore: VerifyStore = {
       const [row] = await getDb()
         .select({
           known: count(),
-          wouldFlag: sql<number>`count(*) filter (where ${r.lastSeenAt} < ${args.seenBefore})`.mapWith(Number),
+          // `lt(...)` y no la fecha cruda: dentro de un `sql` armado a mano el
+          // driver no sabe que es un timestamp y falla (pasó en producción).
+          wouldFlag: sql<number>`count(*) filter (where ${lt(r.lastSeenAt, args.seenBefore)})`.mapWith(Number),
         })
         .from(r)
         .where(
