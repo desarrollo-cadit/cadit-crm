@@ -3,6 +3,7 @@ import { getEnv } from "@/lib/env";
 import { getDb, getRootDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
+import { seGuardaLaGrabacion } from "@/lib/recording-duration";
 import {
   buildPlayUrl,
   listUserRecordings as zoomListUserRecordings,
@@ -95,6 +96,14 @@ export interface SyncStore {
   ): Promise<string>;
   /** Devuelve cuántas filas son NUEVAS. */
   upsertRecordings(orgId: string, rows: RecordingUpsert[], seenAt: Date): Promise<number>;
+  /**
+   * 2026-10-27 — Las cortas que Zoom devolvió (`partirPorDuracion`): NO se
+   * insertan, pero las que YA están guardadas (asignadas a mano, enlace de una
+   * clase o de antes del filtro) se marcan vistas con la misma `seenAt`. Si
+   * no, `markMissing` las daría por borradas de Zoom —y sumarían al freno de
+   * borrado masivo— solo porque el filtro dejó de guardarlas.
+   */
+  touchSeen(orgId: string, connectionId: string, zoomMeetingUuids: string[], seenAt: Date): Promise<void>;
   markMissing(
     orgId: string,
     args: { connectionId: string; roomId: string; from: Date; toExclusive: Date; seenBefore: Date; at: Date }
@@ -135,7 +144,11 @@ export type SyncDeps = {
   credentials: (orgId: string, connectionId: string) => Promise<ZoomCredentials>;
   now: () => Date;
   owner: string;
-  config: { backfillDays: number; overlapDays: number };
+  /**
+   * `minRecordingMin` (2026-10-27, `ZOOM_MIN_RECORDING_MIN`): lo más corto no
+   * se guarda. Ausente o 0 = sin filtro.
+   */
+  config: { backfillDays: number; overlapDays: number; minRecordingMin?: number };
   /** Punto de extensión por página guardada: US2 adjudica acá y devuelve los contadores. */
   afterPage?: (orgId: string, rows: RecordingUpsert[]) => Promise<PageCounts | void>;
   /**
@@ -200,6 +213,22 @@ export function toUpsert(
     fileTypes: m.fileTypes,
     ...sealPasscode(m.playPasscode ?? m.password),
   };
+}
+
+/**
+ * 2026-10-27 — Una página de Zoom, partida por duración: `guardar` entra
+ * (upsert + adjudicación), `cortas` no se guarda nunca (solo se tocan las que
+ * ya estaban, `SyncStore.touchSeen`). La usan la sincronización y la
+ * verificación diaria: el MISMO criterio en las dos.
+ */
+export function partirPorDuracion(
+  page: ZoomRecordingMeeting[],
+  minRecordingMin: number
+): { guardar: ZoomRecordingMeeting[]; cortas: ZoomRecordingMeeting[] } {
+  const guardar: ZoomRecordingMeeting[] = [];
+  const cortas: ZoomRecordingMeeting[] = [];
+  for (const m of page) (seGuardaLaGrabacion(m.durationMin, minRecordingMin) ? guardar : cortas).push(m);
+  return { guardar, cortas };
 }
 
 /* ============================================================
@@ -304,8 +333,12 @@ async function runConnection(
     for (const aula of run.rooms) {
       try {
         for await (const page of deps.zoom.listUserRecordings(creds, aula.zoomUserId, aula.window)) {
-          if (page.length === 0) continue;
-          const rows = page.map((m) => toUpsert(m, run.connectionId, aula.id));
+          const { guardar, cortas } = partirPorDuracion(page, deps.config.minRecordingMin ?? 0);
+          if (cortas.length > 0) {
+            await deps.store.touchSeen(orgId, run.connectionId, cortas.map((m) => m.uuid), inicio);
+          }
+          if (guardar.length === 0) continue;
+          const rows = guardar.map((m) => toUpsert(m, run.connectionId, aula.id));
           fetched += rows.length;
           nuevas += await deps.store.upsertRecordings(orgId, rows, inicio);
           if (deps.afterPage) sumar(await deps.afterPage(orgId, rows));
@@ -516,6 +549,24 @@ export const dbSyncStore: SyncStore = {
         // `xmax = 0` ⇔ la fila la creó ESTE insert (no la actualizó).
         .returning({ inserted: sql<boolean>`(xmax = 0)` });
       return result.filter((r) => r.inserted).length;
+    });
+  },
+  touchSeen(orgId, connectionId, zoomMeetingUuids, seenAt) {
+    if (zoomMeetingUuids.length === 0) return Promise.resolve();
+    return inOrgScope(orgId, async () => {
+      // Solo las que existen: un UPDATE no inserta. Igual que el upsert, lo
+      // que se ve deja de estar marcado como faltante.
+      await getDb()
+        .update(t)
+        .set({ lastSeenAt: seenAt, missingInZoomAt: null, updatedAt: seenAt })
+        .where(
+          scoped(
+            t.organizationId,
+            orgId,
+            eq(t.zoomConnectionId, connectionId),
+            inArray(t.zoomMeetingUuid, zoomMeetingUuids)
+          )
+        );
     });
   },
   markMissing(orgId, args) {
@@ -786,7 +837,11 @@ function defaultDeps(): SyncDeps {
     credentials: (orgId, connectionId) => inOrgScope(orgId, () => loadZoomCredentials(orgId, connectionId)),
     now: () => new Date(),
     owner: leaseOwner(),
-    config: { backfillDays: env.ZOOM_SYNC_BACKFILL_DAYS, overlapDays: env.ZOOM_SYNC_OVERLAP_DAYS },
+    config: {
+      backfillDays: env.ZOOM_SYNC_BACKFILL_DAYS,
+      overlapDays: env.ZOOM_SYNC_OVERLAP_DAYS,
+      minRecordingMin: env.ZOOM_MIN_RECORDING_MIN,
+    },
     afterPage: adjudicatePage,
     rematch: rematchUntouched,
     reconcile: reconcileMissing,

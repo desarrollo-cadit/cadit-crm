@@ -23,6 +23,7 @@ type Room = { id: string; name: string; zoomUserId: string; syncedThrough: strin
 let conns: Conn[];
 let roomsBy: Record<string, Room[]>;
 let upserts: { rows: RecordingUpsert[]; seenAt: Date }[];
+let touched: { connectionId: string; uuids: string[]; seenAt: Date }[];
 let missing: unknown[];
 let runs: Map<string, Record<string, unknown>>;
 let syncedThrough: Record<string, string>;
@@ -50,6 +51,9 @@ const store: SyncStore = {
   async upsertRecordings(_org, rows, seenAt) {
     upserts.push({ rows, seenAt });
     return rows.length;
+  },
+  async touchSeen(_org, connectionId, uuids, seenAt) {
+    touched.push({ connectionId, uuids, seenAt });
   },
   async markMissing(_org, args) {
     missing.push(args);
@@ -139,6 +143,7 @@ beforeEach(() => {
     ],
   };
   upserts = [];
+  touched = [];
   missing = [];
   runs = new Map();
   syncedThrough = {};
@@ -540,5 +545,45 @@ describe("faltantes: la incremental también desvincula y restaura", () => {
     await runSync(ORG, "manual", {}, d);
     expect([...runs.values()][0]!.status).toBe("ok");
     expect(released).toEqual(["test:1"]);
+  });
+});
+
+describe("grabaciones cortas (ZOOM_MIN_RECORDING_MIN)", () => {
+  const conMinimo = (min: number): SyncDeps => ({ ...deps(), config: { ...deps().config, minRecordingMin: min } });
+
+  it("las de menos del mínimo no se guardan ni se adjudican; las de duración desconocida sí", async () => {
+    recordingsBy = {
+      u1: [[meeting("larga"), meeting("corta", { durationMin: 3 }), meeting("sin-dato", { durationMin: null })]],
+      u2: [],
+    };
+    const paginas: string[][] = [];
+    const { runSync } = await import("@/server/zoom/sync");
+    await runSync(ORG, "manual", {}, {
+      ...conMinimo(15),
+      afterPage: async (_org, rows) => {
+        paginas.push(rows.map((r) => r.zoomMeetingUuid));
+      },
+    });
+    expect(upserts.flatMap((u) => u.rows.map((r) => r.zoomMeetingUuid))).toEqual(["larga", "sin-dato"]);
+    expect(paginas).toEqual([["larga", "sin-dato"]]);
+    // No cuentan como traídas.
+    expect([...runs.values()][0]).toMatchObject({ fetchedCount: 2 });
+  });
+
+  it("las cortas que YA están guardadas se tocan como vistas: no parecen borradas de Zoom", async () => {
+    recordingsBy = { u1: [[meeting("corta", { durationMin: 3 })]], u2: [] };
+    const { runSync } = await import("@/server/zoom/sync");
+    await runSync(ORG, "manual", {}, conMinimo(15));
+    expect(touched).toEqual([{ connectionId: "zc_1", uuids: ["corta"], seenAt: HOY }]);
+    // Una página entera de cortas no llega a `upsertRecordings`.
+    expect(upserts).toEqual([]);
+  });
+
+  it("0 apaga el filtro", async () => {
+    recordingsBy = { u1: [[meeting("corta", { durationMin: 3 })]], u2: [] };
+    const { runSync } = await import("@/server/zoom/sync");
+    await runSync(ORG, "manual", {}, conMinimo(0));
+    expect(upserts.flatMap((u) => u.rows.map((r) => r.zoomMeetingUuid))).toEqual(["corta"]);
+    expect(touched).toEqual([]);
   });
 });

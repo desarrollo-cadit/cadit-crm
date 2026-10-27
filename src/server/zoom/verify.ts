@@ -8,7 +8,15 @@ import { loadZoomCredentials } from "./connections";
 import { dbLeaseStore, LEASE_MS, leaseOwner } from "./lease";
 import { purgeMissingOfConnection, reconcileMissing } from "./missing";
 import { inOrgScope } from "./scope";
-import { adjudicatePage, dbSyncStore, toUpsert, type SyncDeps, type SyncRoom, type SyncStore } from "./sync";
+import {
+  adjudicatePage,
+  dbSyncStore,
+  partirPorDuracion,
+  toUpsert,
+  type SyncDeps,
+  type SyncRoom,
+  type SyncStore,
+} from "./sync";
 
 /**
  * La verificación diaria de grabaciones borradas de Zoom.
@@ -50,7 +58,10 @@ const SLACK_MS = 5 * 60_000;
  */
 const MARGIN_DAYS = 1;
 
-export type VerifyStore = Pick<SyncStore, "activeConnections" | "linkedActiveRooms" | "upsertRecordings" | "markMissing"> & {
+export type VerifyStore = Pick<
+  SyncStore,
+  "activeConnections" | "linkedActiveRooms" | "upsertRecordings" | "touchSeen" | "markMissing"
+> & {
   /** Fin de la verificación de una conexión: `error` NULL = completa. */
   setVerified(orgId: string, connectionId: string, at: Date, error: string | null): Promise<void>;
   /**
@@ -64,7 +75,8 @@ type MarkArgs = Parameters<SyncStore["markMissing"]>[1];
 
 export type VerifyDeps = Pick<SyncDeps, "lease" | "zoom" | "credentials" | "now" | "owner" | "afterPage"> & {
   store: VerifyStore;
-  config: { verifyDays: number; purgeDays: number };
+  /** `minRecordingMin`: el MISMO filtro de la sincronización (`partirPorDuracion`). */
+  config: { verifyDays: number; purgeDays: number; minRecordingMin?: number };
   reconcile: (orgId: string, connectionId: string) => Promise<unknown>;
   purge: (orgId: string, connectionId: string, purgeDays: number) => Promise<number>;
 };
@@ -159,8 +171,14 @@ export async function executeVerify(orgId: string, plan: VerifyPlan, deps: Verif
         for (const aula of c.rooms) {
           try {
             for await (const page of deps.zoom.listUserRecordings(creds, aula.zoomUserId, plan.window.fetch)) {
-              if (page.length === 0) continue;
-              const rows = page.map((m) => toUpsert(m, c.id, aula.id));
+              // Las cortas no se guardan; las que ya estaban se marcan vistas,
+              // así no cuentan como borradas ni suman al freno.
+              const { guardar, cortas } = partirPorDuracion(page, deps.config.minRecordingMin ?? 0);
+              if (cortas.length > 0) {
+                await deps.store.touchSeen(orgId, c.id, cortas.map((m) => m.uuid), inicio);
+              }
+              if (guardar.length === 0) continue;
+              const rows = guardar.map((m) => toUpsert(m, c.id, aula.id));
               fetched += rows.length;
               await deps.store.upsertRecordings(orgId, rows, inicio);
               if (deps.afterPage) await deps.afterPage(orgId, rows);
@@ -273,6 +291,7 @@ export const dbVerifyStore: VerifyStore = {
   activeConnections: dbSyncStore.activeConnections,
   linkedActiveRooms: dbSyncStore.linkedActiveRooms,
   upsertRecordings: dbSyncStore.upsertRecordings,
+  touchSeen: dbSyncStore.touchSeen,
   markMissing: dbSyncStore.markMissing,
   missingCandidates(orgId, args) {
     // El MISMO criterio que `markMissing`, contado en lugar de escrito.
@@ -323,7 +342,11 @@ export function verifyDeps(): VerifyDeps {
     credentials: (orgId, connectionId) => inOrgScope(orgId, () => loadZoomCredentials(orgId, connectionId)),
     now: () => new Date(),
     owner: leaseOwner(),
-    config: { verifyDays: env.ZOOM_VERIFY_DAYS, purgeDays: env.ZOOM_MISSING_PURGE_DAYS },
+    config: {
+      verifyDays: env.ZOOM_VERIFY_DAYS,
+      purgeDays: env.ZOOM_MISSING_PURGE_DAYS,
+      minRecordingMin: env.ZOOM_MIN_RECORDING_MIN,
+    },
     afterPage: adjudicatePage,
     reconcile: reconcileMissing,
     purge: purgeMissingOfConnection,

@@ -25,6 +25,7 @@ type Room = { id: string; name: string; zoomUserId: string; syncedThrough: strin
 let conns: { id: string; name: string; syncedThrough: string | null }[];
 let roomsBy: Record<string, Room[]>;
 let upserts: { rows: RecordingUpsert[]; seenAt: Date }[];
+let touched: { connectionId: string; uuids: string[]; seenAt: Date }[];
 let missing: { connectionId: string; roomId: string; from: Date; toExclusive: Date; seenBefore: Date }[];
 let verified: Record<string, { at: Date; error: string | null }>;
 let reconciled: string[];
@@ -48,6 +49,9 @@ const store: VerifyStore = {
   async upsertRecordings(_org, rows, seenAt) {
     upserts.push({ rows, seenAt });
     return 0;
+  },
+  async touchSeen(_org, connectionId, uuids, seenAt) {
+    touched.push({ connectionId, uuids, seenAt });
   },
   async markMissing(_org, args) {
     missing.push(args);
@@ -133,6 +137,7 @@ beforeEach(() => {
     ],
   };
   upserts = [];
+  touched = [];
   missing = [];
   verified = {};
   reconciled = [];
@@ -350,5 +355,24 @@ describe("freno de borrado masivo", () => {
     await runVerify(ORG, {}, deps());
     expect(purged).toEqual([{ connectionId: "zc_2", purgeDays: 30 }]);
     expect(verified.zc_2!.error).toBeNull();
+  });
+});
+
+describe("grabaciones cortas (ZOOM_MIN_RECORDING_MIN)", () => {
+  it("no se guardan, pero las ya guardadas se tocan como vistas: ni se marcan faltantes ni suman al freno", async () => {
+    pagesBy = {
+      u1: { pages: [[meeting("a"), { ...meeting("corta"), durationMin: 3 }]] },
+      u2: { pages: [[{ ...meeting("solo-corta"), durationMin: 0 }]] },
+    };
+    const { runVerify } = await import("@/server/zoom/verify");
+    const r = await runVerify(ORG, {}, { ...deps(), config: { ...deps().config, minRecordingMin: 15 } });
+    expect(r).toMatchObject({ ok: true });
+    expect(upserts.flatMap((u) => u.rows.map((x) => x.zoomMeetingUuid))).toEqual(["a"]);
+    // Con la MISMA marca de inicio: `markMissing` y `missingCandidates` las ven como vistas.
+    expect(touched).toEqual([
+      { connectionId: "zc_1", uuids: ["corta"], seenAt: HOY },
+      { connectionId: "zc_1", uuids: ["solo-corta"], seenAt: HOY },
+    ]);
+    expect(missing.map((m) => m.roomId)).toEqual(["aula_1", "aula_2"]);
   });
 });
