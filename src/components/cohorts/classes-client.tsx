@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { notify } from "@/lib/notify";
+import { alCambiarLasClases } from "@/lib/clases-cambiaron";
 
 type ClassRow = {
   id: string | null;
@@ -150,6 +151,9 @@ export function ClassesClient({
   useEffect(() => {
     void refetch();
   }, [refetch]);
+
+  // 2026-10-27 — Confirmar el grupo puede generar el cronograma solo.
+  useEffect(() => alCambiarLasClases(cohortId, () => void refetch()), [cohortId, refetch]);
 
   async function generar() {
     setGenerating(true);

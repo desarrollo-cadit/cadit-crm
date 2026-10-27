@@ -52,3 +52,24 @@ export function marcaDeConfirmacion(
 export function avisarAlConfirmarPorDefecto(startDate: Date, now: Date): boolean {
   return now < startDate;
 }
+
+/**
+ * 2026-10-27 — Decisión del dueño: "si la especialización está confirmada, el
+ * módulo también". No se escribe nada en el módulo (duplicaría los avisos de
+ * facturación): se MUESTRA la confirmación efectiva. La propia manda; si no
+ * tiene, la de la madre, diciendo de dónde viene (`deLaEspecializacion`).
+ * Quitarle la confirmación a la madre la quita de los módulos sola.
+ */
+export function confirmacionParaMostrar<U>(
+  propia: { confirmedAt: Date | null; confirmedBy: U | null },
+  madre: { id: string; name: string; confirmedAt: Date | null; confirmedBy: U | null } | null
+): { confirmedAt: Date | null; confirmedBy: U | null; deLaEspecializacion: { id: string; name: string } | null } {
+  if (propia.confirmedAt || !madre?.confirmedAt) {
+    return { confirmedAt: propia.confirmedAt, confirmedBy: propia.confirmedBy, deLaEspecializacion: null };
+  }
+  return {
+    confirmedAt: madre.confirmedAt,
+    confirmedBy: madre.confirmedBy,
+    deLaEspecializacion: { id: madre.id, name: madre.name },
+  };
+}

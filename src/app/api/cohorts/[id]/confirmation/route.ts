@@ -29,7 +29,8 @@ export const GET = requireCapability(
 /**
  * 039 — Confirma la cohorte. Idempotente: confirmar una confirmada no cambia
  * quién ni cuándo. El aviso a Soporte sale DESPUÉS del commit y un fallo del
- * correo no deshace la confirmación.
+ * correo no deshace la confirmación. Una confirmación nueva genera el
+ * cronograma si el grupo tiene todo (2026-10-27, `generarCronogramaAutomatico`).
  */
 export const POST = requireCapability(
   "cohortes.confirmar",
@@ -42,7 +43,8 @@ export const POST = requireCapability(
       avisar: body.data.avisar,
     });
     if (!r.ok) return apiError(r.status, r.code, r.message);
-    return Response.json({ confirmation: r.data, changed: r.cambio });
+    // 2026-10-27 — `schedule`: «Se generaron N clases» o lo que falta para generarlas.
+    return Response.json({ confirmation: r.data, changed: r.cambio, schedule: r.cronograma });
   }
 );
 

@@ -6,6 +6,7 @@ import {
   getCohort,
   updateCohort,
 } from "@/server/courses";
+import { datosDeCronograma, generarCronogramaAutomatico } from "@/server/cronograma-automatico";
 
 export const dynamic = "force-dynamic";
 
@@ -35,14 +36,23 @@ export const PATCH = requireCapability(
 
   // 005 (T029/T034, US4/US5) — licenseWarnings/scheduleWarnings viajan junto
   // a la respuesta: FR-006/FR-008 son advertencias, no bloqueos.
+  //
+  // 2026-10-27 — Cómo estaban los datos ANTES: completar un grupo confirmado
+  // genera su cronograma (`generarCronogramaAutomatico`); uno que ya estaba
+  // completo no, aunque no tenga clases. Misma transacción del pedido.
+  const antes = await datosDeCronograma(session.organizationId, id);
   const result = await updateCohort(session.organizationId, id, body.data);
   if (!result.ok) return apiError(result.status, result.code, result.message);
+  const schedule = antes
+    ? await generarCronogramaAutomatico(session.organizationId, id, antes)
+    : null;
 
   const cohort = await getCohort(session.organizationId, id);
   return Response.json({
     cohort,
     licenseWarnings: result.licenseWarnings,
     scheduleWarnings: result.scheduleWarnings,
+    schedule,
   });
 });
 
