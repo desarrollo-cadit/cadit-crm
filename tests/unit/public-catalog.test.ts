@@ -121,7 +121,19 @@ describe("listPublicCourses (T041/006, FR-020/FR-021/FR-022)", () => {
           categorySlug: "bim",
         }),
       ],
-      [{ id: "coh_1", courseId: "crs_1", startDate: new Date("2026-09-15") }]
+      [
+        {
+          id: "coh_1",
+          courseId: "crs_1",
+          startDate: new Date("2026-09-15"),
+          endDate: new Date("2026-11-20"),
+          // Contrato interno: 0 = lunes … 6 = domingo.
+          daysOfWeek: "1,3",
+          startTime: "18:30",
+          endTime: "21:00",
+          timeZone: "America/Montevideo",
+        },
+      ]
     );
     const { listPublicCourses } = await import("@/server/public-catalog");
 
@@ -145,7 +157,16 @@ describe("listPublicCourses (T041/006, FR-020/FR-021/FR-022)", () => {
         durationWeeks: 12,
         hoursPerWeek: 4,
         nextCohorts: [
-          { id: "coh_1", startDate: "2026-09-15T00:00:00.000Z", teacher: null },
+          {
+            id: "coh_1",
+            startDate: "2026-09-15T00:00:00.000Z",
+            // Público: ISO 8601, 1 = lunes … 7 = domingo (martes y jueves).
+            daysOfWeek: [2, 4],
+            startTime: "18:30",
+            endTime: "21:00",
+            timeZone: "America/Montevideo",
+            teacher: null,
+          },
         ],
       },
     ]);
@@ -160,10 +181,15 @@ describe("listPublicCourses (T041/006, FR-020/FR-021/FR-022)", () => {
     expect(Object.keys(courses[0]!.nextCohorts[0]!)).toEqual([
       "id",
       "startDate",
+      "daysOfWeek",
+      "startTime",
+      "endTime",
+      "timeZone",
       "teacher",
     ]);
     const crudo = JSON.stringify(courses);
-    for (const prohibido of ["cost", "capacity", "email", "hourlyRate"]) {
+    // 2026-10-27 — La fecha de fin tampoco sale (decisión del dueño), aunque la fila la traiga.
+    for (const prohibido of ["cost", "capacity", "email", "hourlyRate", "endDate"]) {
       expect(crudo, `el catálogo público filtró ${prohibido}`).not.toContain(prohibido);
     }
   });
@@ -179,6 +205,58 @@ describe("listPublicCourses (T041/006, FR-020/FR-021/FR-022)", () => {
     selectQueue.push([]); // resolveSoleOrganizationId → null
     const { listPublicCourses } = await import("@/server/public-catalog");
     expect(await listPublicCourses()).toEqual([]);
+  });
+
+  /**
+   * El doble de la base ignora los joins, así que se mira el código: el
+   * profesor se resuelve con `organization_id` además de la FK, igual que la
+   * categoría. Sin eso, una cohorte apuntada a un profesor ajeno publica su
+   * nombre y su foto en un endpoint sin sesión.
+   */
+  it("el profesor se une con organization_id explícito, no solo por la FK", async () => {
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync("src/server/public-catalog.ts", "utf8");
+    expect(src).toMatch(
+      /eq\(schema\.cohort\.teacherId, schema\.teacher\.id\),\s*eq\(schema\.teacher\.organizationId, organizationId\)/
+    );
+  });
+
+  it("cohorte sin días ni horario: null y [] en vez de inventar datos", async () => {
+    selectQueue.push(
+      [{ id: "org_1" }],
+      [courseRow()],
+      [
+        {
+          id: "coh_1",
+          courseId: "crs_1",
+          startDate: new Date("2026-09-15"),
+          endDate: null,
+          daysOfWeek: null,
+          startTime: null,
+          endTime: null,
+          timeZone: null,
+        },
+      ]
+    );
+    const { listPublicCourses } = await import("@/server/public-catalog");
+    const [cohorte] = (await listPublicCourses())[0]!.nextCohorts;
+    expect(cohorte).toMatchObject({
+      daysOfWeek: [],
+      startTime: null,
+      endTime: null,
+      timeZone: "America/Montevideo",
+    });
+  });
+
+  it("días guardados con basura o repetidos: solo los válidos, en orden y sin repetir", async () => {
+    selectQueue.push(
+      [{ id: "org_1" }],
+      [courseRow()],
+      [{ id: "coh_1", courseId: "crs_1", startDate: new Date("2026-09-15"), daysOfWeek: "6, 0,x,0,9" }]
+    );
+    const { listPublicCourses } = await import("@/server/public-catalog");
+    const [cohorte] = (await listPublicCourses())[0]!.nextCohorts;
+    expect(cohorte!.daysOfWeek).toEqual([1, 7]);
   });
 
   it("curso sin cohortes futuras → nextCohorts vacío, no un error (edge case spec.md)", async () => {

@@ -56,8 +56,16 @@ Respuesta real:
       "totalHours": 37.5,                    // duración total en horas, con decimales | null
       "durationWeeks": 12,                   // DEPRECADO: ver más abajo
       "hoursPerWeek": 4,                     // DEPRECADO: ver más abajo
-      "nextCohorts": [
-        { "id": "coh_1asacyuvben71bhoisz8", "startDate": "2026-09-15T00:00:00.000Z" }
+      "nextCohorts": [                       // ver sección 4
+        {
+          "id": "coh_1asacyuvben71bhoisz8",
+          "startDate": "2026-09-15T00:00:00.000Z",
+          "daysOfWeek": [2, 4],
+          "startTime": "18:30",
+          "endTime": "21:00",
+          "timeZone": "America/Montevideo",
+          "teacher": null
+        }
       ]
     }
   ],
@@ -201,9 +209,15 @@ cercana a la más lejana:
 
 ```jsonc
 "nextCohorts": [
-  { "id": "coh_1asacyuvben71bhoisz8", "startDate": "2026-09-15T00:00:00.000Z" },
-  { "id": "coh_awjgwnk1ooo83omd34pf", "startDate": "2026-10-01T00:00:00.000Z" },
-  { "id": "coh_wlitju6x0lmi5nlsplcg", "startDate": "2027-01-01T00:00:00.000Z" }
+  {
+    "id": "coh_1asacyuvben71bhoisz8",
+    "startDate": "2026-09-15T00:00:00.000Z", // día de calendario (leer en UTC)
+    "daysOfWeek": [2, 4],                    // ISO: 1 = lunes … 7 = domingo | []
+    "startTime": "18:30",                    // "HH:MM" en timeZone | null
+    "endTime": "21:00",                      // "HH:MM" en timeZone | null
+    "timeZone": "America/Montevideo",        // zona IANA de la academia
+    "teacher": { "name": "…", "title": "Arquitecta", "photoUrl": "/api/teachers/…/photo" }
+  }
 ]
 ```
 
@@ -218,25 +232,45 @@ tiene fechas abiertas ahora mismo", no que el curso no exista. Manejalo con un
 mensaje del estilo *"Próximamente nuevas fechas — dejanos tus datos"* y un
 formulario de contacto, en vez de esconder el curso.
 
-**3. Por ahora cada cohorte trae únicamente `id` y `startDate`.** No hay horario,
-días de cursada, fecha de fin, cupo, precio ni profesor. Eso es deliberado: el
-contrato público excluye explícitamente costo, cupo, aula, profesor y cualquier
-dato de alumnos.
+**3. Cada cohorte trae inicio, días, horario y profesor** (2026-10-27):
+`daysOfWeek`, `startTime`, `endTime` y `timeZone`, además de `teacher` (nombre,
+título y foto). Siguen sin salir la fecha de fin, cupo, precio, aula, el correo o
+la tarifa del profesor y cualquier dato de alumnos: el contrato público los
+excluye a propósito.
+Un dato que el grupo todavía no tiene cargado llega como `null` (o `[]` para los
+días): mostrá lo que haya y no inventes el resto.
 
-> **Si necesitás mostrar más por cohorte** (por ejemplo "martes y jueves de 18:30
-> a 20:30" o el precio), hay que ampliar el endpoint público del CRM y decidir
-> antes qué es seguro publicar. Pedilo como cambio en el CRM; **no** intentes
-> sacarlo de otra ruta: el resto de la API exige autenticación y no es para el
-> sitio público.
+> **Si necesitás mostrar más por cohorte** (por ejemplo el precio), hay que
+> ampliar el endpoint público del CRM y decidir antes qué es seguro publicar.
+> Pedilo como cambio en el CRM; **no** intentes sacarlo de otra ruta: el resto de
+> la API exige autenticación y no es para el sitio público.
 
-Formateo de fechas: `startDate` es ISO 8601 en UTC. Formateala en la zona del
-negocio, no en la del visitante, para que no se corra un día.
+**Fecha de inicio (`startDate`).** Es un DÍA de calendario guardado a medianoche
+UTC. Formateala **en UTC**: en la zona de Montevideo (UTC-3) esa medianoche es
+las 21:00 del día anterior, y la cohorte del 15 de septiembre diría "14".
 
 ```ts
 new Intl.DateTimeFormat("es-UY", {
-  day: "2-digit", month: "long", year: "numeric", timeZone: "America/Montevideo",
+  day: "2-digit", month: "long", year: "numeric", timeZone: "UTC",
 }).format(new Date(cohorte.startDate));
 ```
+
+**Días y horario.** `daysOfWeek` usa la numeración ISO 8601 (1 = lunes … 7 =
+domingo), **no** la de `Date.getDay()` (0 = domingo). `startTime`/`endTime` son
+la hora local de la academia en `timeZone`; mostralos tal cual ("18:30 a 21:00",
+hora de Uruguay) o convertilos a la zona del visitante si querés, pero siempre
+partiendo de `timeZone`, nunca de la zona del navegador.
+
+```ts
+const DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
+const dias = cohorte.daysOfWeek.map((d) => DIAS[d - 1]).join(" y "); // "martes y jueves"
+const horario =
+  cohorte.startTime && cohorte.endTime ? `de ${cohorte.startTime} a ${cohorte.endTime}` : "";
+```
+
+**Especializaciones.** Las clases las dictan sus módulos, así que la cohorte de una
+especialización puede llegar sin días ni horario (`[]` / `null`) aunque sus
+módulos los tengan. Manejalo igual que cualquier dato faltante.
 
 ---
 
@@ -286,10 +320,20 @@ Copiá esto en el sitio. Refleja el contrato actual:
 ```ts
 export type Categoria = { id: string; name: string; slug: string };
 
+export type Profesor = { name: string; title: string | null; photoUrl: string | null };
+
 export type Cohorte = {
   id: string;
-  /** ISO 8601 en UTC. Sólo cohortes que aún no empezaron. */
+  /** Día de calendario, ISO 8601 a medianoche UTC (formatear en UTC). Sólo cohortes que aún no empezaron. */
   startDate: string;
+  /** ISO 8601: 1 = lunes … 7 = domingo, ordenados. Vacío si no se cargaron. */
+  daysOfWeek: number[];
+  /** "HH:MM" en timeZone; null si no se cargó. */
+  startTime: string | null;
+  endTime: string | null;
+  /** Zona IANA de la academia, p. ej. "America/Montevideo". */
+  timeZone: string;
+  teacher: Profesor | null;
 };
 
 export type CursoListado = {
