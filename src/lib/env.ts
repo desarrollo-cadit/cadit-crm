@@ -127,6 +127,21 @@ const envSchema = z.object({
   ZOOM_MATCH_BEFORE_MIN: z.coerce.number().int().min(0).default(30),
   /** Fin supuesto de una clase sin `end_time`, en minutos desde el inicio. */
   ZOOM_MATCH_AFTER_FALLBACK_MIN: z.coerce.number().int().min(0).default(180),
+  /**
+   * Constitución 1.9.0 — Minutos entre pasadas de "traer de Zoom" la
+   * asistencia sugerida (reporte de participantes de clases ya terminadas,
+   * incluidas las pasadas sin asistencia); 0 la apaga (default: el botón
+   * sigue andando). Requiere los permisos de reportes en la app de Zoom.
+   */
+  ZOOM_ATTENDANCE_INTERVAL_MIN: z.coerce.number().int().min(0).default(0),
+  /** Minutos después del fin de la clase antes del primer intento. */
+  ZOOM_ATTENDANCE_DELAY_MIN: z.coerce.number().int().min(0).default(30),
+  /** Días que se guardan los tramos crudos de Zoom (después se borran). */
+  ZOOM_ATTENDANCE_RAW_DAYS: z.coerce.number().int().min(1).max(365).default(180),
+  /** Clases por pasada de la periódica (los reportes de Zoom son HEAVY). */
+  ZOOM_ATTENDANCE_BATCH: z.coerce.number().int().min(1).max(200).default(20),
+  /** Pausa entre clases dentro de una pasada (ms); 0 solo en pruebas. */
+  ZOOM_ATTENDANCE_PAUSE_MS: z.coerce.number().int().min(0).default(1000),
   /** 007 — Envíos del formulario público permitidos por IP y ventana. */
   PUBLIC_FORM_RATE_LIMIT: z.coerce.number().int().min(1).default(5),
   PUBLIC_FORM_RATE_WINDOW_MS: z.coerce.number().int().min(1000).default(600_000),
