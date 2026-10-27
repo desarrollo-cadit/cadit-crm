@@ -57,6 +57,7 @@ describe("Para resolver", () => {
 
   it("cada regla tiene su acción", () => {
     expect(ACCION_DE_REGLA).toEqual({
+      asistencia_zoom: "Revisar y confirmar",
       asistencia: "Pasar asistencia",
       confirmar: "Confirmar o cancelar",
       facturar: "Ir a facturación",

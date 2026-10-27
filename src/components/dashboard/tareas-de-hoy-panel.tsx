@@ -39,6 +39,7 @@ export function TareasDeHoyPanel() {
 
 /** Lo que dice el enlace de cada item: el verbo de lo que se hace allá. */
 export const ACCION_DE_REGLA: Record<ReglaDeTarea, string> = {
+  asistencia_zoom: "Revisar y confirmar",
   asistencia: "Pasar asistencia",
   confirmar: "Confirmar o cancelar",
   facturar: "Ir a facturación",

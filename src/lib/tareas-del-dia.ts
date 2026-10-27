@@ -21,7 +21,7 @@ import { origenDelFormulario } from "@/lib/seguimiento";
  * que solo consulta los datos de las reglas que la sesión puede ver.
  */
 
-export type ReglaDeTarea = "asistencia" | "confirmar" | "facturar" | "leads";
+export type ReglaDeTarea = "asistencia_zoom" | "asistencia" | "confirmar" | "facturar" | "leads";
 export type Urgencia = "alta" | "media";
 
 export type TareaDeHoy = {
@@ -55,6 +55,14 @@ export type GrupoDeTareas = {
  * le llega solo a quien coordina las clases.
  */
 export const REGLAS_DE_TAREAS = [
+  {
+    // Constitución 1.9.0 — antes que "sin pasar": revisar una sugerencia es
+    // más rápido que pasar lista, y la misma clase nunca está en las dos.
+    id: "asistencia_zoom",
+    capacidades: ["asistencia.editar", "grabaciones.gestionar"],
+    titulo: "Asistencia sugerida para revisar",
+    unidad: ["clase con asistencia sugerida", "clases con asistencia sugerida"],
+  },
   {
     id: "asistencia",
     capacidades: ["asistencia.editar", "grabaciones.gestionar"],
@@ -128,6 +136,12 @@ export type ClaseParaTarea = {
   inscriptosActivos: number;
   /** Marcas de asistencia de cualquier alumno en esta clase. */
   marcas: number;
+  /**
+   * Constitución 1.9.0 — Zoom ya trajo quién se conectó y nadie lo confirmó
+   * todavía (traída `lista`, sin revisar). Esa clase va a "Asistencia
+   * sugerida para revisar", no a "sin pasar".
+   */
+  sugerenciaZoom?: boolean;
 };
 
 /**
@@ -144,6 +158,7 @@ export function tareasDeAsistencia(
   const out: TareaDeHoy[] = [];
   for (const c of clases) {
     if (c.courseKind === "taller" || c.inscriptosActivos <= 0 || c.marcas > 0) continue;
+    if (c.sugerenciaZoom) continue;
     if (estadoDeClase({ sessionDate: c.date, endTime: c.endTime, canceled: c.canceled }, reloj) !== "dictada") {
       continue;
     }
@@ -154,6 +169,37 @@ export function tareasDeAsistencia(
       titulo: nombreDeGrupo(c.courseName, c.cohortName),
       detalle: hace === 0 ? "Clase de hoy" : hace === 1 ? "Clase de ayer" : `Clase de hace ${hace} días`,
       href: `/cohorts/${c.cohortId}?tab=asistencia`,
+      urgencia: hace > 3 ? "alta" : "media",
+      fecha: diaGuardado(c.date),
+    });
+  }
+  return out;
+}
+
+/**
+ * Constitución 1.9.0 (decisión del dueño, 2026-10-27) — Las clases con una
+ * sugerencia de Zoom LISTA y sin confirmar: dictadas, con alumnos, sin una
+ * sola marca y no de un taller, como "sin pasar", pero SIN el corte de 14
+ * días (el relleno hacia atrás trae clases viejas que también hay que
+ * revisar). Lleva a la planilla con la clase elegida.
+ */
+export function tareasDeSugerenciasDeZoom(
+  clases: readonly ClaseParaTarea[],
+  reloj: RelojDeAsistencia
+): TareaDeHoy[] {
+  const out: TareaDeHoy[] = [];
+  for (const c of clases) {
+    if (!c.sugerenciaZoom) continue;
+    if (c.courseKind === "taller" || c.inscriptosActivos <= 0 || c.marcas > 0) continue;
+    if (estadoDeClase({ sessionDate: c.date, endTime: c.endTime, canceled: c.canceled }, reloj) !== "dictada") {
+      continue;
+    }
+    const hace = -(diasHastaElInicio(c.date, reloj.now, reloj.timeZone) ?? 0);
+    out.push({
+      ruleId: "asistencia_zoom",
+      titulo: nombreDeGrupo(c.courseName, c.cohortName),
+      detalle: hace === 0 ? "Clase de hoy" : hace === 1 ? "Clase de ayer" : `Clase de hace ${hace} días`,
+      href: `/cohorts/${c.cohortId}?tab=asistencia&clase=${c.classSessionId}`,
       urgencia: hace > 3 ? "alta" : "media",
       fecha: diaGuardado(c.date),
     });

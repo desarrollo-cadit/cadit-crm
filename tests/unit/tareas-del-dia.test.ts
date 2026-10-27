@@ -7,6 +7,7 @@ import {
   tareasDeConfirmacion,
   tareasDeFacturacion,
   tareasDeLeads,
+  tareasDeSugerenciasDeZoom,
   type ClaseParaTarea,
   type EnvioParaTarea,
   type GrupoParaConfirmar,
@@ -25,6 +26,7 @@ const HORA = 60 * 60 * 1000;
 describe("reglasPermitidas — cada regla pide SU capacidad", () => {
   it("las capacidades son de la lista cerrada y cada regla declara las suyas", () => {
     expect(REGLAS_DE_TAREAS.map((r) => [r.id, r.capacidades])).toEqual([
+      ["asistencia_zoom", ["asistencia.editar", "grabaciones.gestionar"]],
       ["asistencia", ["asistencia.editar", "grabaciones.gestionar"]],
       ["confirmar", ["cohortes.confirmar"]],
       ["facturar", ["cobranza.ver"]],
@@ -42,7 +44,7 @@ describe("reglasPermitidas — cada regla pide SU capacidad", () => {
         "cohortes.confirmar",
         "inscripciones.seguimiento",
       ])
-    ).toEqual(["asistencia", "confirmar", "leads"]);
+    ).toEqual(["asistencia_zoom", "asistencia", "confirmar", "leads"]);
   });
 
   it("Soporte pasa asistencia pero no la recibe como tarea; Coordinación sí", () => {
@@ -102,6 +104,67 @@ describe("tareasDeAsistencia — clases dictadas sin una sola marca", () => {
   it("más de 14 días atrás no inunda la bandeja", () => {
     expect(tareasDeAsistencia([{ ...base, date: dia("2026-10-10") }], reloj)).toEqual([]);
     expect(tareasDeAsistencia([{ ...base, date: dia("2026-10-12") }], reloj)).toHaveLength(1);
+  });
+
+  it("con una sugerencia de Zoom lista no es «sin pasar»: va a la otra regla", () => {
+    expect(tareasDeAsistencia([{ ...base, sugerenciaZoom: true }], reloj)).toEqual([]);
+  });
+});
+
+describe("tareasDeSugerenciasDeZoom — asistencia sugerida para revisar (todas, sin corte)", () => {
+  const base: ClaseParaTarea = {
+    classSessionId: "cs_9",
+    cohortId: "coh_1",
+    cohortName: "Revit 12",
+    courseName: "Revit",
+    courseKind: "curso",
+    date: dia("2026-10-22"),
+    endTime: "21:00",
+    canceled: false,
+    inscriptosActivos: 8,
+    marcas: 0,
+    sugerenciaZoom: true,
+  };
+
+  it("lleva a la planilla con la clase elegida", () => {
+    const [t, ...resto] = tareasDeSugerenciasDeZoom([base], reloj);
+    expect(resto).toEqual([]);
+    expect(t).toMatchObject({
+      ruleId: "asistencia_zoom",
+      href: "/cohorts/coh_1?tab=asistencia&clase=cs_9",
+      fecha: "2026-10-22",
+      detalle: "Clase de hace 4 días",
+      urgencia: "alta",
+    });
+  });
+
+  it("también las clases viejas (el relleno hacia atrás): sin corte de 14 días", () => {
+    expect(tareasDeSugerenciasDeZoom([{ ...base, date: dia("2026-03-02") }], reloj)).toHaveLength(1);
+  });
+
+  it("de ayer es media; sin sugerencia, con marcas, cancelada o de taller no es tarea", () => {
+    expect(tareasDeSugerenciasDeZoom([{ ...base, date: dia("2026-10-25") }], reloj)[0]?.urgencia).toBe("media");
+    expect(tareasDeSugerenciasDeZoom([{ ...base, sugerenciaZoom: false }], reloj)).toEqual([]);
+    expect(tareasDeSugerenciasDeZoom([{ ...base, marcas: 2 }], reloj)).toEqual([]);
+    expect(tareasDeSugerenciasDeZoom([{ ...base, canceled: true }], reloj)).toEqual([]);
+    expect(tareasDeSugerenciasDeZoom([{ ...base, courseKind: "taller" }], reloj)).toEqual([]);
+  });
+
+  it("las dos reglas no cuentan dos veces la misma clase", () => {
+    const sinPasar = { ...base, classSessionId: "cs_a", sugerenciaZoom: false };
+    const conSugerencia = { ...base, classSessionId: "cs_b" };
+    const clases = [sinPasar, conSugerencia];
+    const tareas = [...tareasDeAsistencia(clases, reloj), ...tareasDeSugerenciasDeZoom(clases, reloj)];
+    expect(tareas.map((t) => [t.ruleId, t.href])).toEqual([
+      ["asistencia", "/cohorts/coh_1?tab=asistencia"],
+      ["asistencia_zoom", "/cohorts/coh_1?tab=asistencia&clase=cs_b"],
+    ]);
+    const bandeja = armarBandeja(tareas);
+    expect(bandeja.map((g) => [g.ruleId, g.resumen])).toEqual([
+      ["asistencia_zoom", "1 clase con asistencia sugerida"],
+      ["asistencia", "1 clase sin pasar"],
+    ]);
+    expect(bandeja[0]!.titulo).toBe("Asistencia sugerida para revisar");
   });
 });
 
