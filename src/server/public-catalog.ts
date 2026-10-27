@@ -53,11 +53,39 @@ export type PublicTeacherDto = {
   photoUrl: string | null;
 };
 
+/**
+ * 2026-10-27 — Pedido del dueño: la web muestra cuándo y a qué hora se cursa.
+ * Días y horario son datos comerciales del grupo (los mismos que ve quien se
+ * anota). La fecha de FIN no sale, por decisión del dueño; tampoco cupo, aula,
+ * precio ni nada de alumnos.
+ */
 export type PublicCohortDto = {
   id: string;
+  /** Día de calendario a medianoche UTC (ISO 8601): leerlo en UTC. */
   startDate: string;
+  /**
+   * ISO 8601: 1 = lunes … 7 = domingo, ordenados. NO es el 0–6 interno de
+   * `cohort.days_of_week` (0 = lunes) ni el de `Date.getDay()` (0 = domingo):
+   * un contrato público con un 0 ambiguo termina mostrando el día equivocado.
+   */
+  daysOfWeek: number[];
+  /** "HH:MM" en `timeZone`; `null` si no se cargó. */
+  startTime: string | null;
+  endTime: string | null;
+  /** Zona IANA de la academia: el horario se cursa en esta zona. */
+  timeZone: string;
   teacher: PublicTeacherDto | null;
 };
+
+/** CSV interno (0 = lunes) → días ISO (1 = lunes), sin basura ni repetidos. */
+function diasIso(csv: string | null): number[] {
+  const dias = (csv ?? "")
+    .split(",")
+    .map((d) => d.trim())
+    .filter((d) => /^[0-6]$/.test(d))
+    .map((d) => Number(d) + 1);
+  return [...new Set(dias)].sort((a, b) => a - b);
+}
 
 export type PublicCategoryDto = { id: string; name: string; slug: string };
 
@@ -207,13 +235,26 @@ async function nextCohortsByCourse(
       id: schema.cohort.id,
       courseId: schema.cohort.courseId,
       startDate: schema.cohort.startDate,
+      daysOfWeek: schema.cohort.daysOfWeek,
+      startTime: schema.cohort.startTime,
+      endTime: schema.cohort.endTime,
+      timeZone: schema.organization.timezone,
       teacherId: schema.teacher.id,
       teacherName: schema.teacher.name,
       teacherTitle: schema.teacher.title,
       teacherPhoto: schema.teacher.photoMimeType,
     })
     .from(schema.cohort)
-    .leftJoin(schema.teacher, eq(schema.cohort.teacherId, schema.teacher.id))
+    // Con `organization_id` además de la FK, por lo mismo que `categoryJoinFor`:
+    // un profesor ajeno no publica su nombre ni su foto.
+    .leftJoin(
+      schema.teacher,
+      and(
+        eq(schema.cohort.teacherId, schema.teacher.id),
+        eq(schema.teacher.organizationId, organizationId)
+      )
+    )
+    .leftJoin(schema.organization, eq(schema.organization.id, schema.cohort.organizationId))
     .where(
       scoped(
         schema.cohort.organizationId,
@@ -229,6 +270,11 @@ async function nextCohortsByCourse(
     list.push({
       id: c.id,
       startDate: c.startDate.toISOString(),
+      daysOfWeek: diasIso(c.daysOfWeek ?? null),
+      startTime: c.startTime ?? null,
+      endTime: c.endTime ?? null,
+      // Mismo respaldo que `organizationTimezone`.
+      timeZone: c.timeZone ?? "America/Montevideo",
       teacher: c.teacherId
         ? {
             name: c.teacherName ?? "",
