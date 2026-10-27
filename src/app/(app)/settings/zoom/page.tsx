@@ -4,6 +4,7 @@ import { sessionCapabilities } from "@/lib/capabilities";
 import { withTenantTransaction } from "@/lib/db/with-tenant";
 import { listVirtualRooms } from "@/server/virtual-rooms";
 import { ZoomConnectionsClient } from "@/components/settings/zoom-connections-client";
+import { ZoomAttendanceSettings } from "@/components/settings/zoom-attendance-settings";
 
 export const dynamic = "force-dynamic";
 
@@ -25,5 +26,11 @@ export default async function ZoomSettingsPage() {
     () => listVirtualRooms(session.organizationId)
   );
 
-  return <ZoomConnectionsClient rooms={rooms.map((r) => ({ id: r.id, name: r.name }))} />;
+  return (
+    <div className="space-y-10">
+      <ZoomConnectionsClient rooms={rooms.map((r) => ({ id: r.id, name: r.name }))} />
+      {/* Constitución 1.9.0 — umbrales, clases pasadas y nombres aprendidos. */}
+      <ZoomAttendanceSettings />
+    </div>
+  );
 }

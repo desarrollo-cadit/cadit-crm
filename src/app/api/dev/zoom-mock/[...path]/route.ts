@@ -4,6 +4,9 @@ import {
   listRecordingsFor,
   listUsersFor,
   logZoomRequest,
+  participantsReportFor,
+  pastInstancesFor,
+  pastMeetingsReportFor,
   takeZoomFail,
 } from "@/server/dev/zoom-mock-state";
 
@@ -19,6 +22,9 @@ import {
  * - `POST oauth/token?grant_type=account_credentials&account_id=X`
  * - `GET v2/users`
  * - `GET v2/users/{id}/recordings`
+ * - `GET v2/report/users/{id}/meetings` (asistencia, 1.9.0)
+ * - `GET v2/past_meetings/{id}/instances`
+ * - `GET v2/report/meetings/{uuid}/participants`
  */
 export const dynamic = "force-dynamic";
 
@@ -61,7 +67,8 @@ export async function POST(req: Request, { params }: Params) {
       access_token: issued.token,
       token_type: "bearer",
       expires_in: 3600,
-      scope: "cloud_recording:read:list_user_recordings:admin user:read:list_users:admin",
+      scope:
+        "cloud_recording:read:list_user_recordings:admin user:read:list_users:admin report:read:list_meeting_participants:admin report:read:user:admin meeting:read:list_past_instances:admin",
     });
   }
 
@@ -105,8 +112,29 @@ export async function GET(req: Request, { params }: Params) {
       pageSize,
       nextPageToken,
     });
+  } else if (path.length === 5 && path[1] === "report" && path[2] === "users" && path[4] === "meetings") {
+    result = pastMeetingsReportFor(token, decodeURIComponent(path[3]!), {
+      from: q.get("from") ?? "",
+      to: q.get("to") ?? "",
+      pageSize,
+      nextPageToken,
+    });
+  } else if (path.length === 4 && path[1] === "past_meetings" && path[3] === "instances") {
+    result = pastInstancesFor(token, decodeURIComponent(path[2]!));
+  } else if (path.length === 5 && path[1] === "report" && path[2] === "meetings" && path[4] === "participants") {
+    result = participantsReportFor(token, decodificarUuid(path[3]!), { pageSize, nextPageToken });
   } else {
     return Response.json({ code: 404, message: "mock: ruta desconocida" }, { status: 404 });
   }
   return Response.json(result.body, { status: result.status });
+}
+
+/**
+ * El adaptador codifica DOS veces los UUID con `/` o `//` (como pide Zoom).
+ * Un UUID es base64 (sin `%`), así que se decodifica hasta que no quede nada.
+ */
+function decodificarUuid(segmento: string): string {
+  let out = segmento;
+  for (let i = 0; i < 3 && /%[0-9A-Fa-f]{2}/.test(out); i++) out = decodeURIComponent(out);
+  return out;
 }

@@ -1,4 +1,16 @@
+import { apiError } from "@/lib/api";
 import type { ConnErrorCode, ConnResult } from "./connections";
+
+/**
+ * 409 de "ya hay una corrida de Zoom" (traer asistencia o clases pasadas):
+ * el lease es el de la sincronización, así que el mensaje habla de Zoom en
+ * general. Una sola forma para las dos rutas.
+ */
+export function zoomEnCursoResponse(startedAt: Date | null): Response {
+  return apiError(409, "zoom_en_curso", "Ya hay una lectura de Zoom en curso. Probá de nuevo en unos minutos.", {
+    startedAt: startedAt?.toISOString() ?? null,
+  });
+}
 
 /**
  * 030 — El status HTTP de cada resultado tipado de conexiones, dicho UNA vez

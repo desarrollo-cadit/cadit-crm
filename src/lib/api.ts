@@ -12,7 +12,11 @@ export function apiError(
   status: number,
   code: string,
   message: string,
-  extra?: { fields?: { path: string; message: string }[] }
+  extra?: {
+    fields?: { path: string; message: string }[];
+    /** "Corriendo desde…" de un 409 por una corrida en curso (Zoom). */
+    startedAt?: string | null;
+  }
 ): Response {
   return Response.json({ error: { code, message, ...extra } }, { status });
 }

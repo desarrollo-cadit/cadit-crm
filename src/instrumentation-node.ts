@@ -47,6 +47,27 @@ export async function startZoomSyncOnBoot(): Promise<void> {
 }
 
 /**
+ * Constitución 1.9.0 — Asistencia sugerida desde Zoom al arrancar: purga los
+ * tramos crudos viejos (aun con la periódica apagada) y, si
+ * `ZOOM_ATTENDANCE_INTERVAL_MIN > 0`, la periódica que trae los reportes
+ * (incluido el relleno de clases pasadas sin asistencia). Misma guarda que
+ * la periódica de grabaciones; nada puede tumbar el arranque.
+ */
+export async function startZoomAttendanceOnBoot(): Promise<void> {
+  try {
+    const { shouldStartScheduler } = await import("@/server/zoom/scheduler");
+    if (!shouldStartScheduler(process.env)) return;
+    const { purgarCrudosAlArrancar, startZoomAttendanceScheduler } = await import(
+      "@/server/zoom/attendance-scheduler"
+    );
+    await purgarCrudosAlArrancar();
+    startZoomAttendanceScheduler();
+  } catch (err) {
+    console.error("[boot] asistencia de Zoom no arrancó:", err instanceof Error ? err.name : "error");
+  }
+}
+
+/**
  * 033 (FR-020) — El recordatorio de talleres por WhatsApp al arrancar, si
  * `WORKSHOP_REMINDER_INTERVAL_MIN > 0`. Usa la MISMA guarda que la periódica
  * de Zoom (`shouldStartScheduler`): el `process.env` del servidor standalone

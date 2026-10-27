@@ -677,4 +677,56 @@ describe("computeCohortStatus (iteración 4, feedback en vivo: status automátic
     const result = computeCohortStatus(new Date("2026-01-01"), null, new Date("2026-12-31"));
     expect(result).toBe("en_curso");
   });
+
+  /**
+   * 2026-10-27 — Las fechas se guardan como medianoche UTC del día, que en
+   * Montevideo (UTC-3) son las 21:00 del día ANTERIOR. Comparar contra ese
+   * instante daba el grupo por finalizado la noche antes de su última clase,
+   * y por empezado la noche antes de la primera. Los límites son los del día
+   * de la academia: empieza a las 00:00 del inicio y termina al cerrar el día
+   * del fin.
+   */
+  describe("los límites son el día completo en la zona de la academia", () => {
+    const inicio = new Date("2026-11-02T00:00:00Z");
+    const fin = new Date("2026-11-30T00:00:00Z");
+
+    it("el último día, a las 22:00 de Montevideo, sigue en curso", async () => {
+      const { computeCohortStatus } = await import("@/server/courses");
+      // 30/11 22:00 en Montevideo = 01/12 01:00 UTC.
+      expect(computeCohortStatus(inicio, fin, new Date("2026-12-01T01:00:00Z"))).toBe("en_curso");
+    });
+
+    it("la noche ANTES del último día también sigue en curso", async () => {
+      const { computeCohortStatus } = await import("@/server/courses");
+      // 29/11 22:00 en Montevideo = 30/11 01:00 UTC (pasada la medianoche UTC del fin).
+      expect(computeCohortStatus(inicio, fin, new Date("2026-11-30T01:00:00Z"))).toBe("en_curso");
+    });
+
+    it("al terminar el día del fin en Montevideo pasa a finalizada", async () => {
+      const { computeCohortStatus } = await import("@/server/courses");
+      // 01/12 00:00 en Montevideo = 01/12 03:00 UTC.
+      expect(computeCohortStatus(inicio, fin, new Date("2026-12-01T03:00:00Z"))).toBe("finalizada");
+      expect(computeCohortStatus(inicio, fin, new Date("2026-12-01T02:59:00Z"))).toBe("en_curso");
+    });
+
+    it("la noche antes del primer día sigue planificada", async () => {
+      const { computeCohortStatus } = await import("@/server/courses");
+      // 01/11 22:00 en Montevideo = 02/11 01:00 UTC.
+      expect(computeCohortStatus(inicio, fin, new Date("2026-11-02T01:00:00Z"))).toBe("planificada");
+      // 02/11 00:00 en Montevideo = 02/11 03:00 UTC.
+      expect(computeCohortStatus(inicio, fin, new Date("2026-11-02T03:00:00Z"))).toBe("en_curso");
+    });
+
+    it("respeta otra zona si la organización la tiene", async () => {
+      const { computeCohortStatus } = await import("@/server/courses");
+      // 30/11 23:30 en Madrid (UTC+1) = 30/11 22:30 UTC: sigue en curso.
+      expect(
+        computeCohortStatus(inicio, fin, new Date("2026-11-30T22:30:00Z"), "Europe/Madrid")
+      ).toBe("en_curso");
+      // 01/12 00:00 en Madrid = 30/11 23:00 UTC: finalizada.
+      expect(
+        computeCohortStatus(inicio, fin, new Date("2026-11-30T23:00:00Z"), "Europe/Madrid")
+      ).toBe("finalizada");
+    });
+  });
 });

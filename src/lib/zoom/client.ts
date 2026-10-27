@@ -3,6 +3,9 @@ import { getEnv } from "@/lib/env";
 import {
   ZoomError,
   type ZoomCredentials,
+  type ZoomPastInstance,
+  type ZoomPastMeeting,
+  type ZoomParticipantSegment,
   type ZoomRecordingMeeting,
   type ZoomUser,
 } from "./types";
@@ -213,7 +216,8 @@ async function request<S extends z.ZodTypeAny>(
   creds: ZoomCredentials,
   path: string,
   query: Record<string, string>,
-  schema: S
+  schema: S,
+  permisos: ZoomPermisos = "grabaciones"
 ): Promise<z.infer<S>> {
   return serial(creds.connectionId, async () => {
     const st = state();
@@ -270,10 +274,24 @@ async function request<S extends z.ZodTypeAny>(
         continue;
       }
 
-      if (res.status === 403) {
+      // Solo el `code` NUMÉRICO del cuerpo: el texto de Zoom no viaja jamás.
+      const zoomCode = await errorCodeOf(res);
+
+      if (res.status === 403 || (res.status === 400 && SIN_PERMISO_400.has(zoomCode ?? -1))) {
+        throw new ZoomError("sin_permiso", mensajeSinPermiso(permisos));
+      }
+      if (res.status === 404 && zoomCode === 3001) {
+        // "Meeting does not exist / has not ended": todavía en curso o Zoom
+        // no terminó de procesar el reporte. Se reintenta más tarde.
         throw new ZoomError(
-          "sin_permiso",
-          "La app de Zoom no tiene los permisos necesarios (scopes de lectura de usuarios y grabaciones)."
+          "no_terminada",
+          "Zoom todavía no tiene el reporte de esa reunión (sigue en curso o se está procesando)."
+        );
+      }
+      if (res.status === 400 && zoomCode === 12702) {
+        throw new ZoomError(
+          "fuera_de_plazo",
+          "Zoom ya no guarda el reporte de esa reunión (tiene más de un año)."
         );
       }
       if (res.status === 404) {
@@ -282,6 +300,60 @@ async function request<S extends z.ZodTypeAny>(
       throw new ZoomError("respuesta_invalida", `Zoom rechazó el pedido (HTTP ${res.status}).`);
     }
   });
+}
+
+/**
+ * Códigos de Zoom que, con HTTP 400, significan "esta app no puede": 4711 es
+ * el token sin el scope pedido (apps granulares) y 200 "sin permiso / solo
+ * cuentas pagas". [U] 4711 con 400 lo documenta el foro, no la referencia.
+ */
+const SIN_PERMISO_400 = new Set([4711, 200]);
+
+async function errorCodeOf(res: Response): Promise<number | null> {
+  const body: unknown = await res.json().catch(() => null);
+  if (body && typeof body === "object" && "code" in body) {
+    const n = Number((body as { code: unknown }).code);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+/** Qué permisos necesita cada familia de pedidos (para el mensaje del 403). */
+export type ZoomPermisos = "grabaciones" | "reportes";
+
+/**
+ * Scopes a agregar en el Marketplace, por familia. Los granulares van
+ * primero; entre paréntesis el equivalente clásico.
+ *
+ * `report:read:user:admin` (reporte de reuniones de un usuario, "Get meeting
+ * reports"): confirmado en la tabla oficial de scopes granulares el
+ * 2026-10-27. El nombre supuesto antes (`report:read:list_meetings:admin`) no
+ * existe en el selector de la app.
+ */
+export const SCOPES_POR_FAMILIA: Record<ZoomPermisos, string[]> = {
+  grabaciones: [
+    "cloud_recording:read:list_user_recordings:admin",
+    "user:read:list_users:admin",
+  ],
+  reportes: [
+    "report:read:list_meeting_participants:admin",
+    "report:read:user:admin",
+    "meeting:read:list_past_instances:admin",
+  ],
+};
+
+function mensajeSinPermiso(permisos: ZoomPermisos): string {
+  if (permisos === "reportes") {
+    return (
+      "La app de Zoom de esta cuenta no puede leer los reportes de reuniones. " +
+      "Requiere plan Pro o superior y estos permisos en el Marketplace: " +
+      `${SCOPES_POR_FAMILIA.reportes.join(", ")} (en apps clásicas: report:read:admin y meeting:read:admin).`
+    );
+  }
+  return (
+    "La app de Zoom no tiene los permisos necesarios. Agregá en el Marketplace: " +
+    `${SCOPES_POR_FAMILIA.grabaciones.join(", ")} (en apps clásicas: recording:read:admin y user:read:admin).`
+  );
 }
 
 /* ============================================================
@@ -438,4 +510,174 @@ export async function* listUserRecordings(
       next = page.next_page_token ?? "";
     } while (next);
   }
+}
+
+/* ============================================================
+ * Reportes de reuniones pasadas (constitución 1.9.0)
+ *
+ * SOLO LECTURA, para PROPONER la asistencia de una clase. Del reporte de
+ * participantes se toma lo mínimo (nombre, correo si viene, ids de Zoom,
+ * entrada/salida); IP, ubicación, dispositivo y versión se descartan acá y no
+ * llegan ni a la memoria del dominio.
+ * ============================================================ */
+
+/**
+ * Un UUID de instancia que empieza con `/` o contiene `//` va codificado DOS
+ * veces (lo pide Zoom); el resto, una.
+ */
+export function encodeMeetingUuid(uuid: string): string {
+  const once = encodeURIComponent(uuid);
+  return uuid.startsWith("/") || uuid.includes("//") ? encodeURIComponent(once) : once;
+}
+
+const participantsSchema = z
+  .object({
+    participants: z.array(
+      z
+        .object({
+          id: z.string().nullish(),
+          participant_user_id: z.string().nullish(),
+          registrant_id: z.string().nullish(),
+          name: z.string().nullish(),
+          user_email: z.string().nullish(),
+          join_time: z.string(),
+          leave_time: z.string().nullish(),
+          duration: z.number().nullish(),
+          status: z.string().nullish(),
+          bo_mtg_id: z.string().nullish(),
+        })
+        // Sin passthrough: lo que no se declara (IP, ubicación…) se descarta.
+        .strip()
+    ),
+    next_page_token: z.string().nullish(),
+  })
+  .passthrough();
+
+/**
+ * Participantes de UNA instancia (por UUID, nunca por número: en un aula PMI
+ * el número se repite entre grupos). Un tramo por conexión: quien se cae y
+ * vuelve aparece varias veces.
+ */
+export async function listMeetingParticipants(
+  creds: ZoomCredentials,
+  meetingUuid: string
+): Promise<ZoomParticipantSegment[]> {
+  const out: ZoomParticipantSegment[] = [];
+  let next = "";
+  do {
+    const page = await request(
+      creds,
+      `/report/meetings/${encodeMeetingUuid(meetingUuid)}/participants`,
+      {
+        page_size: "300",
+        include_fields: "registrant_id",
+        ...(next ? { next_page_token: next } : {}),
+      },
+      participantsSchema,
+      "reportes"
+    );
+    for (const p of page.participants) {
+      const name = (p.name ?? "").trim() || "Sin nombre";
+      const join = new Date(p.join_time);
+      const durationSec = Math.max(0, Math.round(p.duration ?? 0));
+      const leave = p.leave_time ? new Date(p.leave_time) : new Date(join.getTime() + durationSec * 1000);
+      const email = (p.user_email ?? "").trim().toLowerCase();
+      out.push({
+        participantId: (p.id ?? "").trim() || `anon:${name}`,
+        participantUserId: (p.participant_user_id ?? "").trim() || null,
+        registrantId: (p.registrant_id ?? "").trim() || null,
+        name,
+        email: email || null,
+        joinTime: join,
+        leaveTime: leave,
+        durationSec,
+        breakout: Boolean((p.bo_mtg_id ?? "").trim()),
+        waitingRoom: p.status === "in_waiting_room",
+      });
+    }
+    next = page.next_page_token ?? "";
+  } while (next);
+  return out;
+}
+
+const pastMeetingsSchema = z
+  .object({
+    meetings: z.array(
+      z
+        .object({
+          // [U] La referencia no garantiza `uuid` en este reporte: si falta,
+          // el servidor cae a `/past_meetings/{id}/instances`.
+          uuid: z.string().nullish(),
+          id: z.union([z.number(), z.string()]),
+          topic: z.string().nullish(),
+          start_time: z.string(),
+          end_time: z.string().nullish(),
+          duration: z.number().nullish(),
+        })
+        .passthrough()
+    ),
+    next_page_token: z.string().nullish(),
+  })
+  .passthrough();
+
+/**
+ * Reuniones YA TERMINADAS que hospedó un usuario de Zoom en [from, to]
+ * (YYYY-MM-DD). Zoom: rango ≤ 1 mes, dentro de los últimos 6 meses, y solo
+ * reuniones con ≥ 2 participantes.
+ */
+export async function listUserPastMeetings(
+  creds: ZoomCredentials,
+  zoomUserId: string,
+  range: { from: string; to: string }
+): Promise<ZoomPastMeeting[]> {
+  const out: ZoomPastMeeting[] = [];
+  let next = "";
+  do {
+    const page = await request(
+      creds,
+      `/report/users/${encodeURIComponent(zoomUserId)}/meetings`,
+      {
+        from: range.from,
+        to: range.to,
+        page_size: "300",
+        type: "past",
+        ...(next ? { next_page_token: next } : {}),
+      },
+      pastMeetingsSchema,
+      "reportes"
+    );
+    for (const m of page.meetings) {
+      out.push({
+        uuid: m.uuid || null,
+        meetingId: String(m.id),
+        topic: m.topic ?? null,
+        startTime: new Date(m.start_time),
+        endTime: m.end_time ? new Date(m.end_time) : null,
+        durationMin: m.duration ?? null,
+      });
+    }
+    next = page.next_page_token ?? "";
+  } while (next);
+  return out;
+}
+
+const instancesSchema = z
+  .object({
+    meetings: z.array(z.object({ uuid: z.string(), start_time: z.string() }).passthrough()).nullish(),
+  })
+  .passthrough();
+
+/** Instancias terminadas de un número de reunión (≤ 15 meses). */
+export async function listPastInstances(
+  creds: ZoomCredentials,
+  meetingId: string
+): Promise<ZoomPastInstance[]> {
+  const page = await request(
+    creds,
+    `/past_meetings/${encodeURIComponent(meetingId)}/instances`,
+    {},
+    instancesSchema,
+    "reportes"
+  );
+  return (page.meetings ?? []).map((m) => ({ uuid: m.uuid, startTime: new Date(m.start_time) }));
 }

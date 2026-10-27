@@ -34,12 +34,52 @@ export type ZoomMockUser = {
   /** Sala personal (Zoom la manda como número). */
   pmi?: number;
   recordings?: ZoomMockRecording[];
+  /** Reuniones que hospedó (reportes de asistencia, constitución 1.9.0). */
+  pastMeetings?: ZoomMockPastMeeting[];
+};
+
+/**
+ * Un tramo del reporte de participantes, con la forma de Zoom. El mock le
+ * agrega el ruido que Zoom manda (IP, ubicación, dispositivo) para que el
+ * adaptador demuestre que lo descarta.
+ */
+export type ZoomMockParticipant = {
+  id?: string;
+  user_id?: string;
+  participant_user_id?: string;
+  registrant_id?: string;
+  name: string;
+  user_email?: string;
+  join_time: string;
+  leave_time?: string;
+  duration?: number;
+  status?: "in_meeting" | "in_waiting_room";
+  bo_mtg_id?: string;
+};
+
+export type ZoomMockPastMeeting = {
+  uuid: string;
+  id: number | string;
+  topic?: string | null;
+  start_time: string;
+  end_time?: string;
+  duration?: number;
+  participants?: ZoomMockParticipant[];
+  /**
+   * `lista` (default) · `en_proceso` (404 3001: en curso o sin procesar) ·
+   * `vieja` (400 12702: más de un año).
+   */
+  state?: "lista" | "en_proceso" | "vieja";
 };
 
 export type ZoomMockSeed = {
   accounts: { accountId: string; users: ZoomMockUser[] }[];
   /** Fuerza el tamaño de página (para probar la paginación con pocos datos). */
   pageSize?: number;
+  /** Los reportes responden 400 / 4711 (app sin el scope de reportes). */
+  reportsForbidden?: boolean;
+  /** El reporte de reuniones del usuario no trae `uuid` (el [U] del diseño). */
+  userReportOmitsUuid?: boolean;
 };
 
 export type ZoomMockFail = { status: 401 | 429 | 500; times: number; retryAfterSec?: number };
@@ -64,6 +104,11 @@ function state(): ZoomMockState {
 /** Reemplaza cuentas, usuarios y grabaciones. Conserva el log. */
 export function seedZoomMock(seed: ZoomMockSeed): void {
   state().seed = seed;
+}
+
+/** El seed vigente (tests y endpoints de prueba). */
+export function readSeed(): ZoomMockSeed {
+  return state().seed;
 }
 
 /** Vacía todo: estado, falla programada y log. */
@@ -205,6 +250,136 @@ export function listRecordingsFor(
         password: r.password ?? null,
         auto_delete_date: r.auto_delete_date ?? null,
         recording_files: (r.recording_files ?? []).map((f) => ({ file_type: f.file_type })),
+      })),
+    },
+  };
+}
+
+/* ============================================================
+ * Reportes de reuniones pasadas (asistencia sugerida, 1.9.0)
+ * ============================================================ */
+
+const sinPermiso = (): MockResult => ({
+  status: 400,
+  body: { code: 4711, message: "Invalid access token, does not contain scopes:[report:read:list_meeting_participants:admin]." },
+});
+
+const noTerminada = (): MockResult => ({
+  status: 404,
+  body: { code: 3001, message: "Meeting does not exist or has not ended." },
+});
+
+/** `GET /report/users/{id}/meetings`: las terminadas cuyo inicio cae en [from, to]. */
+export function pastMeetingsReportFor(
+  token: string,
+  userId: string,
+  opts: { from: string; to: string; pageSize?: number; nextPageToken?: string }
+): MockResult {
+  const account = accountOf(token);
+  if (!account) return unauthorized();
+  if (state().seed.reportsForbidden) return sinPermiso();
+  const user = account.users.find((u) => u.id === userId);
+  if (!user) return { status: 404, body: { code: 1001, message: "User does not exist." } };
+  const from = Date.parse(`${opts.from}T00:00:00Z`);
+  const to = Date.parse(`${opts.to}T00:00:00Z`);
+  if (Number.isNaN(from) || Number.isNaN(to) || to < from || (to - from) / DAY_MS + 1 > 31) {
+    return { status: 400, body: { code: 300, message: "Invalid date range." } };
+  }
+  const enRango = (user.pastMeetings ?? []).filter((m) => {
+    if ((m.state ?? "lista") === "en_proceso") return false;
+    const day = Date.parse(`${m.start_time.slice(0, 10)}T00:00:00Z`);
+    return day >= from && day <= to;
+  });
+  const size = state().seed.pageSize ?? opts.pageSize ?? 30;
+  const { page, next } = paginate(enRango, size, opts.nextPageToken);
+  const sinUuid = state().seed.userReportOmitsUuid === true;
+  return {
+    status: 200,
+    body: {
+      from: opts.from,
+      to: opts.to,
+      page_size: size,
+      total_records: enRango.length,
+      next_page_token: next,
+      meetings: page.map((m) => ({
+        ...(sinUuid ? {} : { uuid: m.uuid }),
+        id: m.id,
+        host_id: user.id,
+        topic: m.topic ?? null,
+        start_time: m.start_time,
+        end_time: m.end_time ?? null,
+        duration: m.duration ?? null,
+        participants_count: new Set((m.participants ?? []).map((p) => p.name)).size,
+      })),
+    },
+  };
+}
+
+function allPastMeetings(account: { users: ZoomMockUser[] }): ZoomMockPastMeeting[] {
+  return account.users.flatMap((u) => u.pastMeetings ?? []);
+}
+
+/** `GET /past_meetings/{id}/instances`: solo las ya terminadas. */
+export function pastInstancesFor(token: string, meetingId: string): MockResult {
+  const account = accountOf(token);
+  if (!account) return unauthorized();
+  if (state().seed.reportsForbidden) return sinPermiso();
+  const instancias = allPastMeetings(account).filter(
+    (m) => String(m.id) === meetingId && (m.state ?? "lista") !== "en_proceso"
+  );
+  if (instancias.length === 0) return noTerminada();
+  return {
+    status: 200,
+    body: { meetings: instancias.map((m) => ({ uuid: m.uuid, start_time: m.start_time })) },
+  };
+}
+
+/** `GET /report/meetings/{uuid}/participants`, paginado, con ruido de Zoom. */
+export function participantsReportFor(
+  token: string,
+  uuid: string,
+  opts: { pageSize?: number; nextPageToken?: string }
+): MockResult {
+  const account = accountOf(token);
+  if (!account) return unauthorized();
+  if (state().seed.reportsForbidden) return sinPermiso();
+  const meeting = allPastMeetings(account).find((m) => m.uuid === uuid);
+  if (!meeting) return noTerminada();
+  const estado = meeting.state ?? "lista";
+  if (estado === "en_proceso") return noTerminada();
+  if (estado === "vieja") {
+    return { status: 400, body: { code: 12702, message: "Can not access a meeting a year ago." } };
+  }
+  const todos = meeting.participants ?? [];
+  const size = state().seed.pageSize ?? opts.pageSize ?? 300;
+  const { page, next } = paginate(todos, size, opts.nextPageToken);
+  return {
+    status: 200,
+    body: {
+      page_size: size,
+      total_records: todos.length,
+      next_page_token: next,
+      participants: page.map((p, i) => ({
+        id: p.id ?? "",
+        user_id: p.user_id ?? String(16778240 + i),
+        participant_user_id: p.participant_user_id ?? "",
+        registrant_id: p.registrant_id ?? "",
+        name: p.name,
+        user_email: p.user_email ?? "",
+        join_time: p.join_time,
+        leave_time: p.leave_time ?? null,
+        duration: p.duration ?? 0,
+        status: p.status ?? "in_meeting",
+        bo_mtg_id: p.bo_mtg_id ?? "",
+        failover: false,
+        customer_key: "",
+        // Ruido real de Zoom: el adaptador lo DESCARTA (constitución 1.9.0 c).
+        ip_address: "10.0.0." + (i + 1),
+        location: "Montevideo (UY)",
+        network_type: "Wifi",
+        device: "Mac",
+        pc_name: "PC-" + (i + 1),
+        version: "6.2.0",
       })),
     },
   };

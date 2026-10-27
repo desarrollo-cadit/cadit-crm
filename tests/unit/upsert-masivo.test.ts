@@ -71,6 +71,24 @@ beforeEach(() => {
 });
 
 describe("markAttendance — una sola sentencia", () => {
+  it("la confirmación de Zoom guarda origen zoom y los minutos de cada alumno", async () => {
+    selectRows = [{ id: "cls_1", canceledAt: null }];
+    await markAttendance(
+      "org_1",
+      "cls_1",
+      [
+        { enrollmentId: "enr_1", status: "presente", zoomMinutes: 95 },
+        { enrollmentId: "enr_2", status: "ausente", zoomMinutes: 0 },
+      ],
+      "usr_coord",
+      { origen: "zoom" }
+    );
+    expect(inserts[0]!.values.map((v) => [v.source, v.zoomMinutes, v.recordedBy])).toEqual([
+      ["zoom", 95, "usr_coord"],
+      ["zoom", 0, "usr_coord"],
+    ]);
+  });
+
   it("marca a toda la planilla con UN insert multi-fila", async () => {
     selectRows = [{ id: "cls_1", canceledAt: null }];
     const r = await markAttendance(
@@ -88,9 +106,11 @@ describe("markAttendance — una sola sentencia", () => {
     expect(inserts[0]!.values.map((v) => v.enrollmentId)).toEqual(["enr_1", "enr_2", "enr_3"]);
     expect(inserts[0]!.values.every((v) => v.recordedBy === "usr_prof")).toBe(true);
     expect(inserts[0]!.values[1]!.notes).toBe("avisó");
+    // Desde 0080: una marca de la planilla dice que es manual y no lleva minutos de Zoom.
+    expect(inserts[0]!.values.every((v) => v.source === "manual" && v.zoomMinutes === null)).toBe(true);
     // La corrección pisa estado, nota y autor: los toma de la fila propuesta.
     expect(Object.keys(inserts[0]!.set!).sort()).toEqual(
-      ["notes", "recordedBy", "status", "updatedAt"].sort()
+      ["notes", "recordedBy", "source", "status", "updatedAt", "zoomMinutes"].sort()
     );
   });
 

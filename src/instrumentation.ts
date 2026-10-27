@@ -14,10 +14,12 @@ export async function register(): Promise<void> {
       startMarketingOnBoot,
       startStaffNoticesOnBoot,
       startWorkshopRemindersOnBoot,
+      startZoomAttendanceOnBoot,
       startZoomSyncOnBoot,
     } = await import("./instrumentation-node");
     await cleanupOrphanRuns();
     await startZoomSyncOnBoot();
+    await startZoomAttendanceOnBoot();
     await startWorkshopRemindersOnBoot();
     await startStaffNoticesOnBoot();
     await startMarketingOnBoot();

@@ -628,7 +628,13 @@ export async function listSessions(
 export async function markAttendance(
   organizationId: string,
   classSessionId: string,
-  entries: { enrollmentId: string; status: AttendanceStatus; notes?: string | null }[],
+  entries: {
+    enrollmentId: string;
+    status: AttendanceStatus;
+    notes?: string | null;
+    /** 0080 — Minutos conectado según Zoom (solo con `origen: "zoom"`). */
+    zoomMinutes?: number | null;
+  }[],
   /**
    * 014 (DV-001) — Quién marca. Con el portal, la asistencia deja de tocarla
    * solo la coordinación, y una corrección sin autor no se puede revisar.
@@ -640,7 +646,14 @@ export async function markAttendance(
    * marcar con lo que tenía cargado; si alguien marcó a un alumno mientras
    * tanto, su marca gana.
    */
-  opciones: { soloSinMarca?: boolean } = {}
+  opciones: {
+    soloSinMarca?: boolean;
+    /**
+     * 0080 — De dónde sale la marca. `zoom` SOLO desde la confirmación de la
+     * sugerencia de Zoom (`confirmarAsistenciaDeZoom`): una persona la miró.
+     */
+    origen?: "manual" | "zoom";
+  } = {}
 ): Promise<AttendanceResult<{ marked: number }>> {
   const db = getDb();
 
@@ -688,6 +701,8 @@ export async function markAttendance(
     status: e.status,
     notes: e.notes ?? null,
     recordedBy: recordedBy ?? null,
+    source: opciones.origen ?? ("manual" as const),
+    zoomMinutes: opciones.origen === "zoom" ? (e.zoomMinutes ?? null) : null,
   }));
 
   if (opciones.soloSinMarca) {
@@ -712,6 +727,9 @@ export async function markAttendance(
         // La corrección pisa al autor anterior: quien vale es quien dejó el
         // dato como está ahora, no quien lo puso mal la primera vez.
         recordedBy: sql`excluded.recorded_by`,
+        // Una corrección a mano de una marca de Zoom deja de ser de Zoom.
+        source: sql`excluded.source`,
+        zoomMinutes: sql`excluded.zoom_minutes`,
         updatedAt: now,
       },
     });

@@ -20,17 +20,19 @@ const GRUPOS: GrupoDeTareas[] = [
   {
     ruleId: "asistencia",
     titulo: "Asistencia sin pasar",
-    resumen: "2 clases sin pasar",
+    resumen: "5 clases sin pasar en 2 grupos",
+    cantidad: 5,
     urgencia: "alta",
     items: [
-      { ruleId: "asistencia", titulo: "Revit — Martes", detalle: "Clase de hace 5 días", href: "/cohorts/c1?tab=asistencia", urgencia: "alta" },
-      { ruleId: "asistencia", titulo: "AutoCAD — Noche", detalle: "Clase de ayer", href: "/cohorts/c2?tab=asistencia", urgencia: "media" },
+      { ruleId: "asistencia", titulo: "Revit — Martes", detalle: "4 clases sin pasar · la más vieja de hace 5 días", href: "/cohorts/c1?tab=asistencia", urgencia: "alta", cantidad: 4 },
+      { ruleId: "asistencia", titulo: "AutoCAD — Noche", detalle: "Clase de ayer", href: "/cohorts/c2?tab=asistencia", urgencia: "media", cantidad: 1 },
     ],
   },
   {
     ruleId: "facturar",
     titulo: "Pendientes de facturar",
     resumen: "1 grupo con ventas sin factura",
+    cantidad: 1,
     urgencia: "media",
     items: [
       { ruleId: "facturar", titulo: "BIM — 4", detalle: "1 inscripción sin factura", href: "/facturacion?tab=pendientes&grupo=c3", urgencia: "media" },
@@ -42,7 +44,10 @@ describe("Para resolver", () => {
   it("lleva el total en el encabezado, la cantidad de cada regla y su marca", () => {
     const h = html(createElement(ParaResolver, { grupos: GRUPOS }));
     expect(h).toContain("Para resolver");
-    expect(h).toMatch(/rounded-full bg-brand[^"]*">3</);
+    // Las reglas de asistencia cuentan CLASES (5), aunque vengan en 2 items por grupo.
+    expect(h).toMatch(/rounded-full bg-brand[^"]*">6</);
+    expect(h).toMatch(/tabular-nums[^"]*">5</);
+    expect(h).toContain("5 clases sin pasar en 2 grupos");
     expect(h).toContain("Urgente");
     expect(h).toContain("Esta semana");
   });
@@ -57,6 +62,7 @@ describe("Para resolver", () => {
 
   it("cada regla tiene su acción", () => {
     expect(ACCION_DE_REGLA).toEqual({
+      asistencia_zoom: "Revisar y confirmar",
       asistencia: "Pasar asistencia",
       confirmar: "Confirmar o cancelar",
       facturar: "Ir a facturación",
@@ -99,6 +105,55 @@ describe("Agenda de hoy", () => {
     expect(html(createElement(AgendaDeHoy, { clases: [], timeZone: TZ, now: AHORA }))).toContain(
       "No hay clases programadas para hoy."
     );
+  });
+});
+
+describe("Para resolver y Agenda de hoy: mismo alto, scroll adentro", () => {
+  const panel = readFileSync(join(process.cwd(), "src", "components", "dashboard", "today-panel.tsx"), "utf8");
+  const ALTO = "clamp(22rem,60vh,38rem)";
+
+  it("lado a lado comparten UN alto acotado por la ventana; sola, la agenda lo usa de máximo", () => {
+    expect(panel).toContain(`min-[1100px]:h-[${ALTO}]`);
+    expect(panel).toContain("min-[1100px]:grid-rows-[minmax(0,1fr)]");
+    expect(panel).toContain("min-[1100px]:items-stretch");
+    expect(panel).toContain(`min-[1100px]:max-h-[${ALTO}]`);
+  });
+
+  it("la lista de tareas se desplaza adentro y el encabezado queda afuera", () => {
+    const h = html(createElement(ParaResolver, { grupos: GRUPOS }));
+    expect(h).toContain("scroll-con-borde");
+    expect(h.indexOf("Para resolver")).toBeLessThan(h.indexOf("scroll-con-borde"));
+  });
+
+  it("el scroll interno es solo desde 1100px: apiladas, alto natural (sin scroll dentro de scroll)", () => {
+    const zona = readFileSync(join(process.cwd(), "src", "components", "dashboard", "zona-con-scroll.tsx"), "utf8");
+    expect(zona).toContain("min-[1100px]:overflow-y-auto");
+    expect(zona).not.toMatch(/(^|[\s"])overflow-y-auto/);
+    // Con movimiento reducido, salta.
+    expect(zona).toContain("prefers-reduced-motion: reduce");
+  });
+
+  it("la agenda marca la línea de ahora para traerla a la vista", () => {
+    const AHORA = new Date("2026-10-26T18:42:00Z");
+    const h = html(
+      createElement(AgendaDeHoy, {
+        clases: [
+          {
+            date: "2026-10-26T00:00:00.000Z",
+            cohortId: "x",
+            projected: false,
+            cohortName: "Tarde",
+            courseName: "Revit",
+            startTime: "19:00",
+            endTime: "21:00",
+          },
+        ],
+        timeZone: "America/Montevideo",
+        now: AHORA,
+      })
+    );
+    expect(h).toContain("data-ahora");
+    expect(panel).toContain('enfocar="[data-ahora]"');
   });
 });
 

@@ -14,6 +14,8 @@ import {
   tareasDeConfirmacion,
   tareasDeFacturacion,
   tareasDeLeads,
+  tareasDeSugerenciasDeZoom,
+  type ClaseParaTarea,
   type GrupoDeTareas,
   type ReglaDeTarea,
   type TareaDeHoy,
@@ -48,6 +50,8 @@ export async function tareasDelDia(
   const reloj: RelojDeAsistencia = { timeZone, now };
 
   const lectores: Record<ReglaDeTarea, () => Promise<TareaDeHoy[]>> = {
+    asistencia_zoom: async () =>
+      tareasDeSugerenciasDeZoom(await clasesConSugerencia(organizationId, now), reloj),
     asistencia: async () => tareasDeAsistencia(await clasesSinMarcas(organizationId, now), reloj),
     confirmar: async () => tareasDeConfirmacion(await gruposPorConfirmar(organizationId, now), reloj),
     facturar: async () => tareasDeFacturacion(await ventasSinFactura(organizationId, now), reloj),
@@ -63,16 +67,19 @@ export async function tareasDelDia(
 /**
  * Las clases no canceladas de los últimos 14 días (hasta hoy) y, en dos
  * consultas agregadas más, sus marcas y los inscriptos activos de su grupo.
+ * Las fechas del grupo viajan para que la regla pura deje afuera a los
+ * finalizados (`computeCohortStatus`, la de Académico).
  */
 async function clasesSinMarcas(organizationId: string, now: Date) {
-  const db = getDb();
-  const clases = await db
+  const clases = await getDb()
     .select({
       classSessionId: schema.classSession.id,
       cohortId: schema.classSession.cohortId,
       cohortName: schema.cohort.name,
       courseName: schema.course.name,
       courseKind: schema.course.kind,
+      cohortStartDate: schema.cohort.startDate,
+      cohortEndDate: schema.cohort.endDate,
       date: schema.classSession.date,
       endTime: schema.classSession.endTime,
       canceledAt: schema.classSession.canceledAt,
@@ -90,12 +97,69 @@ async function clasesSinMarcas(organizationId: string, now: Date) {
         lte(schema.classSession.date, new Date(now.getTime() + DIA_MS))
       )
     );
+  return completarClases(organizationId, clases);
+}
+
+/**
+ * Constitución 1.9.0 — Las clases con una sugerencia de Zoom lista y sin
+ * confirmar, de CUALQUIER fecha (el relleno hacia atrás incluido).
+ */
+async function clasesConSugerencia(organizationId: string, now: Date) {
+  const f = schema.zoomAttendanceFetch;
+  const clases = await getDb()
+    .select({
+      classSessionId: schema.classSession.id,
+      cohortId: schema.classSession.cohortId,
+      cohortName: schema.cohort.name,
+      courseName: schema.course.name,
+      courseKind: schema.course.kind,
+      cohortStartDate: schema.cohort.startDate,
+      cohortEndDate: schema.cohort.endDate,
+      date: schema.classSession.date,
+      endTime: schema.classSession.endTime,
+      canceledAt: schema.classSession.canceledAt,
+    })
+    .from(f)
+    .innerJoin(schema.classSession, eq(f.classSessionId, schema.classSession.id))
+    .innerJoin(schema.cohort, eq(schema.classSession.cohortId, schema.cohort.id))
+    .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
+    .where(
+      scoped(
+        f.organizationId,
+        organizationId,
+        eq(f.status, "lista"),
+        isNull(f.reviewedAt),
+        isNull(schema.classSession.canceledAt),
+        ne(schema.course.kind, "taller"),
+        lte(schema.classSession.date, new Date(now.getTime() + DIA_MS))
+      )
+    );
+  return completarClases(organizationId, clases);
+}
+
+type FilaDeClase = {
+  classSessionId: string;
+  cohortId: string;
+  cohortName: string | null;
+  courseName: string;
+  courseKind: ClaseParaTarea["courseKind"];
+  cohortStartDate: Date;
+  cohortEndDate: Date | null;
+  date: Date;
+  endTime: string | null;
+  canceledAt: Date | null;
+};
+
+/** Marcas, inscriptos activos y sugerencia de Zoom, en tres consultas agregadas. */
+async function completarClases(organizationId: string, clases: FilaDeClase[]): Promise<ClaseParaTarea[]> {
   if (clases.length === 0) return [];
+  const db = getDb();
 
   const sesiones = clases.map((c) => c.classSessionId);
   const grupos = [...new Set(clases.map((c) => c.cohortId))];
 
-  const [marcas, inscriptos] = await Promise.all([
+  const f = schema.zoomAttendanceFetch;
+  const [marcas, inscriptos, sugerencias] = await Promise.all([
     db
       .select({ classSessionId: schema.attendance.classSessionId, n: count() })
       .from(schema.attendance)
@@ -120,7 +184,14 @@ async function clasesSinMarcas(organizationId: string, now: Date) {
         )
       )
       .groupBy(schema.enrollment.cohortId),
+    db
+      .select({ classSessionId: f.classSessionId })
+      .from(f)
+      .where(
+        scoped(f.organizationId, organizationId, inArray(f.classSessionId, sesiones), eq(f.status, "lista"), isNull(f.reviewedAt))
+      ),
   ]);
+  const conSugerencia = new Set(sugerencias.map((x) => x.classSessionId));
   const marcasPorClase = new Map(marcas.map((m) => [m.classSessionId, m.n]));
   const inscriptosPorGrupo = new Map(inscriptos.map((i) => [i.cohortId, i.n]));
 
@@ -130,11 +201,14 @@ async function clasesSinMarcas(organizationId: string, now: Date) {
     cohortName: c.cohortName,
     courseName: c.courseName,
     courseKind: c.courseKind,
+    cohortStartDate: c.cohortStartDate,
+    cohortEndDate: c.cohortEndDate,
     date: c.date,
     endTime: c.endTime,
     canceled: c.canceledAt !== null,
     inscriptosActivos: inscriptosPorGrupo.get(c.cohortId) ?? 0,
     marcas: marcasPorClase.get(c.classSessionId) ?? 0,
+    sugerenciaZoom: conSugerencia.has(c.classSessionId),
   }));
 }
 

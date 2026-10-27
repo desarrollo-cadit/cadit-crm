@@ -58,7 +58,8 @@ export const PATCH = requireCapability(
       session.organizationId,
       id,
       body.data.attendance,
-      undefined,
+      // Quién marca: sin esto la marca del panel quedaba sin autor.
+      session.userId,
       { soloSinMarca: body.data.onlyUnmarked === true }
     );
     if (!marked.ok) return apiError(marked.status, marked.code, marked.message);

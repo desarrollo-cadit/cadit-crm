@@ -1,7 +1,32 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Versión: 1.7.0 → 1.8.0
+Versión: 1.8.0 → 1.9.0
+
+Cambios (1.9.0, 2026-10-27, aprobada por el dueño para la asistencia
+sugerida desde Zoom):
+  - Principio II, ítem 5 (Zoom): se AMPLÍA la lectura de Zoom a los
+    reportes de participantes de reuniones YA TERMINADAS de las cuentas del
+    negocio, por el mismo adaptador `src/lib/zoom` y las mismas
+    credenciales, para PROPONER la asistencia de una clase con confirmación
+    humana. Condiciones (a)–(g): solo lectura; la sugerencia jamás escribe
+    asistencia sola (confirma o corrige alguien del equipo con la capacidad
+    de asistencia, y la marca guarda su autor); se guarda lo mínimo y el
+    detalle crudo se purga a los 180 días; los nombres aprendidos son de la
+    organización y se pueden olvidar; nada viaja a los portales; es
+    opcional; tests y entornos de prueba jamás llaman a Zoom real.
+  - Principio II, ítem 5: los scopes de solo lectura suman "leer los
+    reportes de reuniones pasadas y sus participantes"; siguen prohibidos
+    los de escritura, borrado y los de crear, editar o administrar
+    reuniones.
+  Bump: MINOR — expansión material del uso de una dependencia ya permitida,
+  sin dependencias nuevas; mismo criterio que 1.5.0, 1.7.0 y 1.8.0. La
+  viñeta del instalador no cambia (misma app, un permiso más).
+
+Plantillas dependientes: plan/spec/tasks — ✅ compatibles (sin secciones
+nuevas). CLAUDE.md — ✅ viñeta de Soberanía actualizada en el mismo cambio.
+
+Versión anterior: 1.7.0 → 1.8.0
 
 Cambios (1.8.0, 2026-10-22, aprobada por el dueño para la spec 045):
   - Principio II, ítem 3 (Microsoft 365 / Graph): se AMPLÍA el uso a
@@ -211,8 +236,10 @@ dependencias externas en runtime es CERRADA:
      cuentas de Zoom del propio negocio y adjudicar su enlace a las clases,
      accedido EXCLUSIVAMENTE a través del adaptador `src/lib/zoom`.
      Autenticación por Server-to-Server OAuth (account credentials) con
-     scopes de SOLO LECTURA (listar grabaciones en la nube y listar usuarios);
-     ningún scope de escritura, borrado ni de reuniones. Las credenciales
+     scopes de SOLO LECTURA (listar grabaciones en la nube, listar usuarios
+     y, desde 1.9.0, leer los reportes de reuniones pasadas y sus
+     participantes); ningún scope de escritura ni de borrado, y ninguno para
+     crear, editar o administrar reuniones. Las credenciales
      (Account ID, Client ID, Client Secret) se almacenan cifradas en reposo
      (AES-256-GCM, `lib/crypto`), NUNCA viajan al cliente ni a logs, y solo se
      muestran sus últimos 4 caracteres. El CRM NO descarga, almacena ni
@@ -228,6 +255,20 @@ dependencias externas en runtime es CERRADA:
      `/rec/play/`): el servidor NO descarga, retransmite ni almacena video y
      no usa credenciales para esto. Se aísla tras UN solo componente de UI;
      una clase sin enlace de Zoom funciona igual (se muestra el enlace).
+     **Además, desde 1.9.0, la asistencia sugerida desde Zoom**: el CRM
+     puede LEER, por el mismo adaptador y las mismas credenciales, el reporte
+     de participantes de una reunión YA TERMINADA de las cuentas del negocio,
+     para PROPONER la asistencia de esa clase. Condiciones: (a) solo
+     lectura; (b) la sugerencia JAMÁS escribe asistencia por sí sola: solo
+     una persona del equipo con la capacidad de asistencia la confirma o la
+     corrige, y la marca guarda su autor; (c) se guarda lo mínimo —nombre
+     visible, correo si Zoom lo informa, identificadores de Zoom y horarios
+     de entrada y salida—, nunca IP, ubicación ni datos del dispositivo, y el
+     detalle crudo se purga a los 180 días; (d) los nombres aprendidos son de
+     la organización y se pueden olvidar; (e) nada de esto viaja a los
+     portales; (f) es OPCIONAL: sin Zoom, sin plan que incluya reportes o sin
+     el permiso, la asistencia se pasa a mano como siempre; (g) los tests y
+     entornos de prueba JAMÁS llaman a Zoom real.
 - **PROHIBIDO en v1**: almacenamiento de objetos externo (S3/R2), Stripe u otro
   billing, y servicios de Google. Cualquier feature que los requiera queda fuera
   del alcance de v1.
@@ -434,4 +475,4 @@ práctica, convención o preferencia; ante un conflicto, gana la constitución.
 - **Propagación**: al enmendar la constitución se revisan y, si procede, se actualizan
   las plantillas dependientes (plan, spec, tasks).
 
-**Version**: 1.8.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-10-22
+**Version**: 1.9.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-10-27
