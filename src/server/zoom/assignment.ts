@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { esGrabacionCorta, MINUTOS_MINIMOS_GRABACION } from "@/lib/recording-duration";
@@ -14,8 +14,13 @@ import { inOrgScope } from "./scope";
  * que es lo que ya leen los portales y la lista de clases: ninguno se toca.
  *
  * Tres promesas, cada una con test:
- *  - **Un enlace pegado a mano nunca se pisa.** La automática marca
- *    "conflicto"; reemplazar exige una decisión explícita (`replace`).
+ *  - **Un enlace pegado a mano nunca se pisa.** Contra una decisión de una
+ *    persona —un enlace pegado a mano o una grabación asignada a mano— la
+ *    automática queda "sin_clase", NO en "conflicto" (2026-10-27): la persona
+ *    ya decidió, y un "conflicto" ahí volvía en cada sincronización sin forma
+ *    de sacarlo. "Conflicto" queda solo entre automáticas (la que tiene la
+ *    clase no es desplazada por la nueva). Reemplazar exige una decisión
+ *    explícita (`replace`).
  *  - **Una decisión manual nunca la deshace la sincronización** (SC-005): el
  *    matcher saltea toda grabación `manual`.
  *  - **Se limpia solo lo propio**: desasignar borra el enlace de la clase solo
@@ -80,6 +85,12 @@ export interface AssignmentTx {
     classId: string
   ): Promise<{ id: string; assignmentMode: RecRow["assignmentMode"]; durationMin: number | null } | null>;
   updateRecording(id: string, patch: RecPatch): Promise<void>;
+  /**
+   * 2026-10-27 — Las AUTOMÁTICAS en "conflicto" con `classId` (salvo
+   * `exceptId`) pasan a "sin_clase": una persona acaba de decidir esa clase.
+   * Siguen automáticas. Devuelve cuántas.
+   */
+  releaseConflicts(classId: string, exceptId: string): Promise<number>;
   updateClass(id: string, patch: { recordingUrl: string | null; recordingSource: "manual" | "zoom" | null }): Promise<void>;
 }
 
@@ -176,7 +187,17 @@ async function evaluar(tx: AssignmentTx, rec: RecRow, ctx: MatchContext, now: Da
   const cls = await tx.getClass(c);
   const otra = await tx.recordingOnClass(c);
   const hayOtra = otra !== null && otra.id !== rec.id;
-  if (!cls || esManual(cls) || (hayOtra && !desplazaALaActual(rec, otra))) {
+  // 2026-10-27 — La clase ya la decidió una persona (enlace pegado o
+  // grabación asignada a mano): no hay nada que resolver, la competidora
+  // queda sin clase. Si quedara en "conflicto", cada sincronización la
+  // volvería a poner ahí (y no hay cómo descartarla desde la pantalla).
+  if (cls && (esManual(cls) || (hayOtra && otra.assignmentMode === "manual"))) {
+    await tx.updateRecording(rec.id, { ...sinClase, assignmentState: "sin_clase" });
+    return "sin_clase";
+  }
+  // `!cls`: la clase desapareció entre el contexto y el lock. Se deja como
+  // siempre; la próxima corrida ya no la tiene en el contexto y la suelta.
+  if (!cls || (hayOtra && !desplazaALaActual(rec, otra))) {
     await tx.updateRecording(rec.id, { ...sinClase, assignmentState: "conflicto", conflictClassSessionId: c });
     return "conflicto";
   }
@@ -237,6 +258,9 @@ export async function releaseForManualLink(
 ): Promise<void> {
   await deps.run(orgId, async (tx) => {
     await tx.lockClasses([classSessionId]);
+    // 2026-10-27 — Un enlace pegado a mano también es una decisión: las
+    // automáticas en conflicto con esta clase quedan sin clase.
+    await tx.releaseConflicts(classSessionId, "");
     const rec = await tx.recordingOnClass(classSessionId);
     if (!rec) return;
     await tx.updateRecording(rec.id, {
@@ -305,11 +329,20 @@ export async function assignManually(
       assignedAt: deps.now(),
     });
     await tx.updateClass(classSessionId, { recordingUrl: rec.playUrl, recordingSource: "zoom" });
+    // 2026-10-27 — Las otras automáticas que estaban en conflicto con esta
+    // clase quedan sin clase: la persona ya eligió. Siguen automáticas, así
+    // que "Volver a automático" no aplica y el matcher las sigue mirando (y
+    // ahora las deja sin clase mientras la clase tenga esta decisión).
+    await tx.releaseConflicts(classSessionId, rec.id);
     return { ok: true };
   });
 }
 
-/** Desasigna: la grabación queda `manual/sin_clase` y la sincronización la respeta. */
+/**
+ * Desasigna: la grabación queda `manual/sin_clase` y la sincronización la
+ * respeta. Sobre una sin clase (en "conflicto" o "ambigua") es el «Descartar»
+ * de la pantalla: no hay clase que limpiar (`clearClassIfOwned` no hace nada).
+ */
 export async function unassign(
   orgId: string,
   recordingId: string,
@@ -544,6 +577,23 @@ function dbTx(orgId: string): MissingTx {
         .update(r)
         .set({ ...patch, updatedAt: new Date() })
         .where(scoped(r.organizationId, orgId, eq(r.id, id)));
+    },
+    async releaseConflicts(classId, exceptId) {
+      const filas = await getDb()
+        .update(r)
+        .set({ assignmentState: "sin_clase", conflictClassSessionId: null, updatedAt: new Date() })
+        .where(
+          scoped(
+            r.organizationId,
+            orgId,
+            eq(r.conflictClassSessionId, classId),
+            eq(r.assignmentState, "conflicto"),
+            eq(r.assignmentMode, "auto"),
+            ne(r.id, exceptId)
+          )
+        )
+        .returning({ id: r.id });
+      return filas.length;
     },
     async updateClass(id, patch) {
       await getDb()

@@ -13,7 +13,7 @@ import type { MatchContext } from "@/server/zoom/matching";
  *
  * Almacenamiento en memoria con las mismas reglas que la base (una clase, una
  * grabación). Lo que se fija son las promesas al usuario:
- *  - un enlace pegado a mano nunca se pisa (conflicto, no reemplazo);
+ *  - un enlace pegado a mano nunca se pisa (la automática queda sin clase);
  *  - una decisión manual nunca la deshace la sincronización (SC-005);
  *  - desasignar limpia la clase SOLO si el enlace era el de esa grabación.
  */
@@ -51,6 +51,16 @@ const tx: AssignmentTx = {
     if ((r.assignmentState === "asignada") !== (r.classSessionId !== null)) {
       throw new Error("check violation: asignada ⇔ clase");
     }
+  },
+  async releaseConflicts(classId, exceptId) {
+    let n = 0;
+    for (const r of recs.values()) {
+      if (r.id !== exceptId && r.assignmentMode === "auto" && r.assignmentState === "conflicto" && r.conflictClassSessionId === classId) {
+        Object.assign(r, { assignmentState: "sin_clase", conflictClassSessionId: null });
+        n++;
+      }
+    }
+    return n;
   },
   async updateClass(id, patch) {
     Object.assign(classes.get(id)!, patch);
@@ -143,12 +153,12 @@ describe("applyMatch — la adjudicación automática", () => {
     expect(recs.get("r1")!.classSessionId).toBe("X9");
   });
 
-  it("clase con enlace MANUAL → conflicto, sin tocar la clase", async () => {
+  it("clase con enlace MANUAL → sin_clase (lo decidió una persona), sin tocar la clase", async () => {
     const { applyMatch } = await mod();
     rec("r1");
     clase("A1", { recordingUrl: "https://drive.example.com/x", recordingSource: "manual" });
-    expect(await applyMatch(ORG, "r1", ctx, deps())).toBe("conflicto");
-    expect(recs.get("r1")).toMatchObject({ assignmentState: "conflicto", conflictClassSessionId: "A1", classSessionId: null });
+    expect(await applyMatch(ORG, "r1", ctx, deps())).toBe("sin_clase");
+    expect(recs.get("r1")).toMatchObject({ assignmentState: "sin_clase", conflictClassSessionId: null, classSessionId: null });
     expect(classes.get("A1")).toMatchObject({ recordingUrl: "https://drive.example.com/x", recordingSource: "manual" });
   });
 
@@ -156,7 +166,7 @@ describe("applyMatch — la adjudicación automática", () => {
     const { applyMatch } = await mod();
     rec("r1");
     clase("A1", { recordingUrl: "https://drive.example.com/x", recordingSource: null });
-    expect(await applyMatch(ORG, "r1", ctx, deps())).toBe("conflicto");
+    expect(await applyMatch(ORG, "r1", ctx, deps())).toBe("sin_clase");
   });
 
   it("clase que ya tiene OTRA grabación (reunión reiniciada) → conflicto", async () => {
@@ -261,7 +271,10 @@ describe("grabaciones cortas y la más larga gana", () => {
     clase("A1", { recordingUrl: "https://zoom.us/rec/share/r0", recordingSource: "zoom" });
     rec("r0", { durationMin: 10, classSessionId: "A1", assignmentState: "asignada", assignmentMode: "manual" });
     rec("r1", { durationMin: 90 });
-    expect(await applyMatch(ORG, "r1", ctx, deps())).toBe("conflicto");
+    // La competidora queda sin clase, no en conflicto: si no, volvía a
+    // conflicto en cada sincronización y no había cómo sacarla de ahí.
+    expect(await applyMatch(ORG, "r1", ctx, deps())).toBe("sin_clase");
+    expect(recs.get("r1")).toMatchObject({ assignmentState: "sin_clase", conflictClassSessionId: null });
     expect(recs.get("r0")).toMatchObject({ classSessionId: "A1", assignmentState: "asignada" });
   });
 
@@ -411,5 +424,77 @@ describe("US3 — operaciones manuales", () => {
     expect(await applyMatch(ORG, "r1", ctx, deps())).toBeNull();
     expect(await applyMatch(ORG, "r2", ctx, deps())).toBeNull();
     expect(JSON.stringify([...recs.values()])).toBe(antes);
+  });
+});
+
+describe("2026-10-27 — conflictos contra una decisión humana no quedan trabados", () => {
+  it("una 'conflicto' vieja contra una asignación manual se limpia sola en la próxima sincronización", async () => {
+    const { applyMatch } = await mod();
+    clase("A1", { recordingUrl: "https://zoom.us/rec/share/r0", recordingSource: "zoom" });
+    rec("r0", { classSessionId: "A1", assignmentState: "asignada", assignmentMode: "manual" });
+    rec("r1", { assignmentState: "conflicto", conflictClassSessionId: "A1" });
+    expect(await applyMatch(ORG, "r1", ctx, deps())).toBe("sin_clase");
+    expect(recs.get("r1")).toMatchObject({ assignmentMode: "auto", assignmentState: "sin_clase", conflictClassSessionId: null });
+    expect(recs.get("r0")).toMatchObject({ classSessionId: "A1", assignmentState: "asignada" });
+  });
+
+  it("entre automáticas sigue habiendo conflicto (una persona tiene que mirar)", async () => {
+    const { applyMatch } = await mod();
+    clase("A1", { recordingUrl: "https://zoom.us/rec/share/r0", recordingSource: "zoom" });
+    rec("r0", { classSessionId: "A1", assignmentState: "asignada" });
+    rec("r1");
+    expect(await applyMatch(ORG, "r1", ctx, deps())).toBe("conflicto");
+  });
+
+  it("assignManually suelta las otras en 'conflicto' con esa clase: quedan auto/sin_clase", async () => {
+    const { assignManually } = await mod();
+    clase("A1");
+    clase("B1");
+    rec("r1", { assignmentState: "conflicto", conflictClassSessionId: "A1" });
+    rec("r2", { assignmentState: "conflicto", conflictClassSessionId: "A1" });
+    rec("r3", { assignmentState: "conflicto", conflictClassSessionId: "B1" });
+    expect(await assignManually(ORG, "r1", "A1", { replace: false, userId: "usr_1" }, deps())).toEqual({ ok: true });
+    expect(recs.get("r1")).toMatchObject({ classSessionId: "A1", assignmentMode: "manual", assignmentState: "asignada" });
+    expect(recs.get("r2")).toMatchObject({ assignmentMode: "auto", assignmentState: "sin_clase", conflictClassSessionId: null });
+    // La de otra clase no se toca.
+    expect(recs.get("r3")).toMatchObject({ assignmentState: "conflicto", conflictClassSessionId: "B1" });
+  });
+
+  it("Descartar = unassign sobre una sin clase (conflicto o ambigua): no toca ninguna clase", async () => {
+    const { unassign } = await mod();
+    clase("A1", { recordingUrl: "https://zoom.us/rec/share/r0", recordingSource: "zoom" });
+    rec("r1", { assignmentState: "conflicto", conflictClassSessionId: "A1" });
+    rec("r2", { assignmentState: "ambigua", candidateClassIds: ["A1", "C1"] });
+    expect(await unassign(ORG, "r1", "usr_1", deps())).toEqual({ ok: true });
+    expect(await unassign(ORG, "r2", "usr_1", deps())).toEqual({ ok: true });
+    for (const id of ["r1", "r2"]) {
+      expect(recs.get(id)).toMatchObject({
+        assignmentMode: "manual",
+        assignmentState: "sin_clase",
+        conflictClassSessionId: null,
+        candidateClassIds: [],
+      });
+    }
+    expect(classes.get("A1")).toMatchObject({ recordingUrl: "https://zoom.us/rec/share/r0", recordingSource: "zoom" });
+  });
+});
+
+describe("2026-10-27 — «Descartar» en la pantalla", () => {
+  it("una en conflicto o ambigua sin clase se puede descartar, y descartar es el mismo DELETE de desasignar", async () => {
+    const { readFileSync } = await import("node:fs");
+    const ui = readFileSync("src/components/recordings/assign-dialog.tsx", "utf8");
+    expect(ui).toMatch(/descartable\s*=\s*!actual\s*&&\s*\(row\.assignment\.state === "conflicto" \|\| row\.assignment\.state === "ambigua"\)/);
+    expect(ui).toMatch(/async function descartar\(\)[\s\S]*?\/api\/recordings\/\$\{row\.id\}\/assignment`, \{ method: "DELETE" \}/);
+    expect(ui).toContain("Descartar");
+  });
+});
+
+describe("2026-10-27 — pegar un enlace a mano también suelta los conflictos", () => {
+  it("releaseForManualLink deja sin clase a las automáticas en conflicto con esa clase", async () => {
+    const { releaseForManualLink } = await mod();
+    clase("A1", { recordingUrl: "https://drive.example.com/x", recordingSource: "manual" });
+    rec("r1", { assignmentState: "conflicto", conflictClassSessionId: "A1" });
+    await releaseForManualLink(ORG, "A1", "usr_1", deps());
+    expect(recs.get("r1")).toMatchObject({ assignmentMode: "auto", assignmentState: "sin_clase", conflictClassSessionId: null });
   });
 });
