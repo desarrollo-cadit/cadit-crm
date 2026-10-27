@@ -64,6 +64,7 @@ describe("Para resolver", () => {
     expect(ACCION_DE_REGLA).toEqual({
       asistencia_zoom: "Revisar y confirmar",
       asistencia: "Pasar asistencia",
+      grabaciones: "Resolver",
       confirmar: "Confirmar o cancelar",
       facturar: "Ir a facturación",
       leads: "Abrir seguimiento",

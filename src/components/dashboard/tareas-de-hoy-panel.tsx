@@ -42,6 +42,7 @@ export function TareasDeHoyPanel() {
 export const ACCION_DE_REGLA: Record<ReglaDeTarea, string> = {
   asistencia_zoom: "Revisar y confirmar",
   asistencia: "Pasar asistencia",
+  grabaciones: "Resolver",
   confirmar: "Confirmar o cancelar",
   facturar: "Ir a facturación",
   leads: "Abrir seguimiento",

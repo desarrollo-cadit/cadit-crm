@@ -6,6 +6,7 @@ import { avisoSinConfirmarQueToca, grupoRecibeAvisoSinConfirmar } from "@/lib/av
 import { enLaVista } from "@/lib/facturacion";
 import { diasHastaElInicio } from "@/lib/staff-notices";
 import { origenDelFormulario } from "@/lib/seguimiento";
+import { wallClockInZone } from "@/lib/schedule-time";
 
 /**
  * 2026-10-26 — "Hoy": lo que la persona que entra tiene que resolver, con el
@@ -22,7 +23,7 @@ import { origenDelFormulario } from "@/lib/seguimiento";
  * que solo consulta los datos de las reglas que la sesión puede ver.
  */
 
-export type ReglaDeTarea = "asistencia_zoom" | "asistencia" | "confirmar" | "facturar" | "leads";
+export type ReglaDeTarea = "asistencia_zoom" | "asistencia" | "grabaciones" | "confirmar" | "facturar" | "leads";
 export type Urgencia = "alta" | "media";
 
 export type TareaDeHoy = {
@@ -78,6 +79,14 @@ export const REGLAS_DE_TAREAS = [
     titulo: "Asistencia sin pasar",
     unidad: ["clase sin pasar", "clases sin pasar"],
     porGrupo: true,
+  },
+  {
+    // 2026-10-27 — Las que la sincronización no pudo adjudicar sola. Pide la
+    // capacidad que las adjudica: Soporte las ve pero no las mueve.
+    id: "grabaciones",
+    capacidades: ["grabaciones.gestionar"],
+    titulo: "Grabaciones para resolver",
+    unidad: ["grabación para resolver", "grabaciones para resolver"],
   },
   {
     id: "confirmar",
@@ -256,6 +265,54 @@ export function tareasDeSugerenciasDeZoom(
     "clases para revisar",
     (v) => `/cohorts/${v.cohortId}?tab=asistencia&clase=${v.classSessionId}`
   );
+}
+
+/* ============================================================ grabaciones */
+
+/** Los estados de `zoom_recording.assignment_state` que piden una decisión. */
+const ESTADOS_PARA_RESOLVER = {
+  ambigua: ["grabación ambigua", "grabaciones ambiguas"],
+  conflicto: ["grabación en conflicto", "grabaciones en conflicto"],
+} as const;
+
+/** Una fila agregada por estado: cuántas y el inicio de la más vieja. */
+export type GrabacionesPorEstado = {
+  estado: string;
+  cantidad: number;
+  masVieja: Date;
+};
+
+/**
+ * 2026-10-27 — Las grabaciones que la sincronización no pudo adjudicar sola:
+ * `ambigua` (más de una clase posible) y `conflicto` (la clase ya tiene otra).
+ * `sin_clase`, `pendiente` y `asignada` no piden nada. Un item por estado,
+ * que abre `/grabaciones` filtrada por ese estado; alta si la más vieja tiene
+ * más de 3 días. Las faltantes en Zoom las deja afuera la lectura: se van a
+ * borrar solas.
+ */
+export function tareasDeGrabaciones(
+  filas: readonly GrabacionesPorEstado[],
+  reloj: RelojDeAsistencia
+): TareaDeHoy[] {
+  const out: TareaDeHoy[] = [];
+  for (const f of filas) {
+    if (f.estado !== "ambigua" && f.estado !== "conflicto") continue;
+    if (f.cantidad <= 0) continue;
+    // El día de la grabación en la zona de la academia, no en UTC.
+    const fecha = wallClockInZone(f.masVieja, reloj.timeZone)?.fecha ?? diaGuardado(f.masVieja);
+    const hace = Math.max(0, -(diasHastaElInicio(new Date(`${fecha}T00:00:00Z`), reloj.now, reloj.timeZone) ?? 0));
+    const [uno, varios] = ESTADOS_PARA_RESOLVER[f.estado];
+    out.push({
+      ruleId: "grabaciones",
+      titulo: `${f.cantidad} ${f.cantidad === 1 ? uno : varios}`,
+      detalle: `La más vieja ${deHace(hace)}`,
+      href: `/grabaciones?state=${f.estado}`,
+      urgencia: hace > 3 ? "alta" : "media",
+      fecha,
+      cantidad: f.cantidad,
+    });
+  }
+  return out;
 }
 
 /* ============================================================ 2. confirmar */

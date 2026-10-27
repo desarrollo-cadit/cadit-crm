@@ -1,4 +1,4 @@
-import { count, eq, gte, inArray, isNull, lte, max, ne } from "drizzle-orm";
+import { count, eq, gte, inArray, isNull, lte, max, min, ne } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import type { Capability } from "@/lib/capabilities";
@@ -13,6 +13,7 @@ import {
   tareasDeAsistencia,
   tareasDeConfirmacion,
   tareasDeFacturacion,
+  tareasDeGrabaciones,
   tareasDeLeads,
   tareasDeSugerenciasDeZoom,
   type ClaseParaTarea,
@@ -53,6 +54,7 @@ export async function tareasDelDia(
     asistencia_zoom: async () =>
       tareasDeSugerenciasDeZoom(await clasesConSugerencia(organizationId, now), reloj),
     asistencia: async () => tareasDeAsistencia(await clasesSinMarcas(organizationId, now), reloj),
+    grabaciones: async () => tareasDeGrabaciones(await grabacionesParaResolver(organizationId), reloj),
     confirmar: async () => tareasDeConfirmacion(await gruposPorConfirmar(organizationId, now), reloj),
     facturar: async () => tareasDeFacturacion(await ventasSinFactura(organizationId, now), reloj),
     leads: async () => tareasDeLeads(await enviosSinRespuesta(organizationId, now), now),
@@ -210,6 +212,33 @@ async function completarClases(organizationId: string, clases: FilaDeClase[]): P
     marcas: marcasPorClase.get(c.classSessionId) ?? 0,
     sugerenciaZoom: conSugerencia.has(c.classSessionId),
   }));
+}
+
+/* ============================================================ grabaciones */
+
+/**
+ * Las grabaciones ambiguas o en conflicto, agregadas por estado (cuántas y el
+ * inicio de la más vieja) en UNA consulta. Las faltantes en Zoom
+ * (`missing_in_zoom_at`) quedan afuera: se van a borrar solas.
+ */
+async function grabacionesParaResolver(organizationId: string) {
+  const t = schema.zoomRecording;
+  const filas = await getDb()
+    .select({ estado: t.assignmentState, cantidad: count(), masVieja: min(t.startTime) })
+    .from(t)
+    .where(
+      scoped(
+        t.organizationId,
+        organizationId,
+        inArray(t.assignmentState, ["ambigua", "conflicto"]),
+        isNull(t.missingInZoomAt)
+      )
+    )
+    .groupBy(t.assignmentState);
+  return filas.flatMap((f) => {
+    const masVieja = aFecha(f.masVieja);
+    return masVieja ? [{ estado: f.estado, cantidad: Number(f.cantidad), masVieja }] : [];
+  });
 }
 
 /* ============================================================ confirmar */

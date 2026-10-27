@@ -6,10 +6,12 @@ import {
   tareasDeAsistencia,
   tareasDeConfirmacion,
   tareasDeFacturacion,
+  tareasDeGrabaciones,
   tareasDeLeads,
   tareasDeSugerenciasDeZoom,
   type ClaseParaTarea,
   type EnvioParaTarea,
+  type GrabacionesPorEstado,
   type GrupoParaConfirmar,
   type VentaParaFacturar,
 } from "@/lib/tareas-del-dia";
@@ -28,6 +30,7 @@ describe("reglasPermitidas — cada regla pide SU capacidad", () => {
     expect(REGLAS_DE_TAREAS.map((r) => [r.id, r.capacidades])).toEqual([
       ["asistencia_zoom", ["asistencia.editar", "grabaciones.gestionar"]],
       ["asistencia", ["asistencia.editar", "grabaciones.gestionar"]],
+      ["grabaciones", ["grabaciones.gestionar"]],
       ["confirmar", ["cohortes.confirmar"]],
       ["facturar", ["cobranza.ver"]],
       ["leads", ["inscripciones.seguimiento"]],
@@ -44,7 +47,8 @@ describe("reglasPermitidas — cada regla pide SU capacidad", () => {
         "cohortes.confirmar",
         "inscripciones.seguimiento",
       ])
-    ).toEqual(["asistencia_zoom", "asistencia", "confirmar", "leads"]);
+    ).toEqual(["asistencia_zoom", "asistencia", "grabaciones", "confirmar", "leads"]);
+    expect(reglasPermitidas(["grabaciones.ver", "grabaciones.gestionar"])).toEqual(["grabaciones"]);
   });
 
   it("Soporte pasa asistencia pero no la recibe como tarea; Coordinación sí", () => {
@@ -52,6 +56,13 @@ describe("reglasPermitidas — cada regla pide SU capacidad", () => {
     expect(capacidadesDe("soporte")).toContain("asistencia.editar");
     expect(reglasPermitidas(capacidadesDe("soporte"))).not.toContain("asistencia");
     expect(reglasPermitidas(capacidadesDe("coordinacion"))).toContain("asistencia");
+  });
+
+  it("Grabaciones para resolver: Coordinación la recibe, Soporte (que solo las ve) no", () => {
+    const capacidadesDe = (key: string) => SYSTEM_ROLES.find((r) => r.key === key)!.capabilities;
+    expect(reglasPermitidas(capacidadesDe("coordinacion"))).toContain("grabaciones");
+    expect(capacidadesDe("soporte")).toContain("grabaciones.ver");
+    expect(reglasPermitidas(capacidadesDe("soporte"))).not.toContain("grabaciones");
   });
 });
 
@@ -418,5 +429,82 @@ describe("armarBandeja — una entrada por regla, la más urgente primero", () =
 
   it("sin nada pendiente, la bandeja está vacía", () => {
     expect(armarBandeja([])).toEqual([]);
+  });
+});
+
+describe("tareasDeGrabaciones — grabaciones ambiguas o en conflicto, UN item por estado", () => {
+  const fila = (over: Partial<GrabacionesPorEstado> = {}): GrabacionesPorEstado => ({
+    estado: "ambigua",
+    cantidad: 3,
+    // 21/10 a las 22:30 en Montevideo (ya es 22/10 en UTC): el día cuenta en la zona.
+    masVieja: new Date("2026-10-22T01:30:00Z"),
+    ...over,
+  });
+
+  it("ambiguas y en conflicto: un item por estado, con el enlace filtrado", () => {
+    const tareas = tareasDeGrabaciones(
+      [fila(), fila({ estado: "conflicto", cantidad: 1, masVieja: new Date("2026-10-25T15:00:00Z") })],
+      reloj
+    );
+    expect(tareas).toEqual([
+      {
+        ruleId: "grabaciones",
+        titulo: "3 grabaciones ambiguas",
+        detalle: "La más vieja de hace 5 días",
+        href: "/grabaciones?state=ambigua",
+        urgencia: "alta",
+        fecha: "2026-10-21",
+        cantidad: 3,
+      },
+      {
+        ruleId: "grabaciones",
+        titulo: "1 grabación en conflicto",
+        detalle: "La más vieja de ayer",
+        href: "/grabaciones?state=conflicto",
+        urgencia: "media",
+        fecha: "2026-10-25",
+        cantidad: 1,
+      },
+    ]);
+  });
+
+  it("sin clase, pendiente o asignada no son tarea", () => {
+    expect(
+      tareasDeGrabaciones(
+        [fila({ estado: "sin_clase" }), fila({ estado: "pendiente" }), fila({ estado: "asignada" })],
+        reloj
+      )
+    ).toEqual([]);
+  });
+
+  it("sin grabaciones (cantidad 0) no hay item", () => {
+    expect(tareasDeGrabaciones([fila({ cantidad: 0 })], reloj)).toEqual([]);
+  });
+
+  it("alta si la más vieja tiene más de 3 días; a los 3, media", () => {
+    const [tres] = tareasDeGrabaciones([fila({ masVieja: new Date("2026-10-23T15:00:00Z") })], reloj);
+    const [cuatro] = tareasDeGrabaciones([fila({ masVieja: new Date("2026-10-22T15:00:00Z") })], reloj);
+    expect(tres).toMatchObject({ urgencia: "media", detalle: "La más vieja de hace 3 días" });
+    expect(cuatro?.urgencia).toBe("alta");
+  });
+
+  it("en la bandeja: cuenta GRABACIONES y va después de las reglas de asistencia", () => {
+    const bandeja = armarBandeja([
+      ...tareasDeGrabaciones(
+        [
+          fila({ masVieja: new Date("2026-10-25T15:00:00Z") }),
+          fila({ estado: "conflicto", cantidad: 1, masVieja: new Date("2026-10-25T16:00:00Z") }),
+        ],
+        reloj
+      ),
+      { ruleId: "asistencia", titulo: "Revit — 13", href: "/e", urgencia: "media", fecha: "2026-10-25" },
+      { ruleId: "confirmar", titulo: "BIM — 4", href: "/f", urgencia: "media" },
+    ]);
+    expect(bandeja.map((g) => [g.ruleId, g.resumen, g.cantidad])).toEqual([
+      ["asistencia", "1 clase sin pasar", 1],
+      ["grabaciones", "4 grabaciones para resolver", 4],
+      ["confirmar", "1 grupo por confirmar", 1],
+    ]);
+    expect(bandeja[1]!.titulo).toBe("Grabaciones para resolver");
   });
 });
