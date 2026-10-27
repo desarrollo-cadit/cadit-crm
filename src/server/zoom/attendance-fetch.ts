@@ -17,6 +17,7 @@ import {
 } from "@/lib/zoom";
 import { elegirInstancia, type InstanciaCandidata } from "@/lib/zoom-instance";
 import {
+  deGrupoFinalizado,
   estadoPorError,
   ESTADOS_REINTENTABLES,
   fueraDelPlazoDeZoom,
@@ -47,6 +48,11 @@ import { inOrgScope } from "./scope";
  *    una sola marca y con una reunión ubicable. Las de más de un año quedan
  *    "fuera de plazo" sin preguntarle a Zoom. Re-encolar no duplica (una
  *    fila por clase, `ON CONFLICT DO NOTHING`).
+ *  - **Grupos finalizados afuera** (2026-10-27, `deGrupoFinalizado`, la
+ *    regla de Académico): no se encolan, y lo que ya esperaba en la cola de
+ *    un grupo que terminó SALE de ella (como `descartar`: nunca una lista,
+ *    ambigua o confirmada). La clase queda como "todavía no se buscó" y el
+ *    botón "Traer de Zoom" sigue andando a mano.
  *
  * Ubicar la instancia (en orden):
  *  1. La grabación ya adjudicada a la clase trae su UUID (`grabacion`).
@@ -108,9 +114,12 @@ export interface AttendanceFetchStore {
   guardar(orgId: string, classId: string, r: ResultadoDeTraida, now: Date): Promise<void>;
   /** Deja la clase en la cola (estado pendiente). No pisa una confirmada. */
   marcarPendiente(orgId: string, classId: string, now: Date): Promise<"ok" | "confirmada">;
-  /** Encola clases sin marcas y con reunión ubicable. Idempotente. */
+  /**
+   * Encola clases sin marcas y con reunión ubicable, salvo las de grupos
+   * finalizados (y saca de la cola las que esperaban de esos grupos). Idempotente.
+   */
   encolar(orgId: string, now: Date, delayMin: number): Promise<{ encoladas: number; fueraDePlazo: number }>;
-  /** Las clases que toca traer ahora (más recientes primero). */
+  /** Las clases que toca traer ahora (más recientes primero), sin las de grupos finalizados. */
   pendientes(orgId: string, now: Date, limit: number): Promise<string[]>;
   tieneMarcas(orgId: string, classId: string): Promise<boolean>;
   /** Saca de la cola una clase que ya tiene asistencia (nunca una confirmada). */
@@ -697,6 +706,8 @@ export const dbAttendanceFetchStore: AttendanceFetchStore = {
           roomZoomUserId: schema.virtualRoom.zoomUserId,
           recordingId: schema.zoomRecording.id,
           timezone: schema.organization.timezone,
+          cohortStartDate: schema.cohort.startDate,
+          cohortEndDate: schema.cohort.endDate,
         })
         .from(cs)
         .innerJoin(schema.cohort, eq(schema.cohort.id, cs.cohortId))
@@ -723,6 +734,7 @@ export const dbAttendanceFetchStore: AttendanceFetchStore = {
       const nuevas: (typeof f.$inferInsert)[] = [];
       let fueraDePlazo = 0;
       for (const c of filas) {
+        if (deGrupoFinalizado(c, now)) continue;
         const tz = c.timezone ?? "America/Montevideo";
         const inicio = classInstant(c.date, c.startTime, tz);
         if (!inicio) continue;
@@ -746,16 +758,47 @@ export const dbAttendanceFetchStore: AttendanceFetchStore = {
       for (let i = 0; i < nuevas.length; i += 500) {
         await db.insert(f).values(nuevas.slice(i, i + 500)).onConflictDoNothing();
       }
+
+      // Lo que ya esperaba en la cola de un grupo que terminó sale de ella
+      // (pendiente / no_lista / error sin confirmar; nunca una lista).
+      const enCola = await db
+        .select({ id: f.id, cohortStartDate: schema.cohort.startDate, cohortEndDate: schema.cohort.endDate })
+        .from(f)
+        .innerJoin(cs, eq(cs.id, f.classSessionId))
+        .innerJoin(schema.cohort, eq(schema.cohort.id, cs.cohortId))
+        .where(scoped(f.organizationId, orgId, isNull(f.reviewedAt), inArray(f.status, [...ESTADOS_REINTENTABLES])));
+      const deTerminados = enCola.filter((x) => deGrupoFinalizado(x, now)).map((x) => x.id);
+      for (let i = 0; i < deTerminados.length; i += 500) {
+        await db
+          .delete(f)
+          .where(
+            scoped(
+              f.organizationId,
+              orgId,
+              inArray(f.id, deTerminados.slice(i, i + 500)),
+              isNull(f.reviewedAt),
+              inArray(f.status, [...ESTADOS_REINTENTABLES])
+            )
+          );
+      }
       return { encoladas: nuevas.length - fueraDePlazo, fueraDePlazo };
     });
   },
 
   pendientes(orgId, now, limit) {
     return inOrgScope(orgId, async () => {
+      // Sin LIMIT en SQL: los de grupos finalizados se saltean con la regla
+      // única (`deGrupoFinalizado`) y no pueden tapar a los que siguen. Son
+      // filas chicas (id y dos fechas).
       const filas = await getDb()
-        .select({ classSessionId: f.classSessionId })
+        .select({
+          classSessionId: f.classSessionId,
+          cohortStartDate: schema.cohort.startDate,
+          cohortEndDate: schema.cohort.endDate,
+        })
         .from(f)
         .innerJoin(cs, eq(cs.id, f.classSessionId))
+        .innerJoin(schema.cohort, eq(schema.cohort.id, cs.cohortId))
         .where(
           scoped(
             f.organizationId,
@@ -765,9 +808,11 @@ export const dbAttendanceFetchStore: AttendanceFetchStore = {
             or(isNull(f.nextAttemptAt), lte(f.nextAttemptAt, now))
           )
         )
-        .orderBy(desc(cs.date))
-        .limit(limit);
-      return filas.map((x) => x.classSessionId);
+        .orderBy(desc(cs.date));
+      return filas
+        .filter((x) => !deGrupoFinalizado(x, now))
+        .slice(0, limit)
+        .map((x) => x.classSessionId);
     });
   },
 

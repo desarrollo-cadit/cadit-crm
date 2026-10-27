@@ -51,7 +51,8 @@ export function ParaResolver({ grupos, error = false }: { grupos: GrupoDeTareas[
   // La primera regla (la más urgente) abre desplegada: la pantalla arranca
   // mostrando QUÉ hacer, no solo cuánto.
   const [abiertos, setAbiertos] = useState<Record<string, boolean>>({});
-  const total = grupos?.reduce((s, g) => s + g.items.length, 0) ?? null;
+  // Se cuentan UNIDADES (en asistencia, clases), no items: un item es un grupo.
+  const total = grupos?.reduce((s, g) => s + g.cantidad, 0) ?? null;
 
   return (
     <section
@@ -115,7 +116,7 @@ export function ParaResolver({ grupos, error = false }: { grupos: GrupoDeTareas[
                       urgente && "text-warning"
                     )}
                   >
-                    {g.items.length}
+                    {g.cantidad}
                   </span>
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-medium">{g.titulo}</span>

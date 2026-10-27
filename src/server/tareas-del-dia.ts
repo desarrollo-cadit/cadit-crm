@@ -67,6 +67,8 @@ export async function tareasDelDia(
 /**
  * Las clases no canceladas de los últimos 14 días (hasta hoy) y, en dos
  * consultas agregadas más, sus marcas y los inscriptos activos de su grupo.
+ * Las fechas del grupo viajan para que la regla pura deje afuera a los
+ * finalizados (`computeCohortStatus`, la de Académico).
  */
 async function clasesSinMarcas(organizationId: string, now: Date) {
   const clases = await getDb()
@@ -76,6 +78,8 @@ async function clasesSinMarcas(organizationId: string, now: Date) {
       cohortName: schema.cohort.name,
       courseName: schema.course.name,
       courseKind: schema.course.kind,
+      cohortStartDate: schema.cohort.startDate,
+      cohortEndDate: schema.cohort.endDate,
       date: schema.classSession.date,
       endTime: schema.classSession.endTime,
       canceledAt: schema.classSession.canceledAt,
@@ -109,6 +113,8 @@ async function clasesConSugerencia(organizationId: string, now: Date) {
       cohortName: schema.cohort.name,
       courseName: schema.course.name,
       courseKind: schema.course.kind,
+      cohortStartDate: schema.cohort.startDate,
+      cohortEndDate: schema.cohort.endDate,
       date: schema.classSession.date,
       endTime: schema.classSession.endTime,
       canceledAt: schema.classSession.canceledAt,
@@ -137,6 +143,8 @@ type FilaDeClase = {
   cohortName: string | null;
   courseName: string;
   courseKind: ClaseParaTarea["courseKind"];
+  cohortStartDate: Date;
+  cohortEndDate: Date | null;
   date: Date;
   endTime: string | null;
   canceledAt: Date | null;
@@ -193,6 +201,8 @@ async function completarClases(organizationId: string, clases: FilaDeClase[]): P
     cohortName: c.cohortName,
     courseName: c.courseName,
     courseKind: c.courseKind,
+    cohortStartDate: c.cohortStartDate,
+    cohortEndDate: c.cohortEndDate,
     date: c.date,
     endTime: c.endTime,
     canceled: c.canceledAt !== null,

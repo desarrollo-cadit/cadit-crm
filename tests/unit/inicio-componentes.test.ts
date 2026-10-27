@@ -20,17 +20,19 @@ const GRUPOS: GrupoDeTareas[] = [
   {
     ruleId: "asistencia",
     titulo: "Asistencia sin pasar",
-    resumen: "2 clases sin pasar",
+    resumen: "5 clases sin pasar en 2 grupos",
+    cantidad: 5,
     urgencia: "alta",
     items: [
-      { ruleId: "asistencia", titulo: "Revit — Martes", detalle: "Clase de hace 5 días", href: "/cohorts/c1?tab=asistencia", urgencia: "alta" },
-      { ruleId: "asistencia", titulo: "AutoCAD — Noche", detalle: "Clase de ayer", href: "/cohorts/c2?tab=asistencia", urgencia: "media" },
+      { ruleId: "asistencia", titulo: "Revit — Martes", detalle: "4 clases sin pasar · la más vieja de hace 5 días", href: "/cohorts/c1?tab=asistencia", urgencia: "alta", cantidad: 4 },
+      { ruleId: "asistencia", titulo: "AutoCAD — Noche", detalle: "Clase de ayer", href: "/cohorts/c2?tab=asistencia", urgencia: "media", cantidad: 1 },
     ],
   },
   {
     ruleId: "facturar",
     titulo: "Pendientes de facturar",
     resumen: "1 grupo con ventas sin factura",
+    cantidad: 1,
     urgencia: "media",
     items: [
       { ruleId: "facturar", titulo: "BIM — 4", detalle: "1 inscripción sin factura", href: "/facturacion?tab=pendientes&grupo=c3", urgencia: "media" },
@@ -42,7 +44,10 @@ describe("Para resolver", () => {
   it("lleva el total en el encabezado, la cantidad de cada regla y su marca", () => {
     const h = html(createElement(ParaResolver, { grupos: GRUPOS }));
     expect(h).toContain("Para resolver");
-    expect(h).toMatch(/rounded-full bg-brand[^"]*">3</);
+    // Las reglas de asistencia cuentan CLASES (5), aunque vengan en 2 items por grupo.
+    expect(h).toMatch(/rounded-full bg-brand[^"]*">6</);
+    expect(h).toMatch(/tabular-nums[^"]*">5</);
+    expect(h).toContain("5 clases sin pasar en 2 grupos");
     expect(h).toContain("Urgente");
     expect(h).toContain("Esta semana");
   });

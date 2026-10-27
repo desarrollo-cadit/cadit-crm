@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { computeCohortStatus } from "@/lib/cohort-status";
 import {
+  deGrupoFinalizado,
   estadoPorError,
   fueraDelPlazoDeZoom,
   mensajeDeEstado,
@@ -53,5 +55,30 @@ describe("mensajeDeEstado", () => {
     expect(
       mensajeDeEstado({ estado: "sin_permiso", proximo: null, detalle: "Faltan permisos: X", timeZone: "UTC" })
     ).toBe("Faltan permisos: X");
+  });
+});
+
+describe("deGrupoFinalizado — la MISMA regla que Académico (computeCohortStatus)", () => {
+  const dia = (iso: string) => new Date(`${iso}T00:00:00Z`);
+
+  it("terminado por fecha: sí; en curso, sin fecha de fin o por empezar: no", () => {
+    const now = new Date("2026-10-27T15:00:00Z");
+    expect(deGrupoFinalizado({ cohortStartDate: dia("2026-03-01"), cohortEndDate: dia("2026-07-30") }, now)).toBe(true);
+    expect(deGrupoFinalizado({ cohortStartDate: dia("2026-09-01"), cohortEndDate: dia("2026-12-15") }, now)).toBe(false);
+    expect(deGrupoFinalizado({ cohortStartDate: dia("2026-03-01"), cohortEndDate: null }, now)).toBe(false);
+    expect(deGrupoFinalizado({ cohortStartDate: dia("2026-11-10"), cohortEndDate: dia("2026-12-15") }, now)).toBe(false);
+  });
+
+  it("coincide con computeCohortStatus en todos los casos", () => {
+    const now = new Date("2026-10-27T15:00:00Z");
+    for (const [start, end] of [
+      [dia("2026-01-01"), dia("2026-10-26")],
+      [dia("2026-01-01"), dia("2026-10-28")],
+      [dia("2026-01-01"), null],
+    ] as const) {
+      expect(deGrupoFinalizado({ cohortStartDate: start, cohortEndDate: end }, now)).toBe(
+        computeCohortStatus(start, end, now) === "finalizada"
+      );
+    }
   });
 });

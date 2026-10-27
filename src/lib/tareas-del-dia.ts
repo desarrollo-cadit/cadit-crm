@@ -1,6 +1,7 @@
 import type { Capability } from "@/lib/capabilities";
 import type { CourseKind } from "@/lib/course-kind";
 import { estadoDeClase, type RelojDeAsistencia } from "@/lib/attendance-percentage";
+import { computeCohortStatus } from "@/lib/cohort-status";
 import { avisoSinConfirmarQueToca, grupoRecibeAvisoSinConfirmar } from "@/lib/avisos-sin-confirmar";
 import { enLaVista } from "@/lib/facturacion";
 import { diasHastaElInicio } from "@/lib/staff-notices";
@@ -32,13 +33,20 @@ export type TareaDeHoy = {
   urgencia: Urgencia;
   /** `AAAA-MM-DD`, el día al que se refiere (la clase, el inicio). */
   fecha?: string;
+  /**
+   * Cuántas unidades de la regla junta el item (las clases del grupo, en las
+   * reglas de asistencia). Sin el campo, 1.
+   */
+  cantidad?: number;
 };
 
 export type GrupoDeTareas = {
   ruleId: ReglaDeTarea;
   titulo: string;
-  /** "6 clases sin pasar". */
+  /** "6 clases sin pasar en 2 grupos". */
   resumen: string;
+  /** Las unidades de la regla (clases, en asistencia), no los items. */
+  cantidad: number;
   /** La de su item más urgente. */
   urgencia: Urgencia;
   items: TareaDeHoy[];
@@ -61,13 +69,15 @@ export const REGLAS_DE_TAREAS = [
     id: "asistencia_zoom",
     capacidades: ["asistencia.editar", "grabaciones.gestionar"],
     titulo: "Asistencia sugerida para revisar",
-    unidad: ["clase con asistencia sugerida", "clases con asistencia sugerida"],
+    unidad: ["clase para revisar", "clases para revisar"],
+    porGrupo: true,
   },
   {
     id: "asistencia",
     capacidades: ["asistencia.editar", "grabaciones.gestionar"],
     titulo: "Asistencia sin pasar",
     unidad: ["clase sin pasar", "clases sin pasar"],
+    porGrupo: true,
   },
   {
     id: "confirmar",
@@ -92,6 +102,8 @@ export const REGLAS_DE_TAREAS = [
   capacidades: readonly Capability[];
   titulo: string;
   unidad: readonly [string, string];
+  /** Un item por grupo que junta varias unidades: el resumen dice en cuántos grupos. */
+  porGrupo?: boolean;
 }[];
 
 /** Las reglas que la sesión puede ver; las demás ni se consultan. */
@@ -129,6 +141,9 @@ export type ClaseParaTarea = {
   cohortName: string | null;
   courseName: string;
   courseKind: CourseKind | null;
+  /** Fechas del grupo de la clase: deciden si ya está FINALIZADO. */
+  cohortStartDate: Date;
+  cohortEndDate: Date | null;
   date: Date;
   endTime: string | null;
   canceled: boolean;
@@ -145,66 +160,102 @@ export type ClaseParaTarea = {
 };
 
 /**
- * Una clase REAL (las proyectadas no son filas), DICTADA según
- * `estadoDeClase` (terminó en la zona de la academia y no está cancelada),
- * con alumnos activos y sin una sola marca. Un taller no es una cursada.
- * Asistencia y grabaciones son de Coordinación (2026-10-26): el profesor no
- * la recibe porque su portal no tiene capacidades.
+ * Lo común a las dos reglas de asistencia: una clase REAL (las proyectadas no
+ * son filas), DICTADA según `estadoDeClase` (terminó en la zona de la
+ * academia y no está cancelada), con alumnos activos, sin una sola marca, que
+ * no es de un taller y cuyo grupo NO está finalizado (2026-10-27:
+ * `computeCohortStatus`, la MISMA regla que las secciones de Académico; un
+ * módulo, por sus propias fechas). Devuelve hace cuántos días fue, o `null`.
+ */
+function haceCuantoSinMarcas(c: ClaseParaTarea, reloj: RelojDeAsistencia): number | null {
+  if (c.courseKind === "taller" || c.inscriptosActivos <= 0 || c.marcas > 0) return null;
+  if (computeCohortStatus(c.cohortStartDate, c.cohortEndDate, reloj.now) === "finalizada") return null;
+  if (estadoDeClase({ sessionDate: c.date, endTime: c.endTime, canceled: c.canceled }, reloj) !== "dictada") {
+    return null;
+  }
+  return -(diasHastaElInicio(c.date, reloj.now, reloj.timeZone) ?? 0);
+}
+
+const deHace = (hace: number) => (hace === 0 ? "de hoy" : hace === 1 ? "de ayer" : `de hace ${hace} días`);
+
+/**
+ * 2026-10-27 — UNA tarea por GRUPO, no una por clase: la urgencia y la fecha
+ * son las de su clase más vieja (alta si pasaron más de 3 días), y el detalle
+ * dice cuántas son. `href` recibe la clase más vieja.
+ */
+function porGrupo(
+  ruleId: "asistencia" | "asistencia_zoom",
+  clases: readonly { clase: ClaseParaTarea; hace: number }[],
+  plural: string,
+  href: (vieja: ClaseParaTarea) => string
+): TareaDeHoy[] {
+  const grupos = new Map<string, { vieja: ClaseParaTarea; hace: number; n: number }>();
+  for (const { clase, hace } of clases) {
+    const previo = grupos.get(clase.cohortId);
+    if (!previo) {
+      grupos.set(clase.cohortId, { vieja: clase, hace, n: 1 });
+      continue;
+    }
+    previo.n += 1;
+    if (clase.date.getTime() < previo.vieja.date.getTime()) {
+      previo.vieja = clase;
+      previo.hace = hace;
+    }
+  }
+  return [...grupos.values()].map(({ vieja, hace, n }) => ({
+    ruleId,
+    titulo: nombreDeGrupo(vieja.courseName, vieja.cohortName),
+    detalle: n === 1 ? `Clase ${deHace(hace)}` : `${n} ${plural} · la más vieja ${deHace(hace)}`,
+    href: href(vieja),
+    urgencia: hace > 3 ? "alta" : "media",
+    fecha: diaGuardado(vieja.date),
+    cantidad: n,
+  }));
+}
+
+/**
+ * Clases dictadas sin una sola marca de los últimos 14 días, una tarea por
+ * grupo. Asistencia y grabaciones son de Coordinación (2026-10-26): el
+ * profesor no la recibe porque su portal no tiene capacidades.
  */
 export function tareasDeAsistencia(
   clases: readonly ClaseParaTarea[],
   reloj: RelojDeAsistencia
 ): TareaDeHoy[] {
-  const out: TareaDeHoy[] = [];
+  const sinPasar: { clase: ClaseParaTarea; hace: number }[] = [];
   for (const c of clases) {
-    if (c.courseKind === "taller" || c.inscriptosActivos <= 0 || c.marcas > 0) continue;
     if (c.sugerenciaZoom) continue;
-    if (estadoDeClase({ sessionDate: c.date, endTime: c.endTime, canceled: c.canceled }, reloj) !== "dictada") {
-      continue;
-    }
-    const hace = -(diasHastaElInicio(c.date, reloj.now, reloj.timeZone) ?? 0);
-    if (hace > DIAS_DE_ASISTENCIA) continue;
-    out.push({
-      ruleId: "asistencia",
-      titulo: nombreDeGrupo(c.courseName, c.cohortName),
-      detalle: hace === 0 ? "Clase de hoy" : hace === 1 ? "Clase de ayer" : `Clase de hace ${hace} días`,
-      href: `/cohorts/${c.cohortId}?tab=asistencia`,
-      urgencia: hace > 3 ? "alta" : "media",
-      fecha: diaGuardado(c.date),
-    });
+    const hace = haceCuantoSinMarcas(c, reloj);
+    if (hace === null || hace > DIAS_DE_ASISTENCIA) continue;
+    sinPasar.push({ clase: c, hace });
   }
-  return out;
+  return porGrupo("asistencia", sinPasar, "clases sin pasar", (v) => `/cohorts/${v.cohortId}?tab=asistencia`);
 }
 
 /**
  * Constitución 1.9.0 (decisión del dueño, 2026-10-27) — Las clases con una
- * sugerencia de Zoom LISTA y sin confirmar: dictadas, con alumnos, sin una
- * sola marca y no de un taller, como "sin pasar", pero SIN el corte de 14
- * días (el relleno hacia atrás trae clases viejas que también hay que
- * revisar). Lleva a la planilla con la clase elegida.
+ * sugerencia de Zoom LISTA y sin confirmar, con la misma base que "sin pasar"
+ * pero SIN el corte de 14 días (el relleno hacia atrás trae clases viejas
+ * que también hay que revisar). Una tarea por grupo, que abre la planilla en
+ * su clase más vieja.
  */
 export function tareasDeSugerenciasDeZoom(
   clases: readonly ClaseParaTarea[],
   reloj: RelojDeAsistencia
 ): TareaDeHoy[] {
-  const out: TareaDeHoy[] = [];
+  const paraRevisar: { clase: ClaseParaTarea; hace: number }[] = [];
   for (const c of clases) {
     if (!c.sugerenciaZoom) continue;
-    if (c.courseKind === "taller" || c.inscriptosActivos <= 0 || c.marcas > 0) continue;
-    if (estadoDeClase({ sessionDate: c.date, endTime: c.endTime, canceled: c.canceled }, reloj) !== "dictada") {
-      continue;
-    }
-    const hace = -(diasHastaElInicio(c.date, reloj.now, reloj.timeZone) ?? 0);
-    out.push({
-      ruleId: "asistencia_zoom",
-      titulo: nombreDeGrupo(c.courseName, c.cohortName),
-      detalle: hace === 0 ? "Clase de hoy" : hace === 1 ? "Clase de ayer" : `Clase de hace ${hace} días`,
-      href: `/cohorts/${c.cohortId}?tab=asistencia&clase=${c.classSessionId}`,
-      urgencia: hace > 3 ? "alta" : "media",
-      fecha: diaGuardado(c.date),
-    });
+    const hace = haceCuantoSinMarcas(c, reloj);
+    if (hace === null) continue;
+    paraRevisar.push({ clase: c, hace });
   }
-  return out;
+  return porGrupo(
+    "asistencia_zoom",
+    paraRevisar,
+    "clases para revisar",
+    (v) => `/cohorts/${v.cohortId}?tab=asistencia&clase=${v.classSessionId}`
+  );
 }
 
 /* ============================================================ 2. confirmar */
@@ -351,7 +402,8 @@ const ORDEN_DE_REGLA = new Map<ReglaDeTarea, number>(REGLAS_DE_TAREAS.map((r, i)
 /**
  * Una entrada por regla con sus items, la más urgente primero (a igual
  * urgencia, en el orden de `REGLAS_DE_TAREAS`). Adentro, lo urgente primero y
- * después lo más viejo.
+ * después lo más viejo. El resumen cuenta UNIDADES (en asistencia, clases:
+ * "12 clases para revisar en 4 grupos"), no items.
  */
 export function armarBandeja(tareas: readonly TareaDeHoy[]): GrupoDeTareas[] {
   const grupos: GrupoDeTareas[] = [];
@@ -366,11 +418,13 @@ export function armarBandeja(tareas: readonly TareaDeHoy[]): GrupoDeTareas[] {
       );
     const primero = items[0];
     if (!primero) continue;
-    const n = items.length;
+    const n = items.reduce((suma, t) => suma + (t.cantidad ?? 1), 0);
+    const enGrupos = "porGrupo" in regla && regla.porGrupo && items.length > 1 ? ` en ${items.length} grupos` : "";
     grupos.push({
       ruleId: regla.id,
       titulo: regla.titulo,
-      resumen: `${n} ${n === 1 ? regla.unidad[0] : regla.unidad[1]}`,
+      resumen: `${n} ${n === 1 ? regla.unidad[0] : regla.unidad[1]}${enGrupos}`,
+      cantidad: n,
       urgencia: primero.urgencia,
       items,
     });

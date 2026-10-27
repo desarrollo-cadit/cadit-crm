@@ -15,7 +15,7 @@ const MAX_POR_CORRIDA = 1000;
  * Toma el lease y encola DENTRO del pedido (409 si hay una corrida de Zoom;
  * re-encolar no duplica: una fila por clase). Las clases de más de un año
  * quedan "fuera de plazo" sin llamar a Zoom; las que ya tienen asistencia
- * nunca se encolan. El HTTP a Zoom corre después del commit, de a una clase
+ * y las de grupos finalizados nunca se encolan. El HTTP a Zoom corre después del commit, de a una clase
  * y con pausa, y libera el lease al terminar.
  */
 export const POST = requireCapability("configuracion.editar", async (session) => {

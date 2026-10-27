@@ -55,13 +55,15 @@ describe("reglasPermitidas — cada regla pide SU capacidad", () => {
   });
 });
 
-describe("tareasDeAsistencia — clases dictadas sin una sola marca", () => {
+describe("tareasDeAsistencia — clases dictadas sin una sola marca, UNA tarea por grupo", () => {
   const base: ClaseParaTarea = {
     classSessionId: "cs_1",
     cohortId: "coh_1",
     cohortName: "Revit 12",
     courseName: "Revit",
     courseKind: "curso",
+    cohortStartDate: dia("2026-09-01"),
+    cohortEndDate: dia("2026-12-15"),
     date: dia("2026-10-22"),
     endTime: "21:00",
     canceled: false,
@@ -76,8 +78,51 @@ describe("tareasDeAsistencia — clases dictadas sin una sola marca", () => {
       ruleId: "asistencia",
       href: "/cohorts/coh_1?tab=asistencia",
       fecha: "2026-10-22",
+      detalle: "Clase de hace 4 días",
+      cantidad: 1,
     });
-    expect(t?.titulo).toContain("Revit 12");
+    expect(t?.titulo).toBe("Revit — Revit 12");
+  });
+
+  it("varias clases del mismo grupo: UNA tarea con la cantidad y la más vieja", () => {
+    const tareas = tareasDeAsistencia(
+      [
+        { ...base, classSessionId: "cs_a", date: dia("2026-10-25") },
+        { ...base, classSessionId: "cs_b", date: dia("2026-10-21") },
+        { ...base, classSessionId: "cs_c", date: dia("2026-10-23") },
+      ],
+      reloj
+    );
+    expect(tareas).toEqual([
+      {
+        ruleId: "asistencia",
+        titulo: "Revit — Revit 12",
+        detalle: "3 clases sin pasar · la más vieja de hace 5 días",
+        href: "/cohorts/coh_1?tab=asistencia",
+        urgencia: "alta",
+        fecha: "2026-10-21",
+        cantidad: 3,
+      },
+    ]);
+  });
+
+  it("la urgencia del grupo es la de su clase más vieja", () => {
+    const [t] = tareasDeAsistencia(
+      [
+        { ...base, classSessionId: "cs_a", date: dia("2026-10-25") },
+        { ...base, classSessionId: "cs_b", date: dia("2026-10-24") },
+      ],
+      reloj
+    );
+    expect(t).toMatchObject({ urgencia: "media", detalle: "2 clases sin pasar · la más vieja de hace 2 días" });
+  });
+
+  it("grupos distintos, tareas distintas", () => {
+    const otra = { ...base, classSessionId: "cs_2", cohortId: "coh_2", cohortName: "Noche" };
+    expect(tareasDeAsistencia([base, otra], reloj).map((t) => t.href)).toEqual([
+      "/cohorts/coh_1?tab=asistencia",
+      "/cohorts/coh_2?tab=asistencia",
+    ]);
   });
 
   it("con una marca de cualquiera ya no es tarea: se pasó lista", () => {
@@ -90,6 +135,12 @@ describe("tareasDeAsistencia — clases dictadas sin una sola marca", () => {
     expect(tareasDeAsistencia([{ ...base, courseKind: "taller" }], reloj)).toEqual([]);
   });
 
+  it("de un grupo FINALIZADO (computeCohortStatus, la regla de Académico): no es tarea", () => {
+    expect(tareasDeAsistencia([{ ...base, cohortEndDate: dia("2026-10-23") }], reloj)).toEqual([]);
+    // Sin fecha de fin sigue en curso.
+    expect(tareasDeAsistencia([{ ...base, cohortEndDate: null }], reloj)).toHaveLength(1);
+  });
+
   it("una clase de hoy que todavía no terminó no es tarea (estadoDeClase la llama 'hoy')", () => {
     expect(tareasDeAsistencia([{ ...base, date: dia("2026-10-26"), endTime: "21:00" }], reloj)).toEqual([]);
   });
@@ -97,7 +148,7 @@ describe("tareasDeAsistencia — clases dictadas sin una sola marca", () => {
   it("la de ayer es urgencia media; la de hace más de 3 días, alta", () => {
     const [ayer] = tareasDeAsistencia([{ ...base, date: dia("2026-10-25") }], reloj);
     const [vieja] = tareasDeAsistencia([{ ...base, date: dia("2026-10-20") }], reloj);
-    expect(ayer?.urgencia).toBe("media");
+    expect(ayer).toMatchObject({ urgencia: "media", detalle: "Clase de ayer" });
     expect(vieja?.urgencia).toBe("alta");
   });
 
@@ -111,13 +162,15 @@ describe("tareasDeAsistencia — clases dictadas sin una sola marca", () => {
   });
 });
 
-describe("tareasDeSugerenciasDeZoom — asistencia sugerida para revisar (todas, sin corte)", () => {
+describe("tareasDeSugerenciasDeZoom — asistencia sugerida para revisar, UNA tarea por grupo", () => {
   const base: ClaseParaTarea = {
     classSessionId: "cs_9",
     cohortId: "coh_1",
     cohortName: "Revit 12",
     courseName: "Revit",
     courseKind: "curso",
+    cohortStartDate: dia("2026-02-01"),
+    cohortEndDate: dia("2026-12-15"),
     date: dia("2026-10-22"),
     endTime: "21:00",
     canceled: false,
@@ -135,11 +188,38 @@ describe("tareasDeSugerenciasDeZoom — asistencia sugerida para revisar (todas,
       fecha: "2026-10-22",
       detalle: "Clase de hace 4 días",
       urgencia: "alta",
+      cantidad: 1,
     });
+  });
+
+  it("varias del mismo grupo: una tarea que abre en la MÁS VIEJA", () => {
+    const tareas = tareasDeSugerenciasDeZoom(
+      [
+        { ...base, classSessionId: "cs_a", date: dia("2026-10-25") },
+        { ...base, classSessionId: "cs_b", date: dia("2026-10-03") },
+        { ...base, classSessionId: "cs_c", date: dia("2026-10-15") },
+      ],
+      reloj
+    );
+    expect(tareas).toEqual([
+      {
+        ruleId: "asistencia_zoom",
+        titulo: "Revit — Revit 12",
+        detalle: "3 clases para revisar · la más vieja de hace 23 días",
+        href: "/cohorts/coh_1?tab=asistencia&clase=cs_b",
+        urgencia: "alta",
+        fecha: "2026-10-03",
+        cantidad: 3,
+      },
+    ]);
   });
 
   it("también las clases viejas (el relleno hacia atrás): sin corte de 14 días", () => {
     expect(tareasDeSugerenciasDeZoom([{ ...base, date: dia("2026-03-02") }], reloj)).toHaveLength(1);
+  });
+
+  it("de un grupo FINALIZADO no cuenta (la sugerencia se sigue viendo en el grupo)", () => {
+    expect(tareasDeSugerenciasDeZoom([{ ...base, cohortEndDate: dia("2026-10-23") }], reloj)).toEqual([]);
   });
 
   it("de ayer es media; sin sugerencia, con marcas, cancelada o de taller no es tarea", () => {
@@ -150,19 +230,19 @@ describe("tareasDeSugerenciasDeZoom — asistencia sugerida para revisar (todas,
     expect(tareasDeSugerenciasDeZoom([{ ...base, courseKind: "taller" }], reloj)).toEqual([]);
   });
 
-  it("las dos reglas no cuentan dos veces la misma clase", () => {
+  it("las dos reglas no cuentan dos veces la misma clase, aun en el mismo grupo", () => {
     const sinPasar = { ...base, classSessionId: "cs_a", sugerenciaZoom: false };
     const conSugerencia = { ...base, classSessionId: "cs_b" };
     const clases = [sinPasar, conSugerencia];
     const tareas = [...tareasDeAsistencia(clases, reloj), ...tareasDeSugerenciasDeZoom(clases, reloj)];
-    expect(tareas.map((t) => [t.ruleId, t.href])).toEqual([
-      ["asistencia", "/cohorts/coh_1?tab=asistencia"],
-      ["asistencia_zoom", "/cohorts/coh_1?tab=asistencia&clase=cs_b"],
+    expect(tareas.map((t) => [t.ruleId, t.href, t.cantidad])).toEqual([
+      ["asistencia", "/cohorts/coh_1?tab=asistencia", 1],
+      ["asistencia_zoom", "/cohorts/coh_1?tab=asistencia&clase=cs_b", 1],
     ]);
     const bandeja = armarBandeja(tareas);
-    expect(bandeja.map((g) => [g.ruleId, g.resumen])).toEqual([
-      ["asistencia_zoom", "1 clase con asistencia sugerida"],
-      ["asistencia", "1 clase sin pasar"],
+    expect(bandeja.map((g) => [g.ruleId, g.resumen, g.cantidad])).toEqual([
+      ["asistencia_zoom", "1 clase para revisar", 1],
+      ["asistencia", "1 clase sin pasar", 1],
     ]);
     expect(bandeja[0]!.titulo).toBe("Asistencia sugerida para revisar");
   });
@@ -307,10 +387,33 @@ describe("armarBandeja — una entrada por regla, la más urgente primero", () =
       { ruleId: "asistencia", titulo: "BIM 4", href: "/c", urgencia: "alta", fecha: "2026-10-20" },
     ]);
     expect(bandeja.map((g) => [g.ruleId, g.urgencia, g.resumen])).toEqual([
-      ["asistencia", "alta", "2 clases sin pasar"],
+      ["asistencia", "alta", "2 clases sin pasar en 2 grupos"],
       ["leads", "media", "1 interesado sin contactar"],
     ]);
     expect(bandeja[0]?.items.map((i) => i.titulo)).toEqual(["BIM 4", "Revit 12"]);
+  });
+
+  it("las reglas de asistencia cuentan CLASES y dicen en cuántos grupos", () => {
+    const bandeja = armarBandeja([
+      { ruleId: "asistencia_zoom", titulo: "Revit — 12", href: "/a", urgencia: "media", fecha: "2026-10-24", cantidad: 2 },
+      { ruleId: "asistencia_zoom", titulo: "BIM — 4", href: "/b", urgencia: "alta", fecha: "2026-10-03", cantidad: 7 },
+      { ruleId: "asistencia_zoom", titulo: "AutoCAD — Noche", href: "/c", urgencia: "alta", fecha: "2026-10-10", cantidad: 1 },
+      { ruleId: "asistencia_zoom", titulo: "Lumion — 2", href: "/d", urgencia: "alta", fecha: "2026-09-30", cantidad: 2 },
+      { ruleId: "asistencia", titulo: "Revit — 13", href: "/e", urgencia: "media", fecha: "2026-10-25", cantidad: 3 },
+      { ruleId: "facturar", titulo: "BIM — 5", href: "/f", urgencia: "media" },
+    ]);
+    expect(bandeja.map((g) => [g.ruleId, g.resumen, g.cantidad])).toEqual([
+      ["asistencia_zoom", "12 clases para revisar en 4 grupos", 12],
+      ["asistencia", "3 clases sin pasar", 3],
+      ["facturar", "1 grupo con ventas sin factura", 1],
+    ]);
+    // Urgentes primero y, entre ellas, la más vieja primero.
+    expect(bandeja[0]?.items.map((i) => i.titulo)).toEqual([
+      "Lumion — 2",
+      "BIM — 4",
+      "AutoCAD — Noche",
+      "Revit — 12",
+    ]);
   });
 
   it("sin nada pendiente, la bandeja está vacía", () => {

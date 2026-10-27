@@ -273,6 +273,14 @@ describe("guardas estructurales", () => {
     expect(src).not.toContain("markAttendance");
   });
 
+  it("los grupos finalizados no entran a la cola ni se traen (regla única deGrupoFinalizado)", () => {
+    const tramo = (desde: string, hasta: string) => src.slice(src.indexOf(desde), src.indexOf(hasta));
+    expect(tramo("  encolar(orgId, now, delayMin)", "  pendientes(orgId, now, limit)")).toContain("deGrupoFinalizado(");
+    expect(tramo("  pendientes(orgId, now, limit)", "  tieneMarcas(orgId, classId)")).toContain("deGrupoFinalizado(");
+    // Nada de reescribir la regla en SQL.
+    expect(src).not.toMatch(/end_date|cohort\.endDate\s*[<>]/);
+  });
+
   it("no habla con Zoom por fuera del adaptador", () => {
     expect(src).not.toMatch(/fetch\(|api\.zoom\.us/);
   });

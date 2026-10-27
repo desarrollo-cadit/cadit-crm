@@ -1,3 +1,4 @@
+import { computeCohortStatus } from "@/lib/cohort-status";
 import type { ZoomErrorCode } from "@/lib/zoom";
 
 /**
@@ -49,6 +50,20 @@ export function estadoPorError(code: ZoomErrorCode | "interno"): {
     default:
       return { estado: "error", reintentar: true };
   }
+}
+
+/**
+ * 2026-10-27 — Las clases de un grupo FINALIZADO no se buscan en Zoom: ni el
+ * relleno hacia atrás las encola ni la periódica trae las que ya estaban en la
+ * cola. "Finalizado" es la MISMA regla que la sección de Académico y el DTO de
+ * la cohorte (`computeCohortStatus`, por las fechas del grupo de la clase; un
+ * módulo, por las suyas): no hay una segunda definición.
+ */
+export function deGrupoFinalizado(
+  c: { cohortStartDate: Date; cohortEndDate: Date | null },
+  now: Date
+): boolean {
+  return computeCohortStatus(c.cohortStartDate, c.cohortEndDate, now) === "finalizada";
 }
 
 /**
