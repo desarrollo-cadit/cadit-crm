@@ -69,9 +69,6 @@ export function ParaResolver({ grupos, error = false }: { grupos: GrupoDeTareas[
             </span>
           )}
         </h2>
-        <span className="text-xs text-muted-foreground">
-          Lo más urgente primero. Cada fila lleva a donde se resuelve.
-        </span>
       </div>
 
       {/* Lado a lado con la agenda, mismo alto: la lista se desplaza adentro. */}
