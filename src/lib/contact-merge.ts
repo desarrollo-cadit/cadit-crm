@@ -214,6 +214,8 @@ export const TABLAS_SIMPLES = [
   "marketing_unsubscribe",
   "area_handoff",
   "staff_notice",
+  // 0080 — lo aprendido de Zoom: la llave sigue siendo de la misma persona.
+  "zoom_participant_alias",
 ] as const;
 export type TablaSimple = (typeof TABLAS_SIMPLES)[number];
 
@@ -318,6 +320,8 @@ export type ConteosDeUnificacion = {
   avisos: number;
   derivaciones: number;
   registro: number;
+  /** 0080 — nombres de Zoom aprendidos que pasan al que queda. */
+  nombresDeZoom: number;
 };
 
 export type CambiosDelContacto = Partial<{
@@ -592,6 +596,7 @@ export function planDeUnificacion(
     avisos: n("staff_notice"),
     derivaciones: n("area_handoff"),
     registro: n("activity_log"),
+    nombresDeZoom: n("zoom_participant_alias"),
   };
 
   const absorbidoNombre = fullName(x);
@@ -954,6 +959,7 @@ export function notaDeUnificacion(d: {
     c.bajas && plural(c.bajas, "baja de marketing", "bajas de marketing"),
     c.avisos && plural(c.avisos, "aviso interno", "avisos internos"),
     c.derivaciones && plural(c.derivaciones, "derivación", "derivaciones"),
+    c.nombresDeZoom && plural(c.nombresDeZoom, "nombre aprendido de Zoom", "nombres aprendidos de Zoom"),
   ].filter((v): v is string => typeof v === "string");
   const partes = [movido.length > 0 ? `se movieron ${movido.join(", ")}` : "no había nada más que mover"];
   if (d.correosDescartados.length > 0) partes.push(`correos descartados: ${d.correosDescartados.join(", ")}`);
@@ -1054,5 +1060,6 @@ export function lineasDeConteos(c: ConteosDeUnificacion): string[] {
     c.avisos && plural(c.avisos, "aviso interno", "avisos internos"),
     c.derivaciones && plural(c.derivaciones, "derivación", "derivaciones"),
     c.registro && plural(c.registro, "registro de actividad", "registros de actividad"),
+    c.nombresDeZoom && plural(c.nombresDeZoom, "nombre aprendido de Zoom", "nombres aprendidos de Zoom"),
   ].filter((v): v is string => typeof v === "string");
 }

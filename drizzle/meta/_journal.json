@@ -561,6 +561,13 @@
       "when": 1793046948137,
       "tag": "0079_avisos_internos_por_persona",
       "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1793103447920,
+      "tag": "0080_asistencia_zoom",
+      "breakpoints": true
     }
   ]
 }

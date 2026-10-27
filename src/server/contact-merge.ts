@@ -44,7 +44,7 @@ import { sincronizarLicenciasDelGrupo } from "@/server/group-licenses";
  * offline_course_grant, offline_topic_progress, offline_recognition,
  * activity_log, area_handoff, staff_notice, contact_form_submission,
  * contact_activity, marketing_campaign_recipient, marketing_unsubscribe,
- * historical_course_taking.
+ * historical_course_taking, zoom_participant_alias.
  *
  * Lo congelado NO se reescribe: el snapshot de los certificados, los nombres
  * de los envíos de formularios, las variables de los destinatarios de
@@ -118,6 +118,7 @@ const TABLA: Record<
   | typeof schema.marketingUnsubscribe
   | typeof schema.areaHandoff
   | typeof schema.staffNotice
+  | typeof schema.zoomParticipantAlias
 > = {
   activity_log: schema.activityLog,
   contact_activity: schema.contactActivity,
@@ -126,6 +127,7 @@ const TABLA: Record<
   marketing_unsubscribe: schema.marketingUnsubscribe,
   area_handoff: schema.areaHandoff,
   staff_notice: schema.staffNotice,
+  zoom_participant_alias: schema.zoomParticipantAlias,
 };
 
 export type Preparacion = {

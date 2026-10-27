@@ -1933,10 +1933,22 @@ export const attendance = pgTable(
      * inventarles uno sería peor que admitir que no se sabe.
      */
     recordedBy: text("recorded_by").references(() => user.id, { onDelete: "set null" }),
+    /**
+     * 0080 — De dónde salió la marca: `manual` (planilla o portal) o `zoom`
+     * (sugerencia de Zoom CONFIRMADA por una persona). NULL = anterior a
+     * 0080: no se sabe, igual que `recorded_by`.
+     */
+    source: text("source", { enum: ["manual", "zoom"] }),
+    /** 0080 — Minutos conectados según Zoom al confirmar (solo `zoom`). */
+    zoomMinutes: integer("zoom_minutes"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [
+    check(
+      "attendance_source_valid",
+      sql`${t.source} IS NULL OR ${t.source} IN ('manual','zoom')`
+    ),
     // Una marca por alumno y clase: volver a marcar CORRIGE, no duplica.
     uniqueIndex("attendance_session_enrollment_uq").on(
       t.classSessionId,
@@ -3713,6 +3725,203 @@ export const zoomSyncRun = pgTable(
     check(
       "zoom_sync_run_status_valid",
       sql`${t.status} IN ('corriendo','ok','parcial','error')`
+    ),
+  ]
+);
+
+/* ============================================================
+ * 0080 — Asistencia sugerida desde Zoom (constitución 1.9.0)
+ *
+ * La SUGERENCIA no se guarda: se calcula al leer sobre los segmentos crudos,
+ * los nombres aprendidos y la lista del grupo (`src/lib/zoom-attendance.ts`).
+ * Una sola marca en `attendance` vuelve "tomada" a la clase y entonces todo el
+ * que no tiene marca cuenta como ausente: por eso lo único que escribe
+ * `attendance` es la confirmación de una persona del equipo.
+ * ============================================================ */
+
+/**
+ * Una fila por clase: la máquina de estados de "traer de Zoom". Nunca toca
+ * `attendance`; un fallo deja la asistencia exactamente como estaba.
+ */
+export const zoomAttendanceFetch = pgTable(
+  "zoom_attendance_fetch",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    classSessionId: text("class_session_id")
+      .notNull()
+      .references(() => classSession.id, { onDelete: "cascade" }),
+    zoomConnectionId: text("zoom_connection_id").references(() => zoomConnection.id, {
+      onDelete: "set null",
+    }),
+    /** Número de reunión (texto: supera 2^53 en algunos casos). */
+    zoomMeetingId: text("zoom_meeting_id"),
+    /** UUID de la INSTANCIA: el número se repite entre grupos en un aula PMI. */
+    zoomMeetingUuid: text("zoom_meeting_uuid"),
+    instanceSource: text("instance_source", {
+      enum: ["grabacion", "reporte_usuario", "instancias", "manual"],
+    }),
+    status: text("status", {
+      enum: [
+        "pendiente",
+        "lista",
+        "sin_reunion",
+        "ambigua",
+        "no_lista",
+        "sin_permiso",
+        "fuera_de_plazo",
+        "error",
+      ],
+    })
+      .notNull()
+      .default("pendiente"),
+    attempts: integer("attempts").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at"),
+    fetchedAt: timestamp("fetched_at"),
+    /** Código propio + mensaje en castellano; nunca la respuesta cruda de Zoom. */
+    errorCode: text("error_code"),
+    errorMessage: text("error_message"),
+    /** Instancias candidatas cuando `ambigua` (uuid, inicio, tema). */
+    candidates: jsonb("candidates")
+      .$type<{ uuid: string; startTime: string; topic: string | null; meetingId: string }[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    reviewedAt: timestamp("reviewed_at"),
+    reviewedBy: text("reviewed_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("zoom_attendance_fetch_class_uq").on(t.classSessionId),
+    index("zoom_attendance_fetch_org_status_idx").on(
+      t.organizationId,
+      t.status,
+      t.nextAttemptAt
+    ),
+    check(
+      "zoom_attendance_fetch_status_valid",
+      sql`${t.status} IN ('pendiente','lista','sin_reunion','ambigua','no_lista','sin_permiso','fuera_de_plazo','error')`
+    ),
+    check(
+      "zoom_attendance_fetch_source_valid",
+      sql`${t.instanceSource} IS NULL OR ${t.instanceSource} IN ('grabacion','reporte_usuario','instancias','manual')`
+    ),
+  ]
+);
+
+/**
+ * Cada tramo de conexión tal como lo informó Zoom, MINIMIZADO: nunca IP,
+ * ubicación, dispositivo ni versión del cliente. Se purga a los
+ * `ZOOM_ATTENDANCE_RAW_DAYS` (180): lo durable es la marca confirmada.
+ */
+export const zoomParticipantSegment = pgTable(
+  "zoom_participant_segment",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    fetchId: text("fetch_id")
+      .notNull()
+      .references(() => zoomAttendanceFetch.id, { onDelete: "cascade" }),
+    /** `id` del participante en el reporte (o `anon:<nombre>` si no vino). */
+    zoomParticipantId: text("zoom_participant_id").notNull(),
+    participantUserId: text("participant_user_id"),
+    registrantId: text("registrant_id"),
+    displayName: text("display_name").notNull(),
+    /** En minúsculas; casi siempre vacío para invitados (sin sesión de Zoom). */
+    email: text("email"),
+    joinTime: timestamp("join_time", { withTimezone: true }).notNull(),
+    leaveTime: timestamp("leave_time", { withTimezone: true }).notNull(),
+    durationSec: integer("duration_sec").notNull().default(0),
+    breakout: boolean("breakout").notNull().default(false),
+    waitingRoom: boolean("waiting_room").notNull().default(false),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    // Re-traer la misma reunión no duplica tramos.
+    uniqueIndex("zoom_participant_segment_fetch_uq").on(
+      t.fetchId,
+      t.zoomParticipantId,
+      t.joinTime
+    ),
+    index("zoom_participant_segment_org_created_idx").on(t.organizationId, t.createdAt),
+  ]
+);
+
+/**
+ * Lo que el sistema APRENDIÓ: esta llave de Zoom es esta persona (o es del
+ * equipo / un dispositivo y se ignora). Apunta al CONTACTO, no a la
+ * inscripción: "iPhone de Ana" sirve en el próximo curso de Ana. Solo se usa
+ * dentro de la lista del grupo de la clase: un alias jamás asigna afuera.
+ */
+export const zoomParticipantAlias = pgTable(
+  "zoom_participant_alias",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    keyKind: text("key_kind", {
+      enum: ["correo", "usuario_zoom", "registrante", "nombre"],
+    }).notNull(),
+    /** Normalizada (`claveDeAlias`): correo en minúsculas, nombre sin tildes… */
+    key: text("key").notNull(),
+    /** El último nombre visible con el que apareció (para la pantalla). */
+    label: text("label").notNull(),
+    /** NULL = se ignora, o solo se recuerda a quién NO es. */
+    contactId: text("contact_id").references(() => contact.id, { onDelete: "cascade" }),
+    ignorar: boolean("ignorar").notNull().default(false),
+    confirmations: integer("confirmations").notNull().default(0),
+    rejections: integer("rejections").notNull().default(0),
+    /** Contactos que alguien dijo que NO son esta llave. */
+    rejectedContactIds: text("rejected_contact_ids")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    lastUsedAt: timestamp("last_used_at"),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("zoom_participant_alias_org_key_uq").on(t.organizationId, t.keyKind, t.key),
+    index("zoom_participant_alias_org_contact_idx").on(t.organizationId, t.contactId),
+    check(
+      "zoom_participant_alias_kind_valid",
+      sql`${t.keyKind} IN ('correo','usuario_zoom','registrante','nombre')`
+    ),
+    check(
+      "zoom_participant_alias_ignorar_sin_contacto",
+      sql`NOT ${t.ignorar} OR ${t.contactId} IS NULL`
+    ),
+  ]
+);
+
+/** Umbrales de la sugerencia, por organización (sin fila = los de fábrica). */
+export const zoomAttendanceSettings = pgTable(
+  "zoom_attendance_settings",
+  {
+    organizationId: text("organization_id")
+      .primaryKey()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** Porcentaje de la clase conectado para sugerir "presente". */
+    minPct: integer("min_pct").notNull().default(50),
+    /** Piso en minutos (gana el mayor de los dos). */
+    minMinutes: integer("min_minutes").notNull().default(20),
+    /** NULL = nunca sugerir "tarde" (decisión del dueño para v1). */
+    lateMinutes: integer("late_minutes"),
+    updatedBy: text("updated_by").references(() => user.id, { onDelete: "set null" }),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    check("zoom_attendance_settings_pct_valid", sql`${t.minPct} BETWEEN 1 AND 100`),
+    check("zoom_attendance_settings_min_valid", sql`${t.minMinutes} BETWEEN 0 AND 600`),
+    check(
+      "zoom_attendance_settings_late_valid",
+      sql`${t.lateMinutes} IS NULL OR ${t.lateMinutes} BETWEEN 1 AND 180`
     ),
   ]
 );

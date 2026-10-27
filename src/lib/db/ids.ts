@@ -83,6 +83,11 @@ const prefixes = {
   zoomConnection: "zc",
   zoomRecording: "zr",
   zoomSyncRun: "zsr",
+  // 0080 — asistencia sugerida desde Zoom: la traída por clase, cada tramo
+  // crudo y cada nombre aprendido.
+  zoomAttendanceFetch: "zaf",
+  zoomParticipantSegment: "zps",
+  zoomParticipantAlias: "zal",
   // 031 — cada versión de la corrección de un alumno en una evaluación.
   correction: "cor",
   // 033 — lo propio de una persona anotada a un taller (1:1 con su inscripción).
