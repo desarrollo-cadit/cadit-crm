@@ -4,6 +4,10 @@ import {
   listRecordingsFor,
   listUsersFor,
   logZoomRequest,
+  pastInstancesFor,
+  pastMeetingsReportFor,
+  participantsReportFor,
+  readSeed,
   readZoomLog,
   resetZoomMock,
   seedZoomMock,
@@ -155,5 +159,66 @@ describe("falla programada y log", () => {
     resetZoomMock();
     expect(readZoomLog()).toEqual([]);
     expect(takeZoomFail()).toBeNull();
+  });
+});
+
+describe("reportes de reuniones pasadas (asistencia, 1.9.0)", () => {
+  const participantes = [
+    { id: "pA", name: "Ana Pérez", user_email: "ana@x.test", join_time: "2026-10-20T21:00:00Z", leave_time: "2026-10-20T22:30:00Z", duration: 5400 },
+    { id: "pB", name: "iPhone de Juan", join_time: "2026-10-20T21:05:00Z", leave_time: "2026-10-20T21:40:00Z", duration: 2100 },
+    { id: "pB", name: "iPhone de Juan", join_time: "2026-10-20T21:45:00Z", leave_time: "2026-10-20T22:30:00Z", duration: 2700 },
+  ];
+
+  beforeEach(() => {
+    seedZoomMock({
+      accounts: [
+        {
+          accountId: "acc-1",
+          users: [
+            {
+              id: "u1",
+              email: "aula1@x.test",
+              pastMeetings: [
+                { uuid: "/inst==", id: 5551234567, topic: "Aula 1", start_time: "2026-10-20T21:00:00Z", end_time: "2026-10-20T22:31:00Z", duration: 91, participants: participantes },
+                { uuid: "viva", id: 5551234567, start_time: "2026-10-27T21:00:00Z", state: "en_proceso", participants: participantes },
+                { uuid: "vieja", id: 5551234567, start_time: "2025-09-01T21:00:00Z", state: "vieja", participants: participantes },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("reporte de reuniones del usuario: solo las terminadas en el rango, con uuid", () => {
+    const r = pastMeetingsReportFor("mock-acc-1", "u1", { from: "2026-10-20", to: "2026-10-20" });
+    expect(r.status).toBe(200);
+    expect(r.body.meetings.map((m: { uuid: string }) => m.uuid)).toEqual(["/inst=="]);
+  });
+
+  it("sin uuid si el seed lo pide (el [U] del reporte de usuario)", () => {
+    seedZoomMock({ ...readSeed(), userReportOmitsUuid: true });
+    const r = pastMeetingsReportFor("mock-acc-1", "u1", { from: "2026-10-20", to: "2026-10-20" });
+    expect(r.body.meetings[0].uuid).toBeUndefined();
+  });
+
+  it("instancias por número: solo las terminadas", () => {
+    const r = pastInstancesFor("mock-acc-1", "5551234567");
+    expect(r.body.meetings.map((m: { uuid: string }) => m.uuid).sort()).toEqual(["/inst==", "vieja"]);
+  });
+
+  it("participantes: tramos repetidos, invitados sin correo y ruido que el adaptador descarta", () => {
+    const r = participantsReportFor("mock-acc-1", "/inst==", { pageSize: 2 });
+    expect(r.status).toBe(200);
+    expect(r.body.participants).toHaveLength(2);
+    expect(r.body.participants[0].ip_address).toBeTruthy();
+    expect(r.body.next_page_token).toBeTruthy();
+  });
+
+  it("en curso → 404 3001; vieja → 400 12702; sin permiso → 400 4711", () => {
+    expect(participantsReportFor("mock-acc-1", "viva", {})).toMatchObject({ status: 404, body: { code: 3001 } });
+    expect(participantsReportFor("mock-acc-1", "vieja", {})).toMatchObject({ status: 400, body: { code: 12702 } });
+    seedZoomMock({ ...readSeed(), reportsForbidden: true });
+    expect(participantsReportFor("mock-acc-1", "/inst==", {})).toMatchObject({ status: 400, body: { code: 4711 } });
   });
 });

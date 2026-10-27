@@ -54,13 +54,51 @@ export type ZoomRecordingMeeting = {
   fileTypes: string[];
 };
 
+/**
+ * Constitución 1.9.0 — Un tramo del reporte de participantes, MINIMIZADO:
+ * sin IP, ubicación, dispositivo ni versión del cliente.
+ */
+export type ZoomParticipantSegment = {
+  /** `id` del participante, o `anon:<nombre>` si Zoom no lo manda. */
+  participantId: string;
+  /** Vacío para invitados sin sesión y usuarios externos → null. */
+  participantUserId: string | null;
+  registrantId: string | null;
+  name: string;
+  /** En minúsculas; casi siempre null para quien no es de la cuenta. */
+  email: string | null;
+  joinTime: Date;
+  leaveTime: Date;
+  durationSec: number;
+  /** En una sala de grupos (breakout). */
+  breakout: boolean;
+  /** En la sala de espera: no cuenta minutos. */
+  waitingRoom: boolean;
+};
+
+/** Una reunión terminada que hospedó un usuario (reporte de reuniones). */
+export type ZoomPastMeeting = {
+  /** [U] Puede no venir en este reporte: entonces se buscan las instancias. */
+  uuid: string | null;
+  meetingId: string;
+  topic: string | null;
+  startTime: Date;
+  endTime: Date | null;
+  durationMin: number | null;
+};
+
+/** Una instancia terminada de un número de reunión. */
+export type ZoomPastInstance = { uuid: string; startTime: Date };
+
 export type ZoomErrorCode =
   | "credenciales_invalidas" // token 400/401 (invalid_client)
   | "sin_permiso" // 403 / scope faltante
   | "usuario_inexistente" // 404 / 1001
   | "limite_de_tasa" // 429 tras agotar reintentos
   | "zoom_caido" // 5xx / red tras agotar reintentos
-  | "respuesta_invalida"; // JSON que no valida
+  | "respuesta_invalida" // JSON que no valida
+  | "no_terminada" // 404 / 3001: en curso o reporte sin procesar (1.9.0)
+  | "fuera_de_plazo"; // 400 / 12702: más de un año (1.9.0)
 
 /**
  * `message` es SIEMPRE un texto propio en castellano: nunca incluye el

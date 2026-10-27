@@ -21,6 +21,8 @@ const seedSchema = z.object({
     })
   ),
   pageSize: z.number().int().min(1).optional(),
+  reportsForbidden: z.boolean().optional(),
+  userReportOmitsUuid: z.boolean().optional(),
 });
 
 export async function POST(req: Request) {
@@ -28,7 +30,7 @@ export async function POST(req: Request) {
   if (guard) return guard;
   const parsed = seedSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
-    return Response.json({ error: { message: "Body: { accounts: [...], pageSize? }" } }, { status: 422 });
+    return Response.json({ error: { message: "Body: { accounts: [...], pageSize?, reportsForbidden?, userReportOmitsUuid? }" } }, { status: 422 });
   }
   seedZoomMock(parsed.data as Parameters<typeof seedZoomMock>[0]);
   return Response.json({ ok: true });
