@@ -423,7 +423,8 @@ export function ZoomConnectionsClient({ rooms }: { rooms: ActiveRoom[] }) {
           </CardTitle>
           <CardDescription>
             Creá una app Server-to-Server OAuth en el Marketplace de Zoom con permisos de solo
-            lectura (usuarios y grabaciones en la nube) y pegá acá sus tres datos. Si las cuentas
+            lectura (usuarios, grabaciones en la nube y, para la asistencia sugerida, reportes
+            de reuniones pasadas) y pegá acá sus tres datos. Si las cuentas
             de la academia son una sola organización de Zoom, alcanza con una conexión; si son
             cuentas separadas, cargá una por cuenta. El CRM solo lee: no crea ni borra nada en Zoom.
           </CardDescription>
