@@ -7,6 +7,8 @@ import { ItemDeMenu, MenuFlotante } from "@/components/ui/floating-menu";
 import { Modal } from "@/components/ui/modal";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { Select } from "@/components/ui/select";
+import { ZoomAttendanceReview } from "@/components/cohorts/zoom-attendance-review";
 import { cn } from "@/lib/utils";
 import { notify } from "@/lib/notify";
 import type { AttendanceStatus, EstadoDeClase } from "@/lib/attendance-percentage";
@@ -121,6 +123,8 @@ export function AttendanceClient({
   const [confirmar, setConfirmar] = useState<Session | null>(null);
   const [cancelar, setCancelar] = useState<Session | null>(null);
   const gridRef = useRef<HTMLTableElement>(null);
+  /** Constitución 1.9.0 — la clase cuya sugerencia de Zoom se revisa. */
+  const [claseZoom, setClaseZoom] = useState<string | null>(null);
 
   const refetch = useCallback(async () => {
     const res = await fetch(`/api/cohorts/${cohortId}/attendance`).catch(() => null);
@@ -131,6 +135,16 @@ export function AttendanceClient({
   useEffect(() => {
     void refetch();
   }, [refetch]);
+
+  // La bandeja "Asistencia sugerida para revisar" llega con ?clase=<id>.
+  useEffect(() => {
+    try {
+      const clase = new URLSearchParams(window.location.search).get("clase");
+      if (clase) setClaseZoom(clase);
+    } catch {
+      // Sin URL legible se queda la clase por defecto.
+    }
+  }, []);
 
   async function readError(res: Response | null, fallback: string) {
     const body = (await res?.json().catch(() => null)) as
@@ -262,7 +276,15 @@ export function AttendanceClient({
     );
   }
 
-  const dictadas = sheet.sessions.filter((s) => s.estado === "dictada").length;
+  const dictadasLista = sheet.sessions.filter((s) => s.estado === "dictada");
+  // La bandeja de inicio llega con `?clase=<id>`; si no, la última dictada
+  // sin lista (la que más probablemente haya que revisar).
+  const claseElegida =
+    dictadasLista.find((s) => s.id === claseZoom) ??
+    [...dictadasLista].reverse().find((s) => !s.tomada) ??
+    dictadasLista.at(-1) ??
+    null;
+  const dictadas = dictadasLista.length;
   const conLista = sheet.sessions.filter((s) => s.estado === "dictada" && s.tomada).length;
   const menuSession = menu ? sheet.sessions.find((s) => s.id === menu.sessionId) : undefined;
   const menuAlumno =
@@ -278,6 +300,33 @@ export function AttendanceClient({
           ? "sin mínimo de asistencia definido"
           : `mínimo para aprobar: ${sheet.minAttendancePct}%`}
       </p>
+
+      {canEdit && claseElegida && (
+        <div className="space-y-2">
+          {dictadasLista.length > 1 && (
+            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+              Revisar Zoom de la clase
+              <Select
+                value={claseElegida.id}
+                onChange={(e) => setClaseZoom(e.target.value)}
+                className="h-8 w-auto text-xs"
+              >
+                {[...dictadasLista].reverse().map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {fechaCorta(s)}
+                    {s.tomada ? " · con lista" : " · sin lista"}
+                  </option>
+                ))}
+              </Select>
+            </label>
+          )}
+          <ZoomAttendanceReview
+            classSessionId={claseElegida.id}
+            claseLabel={fechaCorta(claseElegida)}
+            onConfirmado={() => void refetch()}
+          />
+        </div>
+      )}
 
       <div className="relative max-h-[calc(100vh-16rem)] max-w-full overflow-auto rounded-lg border">
         <table

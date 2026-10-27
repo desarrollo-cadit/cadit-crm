@@ -8,6 +8,7 @@ import {
   agruparPersonas,
   armarSugerencia,
   llavesDePersona,
+  minutosConectado,
   planDeConfirmacion,
   UMBRALES_DE_FABRICA,
   type AliasAprendido,
@@ -45,6 +46,8 @@ export type AlumnoSugeridoDto = Omit<SugerenciaDeAlumno, "primeraEntrada"> & {
 };
 
 export type ZoomAttendanceDto = {
+  /** Zona de la academia: las horas de las reuniones se muestran en ella. */
+  timeZone: string;
   /** La organización tiene alguna conexión de Zoom activa. */
   zoomConectado: boolean;
   /** Hay una corrida de Zoom en curso (traer o sincronizar). */
@@ -65,6 +68,8 @@ export type ZoomAttendanceDto = {
     alumnos: AlumnoSugeridoDto[];
     sinIdentificar: (Omit<PersonaSinIdentificar, "primeraEntrada"> & { primeraEntrada: string | null })[];
     excluidas: PersonaExcluida[];
+    /** Cada persona de Zoom (no excluida) con sus nombres y SUS minutos. */
+    personas: Record<string, { nombres: string[]; minutos: number }>;
   } | null;
 };
 
@@ -330,10 +335,15 @@ export async function sugerenciaDeZoom(organizationId: string, classId: string):
       })),
       sinIdentificar: s.sinIdentificar.map((p) => ({ ...p, primeraEntrada: p.primeraEntrada?.toISOString() ?? null })),
       excluidas: s.excluidas,
+      personas: Object.fromEntries(
+        agruparPersonas(cargado.ctx.segmentos)
+          .filter((p) => !s.excluidas.some((e) => e.key === p.key))
+          .map((p) => [p.key, { nombres: p.nombres, minutos: minutosConectado(p.segmentos, cargado.ctx!.ventana).minutos }])
+      ),
     };
   }
 
-  return { zoomConectado: conexiones.length > 0, enCurso, traida, sugerencia };
+  return { timeZone: cargado.timeZone, zoomConectado: conexiones.length > 0, enCurso, traida, sugerencia };
 }
 
 /* ============================================================
