@@ -325,8 +325,10 @@ export type ZoomPermisos = "grabaciones" | "reportes";
  * Scopes a agregar en el Marketplace, por familia. Los granulares van
  * primero; entre paréntesis el equivalente clásico.
  *
- * [U] `report:read:list_meetings:admin` (reporte de reuniones de un usuario)
- * no está confirmado en el selector de scopes: verificar con la app real.
+ * `report:read:user:admin` (reporte de reuniones de un usuario, "Get meeting
+ * reports"): confirmado en la tabla oficial de scopes granulares el
+ * 2026-10-27. El nombre supuesto antes (`report:read:list_meetings:admin`) no
+ * existe en el selector de la app.
  */
 export const SCOPES_POR_FAMILIA: Record<ZoomPermisos, string[]> = {
   grabaciones: [
@@ -335,7 +337,7 @@ export const SCOPES_POR_FAMILIA: Record<ZoomPermisos, string[]> = {
   ],
   reportes: [
     "report:read:list_meeting_participants:admin",
-    "report:read:list_meetings:admin",
+    "report:read:user:admin",
     "meeting:read:list_past_instances:admin",
   ],
 };

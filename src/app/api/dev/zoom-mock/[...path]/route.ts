@@ -68,7 +68,7 @@ export async function POST(req: Request, { params }: Params) {
       token_type: "bearer",
       expires_in: 3600,
       scope:
-        "cloud_recording:read:list_user_recordings:admin user:read:list_users:admin report:read:list_meeting_participants:admin report:read:list_meetings:admin meeting:read:list_past_instances:admin",
+        "cloud_recording:read:list_user_recordings:admin user:read:list_users:admin report:read:list_meeting_participants:admin report:read:user:admin meeting:read:list_past_instances:admin",
     });
   }
 
