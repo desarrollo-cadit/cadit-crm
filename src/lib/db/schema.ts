@@ -3,7 +3,6 @@ import {
   boolean,
   check,
   date,
-  foreignKey,
   index,
   integer,
   jsonb,
@@ -3613,15 +3612,19 @@ export const zoomRecording = pgTable(
     /** DV-013 — dejó de aparecer en Zoom dentro de la ventana consultada. */
     missingInZoomAt: timestamp("missing_in_zoom_at"),
     /**
-     * 0069 — La clase de la que se la desvinculó al faltar en Zoom. Si vuelve
-     * a aparecer, una MANUAL vuelve a esa clase (si está libre); una
-     * automática pasa por el matcher. NULL apenas se resuelve.
+     * 0069/0082 — Las clases de las que se la desvinculó al faltar en Zoom
+     * (una grabación compartida entre grupos tiene varias). Si vuelve a
+     * aparecer, una MANUAL vuelve a las que sigan libres; una automática pasa
+     * por el matcher. Vacío apenas se resuelve. Sin FK (es un arreglo): una
+     * clase que ya no existe simplemente no la recibe.
+     *
+     * Las clases a las que ESTÁ adjudicada viven en `zoom_recording_class`
+     * (0082 reemplazó a `class_session_id`).
      */
-    // FK con nombre corto (abajo): el automático pasa los 63 bytes de Postgres.
-    missingFromClassSessionId: text("missing_from_class_session_id"),
-    classSessionId: text("class_session_id").references(() => classSession.id, {
-      onDelete: "set null",
-    }),
+    missingFromClassSessionIds: text("missing_from_class_session_ids")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     assignmentMode: text("assignment_mode", { enum: ["auto", "manual"] })
       .notNull()
       .default("auto"),
@@ -3646,10 +3649,6 @@ export const zoomRecording = pgTable(
       t.zoomConnectionId,
       t.zoomMeetingUuid
     ),
-    // Una clase, UNA grabación adjudicada.
-    uniqueIndex("zoom_recording_org_class_uq")
-      .on(t.organizationId, t.classSessionId)
-      .where(sql`${t.classSessionId} IS NOT NULL`),
     index("zoom_recording_org_start_idx").on(t.organizationId, t.startTime.desc()),
     index("zoom_recording_org_room_start_idx").on(
       t.organizationId,
@@ -3658,20 +3657,45 @@ export const zoomRecording = pgTable(
     ),
     index("zoom_recording_org_state_idx").on(t.organizationId, t.assignmentState),
     index("zoom_recording_org_meeting_idx").on(t.organizationId, t.zoomMeetingId),
-    foreignKey({
-      name: "zoom_recording_missing_from_class_fk",
-      columns: [t.missingFromClassSessionId],
-      foreignColumns: [classSession.id],
-    }).onDelete("set null"),
     check("zoom_recording_mode_valid", sql`${t.assignmentMode} IN ('auto','manual')`),
     check(
       "zoom_recording_state_valid",
       sql`${t.assignmentState} IN ('pendiente','asignada','ambigua','conflicto','sin_clase')`
     ),
-    check(
-      "zoom_recording_assigned_has_class",
-      sql`(${t.assignmentState} = 'asignada') = (${t.classSessionId} IS NOT NULL)`
-    ),
+    // "asignada ⇔ al menos una clase" ya no cabe en un CHECK (las clases están
+    // en otra tabla): lo sostiene `assignment.ts`, que es el único que escribe.
+  ]
+);
+
+/**
+ * 0082 — A qué clases está adjudicada una grabación de Zoom. Una grabación
+ * puede ir a VARIAS clases (dos grupos en la misma reunión a la misma hora:
+ * la grabación compartida); una clase tiene a lo sumo UNA grabación (índice
+ * único por clase). Es la verdad de la adjudicación; la clase recibe su
+ * proyección en `class_session.recording_url`.
+ *
+ * Borrar una clase con grabación adjudicada se RECHAZA (`restrict`), igual
+ * que antes con `zoom_recording_assigned_has_class`: primero se desasigna.
+ */
+export const zoomRecordingClass = pgTable(
+  "zoom_recording_class",
+  {
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    recordingId: text("recording_id")
+      .notNull()
+      .references(() => zoomRecording.id, { onDelete: "cascade" }),
+    classSessionId: text("class_session_id")
+      .notNull()
+      .references(() => classSession.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.recordingId, t.classSessionId] }),
+    // Una clase, UNA grabación adjudicada.
+    uniqueIndex("zoom_recording_class_org_class_uq").on(t.organizationId, t.classSessionId),
+    index("zoom_recording_class_org_rec_idx").on(t.organizationId, t.recordingId),
   ]
 );
 

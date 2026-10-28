@@ -425,7 +425,7 @@ export async function seccionGrabacionesZoom({ api, ok, BASE, getCookie }) {
     porTema(4)?.passcodeEmbedded === false && porTema(4)?.passcode === "7777",
     JSON.stringify(porTema(4))
   );
-  const estadoDe = (f) => [f?.assignment?.mode, f?.assignment?.state, f?.assignment?.classSession?.id ?? null];
+  const estadoDe = (f) => [f?.assignment?.mode, f?.assignment?.state, f?.assignment?.classSessions?.[0]?.id ?? null];
   ok(
     "6 — US2: R1 asignada a A/1 (señal reunión), R2 a B/1 y R5 a B/2 (señal aula)",
     JSON.stringify(estadoDe(porTema(1))) === JSON.stringify(["auto", "asignada", clA[0].id]) &&

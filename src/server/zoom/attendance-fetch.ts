@@ -573,8 +573,11 @@ export const dbAttendanceFetchStore: AttendanceFetchStore = {
           zoomConnectionId: schema.zoomRecording.zoomConnectionId,
           meetingId: schema.zoomRecording.zoomMeetingId,
         })
-        .from(schema.zoomRecording)
-        .where(scoped(schema.zoomRecording.organizationId, orgId, eq(schema.zoomRecording.classSessionId, classId)))
+        .from(schema.zoomRecordingClass)
+        .innerJoin(schema.zoomRecording, eq(schema.zoomRecording.id, schema.zoomRecordingClass.recordingId))
+        .where(
+          scoped(schema.zoomRecordingClass.organizationId, orgId, eq(schema.zoomRecordingClass.classSessionId, classId))
+        )
         .limit(1);
       const conexiones = await db
         .select({ id: schema.zoomConnection.id })
@@ -704,7 +707,7 @@ export const dbAttendanceFetchStore: AttendanceFetchStore = {
           classMeetingUrl: cs.meetingUrl,
           cohortMeetingUrl: schema.cohort.meetingUrl,
           roomZoomUserId: schema.virtualRoom.zoomUserId,
-          recordingId: schema.zoomRecording.id,
+          recordingId: schema.zoomRecordingClass.recordingId,
           timezone: schema.organization.timezone,
           cohortStartDate: schema.cohort.startDate,
           cohortEndDate: schema.cohort.endDate,
@@ -717,7 +720,7 @@ export const dbAttendanceFetchStore: AttendanceFetchStore = {
           schema.virtualRoom,
           eq(schema.virtualRoom.id, sql`coalesce(${cs.virtualRoomId}, ${schema.cohort.virtualRoomId})`)
         )
-        .leftJoin(schema.zoomRecording, eq(schema.zoomRecording.classSessionId, cs.id))
+        .leftJoin(schema.zoomRecordingClass, eq(schema.zoomRecordingClass.classSessionId, cs.id))
         .where(
           scoped(
             cs.organizationId,

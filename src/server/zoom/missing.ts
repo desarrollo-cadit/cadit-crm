@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, isNull, lt } from "drizzle-orm";
+import { and, eq, exists, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { corteDeBorrado } from "@/lib/recording-purge";
@@ -17,6 +17,15 @@ import { inOrgScope } from "./scope";
  */
 
 const t = schema.zoomRecording;
+
+/** Que la grabación esté adjudicada a alguna clase (`zoom_recording_class`). */
+const tieneClases = () =>
+  exists(
+    getDb()
+      .select({ x: sql`1` })
+      .from(schema.zoomRecordingClass)
+      .where(eq(schema.zoomRecordingClass.recordingId, t.id))
+  );
 
 /** Ids que cumplen la condición, en una transacción corta. */
 function ids(orgId: string, connectionId: string, ...cond: Parameters<typeof and>) {
@@ -41,10 +50,10 @@ export async function reconcileMissing(
 ): Promise<{ detached: number; restored: number }> {
   let detached = 0;
   let restored = 0;
-  for (const id of await ids(orgId, connectionId, isNotNull(t.missingInZoomAt), isNotNull(t.classSessionId))) {
+  for (const id of await ids(orgId, connectionId, isNotNull(t.missingInZoomAt), tieneClases())) {
     if (await detachMissing(orgId, id)) detached++;
   }
-  for (const id of await ids(orgId, connectionId, isNull(t.missingInZoomAt), isNotNull(t.missingFromClassSessionId))) {
+  for (const id of await ids(orgId, connectionId, isNull(t.missingInZoomAt), sql`cardinality(${t.missingFromClassSessionIds}) > 0`)) {
     if ((await restoreReappeared(orgId, id)) === "restaurada") restored++;
   }
   return { detached, restored };

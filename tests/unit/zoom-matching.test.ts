@@ -86,6 +86,74 @@ describe("señal A — número de reunión", () => {
   });
 });
 
+/**
+ * 2026-10-28 — Grabación compartida: dos grupos (p. ej. AutoCAD Estudiantes y
+ * AutoCAD Profesionales) entran al MISMO enlace de Zoom, a la MISMA hora, en
+ * las primeras clases. Una reunión, una grabación, una clase por grupo.
+ */
+describe("señal A — grabación compartida entre grupos", () => {
+  const R = "9990000001";
+
+  it("misma reunión, mismo inicio, grupos distintos → compartida con todas", () => {
+    const r = matchRecording(
+      input({}, [
+        clase("EST3", "2026-09-15T21:30:00Z", { meetingId: R, cohortId: "coh_est" }),
+        clase("PRO3", "2026-09-15T21:30:00Z", { meetingId: R, cohortId: "coh_pro" }),
+      ])
+    );
+    expect(r).toEqual({ kind: "compartida", classSessionIds: ["EST3", "PRO3"], signal: "reunion" });
+  });
+
+  it("PMI con clases seguidas (una termina 20:00, otra empieza 20:00) → sigue ambigua", () => {
+    const r = matchRecording(
+      input({ startTime: new Date("2026-09-15T19:50:00Z") }, [
+        clase("T1", "2026-09-15T17:00:00Z", { meetingId: R, cohortId: "coh_tarde", endsAt: new Date("2026-09-15T20:00:00Z") }),
+        clase("N1", "2026-09-15T20:00:00Z", { meetingId: R, cohortId: "coh_noche" }),
+      ])
+    );
+    expect(r).toEqual({ kind: "ambigua", candidateIds: ["N1", "T1"], signal: "reunion" });
+  });
+
+  it("dos clases del MISMO grupo a la misma hora → ambigua (no es compartir)", () => {
+    const r = matchRecording(
+      input({}, [
+        clase("A1", "2026-09-15T21:30:00Z", { meetingId: R, cohortId: "coh_A" }),
+        clase("A2", "2026-09-15T21:30:00Z", { meetingId: R, cohortId: "coh_A" }),
+      ])
+    );
+    expect(r).toEqual({ kind: "ambigua", candidateIds: ["A1", "A2"], signal: "reunion" });
+  });
+
+  it("tres grupos, uno del mismo grupo repetido → ambigua (todas o ninguna)", () => {
+    const r = matchRecording(
+      input({}, [
+        clase("E3", "2026-09-15T21:30:00Z", { meetingId: R, cohortId: "coh_est" }),
+        clase("P3", "2026-09-15T21:30:00Z", { meetingId: R, cohortId: "coh_pro" }),
+        clase("P4", "2026-09-15T21:30:00Z", { meetingId: R, cohortId: "coh_pro" }),
+      ])
+    );
+    expect(r.kind).toBe("ambigua");
+  });
+
+  it("por aula nunca es compartida: mismo inicio y grupos distintos → ambigua", () => {
+    const r = matchRecording(
+      input({ meetingId: "1110000001" }, [
+        clase("A2", "2026-09-15T21:30:00Z", { roomId: "aula_1", cohortId: "coh_A" }),
+        clase("C2", "2026-09-15T21:30:00Z", { roomId: "aula_1", cohortId: "coh_C" }),
+      ])
+    );
+    expect(r).toEqual({ kind: "ambigua", candidateIds: ["A2", "C2"], signal: "aula" });
+  });
+
+  it("determinismo: el orden de llegada no cambia la compartida", () => {
+    const cs = [
+      clase("PRO3", "2026-09-15T21:30:00Z", { meetingId: R, cohortId: "coh_pro" }),
+      clase("EST3", "2026-09-15T21:30:00Z", { meetingId: R, cohortId: "coh_est" }),
+    ];
+    expect(matchRecording(input({}, cs))).toEqual(matchRecording(input({}, [...cs].reverse())));
+  });
+});
+
 describe("señal B — aula del anfitrión o PMI", () => {
   it("sin reunión que coincida, el aula vinculada al anfitrión decide", () => {
     const r = matchRecording(

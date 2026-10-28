@@ -402,6 +402,13 @@ no por `id`: la copia crea filas nuevas, así que el `id` nunca coincide.
   tiene por dónde llegarles (`tests/unit/portal-grabaciones.test.ts`). **Un
   enlace manual nunca se pisa** y una decisión manual nunca la deshace la
   sincronización.
+- **Grabación compartida** (0082): las clases de una grabación viven en
+  `zoom_recording_class` (UNIQUE por clase: una clase, una grabación; una
+  grabación, N clases). El matcher da `compartida` solo por REUNIÓN, con el
+  MISMO inicio exacto y grupos DISTINTOS; cualquier otra cosa sigue `ambigua`
+  (PMI con grupos seguidos). Cada clase se decide sola (`veredicto` en
+  `assignment.ts`); pegar un enlace a mano en una clase de una compartida
+  suelta SOLO esa clase. `zoom_recording.class_session_id` ya no existe.
 - **Una corrida por organización**: lease en `zoom_sync_state` (UPDATE … WHERE
   lease vencido), no un advisory lock de sesión. El botón responde 409 si está
   tomado. Ninguna transacción abierta durante el HTTP a Zoom: cada página se

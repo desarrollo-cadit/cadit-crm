@@ -4,11 +4,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Ban, CalendarSearch, RotateCcw, Search, Unlink, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import type { CandidatesDto, ClassOptionDto, RecordingRowDto } from "@/server/zoom/recordings";
 import { notify } from "@/lib/notify";
 
-type ApiError = { code?: string; message?: string; current?: ClassOptionDto["current"] };
+type ApiError = { code?: string; message?: string; current?: ClassOptionDto["current"]; classSessionId?: string };
+
+/** Lo que se muestra de una clase elegida, aunque ya no esté en la lista cargada. */
+type Elegida = { id: string; label: string };
+
+const etiqueta = (c: { cohortName: string; number: number }) => `${c.cohortName} · clase ${c.number}`;
 
 async function leerError(res: Response | null): Promise<ApiError> {
   const body = (await res?.json().catch(() => null)) as { error?: ApiError } | null;
@@ -25,8 +31,13 @@ async function leerError(res: Response | null): Promise<ApiError> {
  *     elige y aparecen todas sus clases reales.
  *  3. **Por día**: todas las clases reales de una fecha, en cualquier aula.
  *
+ * 2026-10-28 — Se pueden elegir VARIAS clases (una por grupo cuando dos
+ * grupos comparten la reunión). Elegir marca y desmarca; "Asignar" guarda el
+ * conjunto, que REEMPLAZA al que tenía (arranca con las clases actuales
+ * marcadas, para sumar o sacar una sin perder las otras).
+ *
  * Una clase que ya tiene enlace (pegado a mano u otra grabación) se marca, y
- * elegirla pide confirmar QUÉ se reemplaza. Lo que se decide acá no lo
+ * asignarla pide confirmar QUÉ se reemplaza. Lo que se decide acá no lo
  * deshace ninguna sincronización.
  */
 export function AssignDialog({
@@ -46,9 +57,18 @@ export function AssignDialog({
   const [date, setDate] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [confirmar, setConfirmar] = useState<{ clase: ClassOptionDto; current: NonNullable<ClassOptionDto["current"]> } | null>(
-    null
+  const [confirmar, setConfirmar] = useState<{ label: string; current: NonNullable<ClassOptionDto["current"]> } | null>(null);
+  const [elegidas, setElegidas] = useState<Elegida[]>(() =>
+    row.assignment.classSessions.map((c) => ({ id: c.id, label: etiqueta(c) }))
   );
+
+  // Si la fila cambia (desasignar, volver a automático), la selección vuelve a
+  // ser lo que la grabación tiene ahora.
+  const actualesClave = row.assignment.classSessions.map((c) => c.id).join(",");
+  useEffect(() => {
+    setElegidas(row.assignment.classSessions.map((c) => ({ id: c.id, label: etiqueta(c) })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- la clave resume `classSessions`.
+  }, [actualesClave]);
 
   const fecha = useMemo(
     () => new Intl.DateTimeFormat("es-UY", { timeZone: timezone, weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }),
@@ -85,11 +105,18 @@ export function AssignDialog({
     return { ok: false as const, error: await leerError(res) };
   }
 
-  async function asignar(clase: ClassOptionDto, replace = false) {
+  function alternar(c: ClassOptionDto) {
+    setConfirmar(null);
+    setElegidas((prev) =>
+      prev.some((e) => e.id === c.id) ? prev.filter((e) => e.id !== c.id) : [...prev, { id: c.id, label: etiqueta(c) }]
+    );
+  }
+
+  async function asignar(replace = false) {
     const r = await accion(`/api/recordings/${row.id}/assignment`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ classSessionId: clase.id, ...(replace ? { replace: true } : {}) }),
+      body: JSON.stringify({ classSessionIds: elegidas.map((e) => e.id), ...(replace ? { replace: true } : {}) }),
     });
     if (r.ok) {
       setConfirmar(null);
@@ -97,7 +124,8 @@ export function AssignDialog({
       return;
     }
     if (r.error.code === "requiere_reemplazo" && r.error.current) {
-      setConfirmar({ clase, current: r.error.current });
+      const cual = elegidas.find((e) => e.id === r.error.classSessionId);
+      setConfirmar({ label: cual?.label ?? "Una de las clases", current: r.error.current });
       return;
     }
     notify.error(r.error.message ?? "No pudimos asignar la grabación.");
@@ -131,21 +159,29 @@ export function AssignDialog({
     else void cargar();
   }
 
-  const actual = row.assignment.classSession;
+  const actuales = row.assignment.classSessions;
+  const actual = actuales.length > 0 ? actuales : null;
   const descartable = !actual && (row.assignment.state === "conflicto" || row.assignment.state === "ambigua");
+  const sinCambios =
+    elegidas.length === actuales.length && elegidas.every((e) => actuales.some((a) => a.id === e.id));
 
   function opcion(c: ClassOptionDto) {
-    const esLaActual = actual?.id === c.id;
+    const esLaActual = actuales.some((a) => a.id === c.id);
+    const elegida = elegidas.some((e) => e.id === c.id);
     const ajena = c.current && !(c.current.kind === "zoom" && c.current.recordingId === row.id);
     return (
       <li key={c.id}>
         <button
           type="button"
-          disabled={busy || c.canceled || esLaActual}
-          onClick={() => void asignar(c)}
-          className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-md border px-3 py-2 text-left text-sm hover:border-text-3 disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={busy || c.canceled}
+          onClick={() => alternar(c)}
+          aria-pressed={elegida}
+          className={`flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-md border px-3 py-2 text-left text-sm hover:border-text-3 disabled:cursor-not-allowed disabled:opacity-60 ${
+            elegida ? "border-brand bg-brand-soft" : ""
+          }`}
           data-class-id={c.id}
         >
+          <Checkbox checked={elegida} readOnly tabIndex={-1} aria-hidden className="pointer-events-none" />
           <span className="font-medium text-foreground">
             {c.cohortName} · clase {c.number}
           </span>
@@ -167,11 +203,12 @@ export function AssignDialog({
     <div className="space-y-4 rounded-lg border bg-card p-4" role="region" aria-label="Asignar grabación a una clase">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1 text-sm">
-          <p className="font-medium text-foreground">Asignar a una clase</p>
+          <p className="font-medium text-foreground">Asignar a una o varias clases</p>
           <p className="text-muted-foreground">
             {actual ? (
               <>
-                Asignada a <span className="font-medium text-foreground">{actual.cohortName} · clase {actual.number}</span>{" "}
+                Asignada a{" "}
+                <span className="font-medium text-foreground">{actual.map(etiqueta).join(", ")}</span>{" "}
                 ({row.assignment.mode === "manual" ? "a mano" : "automática"}).
               </>
             ) : (
@@ -205,17 +242,29 @@ export function AssignDialog({
         <div className="space-y-2 rounded-md border border-warning-border bg-warning-soft p-3 text-sm" role="alert">
           <p className="text-foreground">
             {confirmar.current.kind === "manual"
-              ? `${confirmar.clase.cohortName} · clase ${confirmar.clase.number} ya tiene un enlace de grabación cargado a mano. Si seguís, se reemplaza por esta grabación de Zoom.`
-              : `${confirmar.clase.cohortName} · clase ${confirmar.clase.number} ya tiene otra grabación de Zoom. Si seguís, esa queda sin clase.`}
+              ? `${confirmar.label} ya tiene un enlace de grabación cargado a mano. Si seguís, se reemplaza por esta grabación de Zoom.`
+              : `${confirmar.label} ya tiene otra grabación de Zoom. Si seguís, esa deja de estar en esta clase.`}
           </p>
           <div className="flex gap-2">
-            <Button size="sm" disabled={busy} onClick={() => void asignar(confirmar.clase, true)}>
+            <Button size="sm" disabled={busy} onClick={() => void asignar(true)}>
               Reemplazar
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setConfirmar(null)}>
               Cancelar
             </Button>
           </div>
+        </div>
+      )}
+
+      {!sinCambios && elegidas.length > 0 && !confirmar && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted p-3 text-sm" data-testid="seleccion">
+          <p className="text-foreground">
+            {elegidas.length === 1 ? "Clase elegida: " : `${elegidas.length} clases elegidas (una grabación compartida): `}
+            <span className="font-medium">{elegidas.map((e) => e.label).join(", ")}</span>
+          </p>
+          <Button size="sm" disabled={busy} onClick={() => void asignar()}>
+            {elegidas.length === 1 ? "Asignar" : `Asignar a las ${elegidas.length} clases`}
+          </Button>
         </div>
       )}
       {/* Inline a propósito: es el ESTADO de la búsqueda de clases (se reintenta al tipear), no el resultado de una acción. */}

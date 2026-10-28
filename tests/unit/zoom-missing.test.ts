@@ -18,7 +18,7 @@ const ORG = "org_1";
 const AHORA = new Date("2026-10-22T12:00:00Z");
 const DIA = 86_400_000;
 
-type Extra = { missingInZoomAt: Date | null; missingFromClassSessionId: string | null };
+type Extra = { missingInZoomAt: Date | null; missingFromClassSessionIds: string[] };
 
 let recs: Map<string, RecRow & Extra>;
 let classes: Map<string, ClassRow>;
@@ -35,18 +35,18 @@ const tx: MissingTx = {
     return c ? { ...c } : null;
   },
   async recordingOnClass(classId) {
-    const r = [...recs.values()].find((x) => x.classSessionId === classId);
+    const r = [...recs.values()].find((x) => x.classSessionIds.includes(classId));
     return r ? { id: r.id, assignmentMode: r.assignmentMode, durationMin: r.durationMin } : null;
   },
   async updateRecording(id, patch) {
     const r = recs.get(id)!;
     Object.assign(r, patch);
-    if (r.classSessionId) {
-      const dup = [...recs.values()].filter((x) => x.classSessionId === r.classSessionId);
+    for (const c of r.classSessionIds) {
+      const dup = [...recs.values()].filter((x) => x.classSessionIds.includes(c));
       if (dup.length > 1) throw new Error("unique violation: una clase, una grabación");
     }
-    if ((r.assignmentState === "asignada") !== (r.classSessionId !== null)) {
-      throw new Error("check violation: asignada ⇔ clase");
+    if ((r.assignmentState === "asignada") !== (r.classSessionIds.length > 0)) {
+      throw new Error("invariante: asignada ⇔ al menos una clase");
     }
   },
   async releaseConflicts(classId, exceptId) {
@@ -64,7 +64,7 @@ const tx: MissingTx = {
   },
   async getMissing(id) {
     const r = recs.get(id);
-    return r ? { missingInZoomAt: r.missingInZoomAt, missingFromClassSessionId: r.missingFromClassSessionId } : null;
+    return r ? { missingInZoomAt: r.missingInZoomAt, missingFromClassSessionIds: r.missingFromClassSessionIds } : null;
   },
   async deleteRecording(id) {
     recs.delete(id);
@@ -85,7 +85,7 @@ function rec(id: string, extra: Partial<RecRow & Extra> = {}) {
     startTime: new Date("2026-06-15T21:34:00Z"),
     durationMin: 120,
     playUrl: url(id),
-    classSessionId: null,
+    classSessionIds: [],
     assignmentMode: "auto",
     assignmentState: "pendiente",
     candidateClassIds: [],
@@ -93,7 +93,7 @@ function rec(id: string, extra: Partial<RecRow & Extra> = {}) {
     assignedBy: null,
     assignedAt: null,
     missingInZoomAt: null,
-    missingFromClassSessionId: null,
+    missingFromClassSessionIds: [],
     ...extra,
   };
   recs.set(id, r);
@@ -110,7 +110,7 @@ function clase(id: string, extra: Partial<ClassRow> = {}) {
 function asignada(id: string, extra: Partial<RecRow & Extra> = {}) {
   clase("A1", { recordingUrl: url(id), recordingSource: "zoom" });
   return rec(id, {
-    classSessionId: "A1",
+    classSessionIds: ["A1"],
     assignmentState: "asignada",
     assignedAt: new Date("2026-06-16T00:00:00Z"),
     ...extra,
@@ -134,9 +134,9 @@ describe("detachMissing — al faltar en Zoom se desvincula", () => {
 
     expect(classes.get("A1")).toMatchObject({ recordingUrl: null, recordingSource: null });
     expect(recs.get("r1")).toMatchObject({
-      classSessionId: null,
+      classSessionIds: [],
       assignmentState: "sin_clase",
-      missingFromClassSessionId: "A1",
+      missingFromClassSessionIds: ["A1"],
       // Auditoría: quién y cuándo se conservan hasta el borrado.
       assignmentMode: "manual",
       assignedBy: "usr_1",
@@ -153,7 +153,7 @@ describe("detachMissing — al faltar en Zoom se desvincula", () => {
     await detachMissing(ORG, "r1", deps());
 
     expect(classes.get("A1")).toMatchObject({ recordingUrl: "https://drive.example/video", recordingSource: "manual" });
-    expect(recs.get("r1")!.classSessionId).toBeNull();
+    expect(recs.get("r1")!.classSessionIds).toEqual([]);
   });
 
   it("un enlace de Zoom que NO es el de esta grabación no se toca", async () => {
@@ -185,17 +185,17 @@ describe("restoreReappeared — si vuelve a aparecer", () => {
       assignmentMode: "manual",
       assignmentState: "sin_clase",
       assignedBy: "usr_1",
-      missingFromClassSessionId: "A1",
+      missingFromClassSessionIds: ["A1"],
     });
 
     expect(await restoreReappeared(ORG, "r1", deps())).toBe("restaurada");
 
     expect(recs.get("r1")).toMatchObject({
-      classSessionId: "A1",
+      classSessionIds: ["A1"],
       assignmentState: "asignada",
       assignmentMode: "manual",
       assignedBy: "usr_1",
-      missingFromClassSessionId: null,
+      missingFromClassSessionIds: [],
     });
     expect(classes.get("A1")).toMatchObject({ recordingUrl: url("r1"), recordingSource: "zoom" });
   });
@@ -203,19 +203,19 @@ describe("restoreReappeared — si vuelve a aparecer", () => {
   it("manual: si la clase ya tiene OTRA grabación, no se restaura y queda sin clase", async () => {
     const { restoreReappeared } = await mod();
     clase("A1", { recordingUrl: url("r2"), recordingSource: "zoom" });
-    rec("r2", { classSessionId: "A1", assignmentState: "asignada" });
-    rec("r1", { assignmentMode: "manual", assignmentState: "sin_clase", missingFromClassSessionId: "A1" });
+    rec("r2", { classSessionIds: ["A1"], assignmentState: "asignada" });
+    rec("r1", { assignmentMode: "manual", assignmentState: "sin_clase", missingFromClassSessionIds: ["A1"] });
 
     expect(await restoreReappeared(ORG, "r1", deps())).toBe("no_restaurada");
 
-    expect(recs.get("r1")).toMatchObject({ classSessionId: null, assignmentState: "sin_clase", missingFromClassSessionId: null });
+    expect(recs.get("r1")).toMatchObject({ classSessionIds: [], assignmentState: "sin_clase", missingFromClassSessionIds: [] });
     expect(classes.get("A1")!.recordingUrl).toBe(url("r2"));
   });
 
   it("manual: si la clase tiene un enlace pegado a mano, no se restaura", async () => {
     const { restoreReappeared } = await mod();
     clase("A1", { recordingUrl: "https://drive.example/video", recordingSource: "manual" });
-    rec("r1", { assignmentMode: "manual", assignmentState: "sin_clase", missingFromClassSessionId: "A1" });
+    rec("r1", { assignmentMode: "manual", assignmentState: "sin_clase", missingFromClassSessionIds: ["A1"] });
 
     expect(await restoreReappeared(ORG, "r1", deps())).toBe("no_restaurada");
     expect(classes.get("A1")!.recordingUrl).toBe("https://drive.example/video");
@@ -224,22 +224,22 @@ describe("restoreReappeared — si vuelve a aparecer", () => {
   it("manual: una clase cancelada o borrada no la recibe", async () => {
     const { restoreReappeared } = await mod();
     clase("A1", { canceledAt: AHORA });
-    rec("r1", { assignmentMode: "manual", assignmentState: "sin_clase", missingFromClassSessionId: "A1" });
-    rec("r3", { assignmentMode: "manual", assignmentState: "sin_clase", missingFromClassSessionId: "BORRADA" });
+    rec("r1", { assignmentMode: "manual", assignmentState: "sin_clase", missingFromClassSessionIds: ["A1"] });
+    rec("r3", { assignmentMode: "manual", assignmentState: "sin_clase", missingFromClassSessionIds: ["BORRADA"] });
 
     expect(await restoreReappeared(ORG, "r1", deps())).toBe("no_restaurada");
     expect(await restoreReappeared(ORG, "r3", deps())).toBe("no_restaurada");
-    expect(recs.get("r1")!.classSessionId).toBeNull();
+    expect(recs.get("r1")!.classSessionIds).toEqual([]);
   });
 
   it("automática: no se le fuerza la clase; queda para el matcher normal", async () => {
     const { restoreReappeared } = await mod();
     clase("A1");
-    rec("r1", { assignmentState: "sin_clase", missingFromClassSessionId: "A1" });
+    rec("r1", { assignmentState: "sin_clase", missingFromClassSessionIds: ["A1"] });
 
     expect(await restoreReappeared(ORG, "r1", deps())).toBe("automatica");
 
-    expect(recs.get("r1")).toMatchObject({ classSessionId: null, missingFromClassSessionId: null });
+    expect(recs.get("r1")).toMatchObject({ classSessionIds: [], missingFromClassSessionIds: [] });
     expect(classes.get("A1")!.recordingUrl).toBeNull();
   });
 
@@ -250,11 +250,50 @@ describe("restoreReappeared — si vuelve a aparecer", () => {
       assignmentMode: "manual",
       assignmentState: "sin_clase",
       missingInZoomAt: AHORA,
-      missingFromClassSessionId: "A1",
+      missingFromClassSessionIds: ["A1"],
     });
 
     expect(await restoreReappeared(ORG, "r1", deps())).toBeNull();
-    expect(recs.get("r1")!.missingFromClassSessionId).toBe("A1");
+    expect(recs.get("r1")!.missingFromClassSessionIds).toEqual(["A1"]);
+  });
+});
+
+/** 2026-10-28 — Una grabación compartida entre grupos falta y vuelve con TODAS sus clases. */
+describe("faltante compartida entre grupos", () => {
+  function compartida(id: string, extra: Partial<RecRow & Extra> = {}) {
+    clase("EST3", { recordingUrl: url(id), recordingSource: "zoom" });
+    clase("PRO3", { recordingUrl: url(id), recordingSource: "zoom" });
+    return rec(id, { classSessionIds: ["EST3", "PRO3"], assignmentState: "asignada", ...extra });
+  }
+
+  it("al faltar suelta TODAS sus clases y las recuerda", async () => {
+    const { detachMissing } = await mod();
+    compartida("r1", { missingInZoomAt: AHORA, assignmentMode: "manual" });
+    expect(await detachMissing(ORG, "r1", deps())).toBe(true);
+    for (const c of ["EST3", "PRO3"]) expect(classes.get(c)).toMatchObject({ recordingUrl: null, recordingSource: null });
+    expect(recs.get("r1")).toMatchObject({
+      classSessionIds: [],
+      assignmentState: "sin_clase",
+      missingFromClassSessionIds: ["EST3", "PRO3"],
+    });
+  });
+
+  it("manual: vuelve a TODAS las clases libres; la ocupada queda afuera", async () => {
+    const { restoreReappeared } = await mod();
+    clase("EST3");
+    clase("PRO3", { recordingUrl: "https://drive.example/video", recordingSource: "manual" });
+    rec("r1", { assignmentMode: "manual", assignmentState: "sin_clase", missingFromClassSessionIds: ["EST3", "PRO3"] });
+    expect(await restoreReappeared(ORG, "r1", deps())).toBe("restaurada");
+    expect(recs.get("r1")).toMatchObject({ classSessionIds: ["EST3"], assignmentState: "asignada", missingFromClassSessionIds: [] });
+    expect(classes.get("EST3")!.recordingUrl).toBe(url("r1"));
+    expect(classes.get("PRO3")!.recordingUrl).toBe("https://drive.example/video");
+  });
+
+  it("al borrarla suelta todas sus clases propias", async () => {
+    const { purgeMissing } = await mod();
+    compartida("r1", { missingInZoomAt: new Date(AHORA.getTime() - 31 * DIA) });
+    expect(await purgeMissing(ORG, "r1", { purgeDays: 30 }, deps())).toBe(true);
+    for (const c of ["EST3", "PRO3"]) expect(classes.get(c)!.recordingUrl).toBeNull();
   });
 });
 

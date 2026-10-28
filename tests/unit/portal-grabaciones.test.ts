@@ -47,7 +47,7 @@ const MODULOS = [
 describe("030 US6 — los portales no leen las tablas de Zoom", () => {
   it("ningún módulo de portal nombra zoom_recording / zoomRecording ni las demás tablas de Zoom", () => {
     const culpables = MODULOS.filter((f) =>
-      /\bzoom_?[Rr]ecording\b|\bzoom_?[Cc]onnection\b|\bzoom_?[Ss]ync_?[Rr]un\b|\bzoomRecording\b/.test(
+      /\bzoom_?[Rr]ecording(_?[Cc]lass)?\b|\bzoom_?[Cc]onnection\b|\bzoom_?[Ss]ync_?[Rr]un\b|\bzoomRecording\b/.test(
         sinComentarios(readFileSync(f, "utf8"))
       )
     ).map(rel);
@@ -179,5 +179,128 @@ describe("030 US6 — la respuesta del portal no cambia", () => {
   it("una clase cancelada o proyectada no ofrece grabación aunque la tenga adjudicada", () => {
     expect(buildClassRow({ ...base, canceledAt: new Date("2026-10-01T10:00:00Z") }).recordingUrl).toBeNull();
     expect(buildClassRow({ ...base, projected: true }).recordingUrl).toBeNull();
+  });
+});
+
+/**
+ * 2026-10-28 — Grabación compartida: Estudiantes y Profesionales comparten las
+ * clases 1 a 3 (misma reunión, misma hora); Profesionales tiene además la 4.
+ * La adjudicación proyecta la MISMA grabación en la clase de cada grupo, y el
+ * portal de cada grupo la ve por SU clase. La clase extra de Profesionales
+ * nunca es una clase de Estudiantes, así que no tiene por dónde llegarles.
+ */
+describe("2026-10-28 — grabación compartida entre dos grupos", () => {
+  it("llega a los alumnos de los dos grupos por recording_url, y la clase extra solo al grupo largo", async () => {
+    const { applyMatch } = await import("@/server/zoom/assignment");
+    type Deps = NonNullable<Parameters<typeof applyMatch>[3]>;
+
+    const inicio = new Date("2026-10-01T21:30:00Z");
+    const fin = new Date("2026-10-02T00:30:00Z");
+    const clases = new Map(
+      ["est_3", "pro_3", "pro_4"].map((id) => [
+        id,
+        { id, canceledAt: null as Date | null, recordingUrl: null as string | null, recordingSource: null as "manual" | "zoom" | null },
+      ])
+    );
+    const grabaciones = new Map<string, { id: string; classSessionIds: string[]; assignmentState: string; [k: string]: unknown }>();
+    const grabacion = (id: string, meetingId: string, start: Date) =>
+      grabaciones.set(id, {
+        id,
+        zoomConnectionId: "zc_1",
+        zoomMeetingId: meetingId,
+        hostZoomUserId: "u1",
+        startTime: start,
+        durationMin: 120,
+        playUrl: `https://zoom.us/rec/share/${id}`,
+        classSessionIds: [],
+        assignmentMode: "auto",
+        assignmentState: "pendiente",
+        candidateClassIds: [],
+        conflictClassSessionId: null,
+        assignedBy: null,
+        assignedAt: null,
+      });
+    grabacion("compartida", "9990000001", new Date("2026-10-01T21:34:00Z"));
+    grabacion("solo_pro", "9990000001", new Date("2026-10-08T21:34:00Z"));
+
+    const deps = {
+      now: () => new Date("2026-10-09T12:00:00Z"),
+      loadContext: async () => ({ classes: [], rooms: [], tolerance: { beforeMin: 30, afterFallbackMin: 180 } }),
+      run: async (_org: string, fn: (tx: never) => Promise<unknown>) =>
+        fn({
+          async lockClasses() {},
+          async getRecording(id: string) {
+            const g = grabaciones.get(id);
+            return g ? { ...g } : null;
+          },
+          async getClass(id: string) {
+            const c = clases.get(id);
+            return c ? { ...c } : null;
+          },
+          async recordingOnClass(classId: string) {
+            const g = [...grabaciones.values()].find((x) => x.classSessionIds.includes(classId));
+            return g ? { id: g.id, assignmentMode: "auto", durationMin: 120 } : null;
+          },
+          async updateRecording(id: string, patch: object) {
+            Object.assign(grabaciones.get(id)!, patch);
+          },
+          async releaseConflicts() {
+            return 0;
+          },
+          async updateClass(id: string, patch: object) {
+            Object.assign(clases.get(id)!, patch);
+          },
+        } as never),
+    } as unknown as Deps;
+
+    const clase = (classSessionId: string, cohortId: string, startsAt: Date, endsAt: Date) => ({
+      classSessionId,
+      cohortId,
+      startsAt,
+      endsAt,
+      meetingId: "9990000001",
+      roomId: null,
+    });
+    const semana = 7 * 86_400_000;
+    const ctx = {
+      classes: [
+        clase("est_3", "coh_est", inicio, fin),
+        clase("pro_3", "coh_pro", inicio, fin),
+        clase("pro_4", "coh_pro", new Date(inicio.getTime() + semana), new Date(fin.getTime() + semana)),
+      ],
+      rooms: [],
+      tolerance: { beforeMin: 30, afterFallbackMin: 180 },
+    };
+    expect(await applyMatch("org_1", "compartida", ctx, deps)).toBe("asignada");
+    expect(await applyMatch("org_1", "solo_pro", ctx, deps)).toBe("asignada");
+
+    // Lo que cada portal arma: las filas de las clases de SU grupo.
+    const filaDe = (id: string) =>
+      buildClassRow({
+        id,
+        number: 3,
+        projected: false,
+        date: new Date("2026-10-01T00:00:00Z"),
+        startTime: "18:30",
+        endTime: "21:30",
+        topic: null,
+        canceledAt: null,
+        cancelReason: null,
+        meetingUrl: null,
+        cohortMeetingUrl: null,
+        recordingUrl: clases.get(id)!.recordingUrl,
+        timezone: "America/Montevideo",
+        window: { beforeMin: 15, afterMin: 15 },
+        now: new Date("2026-10-20T12:00:00Z"),
+      });
+    const estudiantes = ["est_3"].map(filaDe);
+    const profesionales = ["pro_3", "pro_4"].map(filaDe);
+
+    expect(estudiantes.map((f) => f.recordingUrl)).toEqual(["https://zoom.us/rec/share/compartida"]);
+    expect(profesionales.map((f) => f.recordingUrl)).toEqual([
+      "https://zoom.us/rec/share/compartida",
+      "https://zoom.us/rec/share/solo_pro",
+    ]);
+    expect(JSON.stringify(estudiantes)).not.toContain("solo_pro");
   });
 });

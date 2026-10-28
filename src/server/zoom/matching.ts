@@ -49,6 +49,12 @@ export type MatchInput = {
 export type MatchResult =
   | { kind: "unica"; classSessionId: string; signal: "reunion" | "aula" }
   | { kind: "ambigua"; candidateIds: string[]; signal: "reunion" | "aula" }
+  /**
+   * 2026-10-28 — Dos o más grupos en la MISMA reunión a la MISMA hora (p. ej.
+   * Estudiantes y Profesionales comparten las primeras clases): una grabación
+   * para una clase de cada grupo. Solo por reunión, nunca por aula.
+   */
+  | { kind: "compartida"; classSessionIds: string[]; signal: "reunion" }
   | { kind: "ninguna" };
 
 function decidir(ids: string[], signal: "reunion" | "aula"): MatchResult | null {
@@ -57,6 +63,24 @@ function decidir(ids: string[], signal: "reunion" | "aula"): MatchResult | null 
   if (unicos.length === 1) return { kind: "unica", classSessionId: unicos[0]!, signal };
   if (unicos.length > 1) return { kind: "ambigua", candidateIds: unicos, signal };
   return null;
+}
+
+/**
+ * Varias candidatas de la MISMA reunión son una sola clase compartida solo si
+ * empiezan EXACTAMENTE a la misma hora y son de grupos DISTINTOS (una por
+ * grupo). Cualquier otra cosa sigue ambigua: con un PMI y dos grupos seguidos
+ * (uno termina 20:00, el otro empieza 20:00) una grabación de las 19:50 cae en
+ * las dos ventanas, y ahí manda la regla de la 025: mejor ningún enlace que el
+ * equivocado.
+ */
+function esCompartida(clases: MatchableClass[]): boolean {
+  const unicas = [...new Map(clases.map((c) => [c.classSessionId, c])).values()];
+  if (unicas.length < 2) return false;
+  const inicio = unicas[0]!.startsAt.getTime();
+  return (
+    unicas.every((c) => c.startsAt.getTime() === inicio) &&
+    new Set(unicas.map((c) => c.cohortId)).size === unicas.length
+  );
 }
 
 export function matchRecording(input: MatchInput): MatchResult {
@@ -72,10 +96,14 @@ export function matchRecording(input: MatchInput): MatchResult {
   });
 
   // Señal A — el número de reunión identifica a la COHORTE aunque compartan cuenta.
+  const deLaReunion = compatibles.filter((c) => c.meetingId !== null && c.meetingId === r.meetingId);
   const porReunion = decidir(
-    compatibles.filter((c) => c.meetingId !== null && c.meetingId === r.meetingId).map((c) => c.classSessionId),
+    deLaReunion.map((c) => c.classSessionId),
     "reunion"
   );
+  if (porReunion?.kind === "ambigua" && esCompartida(deLaReunion)) {
+    return { kind: "compartida", classSessionIds: porReunion.candidateIds, signal: "reunion" };
+  }
   if (porReunion) return porReunion;
 
   // Señal B — el aula del anfitrión (por conexión + usuario) o la de su PMI.

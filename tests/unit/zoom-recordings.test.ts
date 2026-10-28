@@ -83,7 +83,7 @@ describe("RecordingRowDto", () => {
       missingInZoomAt: null as Date | null,
       assignmentMode: "auto" as const,
       assignmentState: "pendiente" as const,
-      classSessionId: null as string | null,
+      classSessionIds: [] as string[],
       candidateClassIds: [] as string[],
       conflictClassSessionId: null as string | null,
       assignedBy: null as string | null,
@@ -114,7 +114,7 @@ describe("RecordingRowDto", () => {
       assignment: {
         mode: "auto",
         state: "pendiente",
-        classSession: null,
+        classSessions: [],
         candidates: [],
         conflictWith: null,
         assignedBy: null,
@@ -164,7 +164,7 @@ describe("RecordingRowDto", () => {
         roomName: null,
         assignmentMode: "manual",
         assignmentState: "asignada",
-        classSessionId: "cls_1",
+        classSessionIds: ["cls_1"],
         candidateClassIds: ["cls_1", "cls_2"],
         assignedBy: "usr_1",
         assignedAt: new Date("2026-10-02T10:00:00Z"),
@@ -177,7 +177,7 @@ describe("RecordingRowDto", () => {
     expect(dto.assignment).toEqual({
       mode: "manual",
       state: "asignada",
-      classSession: { id: "cls_1", number: 3, date: "2026-10-01", cohortId: "coh_1", cohortName: "Revit A" },
+      classSessions: [{ id: "cls_1", number: 3, date: "2026-10-01", cohortId: "coh_1", cohortName: "Revit A" }],
       candidates: [
         { id: "cls_1", number: 3, cohortName: "Revit A", startsAt: "2026-10-01T21:30:00.000Z" },
         { id: "cls_2", number: 3, cohortName: "Revit C", startsAt: "2026-10-01T21:30:00.000Z" },
@@ -186,6 +186,19 @@ describe("RecordingRowDto", () => {
       assignedBy: "Ana Coordinadora",
       assignedAt: "2026-10-02T10:00:00.000Z",
     });
+  });
+
+  it("compartida: trae TODAS sus clases, una por grupo, ordenadas por grupo", async () => {
+    const { toRecordingRowDto } = await import("@/server/zoom/recordings");
+    const classes = new Map([
+      ["cls_p", { id: "cls_p", number: 3, date: "2026-10-01", cohortId: "coh_p", cohortName: "AutoCAD Profesionales", startsAt: null }],
+      ["cls_e", { id: "cls_e", number: 3, date: "2026-10-01", cohortId: "coh_e", cohortName: "AutoCAD Estudiantes", startsAt: null }],
+    ]);
+    const dto = toRecordingRowDto(
+      await fila({ assignmentState: "asignada", classSessionIds: ["cls_e", "cls_p", "borrada"] }),
+      { classes, users: new Map() }
+    );
+    expect(dto.assignment.classSessions.map((c) => c.cohortName)).toEqual(["AutoCAD Estudiantes", "AutoCAD Profesionales"]);
   });
 });
 

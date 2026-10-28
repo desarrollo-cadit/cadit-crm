@@ -38,18 +38,19 @@ const tx: AssignmentTx = {
     return c ? { ...c } : null;
   },
   async recordingOnClass(classId) {
-    const r = [...recs.values()].find((x) => x.classSessionId === classId);
+    const r = [...recs.values()].find((x) => x.classSessionIds.includes(classId));
     return r ? { id: r.id, assignmentMode: r.assignmentMode, durationMin: r.durationMin } : null;
   },
   async updateRecording(id, patch) {
     const r = recs.get(id)!;
     Object.assign(r, patch);
-    if (r.classSessionId) {
-      const dup = [...recs.values()].filter((x) => x.classSessionId === r.classSessionId);
+    // `zoom_recording_class`: UNIQUE(class_session_id) — una clase, una grabación.
+    for (const c of r.classSessionIds) {
+      const dup = [...recs.values()].filter((x) => x.classSessionIds.includes(c));
       if (dup.length > 1) throw new Error("unique violation: una clase, una grabación");
     }
-    if ((r.assignmentState === "asignada") !== (r.classSessionId !== null)) {
-      throw new Error("check violation: asignada ⇔ clase");
+    if ((r.assignmentState === "asignada") !== (r.classSessionIds.length > 0)) {
+      throw new Error("invariante: asignada ⇔ al menos una clase");
     }
   },
   async releaseConflicts(classId, exceptId) {
@@ -85,7 +86,7 @@ function rec(id: string, extra: Partial<RecRow> = {}): RecRow {
     startTime: new Date("2026-09-15T21:34:00Z"),
     durationMin: 120,
     playUrl: `https://zoom.us/rec/share/${id}`,
-    classSessionId: null,
+    classSessionIds: [],
     assignmentMode: "auto",
     assignmentState: "pendiente",
     candidateClassIds: [],
@@ -130,7 +131,7 @@ describe("applyMatch — la adjudicación automática", () => {
     rec("r1");
     clase("A1");
     expect(await applyMatch(ORG, "r1", ctx, deps())).toBe("asignada");
-    expect(recs.get("r1")).toMatchObject({ classSessionId: "A1", assignmentState: "asignada", assignedAt: AHORA });
+    expect(recs.get("r1")).toMatchObject({ classSessionIds: ["A1"], assignmentState: "asignada", assignedAt: AHORA });
     expect(classes.get("A1")).toMatchObject({ recordingUrl: "https://zoom.us/rec/share/r1", recordingSource: "zoom" });
     expect(locks).toEqual([["A1"]]);
   });
@@ -148,9 +149,9 @@ describe("applyMatch — la adjudicación automática", () => {
     const { applyMatch } = await mod();
     clase("A1");
     clase("X9", { recordingUrl: "https://zoom.us/rec/share/r1", recordingSource: "zoom" });
-    rec("r1", { classSessionId: "X9", assignmentState: "asignada" });
+    rec("r1", { classSessionIds: ["X9"], assignmentState: "asignada" });
     expect(await applyMatch(ORG, "r1", ctx, deps())).toBeNull();
-    expect(recs.get("r1")!.classSessionId).toBe("X9");
+    expect(recs.get("r1")!.classSessionIds).toEqual(["X9"]);
   });
 
   it("clase con enlace MANUAL → sin_clase (lo decidió una persona), sin tocar la clase", async () => {
@@ -158,7 +159,7 @@ describe("applyMatch — la adjudicación automática", () => {
     rec("r1");
     clase("A1", { recordingUrl: "https://drive.example.com/x", recordingSource: "manual" });
     expect(await applyMatch(ORG, "r1", ctx, deps())).toBe("sin_clase");
-    expect(recs.get("r1")).toMatchObject({ assignmentState: "sin_clase", conflictClassSessionId: null, classSessionId: null });
+    expect(recs.get("r1")).toMatchObject({ assignmentState: "sin_clase", conflictClassSessionId: null, classSessionIds: [] });
     expect(classes.get("A1")).toMatchObject({ recordingUrl: "https://drive.example.com/x", recordingSource: "manual" });
   });
 
@@ -172,7 +173,7 @@ describe("applyMatch — la adjudicación automática", () => {
   it("clase que ya tiene OTRA grabación (reunión reiniciada) → conflicto", async () => {
     const { applyMatch } = await mod();
     clase("A1", { recordingUrl: "https://zoom.us/rec/share/r0", recordingSource: "zoom" });
-    rec("r0", { classSessionId: "A1", assignmentState: "asignada" });
+    rec("r0", { classSessionIds: ["A1"], assignmentState: "asignada" });
     rec("r1");
     expect(await applyMatch(ORG, "r1", ctx, deps())).toBe("conflicto");
     expect(classes.get("A1")!.recordingUrl).toBe("https://zoom.us/rec/share/r0");
@@ -237,22 +238,22 @@ describe("grabaciones cortas y la más larga gana", () => {
   it("el caso real: la larga desplaza a la corta que ya tenía la clase", async () => {
     const { applyMatch } = await mod();
     clase("A1", { recordingUrl: "https://zoom.us/rec/share/corta", recordingSource: "zoom" });
-    rec("corta", { durationMin: 0, classSessionId: "A1", assignmentState: "asignada" });
+    rec("corta", { durationMin: 0, classSessionIds: ["A1"], assignmentState: "asignada" });
     rec("larga", { durationMin: 88, assignmentState: "conflicto", conflictClassSessionId: "A1" });
     expect(await applyMatch(ORG, "larga", ctx, deps())).toBe("asignada");
     expect(classes.get("A1")).toMatchObject({ recordingUrl: "https://zoom.us/rec/share/larga", recordingSource: "zoom" });
-    expect(recs.get("corta")).toMatchObject({ assignmentState: "sin_clase", classSessionId: null });
+    expect(recs.get("corta")).toMatchObject({ assignmentState: "sin_clase", classSessionIds: [] });
   });
 
   it("entre dos automáticas no cortas gana la más larga; la desplazada queda en conflicto con esa clase", async () => {
     const { applyMatch } = await mod();
     clase("A1", { recordingUrl: "https://zoom.us/rec/share/r0", recordingSource: "zoom" });
-    rec("r0", { durationMin: 30, classSessionId: "A1", assignmentState: "asignada" });
+    rec("r0", { durationMin: 30, classSessionIds: ["A1"], assignmentState: "asignada" });
     rec("r1", { durationMin: 90 });
     expect(await applyMatch(ORG, "r1", ctx, deps())).toBe("asignada");
     expect(recs.get("r0")).toMatchObject({
       assignmentState: "conflicto",
-      classSessionId: null,
+      classSessionIds: [],
       conflictClassSessionId: "A1",
     });
   });
@@ -260,7 +261,7 @@ describe("grabaciones cortas y la más larga gana", () => {
   it("la más corta que llega después no desplaza a la más larga", async () => {
     const { applyMatch } = await mod();
     clase("A1", { recordingUrl: "https://zoom.us/rec/share/r0", recordingSource: "zoom" });
-    rec("r0", { durationMin: 90, classSessionId: "A1", assignmentState: "asignada" });
+    rec("r0", { durationMin: 90, classSessionIds: ["A1"], assignmentState: "asignada" });
     rec("r1", { durationMin: 30 });
     expect(await applyMatch(ORG, "r1", ctx, deps())).toBe("conflicto");
     expect(classes.get("A1")!.recordingUrl).toBe("https://zoom.us/rec/share/r0");
@@ -269,22 +270,22 @@ describe("grabaciones cortas y la más larga gana", () => {
   it("una grabación asignada A MANO nunca se desplaza, aunque la nueva sea más larga", async () => {
     const { applyMatch } = await mod();
     clase("A1", { recordingUrl: "https://zoom.us/rec/share/r0", recordingSource: "zoom" });
-    rec("r0", { durationMin: 10, classSessionId: "A1", assignmentState: "asignada", assignmentMode: "manual" });
+    rec("r0", { durationMin: 10, classSessionIds: ["A1"], assignmentState: "asignada", assignmentMode: "manual" });
     rec("r1", { durationMin: 90 });
     // La competidora queda sin clase, no en conflicto: si no, volvía a
     // conflicto en cada sincronización y no había cómo sacarla de ahí.
     expect(await applyMatch(ORG, "r1", ctx, deps())).toBe("sin_clase");
     expect(recs.get("r1")).toMatchObject({ assignmentState: "sin_clase", conflictClassSessionId: null });
-    expect(recs.get("r0")).toMatchObject({ classSessionId: "A1", assignmentState: "asignada" });
+    expect(recs.get("r0")).toMatchObject({ classSessionIds: ["A1"], assignmentState: "asignada" });
   });
 
   it("si la más larga todavía no tiene play_url, queda pendiente y la otra conserva la clase", async () => {
     const { applyMatch } = await mod();
     clase("A1", { recordingUrl: "https://zoom.us/rec/share/r0", recordingSource: "zoom" });
-    rec("r0", { durationMin: 0, classSessionId: "A1", assignmentState: "asignada" });
+    rec("r0", { durationMin: 0, classSessionIds: ["A1"], assignmentState: "asignada" });
     rec("r1", { durationMin: 90, playUrl: null });
     expect(await applyMatch(ORG, "r1", ctx, deps())).toBe("pendiente");
-    expect(recs.get("r0")).toMatchObject({ classSessionId: "A1", assignmentState: "asignada" });
+    expect(recs.get("r0")).toMatchObject({ classSessionIds: ["A1"], assignmentState: "asignada" });
   });
 });
 
@@ -292,10 +293,10 @@ describe("liberar al pegar a mano (R6) y limpiar lo propio", () => {
   it("releaseForManualLink pasa la grabación de Zoom de esa clase a manual/sin_clase", async () => {
     const { releaseForManualLink } = await mod();
     clase("A1", { recordingUrl: "https://zoom.us/rec/share/r1", recordingSource: "zoom" });
-    rec("r1", { classSessionId: "A1", assignmentState: "asignada" });
+    rec("r1", { classSessionIds: ["A1"], assignmentState: "asignada" });
     await releaseForManualLink(ORG, "A1", "usr_1", deps());
     expect(recs.get("r1")).toMatchObject({
-      classSessionId: null,
+      classSessionIds: [],
       assignmentMode: "manual",
       assignmentState: "sin_clase",
       assignedBy: "usr_1",
@@ -311,7 +312,7 @@ describe("liberar al pegar a mano (R6) y limpiar lo propio", () => {
   it("clearClassIfOwned limpia solo si el enlace es el de ESA grabación y vino de Zoom", async () => {
     const { clearClassIfOwned } = await mod();
     clase("A1", { recordingUrl: "https://drive.example.com/x", recordingSource: "manual" });
-    await clearClassIfOwned(tx, rec("r1", { classSessionId: null }), "A1");
+    await clearClassIfOwned(tx, rec("r1", { classSessionIds: [] }), "A1");
     expect(classes.get("A1")!.recordingUrl).toBe("https://drive.example.com/x");
 
     clase("A2", { recordingUrl: "https://zoom.us/rec/share/r2", recordingSource: "zoom" });
@@ -340,7 +341,7 @@ describe("US3 — operaciones manuales", () => {
     clase("A1");
     expect(await assignManually(ORG, "r1", "A1", { replace: false, userId: "usr_1" }, deps())).toEqual({ ok: true });
     expect(recs.get("r1")).toMatchObject({
-      classSessionId: "A1",
+      classSessionIds: ["A1"],
       assignmentMode: "manual",
       assignmentState: "asignada",
       candidateClassIds: [],
@@ -355,29 +356,31 @@ describe("US3 — operaciones manuales", () => {
     rec("r1");
     clase("M", { recordingUrl: "https://drive.example.com/x", recordingSource: "manual" });
     clase("Z", { recordingUrl: "https://zoom.us/rec/share/r0", recordingSource: "zoom" });
-    rec("r0", { classSessionId: "Z", assignmentState: "asignada" });
+    rec("r0", { classSessionIds: ["Z"], assignmentState: "asignada" });
     const o = { replace: false, userId: "usr_1" };
     expect(await assignManually(ORG, "r1", "M", o, deps())).toEqual({
       ok: false,
       reason: "requiere_reemplazo",
       current: { kind: "manual", recordingId: null },
+      classSessionId: "M",
     });
     expect(await assignManually(ORG, "r1", "Z", o, deps())).toEqual({
       ok: false,
       reason: "requiere_reemplazo",
       current: { kind: "zoom", recordingId: "r0" },
+      classSessionId: "Z",
     });
   });
 
   it("con replace: la otra grabación → manual/sin_clase, la clase anterior de ESTA se limpia, locks en orden", async () => {
     const { assignManually } = await mod();
     clase("Z", { recordingUrl: "https://zoom.us/rec/share/r0", recordingSource: "zoom" });
-    rec("r0", { classSessionId: "Z", assignmentState: "asignada" });
+    rec("r0", { classSessionIds: ["Z"], assignmentState: "asignada" });
     clase("A", { recordingUrl: "https://zoom.us/rec/share/r1", recordingSource: "zoom" });
-    rec("r1", { classSessionId: "A", assignmentState: "asignada" });
+    rec("r1", { classSessionIds: ["A"], assignmentState: "asignada" });
     expect(await assignManually(ORG, "r1", "Z", { replace: true, userId: "usr_1" }, deps())).toEqual({ ok: true });
-    expect(recs.get("r0")).toMatchObject({ classSessionId: null, assignmentMode: "manual", assignmentState: "sin_clase" });
-    expect(recs.get("r1")).toMatchObject({ classSessionId: "Z", assignmentMode: "manual", assignmentState: "asignada" });
+    expect(recs.get("r0")).toMatchObject({ classSessionIds: [], assignmentMode: "manual", assignmentState: "sin_clase" });
+    expect(recs.get("r1")).toMatchObject({ classSessionIds: ["Z"], assignmentMode: "manual", assignmentState: "asignada" });
     expect(classes.get("A")).toMatchObject({ recordingUrl: null, recordingSource: null });
     expect(classes.get("Z")!.recordingUrl).toBe("https://zoom.us/rec/share/r1");
     expect(locks.at(-1)).toEqual(["A", "Z"]);
@@ -394,9 +397,9 @@ describe("US3 — operaciones manuales", () => {
   it("unassign: manual/sin_clase y limpia SOLO lo propio", async () => {
     const { unassign } = await mod();
     clase("A", { recordingUrl: "https://zoom.us/rec/share/r1", recordingSource: "zoom" });
-    rec("r1", { classSessionId: "A", assignmentState: "asignada" });
+    rec("r1", { classSessionIds: ["A"], assignmentState: "asignada" });
     expect(await unassign(ORG, "r1", "usr_1", deps())).toEqual({ ok: true });
-    expect(recs.get("r1")).toMatchObject({ classSessionId: null, assignmentMode: "manual", assignmentState: "sin_clase", assignedBy: "usr_1" });
+    expect(recs.get("r1")).toMatchObject({ classSessionIds: [], assignmentMode: "manual", assignmentState: "sin_clase", assignedBy: "usr_1" });
     expect(classes.get("A")).toMatchObject({ recordingUrl: null, recordingSource: null });
     expect(await unassign(ORG, "nada", "usr_1", deps())).toEqual({ ok: false, reason: "no_existe" });
   });
@@ -404,11 +407,11 @@ describe("US3 — operaciones manuales", () => {
   it("resetToAuto exige manual; limpia, vuelve a auto y re-evalúa en el acto", async () => {
     const { resetToAuto, unassign } = await mod();
     clase("A1", { recordingUrl: "https://zoom.us/rec/share/r1", recordingSource: "zoom" });
-    rec("r1", { classSessionId: "A1", assignmentState: "asignada" });
+    rec("r1", { classSessionIds: ["A1"], assignmentState: "asignada" });
     expect(await resetToAuto(ORG, "r1", deps())).toEqual({ ok: false, reason: "ya_automatica" });
     await unassign(ORG, "r1", "usr_1", deps());
     expect(await resetToAuto(ORG, "r1", deps())).toEqual({ ok: true });
-    expect(recs.get("r1")).toMatchObject({ assignmentMode: "auto", assignmentState: "asignada", classSessionId: "A1", assignedBy: null });
+    expect(recs.get("r1")).toMatchObject({ assignmentMode: "auto", assignmentState: "asignada", classSessionIds: ["A1"], assignedBy: null });
     expect(classes.get("A1")!.recordingUrl).toBe("https://zoom.us/rec/share/r1");
   });
 
@@ -431,17 +434,17 @@ describe("2026-10-27 — conflictos contra una decisión humana no quedan trabad
   it("una 'conflicto' vieja contra una asignación manual se limpia sola en la próxima sincronización", async () => {
     const { applyMatch } = await mod();
     clase("A1", { recordingUrl: "https://zoom.us/rec/share/r0", recordingSource: "zoom" });
-    rec("r0", { classSessionId: "A1", assignmentState: "asignada", assignmentMode: "manual" });
+    rec("r0", { classSessionIds: ["A1"], assignmentState: "asignada", assignmentMode: "manual" });
     rec("r1", { assignmentState: "conflicto", conflictClassSessionId: "A1" });
     expect(await applyMatch(ORG, "r1", ctx, deps())).toBe("sin_clase");
     expect(recs.get("r1")).toMatchObject({ assignmentMode: "auto", assignmentState: "sin_clase", conflictClassSessionId: null });
-    expect(recs.get("r0")).toMatchObject({ classSessionId: "A1", assignmentState: "asignada" });
+    expect(recs.get("r0")).toMatchObject({ classSessionIds: ["A1"], assignmentState: "asignada" });
   });
 
   it("entre automáticas sigue habiendo conflicto (una persona tiene que mirar)", async () => {
     const { applyMatch } = await mod();
     clase("A1", { recordingUrl: "https://zoom.us/rec/share/r0", recordingSource: "zoom" });
-    rec("r0", { classSessionId: "A1", assignmentState: "asignada" });
+    rec("r0", { classSessionIds: ["A1"], assignmentState: "asignada" });
     rec("r1");
     expect(await applyMatch(ORG, "r1", ctx, deps())).toBe("conflicto");
   });
@@ -454,7 +457,7 @@ describe("2026-10-27 — conflictos contra una decisión humana no quedan trabad
     rec("r2", { assignmentState: "conflicto", conflictClassSessionId: "A1" });
     rec("r3", { assignmentState: "conflicto", conflictClassSessionId: "B1" });
     expect(await assignManually(ORG, "r1", "A1", { replace: false, userId: "usr_1" }, deps())).toEqual({ ok: true });
-    expect(recs.get("r1")).toMatchObject({ classSessionId: "A1", assignmentMode: "manual", assignmentState: "asignada" });
+    expect(recs.get("r1")).toMatchObject({ classSessionIds: ["A1"], assignmentMode: "manual", assignmentState: "asignada" });
     expect(recs.get("r2")).toMatchObject({ assignmentMode: "auto", assignmentState: "sin_clase", conflictClassSessionId: null });
     // La de otra clase no se toca.
     expect(recs.get("r3")).toMatchObject({ assignmentState: "conflicto", conflictClassSessionId: "B1" });
@@ -496,5 +499,197 @@ describe("2026-10-27 — pegar un enlace a mano también suelta los conflictos",
     rec("r1", { assignmentState: "conflicto", conflictClassSessionId: "A1" });
     await releaseForManualLink(ORG, "A1", "usr_1", deps());
     expect(recs.get("r1")).toMatchObject({ assignmentMode: "auto", assignmentState: "sin_clase", conflictClassSessionId: null });
+  });
+});
+
+/**
+ * 2026-10-28 — Grabación compartida: Estudiantes y Profesionales entran a la
+ * MISMA reunión a la MISMA hora en las primeras clases. Una grabación, una
+ * clase por grupo; cada clase sigue teniendo a lo sumo UNA grabación.
+ */
+describe("grabación compartida entre grupos", () => {
+  const compartida = (): MatchContext => ({
+    ...sinClases,
+    classes: [claseEnVentana("EST3"), claseEnVentana("PRO3")],
+  });
+
+  it("el matcher la asigna a TODAS las clases: cada una recibe el enlace, locks en orden", async () => {
+    const { applyMatch } = await mod();
+    rec("r1");
+    clase("EST3");
+    clase("PRO3");
+    expect(await applyMatch(ORG, "r1", compartida(), deps())).toBe("asignada");
+    expect(recs.get("r1")).toMatchObject({ classSessionIds: ["EST3", "PRO3"], assignmentState: "asignada", assignmentMode: "auto" });
+    for (const c of ["EST3", "PRO3"]) {
+      expect(classes.get(c)).toMatchObject({ recordingUrl: "https://zoom.us/rec/share/r1", recordingSource: "zoom" });
+    }
+    expect(locks).toEqual([["EST3", "PRO3"]]);
+  });
+
+  it("parcial: una clase con enlace manual se saltea; la otra recibe la grabación", async () => {
+    const { applyMatch } = await mod();
+    rec("r1");
+    clase("EST3");
+    clase("PRO3", { recordingUrl: "https://drive.example.com/x", recordingSource: "manual" });
+    expect(await applyMatch(ORG, "r1", compartida(), deps())).toBe("asignada");
+    expect(recs.get("r1")).toMatchObject({ classSessionIds: ["EST3"], assignmentState: "asignada" });
+    expect(classes.get("PRO3")).toMatchObject({ recordingUrl: "https://drive.example.com/x", recordingSource: "manual" });
+  });
+
+  it("parcial: una clase con grabación asignada A MANO se saltea", async () => {
+    const { applyMatch } = await mod();
+    rec("r0", { classSessionIds: ["PRO3"], assignmentState: "asignada", assignmentMode: "manual" });
+    rec("r1");
+    clase("EST3");
+    clase("PRO3", { recordingUrl: "https://zoom.us/rec/share/r0", recordingSource: "zoom" });
+    expect(await applyMatch(ORG, "r1", compartida(), deps())).toBe("asignada");
+    expect(recs.get("r1")!.classSessionIds).toEqual(["EST3"]);
+    expect(recs.get("r0")!.classSessionIds).toEqual(["PRO3"]);
+  });
+
+  it("todas decididas por personas → sin_clase, sin tocar ninguna clase", async () => {
+    const { applyMatch } = await mod();
+    rec("r1");
+    clase("EST3", { recordingUrl: "https://drive.example.com/e", recordingSource: "manual" });
+    clase("PRO3", { recordingUrl: "https://drive.example.com/p", recordingSource: "manual" });
+    expect(await applyMatch(ORG, "r1", compartida(), deps())).toBe("sin_clase");
+    expect(recs.get("r1")).toMatchObject({ classSessionIds: [], conflictClassSessionId: null });
+  });
+
+  it("todas con otra automática más larga → conflicto con la primera (orden de id)", async () => {
+    const { applyMatch } = await mod();
+    rec("r0", { durationMin: 200, classSessionIds: ["EST3", "PRO3"], assignmentState: "asignada" });
+    rec("r1", { durationMin: 90 });
+    clase("EST3", { recordingUrl: "https://zoom.us/rec/share/r0", recordingSource: "zoom" });
+    clase("PRO3", { recordingUrl: "https://zoom.us/rec/share/r0", recordingSource: "zoom" });
+    expect(await applyMatch(ORG, "r1", compartida(), deps())).toBe("conflicto");
+    expect(recs.get("r1")).toMatchObject({ classSessionIds: [], conflictClassSessionId: "EST3" });
+  });
+
+  it("desplaza por clase: la más larga se queda con las dos; la desplazada compartida queda en conflicto", async () => {
+    const { applyMatch } = await mod();
+    rec("r0", { durationMin: 30, classSessionIds: ["EST3", "PRO3"], assignmentState: "asignada" });
+    rec("r1", { durationMin: 90 });
+    clase("EST3", { recordingUrl: "https://zoom.us/rec/share/r0", recordingSource: "zoom" });
+    clase("PRO3", { recordingUrl: "https://zoom.us/rec/share/r0", recordingSource: "zoom" });
+    expect(await applyMatch(ORG, "r1", compartida(), deps())).toBe("asignada");
+    expect(recs.get("r1")!.classSessionIds).toEqual(["EST3", "PRO3"]);
+    expect(recs.get("r0")).toMatchObject({ classSessionIds: [], assignmentState: "conflicto", conflictClassSessionId: "PRO3" });
+  });
+
+  it("la desplazada en UNA clase conserva las otras y sigue asignada", async () => {
+    const { applyMatch } = await mod();
+    // r0 tenía EST3 y además la clase X de otro día (otra compartida).
+    rec("r0", { durationMin: 30, classSessionIds: ["EST3", "X"], assignmentState: "asignada" });
+    rec("r1", { durationMin: 90 });
+    clase("EST3", { recordingUrl: "https://zoom.us/rec/share/r0", recordingSource: "zoom" });
+    clase("PRO3");
+    clase("X", { recordingUrl: "https://zoom.us/rec/share/r0", recordingSource: "zoom" });
+    expect(await applyMatch(ORG, "r1", compartida(), deps())).toBe("asignada");
+    expect(recs.get("r0")).toMatchObject({ classSessionIds: ["X"], assignmentState: "asignada" });
+    expect(classes.get("X")!.recordingUrl).toBe("https://zoom.us/rec/share/r0");
+  });
+
+  it("unassign limpia TODAS las clases propias (y no la que alguien pisó a mano)", async () => {
+    const { unassign } = await mod();
+    rec("r1", { classSessionIds: ["EST3", "PRO3"], assignmentState: "asignada" });
+    clase("EST3", { recordingUrl: "https://zoom.us/rec/share/r1", recordingSource: "zoom" });
+    clase("PRO3", { recordingUrl: "https://drive.example.com/p", recordingSource: "manual" });
+    expect(await unassign(ORG, "r1", "usr_1", deps())).toEqual({ ok: true });
+    expect(recs.get("r1")).toMatchObject({ classSessionIds: [], assignmentMode: "manual", assignmentState: "sin_clase" });
+    expect(classes.get("EST3")).toMatchObject({ recordingUrl: null, recordingSource: null });
+    expect(classes.get("PRO3")!.recordingUrl).toBe("https://drive.example.com/p");
+    expect(locks.at(-1)).toEqual(["EST3", "PRO3"]);
+  });
+
+  it("resetToAuto limpia todas y la vuelve a repartir entre los grupos", async () => {
+    const { resetToAuto } = await mod();
+    ctx = compartida();
+    rec("r1", { classSessionIds: ["EST3"], assignmentState: "asignada", assignmentMode: "manual" });
+    clase("EST3", { recordingUrl: "https://zoom.us/rec/share/r1", recordingSource: "zoom" });
+    clase("PRO3");
+    expect(await resetToAuto(ORG, "r1", deps())).toEqual({ ok: true });
+    expect(recs.get("r1")).toMatchObject({ assignmentMode: "auto", assignmentState: "asignada", classSessionIds: ["EST3", "PRO3"] });
+    expect(classes.get("PRO3")!.recordingUrl).toBe("https://zoom.us/rec/share/r1");
+  });
+
+  it("releaseForManualLink en UNA clase de una compartida suelta solo esa; la grabación sigue en la otra", async () => {
+    const { releaseForManualLink } = await mod();
+    rec("r1", { classSessionIds: ["EST3", "PRO3"], assignmentState: "asignada" });
+    clase("EST3", { recordingUrl: "https://zoom.us/rec/share/r1", recordingSource: "zoom" });
+    clase("PRO3", { recordingUrl: "https://zoom.us/rec/share/r1", recordingSource: "zoom" });
+    await releaseForManualLink(ORG, "PRO3", "usr_1", deps());
+    expect(recs.get("r1")).toMatchObject({ classSessionIds: ["EST3"], assignmentMode: "auto", assignmentState: "asignada" });
+  });
+
+  it("releaseForManualLink en su ÚLTIMA clase → manual/sin_clase como siempre", async () => {
+    const { releaseForManualLink } = await mod();
+    rec("r1", { classSessionIds: ["PRO3"], assignmentState: "asignada" });
+    clase("PRO3", { recordingUrl: "https://zoom.us/rec/share/r1", recordingSource: "zoom" });
+    await releaseForManualLink(ORG, "PRO3", "usr_1", deps());
+    expect(recs.get("r1")).toMatchObject({ classSessionIds: [], assignmentMode: "manual", assignmentState: "sin_clase" });
+  });
+});
+
+describe("asignar a mano a varias clases", () => {
+  it("un conjunto de clases: todas reciben el enlace; manual/asignada", async () => {
+    const { assignManually } = await mod();
+    rec("r1", { assignmentState: "ambigua", candidateClassIds: ["EST3", "PRO3"] });
+    clase("EST3");
+    clase("PRO3");
+    expect(await assignManually(ORG, "r1", ["PRO3", "EST3"], { replace: false, userId: "usr_1" }, deps())).toEqual({ ok: true });
+    expect(recs.get("r1")).toMatchObject({ classSessionIds: ["EST3", "PRO3"], assignmentMode: "manual", assignmentState: "asignada" });
+    for (const c of ["EST3", "PRO3"]) expect(classes.get(c)!.recordingUrl).toBe("https://zoom.us/rec/share/r1");
+  });
+
+  it("requiere_reemplazo por clase: dice CUÁL clase y qué tiene; no escribe nada", async () => {
+    const { assignManually } = await mod();
+    rec("r1");
+    clase("EST3");
+    clase("PRO3", { recordingUrl: "https://drive.example.com/p", recordingSource: "manual" });
+    expect(await assignManually(ORG, "r1", ["EST3", "PRO3"], { replace: false, userId: "usr_1" }, deps())).toEqual({
+      ok: false,
+      reason: "requiere_reemplazo",
+      current: { kind: "manual", recordingId: null },
+      classSessionId: "PRO3",
+    });
+    expect(recs.get("r1")!.classSessionIds).toEqual([]);
+    expect(classes.get("EST3")!.recordingUrl).toBeNull();
+  });
+
+  it("una clase cancelada en el conjunto → clase_cancelada, sin escribir", async () => {
+    const { assignManually } = await mod();
+    rec("r1");
+    clase("EST3");
+    clase("X", { canceledAt: new Date() });
+    expect(await assignManually(ORG, "r1", ["EST3", "X"], { replace: false, userId: "usr_1" }, deps())).toEqual({
+      ok: false,
+      reason: "clase_cancelada",
+    });
+    expect(classes.get("EST3")!.recordingUrl).toBeNull();
+  });
+
+  it("con replace: a la otra compartida se le quita SOLO esa clase; las que esta deja se limpian", async () => {
+    const { assignManually } = await mod();
+    rec("r0", { classSessionIds: ["EST3", "PRO3"], assignmentState: "asignada" });
+    rec("r1", { classSessionIds: ["VIEJA"], assignmentState: "asignada", assignmentMode: "manual" });
+    clase("EST3", { recordingUrl: "https://zoom.us/rec/share/r0", recordingSource: "zoom" });
+    clase("PRO3", { recordingUrl: "https://zoom.us/rec/share/r0", recordingSource: "zoom" });
+    clase("VIEJA", { recordingUrl: "https://zoom.us/rec/share/r1", recordingSource: "zoom" });
+    expect(await assignManually(ORG, "r1", ["PRO3"], { replace: true, userId: "usr_1" }, deps())).toEqual({ ok: true });
+    expect(recs.get("r0")).toMatchObject({ classSessionIds: ["EST3"], assignmentState: "asignada" });
+    expect(recs.get("r1")).toMatchObject({ classSessionIds: ["PRO3"], assignmentMode: "manual" });
+    expect(classes.get("VIEJA")).toMatchObject({ recordingUrl: null, recordingSource: null });
+    expect(classes.get("PRO3")!.recordingUrl).toBe("https://zoom.us/rec/share/r1");
+    expect(locks.at(-1)).toEqual(["PRO3", "VIEJA"]);
+  });
+
+  it("agregar una clase a una ya asignada (incluir la que ya tenía) no pide reemplazar", async () => {
+    const { assignManually } = await mod();
+    rec("r1", { classSessionIds: ["EST3"], assignmentState: "asignada" });
+    clase("EST3", { recordingUrl: "https://zoom.us/rec/share/r1", recordingSource: "zoom" });
+    clase("PRO3");
+    expect(await assignManually(ORG, "r1", ["EST3", "PRO3"], { replace: false, userId: "usr_1" }, deps())).toEqual({ ok: true });
+    expect(recs.get("r1")!.classSessionIds).toEqual(["EST3", "PRO3"]);
   });
 });
