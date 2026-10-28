@@ -31,6 +31,7 @@ export async function manualResponse(orgId: string, recordingId: string, r: Manu
                 ? "La clase ya tiene un enlace de grabación cargado a mano."
                 : "La clase ya tiene otra grabación de Zoom.",
             current: r.current,
+            classSessionId: r.classSessionId,
           },
         },
         { status: 409 }

@@ -511,7 +511,7 @@ export function RecordingsClient({
                   <TableBody>
                     {rows.map((r) => {
                       const estado = ESTADOS[r.assignment.state];
-                      const clase = r.assignment.classSession;
+                      const clases = r.assignment.classSessions;
                       const destacada = r.assignment.state === "ambigua" || r.assignment.state === "conflicto";
                       const duracion = formatDuration(r.durationMin);
                       return (
@@ -575,10 +575,19 @@ export function RecordingsClient({
                               )}
                             </TableCell>
                             <TableCell>
-                              {clase ? (
-                                <Link href={`/cohorts/${clase.cohortId}`} className="whitespace-nowrap hover:underline">
-                                  {clase.cohortName} · clase {clase.number}
-                                </Link>
+                              {clases.length > 0 ? (
+                                /* 2026-10-28 — Compartida: una clase por grupo, todas a la vista. */
+                                <span className="flex flex-col gap-0.5" data-shared={clases.length > 1 || undefined}>
+                                  {clases.map((clase) => (
+                                    <Link
+                                      key={clase.id}
+                                      href={`/cohorts/${clase.cohortId}`}
+                                      className="whitespace-nowrap hover:underline"
+                                    >
+                                      {clase.cohortName} · clase {clase.number}
+                                    </Link>
+                                  ))}
+                                </span>
                               ) : r.assignment.state === "ambigua" ? (
                                 /* Lo dudoso no se adivina: se muestra para que una persona elija. */
                                 <span className="text-xs text-foreground">
@@ -610,7 +619,7 @@ export function RecordingsClient({
                                 playUrl={r.playUrl}
                                 passcode={r.passcode}
                                 onAssign={canManage ? () => setAbierta(abierta === r.id ? null : r.id) : undefined}
-                                assigned={r.assignment.classSession !== null}
+                                assigned={r.assignment.classSessions.length > 0}
                               />
                             </TableCell>
                           </TableRow>

@@ -7,6 +7,7 @@ import { fechaDeBorrado } from "@/lib/recording-purge";
 import { classInstant } from "@/lib/schedule-time";
 import { organizationTimezone } from "@/server/finanzas-periodo";
 import { openPasscode, type SealedPasscode } from "./connections";
+import { classesOfRecordings } from "./assignment";
 import { currentRun } from "./lease";
 
 /**
@@ -121,7 +122,8 @@ export type RecordingRowDto = {
   assignment: {
     mode: "auto" | "manual";
     state: AssignmentState;
-    classSession: { id: string; number: number; date: string; cohortId: string; cohortName: string } | null;
+    /** 2026-10-28 — Una por grupo si es compartida; vacía si no tiene clase. */
+    classSessions: { id: string; number: number; date: string; cohortId: string; cohortName: string }[];
     candidates: { id: string; number: number; cohortName: string; startsAt: string }[];
     conflictWith: { id: string; number: number; cohortName: string } | null;
     assignedBy: string | null;
@@ -147,7 +149,8 @@ export type RecordingRow = SealedPasscode & {
   missingInZoomAt: Date | null;
   assignmentMode: "auto" | "manual";
   assignmentState: AssignmentState;
-  classSessionId: string | null;
+  /** `zoom_recording_class`, en orden de id. */
+  classSessionIds: string[];
   candidateClassIds: string[];
   conflictClassSessionId: string | null;
   assignedBy: string | null;
@@ -167,7 +170,12 @@ export function toRecordingRowDto(
   row: RecordingRow,
   ctx: { classes: Map<string, ClassRef>; users: Map<string, string>; purgeDays?: number }
 ): RecordingRowDto {
-  const clase = row.classSessionId ? ctx.classes.get(row.classSessionId) : undefined;
+  const clases = row.classSessionIds
+    .flatMap((id) => {
+      const c = ctx.classes.get(id);
+      return c ? [c] : [];
+    })
+    .sort((a, b) => a.cohortName.localeCompare(b.cohortName, "es") || a.id.localeCompare(b.id));
   const conflicto = row.conflictClassSessionId ? ctx.classes.get(row.conflictClassSessionId) : undefined;
   return {
     id: row.id,
@@ -192,9 +200,13 @@ export function toRecordingRowDto(
     assignment: {
       mode: row.assignmentMode,
       state: row.assignmentState,
-      classSession: clase
-        ? { id: clase.id, number: clase.number, date: clase.date, cohortId: clase.cohortId, cohortName: clase.cohortName }
-        : null,
+      classSessions: clases.map((c) => ({
+        id: c.id,
+        number: c.number,
+        date: c.date,
+        cohortId: c.cohortId,
+        cohortName: c.cohortName,
+      })),
       candidates: row.candidateClassIds.flatMap((id) => {
         const c = ctx.classes.get(id);
         return c ? [{ id: c.id, number: c.number, cohortName: c.cohortName, startsAt: c.startsAt ?? c.date }] : [];
@@ -281,7 +293,6 @@ export async function listRecordings(
       missingInZoomAt: t.missingInZoomAt,
       assignmentMode: t.assignmentMode,
       assignmentState: t.assignmentState,
-      classSessionId: t.classSessionId,
       candidateClassIds: t.candidateClassIds,
       conflictClassSessionId: t.conflictClassSessionId,
       assignedBy: t.assignedBy,
@@ -295,12 +306,14 @@ export async function listRecordings(
     .limit(q.pageSize)
     .offset(ventana.offset);
 
-  const pagina = filas;
+  // Las clases adjudicadas de TODA la página en una consulta.
+  const asignadas = await classesOfRecordings(orgId, filas.map((f) => f.id));
+  const pagina = filas.map((f) => ({ ...f, classSessionIds: asignadas.get(f.id) ?? [] }));
 
   // Clases y personas de TODA la página en una consulta cada una.
   const claseIds = [
     ...new Set(
-      pagina.flatMap((r) => [r.classSessionId, r.conflictClassSessionId, ...r.candidateClassIds].filter(Boolean))
+      pagina.flatMap((r) => [...r.classSessionIds, r.conflictClassSessionId, ...r.candidateClassIds].filter(Boolean))
     ),
   ] as string[];
   const classes = new Map<string, ClassRef>();
@@ -635,11 +648,12 @@ export async function listCandidates(
       for (const r of rs) rooms.set(r.id, r.name);
     }
     const recByClass = new Map<string, string>();
+    const rc = schema.zoomRecordingClass;
     const asignadas = await db
-      .select({ id: t.id, classSessionId: t.classSessionId })
-      .from(t)
-      .where(scoped(t.organizationId, orgId, inArray(t.classSessionId, filas.map((f) => f.id))));
-    for (const r of asignadas) if (r.classSessionId) recByClass.set(r.classSessionId, r.id);
+      .select({ id: rc.recordingId, classSessionId: rc.classSessionId })
+      .from(rc)
+      .where(scoped(rc.organizationId, orgId, inArray(rc.classSessionId, filas.map((f) => f.id))));
+    for (const r of asignadas) recByClass.set(r.classSessionId, r.id);
     return filas.map((f) => toClassOption(f, { timezone: tz, rooms, recByClass }));
   }
 
