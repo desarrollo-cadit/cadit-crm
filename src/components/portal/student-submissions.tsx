@@ -252,6 +252,9 @@ function EvaluacionItem({
 
       <Plazo evaluacion={entregas} zona={zona} />
 
+      {/* 0083 — Pedir más tiempo: lo decide Coordinación. */}
+      <SolicitudDeProrroga assessmentId={resumen.id} zona={zona} onDecidido={onCambio} />
+
       {/*
         031 (US3) — La corrección completa, dentro de la evaluación. Con una
         publicada, la devolución se lee acá y no se repite en la entrega. Sin
@@ -579,5 +582,156 @@ function FormularioDeEntrega({
         {reentrega ? "Volver a entregar" : "Entregar"}
       </Button>
     </form>
+  );
+}
+
+/* ============================================================
+ * 0083 — El pedido de prórroga
+ * ============================================================ */
+
+type EstadoDePedido = {
+  vigenteAt: string | null;
+  pedido: {
+    id: string;
+    requestedDueAt: string;
+    reason: string;
+    status: "pendiente" | "aprobada" | "rechazada";
+    decisionNote: string | null;
+    decidedAt: string | null;
+  } | null;
+  puedePedir: boolean;
+};
+
+/**
+ * "Solicitar prórroga": un día y el motivo. El pedido NO corre el plazo: lo
+ * aprueba o rechaza Coordinación, y hasta entonces se ve como pendiente. Si
+ * el acceso a la cursada venció, la ruta responde 404 y esto no se dibuja.
+ */
+function SolicitudDeProrroga({
+  assessmentId,
+  zona,
+  onDecidido,
+}: {
+  assessmentId: string;
+  zona: string;
+  onDecidido: () => void;
+}) {
+  const [estado, setEstado] = useState<EstadoDePedido | null>(null);
+  const [abierto, setAbierto] = useState(false);
+  const [fecha, setFecha] = useState("");
+  const [motivo, setMotivo] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const url = `/api/portal/me/assessments/${encodeURIComponent(assessmentId)}/extension-request`;
+
+  const cargar = useCallback(async () => {
+    const res = await fetch(url).catch(() => null);
+    if (!res?.ok) {
+      setEstado(null);
+      return;
+    }
+    setEstado((await res.json()) as EstadoDePedido);
+  }, [url]);
+
+  useEffect(() => {
+    void cargar();
+  }, [cargar]);
+
+  if (!estado) return null;
+
+  async function pedir(e: React.FormEvent) {
+    e.preventDefault();
+    setEnviando(true);
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ fecha, motivo: motivo.trim() }),
+    }).catch(() => null);
+    setEnviando(false);
+    if (!res?.ok) {
+      const body = (await res?.json().catch(() => null)) as
+        | { error?: { message?: string } }
+        | null;
+      notify.error(body?.error?.message ?? "No pudimos enviar tu pedido. Probá de nuevo en unos minutos.");
+      return;
+    }
+    notify.success("Pedido enviado. Te avisamos acá cuando lo resuelvan.");
+    setAbierto(false);
+    setFecha("");
+    setMotivo("");
+    await cargar();
+    onDecidido();
+  }
+
+  const pedido = estado.pedido;
+
+  return (
+    <div className="space-y-2">
+      {pedido?.status === "pendiente" && (
+        <p className="inline-flex flex-wrap items-center gap-1.5 text-xs text-text-2">
+          <ChipDeEstado tono="aviso">Prórroga solicitada</ChipDeEstado>
+          Pediste hasta el {fechaYHora(pedido.requestedDueAt, zona)}. Está esperando respuesta.
+        </p>
+      )}
+      {pedido?.status === "aprobada" && (
+        <p className="inline-flex flex-wrap items-center gap-1.5 text-xs text-text-2">
+          <ChipDeEstado tono="ok">Prórroga aprobada</ChipDeEstado>
+          {pedido.decisionNote}
+        </p>
+      )}
+      {pedido?.status === "rechazada" && (
+        <p className="inline-flex flex-wrap items-center gap-1.5 text-xs text-text-2">
+          <ChipDeEstado tono="atencion">Prórroga no aprobada</ChipDeEstado>
+          {pedido.decisionNote}
+        </p>
+      )}
+
+      {estado.puedePedir && !abierto && (
+        <Button variant="outline" size="sm" onClick={() => setAbierto(true)}>
+          <Clock className="h-4 w-4" />
+          Solicitar prórroga
+        </Button>
+      )}
+
+      {estado.puedePedir && abierto && (
+        <form onSubmit={pedir} className="space-y-3 rounded-md border border-border bg-subtle p-3">
+          <div className="space-y-1.5">
+            <Label htmlFor={`prorroga-fecha-${assessmentId}`}>¿Hasta qué día necesitás?</Label>
+            <Input
+              id={`prorroga-fecha-${assessmentId}`}
+              type="date"
+              required
+              className="h-11"
+              value={fecha}
+              onChange={(e) => setFecha(e.target.value)}
+            />
+            <p className="text-xs text-text-3">
+              Hasta las 23:59 de ese día
+              {estado.vigenteAt && `. Tu plazo actual: ${fechaYHora(estado.vigenteAt, zona)}`}.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor={`prorroga-motivo-${assessmentId}`}>Motivo</Label>
+            <textarea
+              id={`prorroga-motivo-${assessmentId}`}
+              required
+              minLength={3}
+              maxLength={1000}
+              rows={3}
+              className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm"
+              value={motivo}
+              onChange={(e) => setMotivo(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit" loading={enviando} disabled={!fecha || motivo.trim().length < 3}>
+              Enviar pedido
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setAbierto(false)}>
+              Cancelar
+            </Button>
+          </div>
+        </form>
+      )}
+    </div>
   );
 }

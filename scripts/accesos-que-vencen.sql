@@ -17,13 +17,17 @@
 -- vencido ese día si su último día con acceso es ANTERIOR a esa fecha.
 --
 -- Misma regla que `src/lib/access-expiry.ts`:
---   - referencia de una cohorte = end_date; sin ella, la última clase no
---     cancelada; sin ninguna, no vence.
+--   - referencia de una cohorte = delivery_deadline (0083, la entrega final);
+--     sin ella, end_date; sin ella, la última clase no cancelada; sin
+--     ninguna, no vence.
 --   - especialización (madre con módulos): el ÚLTIMO módulo (y la end_date de
 --     la madre si es posterior); si algún módulo no tiene fecha, no vence.
 --   - hasta = referencia + 1 mes calendario (Postgres recorta fin de mes:
 --     31/01 + 1 mes = 28/02).
 --   - las hijas (módulos) heredan el de su madre.
+--   - 0083: las prórrogas APROBADAS (`assessment_extension`) de la inscripción
+--     y sus hijas, en evaluaciones de su grupo, estiran `hasta` hasta su día
+--     (en la zona de la academia), sin sumarle otro mes. Requiere la 0083.
 -- Antes de desplegar nadie tiene fecha fijada a mano (`access_until` llega con
 -- la 0064), así que la consulta no la lee: funciona antes y después.
 
@@ -42,6 +46,7 @@ create temporary view _ref_cohorte as
 select c.id, c.organization_id, c.parent_cohort_id, c.is_specialization,
        coalesce(c.name, co.name) as nombre,
        coalesce(
+         c.delivery_deadline::date,
          c.end_date::date,
          (select max(s.date)::date from class_session s
            where s.cohort_id = c.id and s.canceled_at is null)
@@ -79,10 +84,28 @@ select ra.*,
        end as referencia
 from _raiz ra;
 
+-- 0083 — La prórroga aprobada más tardía de cada recorrido (día de la academia).
+create temporary view _prorroga as
+select ra.enrollment_id,
+       max((ae.due_at at time zone 'UTC' at time zone o.timezone)::date) as dia
+from _raiz ra
+join organization o on o.id = ra.organization_id
+join enrollment e on e.id = ra.enrollment_id or e.parent_enrollment_id = ra.enrollment_id
+join assessment_extension ae on ae.enrollment_id = e.id
+join assessment asm on asm.id = ae.assessment_id and asm.cohort_id = e.cohort_id
+group by ra.enrollment_id;
+
+create temporary view _hasta as
+select a.*,
+       case when a.referencia is null then null
+            else greatest((a.referencia + interval '1 month')::date, p.dia)
+       end as hasta
+from _acceso a
+left join _prorroga p on p.enrollment_id = a.enrollment_id;
+
 create temporary view _estado as
-select a.*, (a.referencia + interval '1 month')::date as hasta,
-       (a.referencia is not null and (a.referencia + interval '1 month')::date < :'fecha'::date) as vencido
-from _acceso a;
+select h.*, (h.hasta is not null and h.hasta < :'fecha'::date) as vencido
+from _hasta h;
 
 \echo
 \echo '== Resumen a la fecha indicada =='

@@ -705,6 +705,15 @@ export const cohort = pgTable(
     name: text("name"),
     startDate: timestamp("start_date").notNull(),
     endDate: timestamp("end_date"),
+    /**
+     * 0083 — La ENTREGA FINAL del grupo: un día de calendario (medianoche UTC,
+     * como `end_date`), estrictamente posterior al fin. Las evaluaciones sin
+     * plazo propio la heredan (a las 23:59 de la zona de la academia, vía
+     * `classInstant`), y el acceso a los contenidos vence un mes después de
+     * ella. NULL = sin entrega final: todo sigue como antes.
+     * Regla pura en `src/lib/entrega-final.ts`.
+     */
+    deliveryDeadline: timestamp("delivery_deadline"),
     /** 005 (DV-005) — reemplaza el `professor` texto libre de 004. */
     teacherId: text("teacher_id").references(() => teacher.id, {
       onDelete: "set null",
@@ -2270,6 +2279,61 @@ export const assessmentExtension = pgTable(
     index("assessment_extension_org_enrollment_idx").on(
       t.organizationId,
       t.enrollmentId
+    ),
+  ]
+);
+
+export const EXTENSION_REQUEST_STATUSES = ["pendiente", "aprobada", "rechazada"] as const;
+export type ExtensionRequestStatus = (typeof EXTENSION_REQUEST_STATUSES)[number];
+
+/**
+ * 0083 — El PEDIDO de prórroga que hace el alumno desde su portal.
+ *
+ * No es una prórroga: hasta que Coordinación lo aprueba no corre ningún plazo
+ * ni extiende ningún acceso. Aprobarlo escribe (o corrige) la fila de
+ * `assessment_extension` en la misma transacción, con el motivo del alumno y
+ * quien decidió como autor; rechazarlo no toca nada más. A lo sumo UN pedido
+ * `pendiente` por evaluación e inscripción (índice parcial): el segundo antes
+ * de la respuesta sería la misma pregunta dos veces.
+ */
+export const assessmentExtensionRequest = pgTable(
+  "assessment_extension_request",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    assessmentId: text("assessment_id")
+      .notNull()
+      .references(() => assessment.id, { onDelete: "cascade" }),
+    enrollmentId: text("enrollment_id")
+      .notNull()
+      .references(() => enrollment.id, { onDelete: "cascade" }),
+    /** El instante pedido, compuesto con `classInstant()` como todo plazo. */
+    requestedDueAt: timestamp("requested_due_at").notNull(),
+    /** Sin motivo no hay pedido: es el motivo que hereda la prórroga. */
+    reason: text("reason").notNull(),
+    status: text("status", { enum: EXTENSION_REQUEST_STATUSES })
+      .notNull()
+      .default("pendiente"),
+    decidedBy: text("decided_by").references(() => user.id, { onDelete: "set null" }),
+    decidedAt: timestamp("decided_at"),
+    decisionNote: text("decision_note"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("assessment_extension_request_pendiente_uq")
+      .on(t.assessmentId, t.enrollmentId)
+      .where(sql`${t.status} = 'pendiente'`),
+    index("assessment_extension_request_org_status_idx").on(t.organizationId, t.status),
+    index("assessment_extension_request_org_enrollment_idx").on(
+      t.organizationId,
+      t.enrollmentId
+    ),
+    check(
+      "assessment_extension_request_status_valid",
+      sql`${t.status} in ('pendiente', 'aprobada', 'rechazada')`
     ),
   ]
 );

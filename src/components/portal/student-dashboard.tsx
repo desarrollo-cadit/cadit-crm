@@ -101,6 +101,8 @@ type Course = {
   modules?: Module[];
   /** 043 — Hasta cuándo ve los contenidos de esta cursada. */
   access?: StudentAccess;
+  /** 0083 — "En período de entrega · hasta el …" (las clases terminaron). */
+  deliveryPeriod?: { hasta: string; texto: string } | null;
 };
 
 /**
@@ -324,6 +326,12 @@ export function StudentDashboard() {
                       {formatDate(c.startDate)}
                       {c.endDate && ` – ${formatDate(c.endDate)}`}
                     </span>
+                    {/* 0083 — Terminó de cursar pero todavía puede entregar. */}
+                    {c.deliveryPeriod && (
+                      <span className="block truncate text-xs font-medium text-warning">
+                        {c.deliveryPeriod.texto}
+                      </span>
+                    )}
                     {/* 043 — Hasta cuándo ve grabaciones y material. */}
                     {textoDeAcceso(c.access) && (
                       <span className="block truncate text-xs text-text-3">
@@ -529,6 +537,12 @@ function ResumenDeCurso({
         </div>
         <ApprovalBadge value={course.approval} />
       </div>
+
+      {course.deliveryPeriod && (
+        <ChipDeEstado tono="aviso" className="self-start">
+          {course.deliveryPeriod.texto}
+        </ChipDeEstado>
+      )}
 
       {course.totalClasses > 0 ? (
         <div className="space-y-2">

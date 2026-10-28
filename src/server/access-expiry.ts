@@ -4,6 +4,7 @@ import { scoped } from "@/lib/db/tenant";
 import {
   diaCalendario,
   diaComoFecha,
+  diaDeProrrogaMasTardia,
   estadoDeAcceso,
   referenciaDeRecorrido,
   type CohorteFechas,
@@ -136,19 +137,26 @@ export async function estadosDeAcceso(
   }
   const cohortes = new Map<
     string,
-    { id: string; endDate: Date | null; isSpecialization: boolean; parentCohortId: string | null }
+    {
+      id: string;
+      endDate: Date | null;
+      deliveryDeadline: Date | null;
+      isSpecialization: boolean;
+      parentCohortId: string | null;
+    }
   >();
   const traerCohortes = async (where: SQL) => {
     const rows = await db
       .select({
         id: schema.cohort.id,
         endDate: schema.cohort.endDate,
+        deliveryDeadline: schema.cohort.deliveryDeadline,
         isSpecialization: schema.cohort.isSpecialization,
         parentCohortId: schema.cohort.parentCohortId,
       })
       .from(schema.cohort)
       .where(scoped(schema.cohort.organizationId, organizationId, where));
-    for (const c of rows) cohortes.set(c.id, c);
+    for (const c of rows) cohortes.set(c.id, { ...c, deliveryDeadline: c.deliveryDeadline ?? null });
     return rows;
   };
   if (cohortIds.size > 0) {
@@ -189,8 +197,44 @@ export async function estadosDeAcceso(
     if (!id) return null;
     const c = cohortes.get(id);
     if (!c) return null;
-    return { id: c.id, endDate: c.endDate, lastClassDate: ultimaClase.get(c.id) ?? null };
+    return {
+      id: c.id,
+      endDate: c.endDate,
+      deliveryDeadline: c.deliveryDeadline,
+      lastClassDate: ultimaClase.get(c.id) ?? null,
+    };
   };
+
+  /**
+   * 0083 — Las prórrogas APROBADAS (`assessment_extension`: un pedido
+   * pendiente o rechazado no está acá) de cada inscripción del recorrido, de
+   * evaluaciones de SU grupo. Estiran el acceso hasta su día, sin sumarle otro
+   * mes.
+   */
+  const todas = [...filas.values(), ...[...hijasDe.values()].flat()];
+  const prorrogasDe = new Map<string, Date[]>();
+  if (todas.length > 0) {
+    const cohorteDe = new Map(todas.map((f) => [f.id, f.cohortId]));
+    const rows = await db
+      .select({
+        enrollmentId: schema.assessmentExtension.enrollmentId,
+        cohortId: schema.assessment.cohortId,
+        dueAt: schema.assessmentExtension.dueAt,
+      })
+      .from(schema.assessmentExtension)
+      .innerJoin(schema.assessment, eq(schema.assessmentExtension.assessmentId, schema.assessment.id))
+      .where(
+        scoped(
+          schema.assessmentExtension.organizationId,
+          organizationId,
+          inArray(schema.assessmentExtension.enrollmentId, [...cohorteDe.keys()])
+        )
+      );
+    for (const r of rows) {
+      if (!cohorteDe.has(r.enrollmentId) || cohorteDe.get(r.enrollmentId) !== r.cohortId) continue;
+      prorrogasDe.set(r.enrollmentId, [...(prorrogasDe.get(r.enrollmentId) ?? []), r.dueAt]);
+    }
+  }
 
   const timeZone = await zonaDeLaOrganizacion(organizationId);
 
@@ -206,9 +250,15 @@ export async function estadosDeAcceso(
       esPrograma: Boolean(cohorte?.isSpecialization) || modulos.length > 0,
       modulos,
     });
+    // La madre y sus módulos vencen juntos: cuentan las prórrogas de todo el recorrido.
+    const prorrogas = [r, ...(hijasDe.get(r.id) ?? [])].flatMap((f) => prorrogasDe.get(f.id) ?? []);
     return {
       ...estadoDeAcceso(
-        { referencia, override: r.accessUntil ? diaCalendario(r.accessUntil) : null },
+        {
+          referencia,
+          override: r.accessUntil ? diaCalendario(r.accessUntil) : null,
+          prorroga: diaDeProrrogaMasTardia(prorrogas, timeZone),
+        },
         now,
         timeZone
       ),

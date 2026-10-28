@@ -66,6 +66,8 @@ type Sheet = {
   minAttendancePct: number | null;
   /** 016 (FR-005e) — La zona de la academia, para pintar el plazo con ella. */
   timezone: string;
+  /** 0083 — La entrega final del grupo (instante); la heredan las evaluaciones sin plazo. */
+  entregaFinalAt?: string | null;
   students: Student[];
 };
 
@@ -413,9 +415,15 @@ export function GradingClient({
         <PlazosDeEntrega
           assessments={sheet.assessments}
           timezone={sheet.timezone}
+          entregaFinalAt={sheet.entregaFinalAt ?? null}
           canEdit={canEdit}
           onCambio={refetch}
         />
+      )}
+
+      {/* 0083 — Los pedidos de prórroga de los alumnos: los decide quien edita la evaluación. */}
+      {canEdit && sheet.assessments.length > 0 && (
+        <PedidosDeProrroga cohortId={cohortId} timezone={sheet.timezone} />
       )}
 
       {sheet.assessments.length === 0 ? (
@@ -761,12 +769,15 @@ function PlantillasDeCorreccion({
 function PlazosDeEntrega({
   assessments,
   timezone,
+  entregaFinalAt,
   canEdit,
   onCambio,
 }: {
   assessments: Assessment[];
   /** FR-005e — La zona de la ACADEMIA. Sin ella se pinta con la de quien mira. */
   timezone: string;
+  /** 0083 — La entrega final del grupo: la heredan las evaluaciones sin plazo propio. */
+  entregaFinalAt: string | null;
   canEdit: boolean;
   onCambio: () => void;
 }) {
@@ -842,7 +853,9 @@ function PlazosDeEntrega({
                         minute: "2-digit",
                         hour12: false,
                       }).format(new Date(a.dueAt))
-                    : "sin fecha límite"}
+                    : entregaFinalAt
+                      ? `entrega final del grupo: ${fechaDeLaAcademia(entregaFinalAt, timezone)}`
+                      : "sin fecha límite"}
                 </span>
               </span>
               {canEdit && (
@@ -901,6 +914,163 @@ function PlazosDeEntrega({
         fuera de plazo y decide el profesor. La prórroga de una persona concreta
         se da desde el portal del profesor.
       </p>
+    </div>
+  );
+}
+
+/* ============================================================
+ * 0083 — Los pedidos de prórroga
+ * ============================================================ */
+
+type PedidoParaDecidir = {
+  id: string;
+  assessmentId: string;
+  assessmentName: string;
+  enrollmentId: string;
+  studentName: string;
+  requestedDueAt: string;
+  vigenteAt: string | null;
+  reason: string;
+  createdAt: string;
+};
+
+/** Día y hora en la zona de la ACADEMIA (FR-005e), como el resto de los plazos. */
+function fechaDeLaAcademia(iso: string, timezone: string): string {
+  return new Intl.DateTimeFormat("es-UY", {
+    timeZone: timezone,
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(iso));
+}
+
+/**
+ * Los pedidos PENDIENTES del grupo. Aprobar escribe la prórroga con el
+ * motivo del alumno (se puede ajustar la fecha); rechazar lleva una nota
+ * opcional que el alumno lee. Sin pedidos, no se dibuja nada.
+ */
+function PedidosDeProrroga({ cohortId, timezone }: { cohortId: string; timezone: string }) {
+  const [pedidos, setPedidos] = useState<PedidoParaDecidir[] | null>(null);
+  const [abierto, setAbierto] = useState<string | null>(null);
+  const [fecha, setFecha] = useState("");
+  const [hora, setHora] = useState("23:59");
+  const [nota, setNota] = useState("");
+  const [guardando, setGuardando] = useState(false);
+
+  const cargar = useCallback(async () => {
+    const res = await fetch(`/api/cohorts/${cohortId}/extension-requests`).catch(() => null);
+    if (!res?.ok) return;
+    const body = (await res.json().catch(() => null)) as { pedidos?: PedidoParaDecidir[] } | null;
+    setPedidos(body?.pedidos ?? []);
+  }, [cohortId]);
+
+  useEffect(() => {
+    void cargar();
+  }, [cargar]);
+
+  if (!pedidos || pedidos.length === 0) return null;
+
+  function abrir(p: PedidoParaDecidir) {
+    if (abierto === p.id) {
+      setAbierto(null);
+      return;
+    }
+    const pedida = wallClockInZone(new Date(p.requestedDueAt), timezone);
+    setAbierto(p.id);
+    setFecha(pedida?.fecha ?? "");
+    setHora(pedida?.hora ?? "23:59");
+    setNota("");
+  }
+
+  async function decidir(p: PedidoParaDecidir, decision: "aprobar" | "rechazar") {
+    setGuardando(true);
+    const body =
+      decision === "aprobar"
+        ? { decision, plazo: fecha ? { fecha, hora } : null, nota: nota.trim() || null }
+        : { decision, nota: nota.trim() || null };
+    const res = await fetch(`/api/extension-requests/${p.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }).catch(() => null);
+    setGuardando(false);
+    if (!res?.ok) {
+      const error = (await res?.json().catch(() => null)) as
+        | { error?: { message?: string } }
+        | null;
+      notify.error(error?.error?.message ?? "No se pudo resolver el pedido");
+      return;
+    }
+    notify.success(decision === "aprobar" ? "Prórroga aprobada." : "Pedido rechazado.");
+    setAbierto(null);
+    await cargar();
+  }
+
+  return (
+    <div className="rounded-lg border">
+      <p className="border-b bg-subtle px-3 py-2 text-xs font-medium">
+        Prórrogas solicitadas · {pedidos.length}
+      </p>
+      <ul className="divide-y">
+        {pedidos.map((p) => (
+          <li key={p.id} className="space-y-2 px-3 py-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="min-w-0 flex-1 text-xs">
+                <p className="truncate font-medium">
+                  {p.studentName} · {p.assessmentName}
+                </p>
+                <p className="text-muted-foreground">
+                  Pide hasta el {fechaDeLaAcademia(p.requestedDueAt, timezone)}
+                  {p.vigenteAt && ` (plazo actual: ${fechaDeLaAcademia(p.vigenteAt, timezone)})`}
+                </p>
+                <p className="whitespace-pre-line text-muted-foreground">Motivo: {p.reason}</p>
+              </div>
+              <Button size="sm" variant="outline" onClick={() => abrir(p)}>
+                {abierto === p.id ? "Cerrar" : "Resolver"}
+              </Button>
+            </div>
+            {abierto === p.id && (
+              <div className="flex flex-wrap items-end gap-2">
+                <Input
+                  type="date"
+                  aria-label={`Fecha de la prórroga de ${p.studentName}`}
+                  className="h-8 w-40"
+                  value={fecha}
+                  onChange={(e) => setFecha(e.target.value)}
+                />
+                <Input
+                  type="time"
+                  aria-label={`Hora de la prórroga de ${p.studentName}`}
+                  className="h-8 w-28"
+                  value={hora}
+                  onChange={(e) => setHora(e.target.value)}
+                />
+                <Input
+                  aria-label={`Nota para ${p.studentName}`}
+                  placeholder="Nota (opcional)"
+                  className="h-8 min-w-48 flex-1"
+                  value={nota}
+                  onChange={(e) => setNota(e.target.value)}
+                />
+                <Button size="sm" disabled={!fecha || guardando} onClick={() => void decidir(p, "aprobar")}>
+                  Aprobar
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={guardando}
+                  onClick={() => void decidir(p, "rechazar")}
+                >
+                  Rechazar
+                </Button>
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

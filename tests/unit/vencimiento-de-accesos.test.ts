@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DIAS_DE_AVISO,
+  diaDeProrrogaMasTardia,
   avisoDeAcceso,
   accesoTerminaEn,
   diaCalendario,
@@ -220,5 +221,76 @@ describe("043 — el aviso al alumno", () => {
   it("lejos del corte o sin fecha: nada", () => {
     expect(avisoDeAcceso(estado("2027-03-01", false), dia("2026-10-19"))).toBeNull();
     expect(avisoDeAcceso(estado(null, false), dia("2026-10-19"))).toBeNull();
+  });
+});
+
+describe("0083 — la entrega final y las prórrogas aprobadas", () => {
+  const conEntrega = (
+    id: string,
+    endDate: string | null,
+    deliveryDeadline: string | null,
+    lastClassDate: string | null = null
+  ): CohorteFechas => ({
+    ...cohorte(id, endDate, lastClassDate),
+    deliveryDeadline: deliveryDeadline ? dia(deliveryDeadline) : null,
+  });
+
+  it("cohorte: la entrega final manda sobre el fin y la última clase", () => {
+    expect(referenciaDeCohorte(conEntrega("a", "2026-11-30", "2026-12-15", "2026-11-28"))).toBe(
+      "2026-12-15"
+    );
+    expect(referenciaDeCohorte(conEntrega("a", null, "2026-12-15", "2026-11-28"))).toBe("2026-12-15");
+    expect(referenciaDeCohorte(conEntrega("a", "2026-11-30", null))).toBe("2026-11-30");
+  });
+
+  it("especialización: un mes después de la entrega final del ÚLTIMO módulo", () => {
+    expect(
+      referenciaDeRecorrido({
+        cohorte: cohorte("madre", null),
+        esPrograma: true,
+        modulos: [conEntrega("m1", "2026-03-31", "2026-04-20"), conEntrega("m2", "2026-09-15", "2026-10-10")],
+      })
+    ).toBe("2026-10-10");
+  });
+
+  it("la prórroga aprobada estira el acceso hasta su día, sin sumarle otro mes", () => {
+    const e = estadoDeAcceso(
+      { referencia: "2026-12-15", override: null, prorroga: "2027-02-10" },
+      dia("2027-02-01"),
+      TZ
+    );
+    expect(e).toMatchObject({ hasta: "2027-02-10", calculada: "2027-02-10", prorroga: "2027-02-10" });
+    expect(e.vencido).toBe(false);
+  });
+
+  it("una prórroga anterior al mes de acceso no lo acorta", () => {
+    const e = estadoDeAcceso(
+      { referencia: "2026-12-15", override: null, prorroga: "2026-12-20" },
+      dia("2027-01-01"),
+      TZ
+    );
+    expect(e.hasta).toBe("2027-01-15");
+  });
+
+  it("la fecha manual sigue reemplazando a todo", () => {
+    const e = estadoDeAcceso(
+      { referencia: "2026-12-15", override: "2026-12-31", prorroga: "2027-02-10" },
+      dia("2027-01-05"),
+      TZ
+    );
+    expect(e).toMatchObject({ hasta: "2026-12-31", origen: "manual", vencido: true });
+  });
+
+  it("sin referencia, una prórroga no inventa un vencimiento", () => {
+    const e = estadoDeAcceso({ referencia: null, override: null, prorroga: "2027-02-10" }, dia("2030-01-01"), TZ);
+    expect(e).toMatchObject({ hasta: null, origen: "sin_fecha", vencido: false });
+  });
+
+  it("el día de una prórroga es el de la academia (instante → día de pared)", () => {
+    // 02:59 UTC del 16/12 = 23:59 del 15/12 en Montevideo.
+    expect(diaDeProrrogaMasTardia([new Date("2026-12-16T02:59:00.000Z"), new Date("2026-12-01T12:00:00.000Z")], TZ)).toBe(
+      "2026-12-15"
+    );
+    expect(diaDeProrrogaMasTardia([], TZ)).toBeNull();
   });
 });

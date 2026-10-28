@@ -33,6 +33,7 @@ import { onLeadActivity } from "@/server/inbox/lead-activity";
  * | module_exclusion           | DERIVADO  | configuración del recorrido                     |
  * | offline_course_access      | DERIVADO  | excepción de acceso por inscripción             |
  * | assessment_extension       | DERIVADO  | prórroga otorgada, sin entrega                  |
+ * | assessment_extension_request | DERIVADO | pedido de prórroga (0083), sin entrega        |
  * | bulk_send_recipient        | DERIVADO  | renglón del registro de un envío masivo         |
  * | staff_notice               | CASCADA   | el correo ya salió y queda salido; la fila de   |
  * |                            |           | idempotencia se va (su llave es por inscripción |

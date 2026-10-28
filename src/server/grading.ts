@@ -3,6 +3,7 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
+import { instanteDeEntregaFinal } from "@/lib/entrega-final";
 import {
   admiteAtajo,
   completarIds,
@@ -941,6 +942,11 @@ export type CohortGradingDto = {
    * donde la pantalla del staff muestra el plazo.
    */
   timezone: string;
+  /**
+   * 0083 — La entrega final del grupo como instante ISO (23:59 de la zona de
+   * la academia), o `null`. Las evaluaciones sin plazo propio la heredan.
+   */
+  entregaFinalAt?: string | null;
   students: StudentGrading[];
 };
 
@@ -956,6 +962,7 @@ export async function cohortGrading(
       id: schema.cohort.id,
       minAttendancePct: schema.cohort.minAttendancePct,
       courseMinPct: schema.course.minAttendancePct,
+      deliveryDeadline: schema.cohort.deliveryDeadline,
       // 016 (FR-005e) — En la MISMA consulta: la zona no paga un viaje aparte.
       timezone: schema.organization.timezone,
     })
@@ -1093,6 +1100,8 @@ export async function cohortGrading(
     assessments,
     minAttendancePct: minPct,
     timezone: cohort.timezone,
+    entregaFinalAt:
+      instanteDeEntregaFinal(cohort.deliveryDeadline ?? null, cohort.timezone)?.toISOString() ?? null,
     students: enrollments.map((e) => {
       const mine = resultsByEnrollment.get(e.id) ?? new Map<string, boolean | null>();
       const asistencia = attendanceByEnrollment.get(e.id) ?? new Map<string, string>();

@@ -68,6 +68,7 @@ describe("Para resolver", () => {
       confirmar: "Confirmar o cancelar",
       facturar: "Ir a facturación",
       leads: "Abrir seguimiento",
+      prorrogas: "Aprobar o rechazar",
     });
   });
 

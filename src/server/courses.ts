@@ -11,6 +11,7 @@ import { computeCohortStatus } from "@/lib/cohort-status";
 import { ACADEMY_TIME_ZONE } from "@/lib/schedule-time";
 import { progresoDeCursada, type ProgresoDeCursada } from "@/lib/cohort-progress";
 import { decidirBorradoDeClases } from "@/lib/recess";
+import { ENTREGA_FINAL_ANTES_DEL_FIN, entregaFinalValida } from "@/lib/entrega-final";
 import { marcaDeConfirmacion } from "@/lib/marca-de-confirmacion";
 import { confirmacionEfectiva } from "@/lib/cronograma-automatico";
 import { organizationTimezone } from "@/server/finanzas-periodo";
@@ -377,6 +378,11 @@ export type CohortInput = {
   name?: string | null;
   startDate: Date;
   endDate?: Date | null;
+  /**
+   * 0083 — La entrega final del grupo (día), estrictamente posterior al fin
+   * (`entregaFinalValida`, `src/lib/entrega-final.ts`).
+   */
+  deliveryDeadline?: Date | null;
   /** 005 (DV-005) — reemplaza el `professor` texto libre de 004. */
   teacherId?: string | null;
   /** 005 — en centésimos (DV-008, `src/lib/money.ts`). */
@@ -462,6 +468,8 @@ const timeHHMM = z
 export const cohortInputSchema = {
   name: z.string().trim().max(200).nullable().optional(),
   endDate: z.coerce.date().nullable().optional(),
+  /** 0083 — "Entrega final"; la coherencia con el fin la valida el servidor. */
+  deliveryDeadline: z.coerce.date().nullable().optional(),
   teacherId: z.string().min(1).nullable().optional(),
   cost: minorAmount.nullable().optional(),
   currency: z.enum(CURRENCIES).optional(),
@@ -557,7 +565,7 @@ export type CreateCohortResult =
        */
       autoEnrolled: number;
     }
-  | { ok: false; status: 422; code: "invalid_body"; message: string };
+  | { ok: false; status: 422; code: "invalid_body" | "entrega_final_antes_del_fin"; message: string };
 
 /**
  * Confirma que `courseId`/`teacherId`/`softwareIds` referenciados desde el
@@ -654,6 +662,11 @@ export async function createCohort(
   const fkError = await validateCohortForeignKeys(db, organizationId, input);
   if (fkError) return { ok: false, status: 422, code: "invalid_body", message: fkError };
 
+  // 0083 — La entrega final, estrictamente después del fin.
+  if (!entregaFinalValida(input.endDate ?? null, input.deliveryDeadline ?? null)) {
+    return { ...ENTREGA_FINAL_ANTES_DEL_FIN, ok: false };
+  }
+
   const id = newId("cohort");
 
   // 028 (FR-003/FR-004) — antes de insertar: el árbol es de un solo nivel.
@@ -714,6 +727,7 @@ export async function createCohort(
     name: input.name ?? null,
     startDate: input.startDate,
     endDate: input.endDate ?? null,
+    deliveryDeadline: input.deliveryDeadline ?? null,
     teacherId: input.teacherId ?? null,
     cost: input.cost ?? null,
     currency: input.currency ?? "UYU",
@@ -848,7 +862,7 @@ export type UpdateCohortResult =
       scheduleWarnings: ScheduleConflict[];
     }
   | { ok: false; status: 404; code: "not_found"; message: string }
-  | { ok: false; status: 422; code: "invalid_body"; message: string };
+  | { ok: false; status: 422; code: "invalid_body" | "entrega_final_antes_del_fin"; message: string };
 
 /** 005 (T008) — Edición de una cohorte; solo toca los campos presentes en `input`. */
 export async function updateCohort(
@@ -860,6 +874,23 @@ export async function updateCohort(
 
   const fkError = await validateCohortForeignKeys(db, organizationId, input, cohortId);
   if (fkError) return { ok: false, status: 422, code: "invalid_body", message: fkError };
+
+  /**
+   * 0083 — Si el pedido toca el fin o la entrega final, la pareja con la que
+   * queda el grupo tiene que seguir siendo coherente: mover el fin a la
+   * entrega final (o después) también es un 422.
+   */
+  if (input.endDate !== undefined || input.deliveryDeadline !== undefined) {
+    const [actual] = await db
+      .select({ endDate: schema.cohort.endDate, deliveryDeadline: schema.cohort.deliveryDeadline })
+      .from(schema.cohort)
+      .where(scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, cohortId)))
+      .limit(1);
+    const fin = input.endDate !== undefined ? input.endDate : (actual?.endDate ?? null);
+    const entrega =
+      input.deliveryDeadline !== undefined ? input.deliveryDeadline : (actual?.deliveryDeadline ?? null);
+    if (!entregaFinalValida(fin, entrega)) return { ...ENTREGA_FINAL_ANTES_DEL_FIN, ok: false };
+  }
 
   // 028 (FR-003/FR-004) — sólo si el pedido TOCA el padre. Un PATCH que no lo
   // menciona no puede fallar por una regla que no está ejerciendo (FR-032).
@@ -921,6 +952,7 @@ export async function updateCohort(
       ...(input.name !== undefined ? { name: input.name } : {}),
       ...(input.startDate !== undefined ? { startDate: input.startDate } : {}),
       ...(input.endDate !== undefined ? { endDate: input.endDate } : {}),
+      ...(input.deliveryDeadline !== undefined ? { deliveryDeadline: input.deliveryDeadline } : {}),
       ...(input.teacherId !== undefined ? { teacherId: input.teacherId } : {}),
       ...(input.cost !== undefined ? { cost: input.cost } : {}),
       ...(input.currency !== undefined ? { currency: input.currency } : {}),
@@ -1138,6 +1170,8 @@ function serializeCohort(
     isSpecialization: cohort.isSpecialization,
     startDate: cohort.startDate.toISOString(),
     endDate: cohort.endDate?.toISOString() ?? null,
+    /** 0083 — La entrega final del grupo (día). */
+    deliveryDeadline: cohort.deliveryDeadline?.toISOString() ?? null,
     startTime: cohort.startTime,
     endTime: cohort.endTime,
     daysOfWeek: cohort.daysOfWeek,

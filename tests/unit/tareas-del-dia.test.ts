@@ -9,6 +9,8 @@ import {
   tareasDeGrabaciones,
   tareasDeLeads,
   tareasDeSugerenciasDeZoom,
+  tareasDeProrrogas,
+  type PedidoParaTarea,
   type ClaseParaTarea,
   type EnvioParaTarea,
   type GrabacionesPorEstado,
@@ -34,6 +36,7 @@ describe("reglasPermitidas — cada regla pide SU capacidad", () => {
       ["confirmar", ["cohortes.confirmar"]],
       ["facturar", ["cobranza.ver"]],
       ["leads", ["inscripciones.seguimiento"]],
+      ["prorrogas", ["evaluacion.editar"]],
     ]);
   });
 
@@ -506,5 +509,49 @@ describe("tareasDeGrabaciones — grabaciones ambiguas o en conflicto, UN item p
       ["confirmar", "1 grupo por confirmar", 1],
     ]);
     expect(bandeja[1]!.titulo).toBe("Grabaciones para resolver");
+  });
+});
+
+describe("tareasDeProrrogas — pedidos de prórroga pendientes, UNO por grupo", () => {
+  const base: PedidoParaTarea = {
+    cohortId: "coh_1",
+    cohortName: "Revit 12",
+    courseName: "Revit",
+    createdAt: new Date("2026-10-25T15:00:00Z"),
+  };
+
+  it("pide la capacidad que otorga prórrogas", () => {
+    expect(reglasPermitidas(["evaluacion.editar"])).toEqual(["prorrogas"]);
+    expect(reglasPermitidas(["evaluacion.ver"])).toEqual([]);
+  });
+
+  it("junta los pedidos del grupo y lleva a la pestaña de evaluación", () => {
+    const tareas = tareasDeProrrogas(
+      [
+        base,
+        { ...base, createdAt: new Date("2026-10-20T15:00:00Z") },
+        { ...base, cohortId: "coh_2", cohortName: null, courseName: "BIM" },
+      ],
+      reloj
+    );
+    expect(tareas).toHaveLength(2);
+    expect(tareas.find((t) => t.href === "/cohorts/coh_1?tab=evaluacion")).toMatchObject({
+      ruleId: "prorrogas",
+      titulo: "Revit — Revit 12",
+      cantidad: 2,
+      // El más viejo es de hace 6 días: urgente.
+      urgencia: "alta",
+      fecha: "2026-10-20",
+    });
+    expect(tareas.find((t) => t.href === "/cohorts/coh_2?tab=evaluacion")).toMatchObject({
+      titulo: "BIM",
+      cantidad: 1,
+      urgencia: "media",
+    });
+  });
+
+  it("en la bandeja cuenta pedidos y dice en cuántos grupos", () => {
+    const bandeja = armarBandeja(tareasDeProrrogas([base, { ...base, cohortId: "coh_2" }], reloj));
+    expect(bandeja.map((g) => g.resumen)).toEqual(["2 pedidos de prórroga en 2 grupos"]);
   });
 });

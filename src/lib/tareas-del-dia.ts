@@ -23,7 +23,14 @@ import { wallClockInZone } from "@/lib/schedule-time";
  * que solo consulta los datos de las reglas que la sesión puede ver.
  */
 
-export type ReglaDeTarea = "asistencia_zoom" | "asistencia" | "grabaciones" | "confirmar" | "facturar" | "leads";
+export type ReglaDeTarea =
+  | "asistencia_zoom"
+  | "asistencia"
+  | "grabaciones"
+  | "confirmar"
+  | "facturar"
+  | "leads"
+  | "prorrogas";
 export type Urgencia = "alta" | "media";
 
 export type TareaDeHoy = {
@@ -105,6 +112,15 @@ export const REGLAS_DE_TAREAS = [
     capacidades: ["inscripciones.seguimiento"],
     titulo: "Interesados sin contactar",
     unidad: ["interesado sin contactar", "interesados sin contactar"],
+  },
+  {
+    // 0083 — Los pedidos de prórroga de los alumnos. La MISMA capacidad que
+    // otorga prórrogas desde el panel (`/api/assessments/[id]/plazo`).
+    id: "prorrogas",
+    capacidades: ["evaluacion.editar"],
+    titulo: "Prórrogas por resolver",
+    unidad: ["pedido de prórroga", "pedidos de prórroga"],
+    porGrupo: true,
   },
 ] as const satisfies readonly {
   id: ReglaDeTarea;
@@ -447,6 +463,55 @@ export function tareasDeLeads(envios: readonly EnvioParaTarea[], now: Date): Tar
       href: `/contacts/${e.contactId}/legajo?tab=seguimiento`,
       urgencia: horas > 72 ? "alta" : "media",
       fecha: e.submittedAt.toISOString().slice(0, 10),
+    } satisfies TareaDeHoy;
+  });
+}
+
+/* ============================================================ 5. prórrogas */
+
+/** Un pedido de prórroga PENDIENTE, con el grupo de su evaluación. */
+export type PedidoParaTarea = {
+  cohortId: string;
+  cohortName: string | null;
+  courseName: string;
+  createdAt: Date;
+};
+
+/**
+ * 0083 — Los pedidos de prórroga pendientes, UNA tarea por grupo, que abre su
+ * pestaña de evaluación (donde se aprueban o rechazan). La urgencia y la
+ * fecha son las del pedido más viejo: alta si tiene más de 3 días.
+ */
+export function tareasDeProrrogas(
+  pedidos: readonly PedidoParaTarea[],
+  reloj: RelojDeAsistencia
+): TareaDeHoy[] {
+  const grupos = new Map<string, { viejo: PedidoParaTarea; n: number }>();
+  for (const p of pedidos) {
+    const previo = grupos.get(p.cohortId);
+    if (!previo) grupos.set(p.cohortId, { viejo: p, n: 1 });
+    else {
+      previo.n += 1;
+      if (p.createdAt.getTime() < previo.viejo.createdAt.getTime()) previo.viejo = p;
+    }
+  }
+  return [...grupos.values()].map(({ viejo, n }) => {
+    const fecha = wallClockInZone(viejo.createdAt, reloj.timeZone)?.fecha ?? diaGuardado(viejo.createdAt);
+    const hace = Math.max(
+      0,
+      -(diasHastaElInicio(new Date(`${fecha}T00:00:00Z`), reloj.now, reloj.timeZone) ?? 0)
+    );
+    return {
+      ruleId: "prorrogas",
+      titulo: nombreDeGrupo(viejo.courseName, viejo.cohortName),
+      detalle:
+        n === 1
+          ? `Pedido ${deHace(hace)}`
+          : `${n} pedidos de prórroga · el más viejo ${deHace(hace)}`,
+      href: `/cohorts/${viejo.cohortId}?tab=evaluacion`,
+      urgencia: hace > 3 ? "alta" : "media",
+      fecha,
+      cantidad: n,
     } satisfies TareaDeHoy;
   });
 }

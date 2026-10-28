@@ -96,12 +96,20 @@ export type CohorteFechas = {
   id: string;
   /** `cohort.end_date`. */
   endDate: Date | null;
+  /** 0083 — `cohort.delivery_deadline`: la entrega final, si la tiene. */
+  deliveryDeadline?: Date | null;
   /** La última `class_session.date` NO cancelada de la cohorte. */
   lastClassDate: Date | null;
 };
 
-/** `end_date`; sin ella, la última clase no cancelada; sin ninguna, `null`. */
+/**
+ * 0083 — La entrega final; sin ella, `end_date`; sin ella, la última clase no
+ * cancelada; sin ninguna, `null`. En una especialización cada módulo usa la
+ * suya, así que el programa vence un mes después de la entrega final del
+ * último módulo.
+ */
 export function referenciaDeCohorte(c: CohorteFechas): string | null {
+  if (c.deliveryDeadline) return diaCalendario(c.deliveryDeadline);
   if (c.endDate) return diaCalendario(c.endDate);
   if (c.lastClassDate) return diaCalendario(c.lastClassDate);
   return null;
@@ -156,6 +164,11 @@ export type EstadoDeAcceso = {
   calculada: string | null;
   /** Cuándo terminó la cursada. */
   referencia: string | null;
+  /**
+   * 0083 — El día de la prórroga APROBADA más tardía de la inscripción (o de
+   * su recorrido). Estira `calculada` hasta ese día, sin sumarle otro mes.
+   */
+  prorroga: string | null;
   origen: OrigenDeAcceso;
   vencido: boolean;
   /** Instante del corte (fin del día `hasta` en la zona de la academia), ISO. */
@@ -167,12 +180,29 @@ export function accesoTerminaEn(hasta: string, timeZone: string): Date {
   return classEndsAt(diaComoFecha(hasta), null, timeZone);
 }
 
+/**
+ * 0083 — El día (de pared, en la zona de la academia) de la prórroga más
+ * tardía. Las prórrogas son instantes; el acceso se cuenta en días.
+ */
+export function diaDeProrrogaMasTardia(dueAts: readonly Date[], timeZone: string): string | null {
+  return maxDia(dueAts.map((d) => hoyEnZona(d, timeZone)));
+}
+
+/**
+ * - `calculada` = referencia + 1 mes, estirada hasta la prórroga aprobada más
+ *   tardía si es posterior (0083: sin sumarle otro mes). Sin referencia no
+ *   hay vencimiento, y una prórroga no lo inventa.
+ * - La fecha manual reemplaza a la calculada, como siempre.
+ */
 export function estadoDeAcceso(
-  input: { referencia: string | null; override: string | null },
+  input: { referencia: string | null; override: string | null; prorroga?: string | null },
   now: Date,
   timeZone: string
 ): EstadoDeAcceso {
-  const calculada = input.referencia ? sumarMeses(input.referencia, MESES_DE_ACCESO) : null;
+  const prorroga = input.prorroga ?? null;
+  const calculada = input.referencia
+    ? maxDia([sumarMeses(input.referencia, MESES_DE_ACCESO), prorroga])
+    : null;
   const hasta = input.override ?? calculada;
   const origen: OrigenDeAcceso = input.override ? "manual" : calculada ? "calculado" : "sin_fecha";
   const fin = hasta ? accesoTerminaEn(hasta, timeZone) : null;
@@ -180,6 +210,7 @@ export function estadoDeAcceso(
     hasta,
     calculada,
     referencia: input.referencia,
+    prorroga,
     origen,
     vencido: fin !== null && now.getTime() >= fin.getTime(),
     terminaEn: fin?.toISOString() ?? null,
