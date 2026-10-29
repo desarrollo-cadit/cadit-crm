@@ -82,6 +82,15 @@ export const CAPABILITIES = [
    */
   "empresas.editar",
   /**
+   * 2026-10-29 — Unificar dos empresas que son la misma (carga duplicada,
+   * `src/lib/company-merge.ts`): contactos, inscripciones, accesos y cursadas
+   * históricas pasan a la que queda y la absorbida se BORRA. Es irreversible,
+   * por eso no cuelga de `empresas.editar`. La reciben los mismos roles que
+   * `contactos.unificar`: dirección, coordinación y soporte; ventas y
+   * administración no.
+   */
+  "empresas.unificar",
+  /**
    * 042 — Registrar los DOCUMENTOS de una venta y nada más: el número de
    * factura de la inscripción y el número de recibo de un pago (el recibo es
    * del PAGO, DV-006 de 008). No cambia montos, moneda, cuotas, pagos,

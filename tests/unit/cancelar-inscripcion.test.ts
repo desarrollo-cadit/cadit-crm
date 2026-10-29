@@ -25,6 +25,7 @@ function base(over: Partial<InscripcionACancelar> = {}): InscripcionACancelar {
     modulos: 0,
     cuotas: 0,
     licencias: [],
+    asistencias: 0,
     historial: { ...HISTORIAL_VACIO },
     ...over,
   };
@@ -52,6 +53,24 @@ describe("decidirCancelacion — sin historial se borra", () => {
     expect(d.motivo).toContain("las licencias de Revit, AutoCAD y Navisworks");
   });
 
+  it("la asistencia NO bloquea: se borra con la inscripción y lo avisa con número", () => {
+    // 2026-10-29: una inscripción duplicada a la que se le pasó lista impedía
+    // unificar contactos. La marca de asistencia de una inscripción hecha por
+    // error no es historia de la persona: se va con ella, avisando.
+    const d = decidirCancelacion(base({ asistencias: 3 }));
+    expect(d.deletable).toBe(true);
+    expect(d.motivo).toContain("la asistencia de 3 clases");
+    expect(d.detalle.asistencias).toBe(3);
+    expect(decidirCancelacion(base({ asistencias: 1 })).motivo).toContain("la asistencia de 1 clase");
+  });
+
+  it("asistencia más un pago: bloquea por el pago, no por la asistencia", () => {
+    const d = decidirCancelacion(base({ asistencias: 3, historial: { ...HISTORIAL_VACIO, pagos: 1 } }));
+    expect(d.deletable).toBe(false);
+    expect(d.motivo).toContain("1 pago registrado");
+    expect(d.motivo).not.toContain("asistencia");
+  });
+
   it("una especialización sin historia se lleva sus módulos y lo avisa", () => {
     const d = decidirCancelacion(base({ modulos: 3 }));
     expect(d.deletable).toBe(true);
@@ -71,15 +90,14 @@ describe("decidirCancelacion — con historial NO se borra", () => {
 
   it("junta todo lo que encontró en una frase con números", () => {
     const d = decidirCancelacion(
-      base({ historial: { ...HISTORIAL_VACIO, pagos: 2, asistencias: 3 } })
+      base({ historial: { ...HISTORIAL_VACIO, pagos: 2, resultados: 3 } })
     );
-    expect(d.motivo).toContain("Tiene 2 pagos registrados y asistencia en 3 clases.");
+    expect(d.motivo).toContain("Tiene 2 pagos registrados y 3 notas cargadas.");
   });
 
   it.each([
     ["pagos", "1 pago registrado"],
     ["certificados", "1 certificado emitido"],
-    ["asistencias", "asistencia en 1 clase"],
     ["resultados", "1 nota cargada"],
     ["correcciones", "1 corrección"],
     ["entregas", "1 entrega"],
@@ -99,7 +117,7 @@ describe("decidirCancelacion — con historial NO se borra", () => {
 
   it("la historia de un MÓDULO hijo bloquea a la madre y lo dice", () => {
     const d = decidirCancelacion(
-      base({ modulos: 2, historial: { ...HISTORIAL_VACIO, asistencias: 4 } })
+      base({ modulos: 2, historial: { ...HISTORIAL_VACIO, resultados: 4 } })
     );
     expect(d.deletable).toBe(false);
     expect(d.motivo).toContain("contando sus módulos");

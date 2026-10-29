@@ -22,10 +22,12 @@ export default async function EmpresasPage() {
   return (
     <div className="h-full overflow-y-auto">
       {/* 040 — Crear y editar, solo con `empresas.editar`. */}
+      {/* 2026-10-29 — Unificar empresas duplicadas, solo con `empresas.unificar`. */}
       {/* 045 — Cursos offline: ver con `contactos.ver`; asignar, extender y quitar con `academico.editar`. */}
       <CompaniesClient
         canEdit={caps.includes("empresas.editar")}
         canEditAcademic={caps.includes("academico.editar")}
+        canMerge={caps.includes("empresas.unificar")}
       />
     </div>
   );
