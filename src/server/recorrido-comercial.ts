@@ -1,4 +1,5 @@
 import { eq, inArray } from "drizzle-orm";
+import { grupoTieneEvaluaciones } from "@/lib/taller-config";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import type { CourseKind } from "@/lib/course-kind";
@@ -52,6 +53,8 @@ export type InscripcionLeida = {
     startDate: Date;
     endDate: Date | null;
     minAttendancePct: number | null;
+    registrationStatus?: string | null;
+    hasAssessments?: boolean;
   };
   course: {
     id: string;
@@ -113,6 +116,11 @@ export function armarCursadasComerciales(p: PiezasDelRecorrido): CursadaComercia
         waiverAuthorName,
         cohortMinPct: cohort.minAttendancePct,
         courseMinPct: course.minAttendancePct,
+        tieneEvaluaciones: grupoTieneEvaluaciones({
+          courseKind: course.kind,
+          registrationStatus: cohort.registrationStatus,
+          hasAssessments: cohort.hasAssessments,
+        }),
       },
       {
         clases: clasesPorGrupo.get(cohort.id) ?? [],
@@ -129,6 +137,11 @@ export function armarCursadasComerciales(p: PiezasDelRecorrido): CursadaComercia
       courseId: course.id,
       courseName: course.name,
       courseKind: course.kind,
+      sinEvaluaciones: !grupoTieneEvaluaciones({
+        courseKind: course.kind,
+        registrationStatus: cohort.registrationStatus,
+        hasAssessments: cohort.hasAssessments,
+      }),
       categoryId: course.categoryId,
       cohortId: cohort.id,
       cohortName: cohort.name?.trim() || course.name,
@@ -181,6 +194,8 @@ export async function cargarCursadasComerciales(
       confirmedAt: schema.cohort.confirmedAt,
       parentCohortId: schema.cohort.parentCohortId,
       cohortMinPct: schema.cohort.minAttendancePct,
+      registrationStatus: schema.cohort.registrationStatus,
+      hasAssessments: schema.cohort.hasAssessments,
       courseId: schema.course.id,
       courseName: schema.course.name,
       courseKind: schema.course.kind,
@@ -283,6 +298,8 @@ export async function cargarCursadasComerciales(
         startDate: f.startDate,
         endDate: f.endDate,
         minAttendancePct: f.cohortMinPct,
+        registrationStatus: f.registrationStatus,
+        hasAssessments: f.hasAssessments,
       },
       course: {
         id: f.courseId,

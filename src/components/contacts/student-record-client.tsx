@@ -27,7 +27,7 @@ type RecordCourse = {
   approval: "aprobado" | "reprobado" | "pendiente" | "sin_datos";
   approvalReasons: string[];
   assessments: { name: string; passed: boolean | null }[];
-  certificate: { code: string; issuedAt: string; revokedAt: string | null } | null;
+  certificate: { code: string; issuedAt: string; revokedAt: string | null; suspended?: boolean } | null;
 };
 
 type StudentRecord = {
@@ -196,7 +196,10 @@ export function StudentRecordClient({
               <Badge variant={APROBACION[c.approval].variant}>
                 {APROBACION[c.approval].label}
               </Badge>
-              {c.certificate && !c.certificate.revokedAt && (
+              {c.certificate?.suspended && !c.certificate.revokedAt && (
+                <Badge variant="outline">Certificado suspendido (el grupo no emite)</Badge>
+              )}
+              {c.certificate && !c.certificate.revokedAt && !c.certificate.suspended && (
                 <>
                   <Badge variant="secondary">
                     <Award className="mr-1 h-3 w-3" />

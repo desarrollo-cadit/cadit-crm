@@ -45,6 +45,12 @@ export type CursadaComercial = {
   endDate: Date | null;
   stageKind: "open" | "won" | "lost";
   nuncaDictada: boolean;
+  /**
+   * 2026-10-29 — Grupo de taller configurado SIN evaluaciones: no hay
+   * aprobación que afirmar. Terminado, se informa "curso_historico" (se
+   * cursó, sin resultado) y nunca "curso_sin_aprobar" ni "aprobo".
+   */
+  sinEvaluaciones?: boolean;
   aprobacion: ModuleState;
   certificadoVigente: boolean;
   /** 046 US8 — el vendedor y la empresa de la inscripción (de la madre, en un módulo). */
@@ -191,7 +197,10 @@ type Decision = { estado: EstadoComercial; sinResultado: boolean } | null;
  * El estado de UNA cursada (research R1). `null` = no cuenta.
  */
 function estadoDeCursada(
-  c: Pick<CursadaComercial, "startDate" | "endDate" | "stageKind" | "certificadoVigente">,
+  c: Pick<
+    CursadaComercial,
+    "startDate" | "endDate" | "stageKind" | "certificadoVigente" | "sinEvaluaciones"
+  >,
   aprobacion: ModuleState,
   now: Date
 ): Decision {
@@ -206,6 +215,7 @@ function estadoDeCursada(
       ? { estado: "curso_sin_aprobar", sinResultado: false }
       : { estado: "en_curso", sinResultado: false };
   }
+  if (c.sinEvaluaciones) return { estado: "curso_historico", sinResultado: false };
   if (aprobacion === "aprobado" || c.certificadoVigente) return { estado: "aprobo", sinResultado: false };
   return { estado: "curso_sin_aprobar", sinResultado: aprobacion === "sin_datos" };
 }

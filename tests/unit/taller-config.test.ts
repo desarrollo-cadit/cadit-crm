@@ -5,6 +5,7 @@ import {
   grupoTieneEvaluaciones,
 } from "@/lib/taller-config";
 import { resultadoDeCursada } from "@/lib/resultado-de-cursada";
+import { historialesComerciales, type CursadaComercial } from "@/lib/recorrido-comercial";
 import { pestanasDelGrupo, pestanasPortalCursada, pestanasPortalGrupo } from "@/lib/pestanas";
 
 const taller = { courseKind: "taller", registrationStatus: null };
@@ -50,5 +51,32 @@ describe("configuración de un grupo de taller", () => {
     expect(pestanasDelGrupo({ ...base, tieneEvaluaciones: false, emiteCertificado: true })).toContain("evaluacion");
     expect(pestanasPortalGrupo({ tieneEvaluaciones: false })).toEqual(["clases", "material"]);
     expect(pestanasPortalCursada({ tieneEvaluaciones: false })).not.toContain("evaluaciones");
+  });
+});
+
+describe("recorrido comercial: grupo sin evaluaciones", () => {
+  const NOW = new Date("2026-10-29T12:00:00Z");
+  const base: CursadaComercial = {
+    enrollmentId: "e1",
+    contactId: "c1",
+    parentEnrollmentId: null,
+    courseId: "k1",
+    courseName: "Curso",
+    courseKind: "curso",
+    categoryId: null,
+    cohortId: "g1",
+    cohortName: "G1",
+    startDate: new Date("2026-01-01T00:00:00Z"),
+    endDate: new Date("2026-03-01T00:00:00Z"),
+    stageKind: "won",
+    nuncaDictada: false,
+    aprobacion: "sin_datos",
+    certificadoVigente: false,
+  };
+  it("terminado sin evaluaciones no es 'cursó sin aprobar' ni 'aprobó'", () => {
+    const h = historialesComerciales([{ ...base, sinEvaluaciones: true }], NOW).get("c1") ?? [];
+    expect(h.map((x) => x.estado)).toEqual(["curso_historico"]);
+    const normal = historialesComerciales([base], NOW).get("c1") ?? [];
+    expect(normal.map((x) => x.estado)).toEqual(["curso_sin_aprobar"]);
   });
 });

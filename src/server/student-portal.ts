@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, gte, inArray, isNotNull } from "drizzle-orm";
-import { grupoTieneEvaluaciones } from "@/lib/taller-config";
+import { grupoEmiteCertificado, grupoTieneEvaluaciones } from "@/lib/taller-config";
+import { grupoEmiteCertificadoSql } from "@/server/taller-config";
 import { inscripcionesNoDictadas } from "@/server/cursadas-no-dictadas";
 import { cursoNoEsTaller } from "@/server/workshop-scope";
 import { getDb, schema } from "@/lib/db";
@@ -694,7 +695,13 @@ function buildCourse(
   // legajo, la grilla del Recorrido y el certificado general.
   const sinDatos = state === "sin_datos" || !tieneEvaluaciones;
 
-  const cert = data.certificados.find((c) => c.enrollmentId === enrollment.id);
+  const cert = grupoEmiteCertificado({
+    courseKind: course?.kind,
+    registrationStatus: cohort?.registrationStatus,
+    issuesCertificate: cohort?.issuesCertificate,
+  })
+    ? data.certificados.find((c) => c.enrollmentId === enrollment.id)
+    : undefined;
   // 034 (FR-020) — Varias por cursada; las asignadas primero.
   const licencias = data.licencias
     .filter((l) => l.enrollmentId === enrollment.id)
@@ -1336,9 +1343,13 @@ export async function studentCourseDetail(
             : Promise.resolve([]),
       ]);
 
-  const certificadoPropio = certificados.find(
-    (c) => c.enrollmentId === mia.enrollment.id
-  );
+  const certificadoPropio = grupoEmiteCertificado({
+    courseKind: mia.course?.kind,
+    registrationStatus: mia.cohort?.registrationStatus,
+    issuesCertificate: mia.cohort?.issuesCertificate,
+  })
+    ? certificados.find((c) => c.enrollmentId === mia.enrollment.id)
+    : undefined;
 
   /**
    * 024 — El recorrido. Se arma acá, en el servidor, y no en la pantalla: es
@@ -1683,7 +1694,13 @@ export async function studentCertificates(
       scoped(
         schema.certificate.organizationId,
         organizationId,
-        eq(schema.enrollment.contactId, contactId)
+        eq(schema.enrollment.contactId, contactId),
+        // 2026-10-29 — Suspendido: el grupo ya no emite certificado.
+        grupoEmiteCertificadoSql(
+          schema.course.kind,
+          schema.cohort.registrationStatus,
+          schema.cohort.issuesCertificate
+        )
       )
     )
     .orderBy(desc(schema.certificate.issuedAt));

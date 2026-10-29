@@ -152,6 +152,15 @@ async function emitirCertificado(
   }
   const dispensada = dispensaVigente(enrollment);
 
+  /**
+   * 2026-10-29 — Un grupo de taller que NO emite no emite ni devuelve
+   * certificados: los ya emitidos quedan SUSPENDIDOS (la fila no se toca; si
+   * el grupo vuelve a "emite", vuelven a valer).
+   */
+  if (!grupoEmiteCertificado(enrollment)) {
+    return { ok: false, ...GRUPO_SIN_CERTIFICADO };
+  }
+
   const existing = await db
     .select()
     .from(schema.certificate)
@@ -202,15 +211,6 @@ async function emitirCertificado(
    * Lo que la bandera dice es qué vende la academia, y de eso no hay cohorte
    * vieja que exima.
    */
-  /**
-   * 2026-10-29 — Un grupo de taller configurado como "no emite certificado"
-   * no emite NUEVOS. Va después del certificado existente a propósito: lo ya
-   * emitido sigue vigente (descarga y /verificar) aunque alguien apague la
-   * casilla después; solo se frena la emisión.
-   */
-  if (!grupoEmiteCertificado(enrollment)) {
-    return { ok: false, ...GRUPO_SIN_CERTIFICADO };
-  }
   if (enrollment.grantsCertificate === false) {
     return {
       ok: false,
@@ -593,6 +593,9 @@ export async function verifyCertificate(code: string): Promise<PublicCertificate
       courseName: schema.course.name,
       cohortName: schema.cohort.name,
       totalHours: schema.course.totalHours,
+      courseKind: schema.course.kind,
+      registrationStatus: schema.cohort.registrationStatus,
+      issuesCertificate: schema.cohort.issuesCertificate,
     })
     .from(schema.certificate)
     .innerJoin(schema.enrollment, eq(schema.certificate.enrollmentId, schema.enrollment.id))
@@ -618,7 +621,8 @@ export async function verifyCertificate(code: string): Promise<PublicCertificate
     cohort: row.cohortName,
     issuedAt: row.certificate.issuedAt.toISOString(),
     hours,
-    valid: !row.certificate.revokedAt,
+    // 2026-10-29 — Suspendido (el grupo ya no emite): no valida, sin anular la fila.
+    valid: !row.certificate.revokedAt && grupoEmiteCertificado(row),
     revokedAt: row.certificate.revokedAt?.toISOString() ?? null,
   };
 }

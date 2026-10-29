@@ -12,6 +12,7 @@ import {
 } from "@/lib/certificado";
 import { modulosConOrdinal } from "@/lib/program-order";
 import { fullName } from "@/lib/utils";
+import { grupoEmiteCertificadoSql } from "@/server/taller-config";
 import { lugaresDelPrograma, tieneHijas } from "@/server/program-modules";
 
 /**
@@ -181,11 +182,23 @@ async function certificadoVigente(
     })
     .from(schema.certificate)
     .innerJoin(schema.enrollment, eq(schema.certificate.enrollmentId, schema.enrollment.id))
+    .leftJoin(schema.cohort, eq(schema.enrollment.cohortId, schema.cohort.id))
+    .leftJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
     .where(
       scoped(
         schema.certificate.organizationId,
         organizationId,
-        and(condicion, isNull(schema.certificate.revokedAt))
+        // 2026-10-29 — Un grupo de taller que NO emite deja sus certificados
+        // SUSPENDIDOS: sin PDF (la fila no se toca; si vuelve a "emite", vale).
+        and(
+          condicion,
+          isNull(schema.certificate.revokedAt),
+          grupoEmiteCertificadoSql(
+            schema.course.kind,
+            schema.cohort.registrationStatus,
+            schema.cohort.issuesCertificate
+          )
+        )
       )
     )
     .limit(1);

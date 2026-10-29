@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { grupoEmiteCertificado } from "@/lib/taller-config";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
@@ -115,6 +116,8 @@ export type StudentGrading = {
     revokedAt: string | null;
     revokeReason: string | null;
     revokedByName: string | null;
+    /** 2026-10-29 — El grupo ya no emite: existe, pero está suspendido (sin PDF). */
+    suspended?: boolean;
   } | null;
 };
 
@@ -1181,6 +1184,9 @@ export async function cohortGrading(
       deliveryDeadline: schema.cohort.deliveryDeadline,
       // 016 (FR-005e) — En la MISMA consulta: la zona no paga un viaje aparte.
       timezone: schema.organization.timezone,
+      courseKind: schema.course.kind,
+      registrationStatus: schema.cohort.registrationStatus,
+      issuesCertificate: schema.cohort.issuesCertificate,
     })
     .from(schema.cohort)
     .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
@@ -1194,6 +1200,7 @@ export async function cohortGrading(
   if (!cohort) return null;
 
   const minPct = resolveMinAttendance(cohort.minAttendancePct, cohort.courseMinPct);
+  const emiteCertificadoElGrupo = grupoEmiteCertificado(cohort);
   const assessments = await listAssessments(organizationId, cohortId);
 
   const enrollments = await db
@@ -1367,6 +1374,7 @@ export async function cohortGrading(
               revokedAt: cert.certificate.revokedAt?.toISOString() ?? null,
               revokeReason: cert.certificate.revokeReason,
               revokedByName: cert.revokedByName,
+              suspended: !emiteCertificadoElGrupo,
             }
           : null,
       };

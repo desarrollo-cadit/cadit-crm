@@ -60,6 +60,7 @@ type Student = {
     /** 024 — Por qué se anuló y de quién fue la decisión. */
     revokeReason: string | null;
     revokedByName: string | null;
+    suspended?: boolean;
   } | null;
 };
 
@@ -587,6 +588,8 @@ export function GradingClient({
                         {/* 038 (FR-007/FR-015) — el PDF del diseño; el anulado no se descarga. */}
                         {st.certificate.revokedAt ? (
                           <span title={st.certificate.code}>anulado</span>
+                        ) : st.certificate.suspended ? (
+                          <span title={st.certificate.code}>suspendido (el grupo no emite)</span>
                         ) : (
                           <a
                             href={`/api/enrollments/${st.enrollmentId}/certificate/print`}

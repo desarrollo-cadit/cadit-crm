@@ -33,8 +33,15 @@ describe("taller sin evaluaciones / sin certificado: validación en el backend",
   it("emitirCertificado rechaza la emisión nueva de un grupo que no emite", () => {
     const src = leer("src/server/certificates.ts");
     expect(src).toMatch(/grupoEmiteCertificado\(enrollment\)/);
-    // y va DESPUÉS del certificado ya emitido: lo emitido sigue vigente
-    expect(src.indexOf("grupoEmiteCertificado(enrollment)")).toBeGreaterThan(src.indexOf("if (existing[0])"));
+    // y va ANTES del certificado ya emitido: lo emitido queda suspendido (no se borra)
+    expect(src.indexOf("grupoEmiteCertificado(enrollment)")).toBeLessThan(src.indexOf("if (existing[0])"));
+  });
+
+  it("la lectura de certificados suspendidos pasa por la regla (PDF, listado, verificar, portal)", () => {
+    expect(leer("src/server/certificate-pdf.ts")).toContain("grupoEmiteCertificadoSql(");
+    expect(leer("src/server/certificates.ts")).toContain("valid: !row.certificate.revokedAt && grupoEmiteCertificado(row)");
+    const sp = leer("src/server/student-portal.ts");
+    expect(sp.split("grupoEmiteCertificado").length - 1).toBeGreaterThanOrEqual(3);
   });
 
   it("la emisión masiva exige que el grupo emita", () => {

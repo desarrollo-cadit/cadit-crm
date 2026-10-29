@@ -7,7 +7,7 @@ import type { Capability } from "@/lib/capabilities";
 import type { Currency } from "@/lib/db/schema";
 import { columnasDeClaseConLista, relojDeAsistencia } from "@/server/attendance";
 import { estadoDeAprobacionDeCursada } from "@/server/estado-de-cursada";
-import { grupoTieneEvaluaciones } from "@/lib/taller-config";
+import { grupoEmiteCertificado, grupoTieneEvaluaciones } from "@/lib/taller-config";
 import {
   programApprovalState,
   razonDeModulo,
@@ -61,7 +61,7 @@ export type RecordCourse = {
   approval: ApprovalState | "sin_datos";
   approvalReasons: string[];
   assessments: { name: string; passed: boolean | null }[];
-  certificate: { code: string; issuedAt: string; revokedAt: string | null } | null;
+  certificate: { code: string; issuedAt: string; revokedAt: string | null; suspended?: boolean } | null;
   /**
    * 028 (FR-022) — `true` cuando esta inscripción tiene una dispensa vigente.
    * La dispensa es POR MÓDULO, así que en las 33 cohortes simples y en la
@@ -108,7 +108,7 @@ export type RecordModule = {
   approval: ApprovalState | "sin_datos";
   approvalReasons: string[];
   assessments: { name: string; passed: boolean | null }[];
-  certificate: { code: string; issuedAt: string; revokedAt: string | null } | null;
+  certificate: { code: string; issuedAt: string; revokedAt: string | null; suspended?: boolean } | null;
   /** `true` cuando este módulo tiene una dispensa vigente (FR-022). */
   dispensada: boolean;
 };
@@ -427,6 +427,12 @@ export async function getStudentRecord(
             code: cert.code,
             issuedAt: cert.issuedAt.toISOString(),
             revokedAt: cert.revokedAt?.toISOString() ?? null,
+            // 2026-10-29 — El grupo ya no emite: el staff lo ve marcado, sin PDF.
+            suspended: !grupoEmiteCertificado({
+              courseKind: course?.kind,
+              registrationStatus: cohort?.registrationStatus,
+              issuesCertificate: cohort?.issuesCertificate,
+            }),
           }
         : null,
     };
