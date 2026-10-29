@@ -8,7 +8,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { CompanyForm } from "@/components/companies/company-form";
 import { CompanyOfflineCourses } from "@/components/companies/company-offline-courses";
 import { MergeCompaniesDialog } from "@/components/companies/merge-companies-dialog";
+import { CompanyConstancia } from "@/components/companies/company-constancia";
 import { condicionDePago } from "@/lib/company";
+import { ETIQUETA_DE_RESULTADO, type ResultadoDeCursada } from "@/lib/resultado-de-cursada";
 import type { CompanyDto } from "@/lib/types";
 
 type ReportRow = {
@@ -16,17 +18,14 @@ type ReportRow = {
   email: string | null;
   cohortName: string;
   courseName: string;
-  attendancePct: number | null;
-  minAttendancePct: number | null;
-  approval: "aprobado" | "reprobado" | "pendiente" | "sin_datos";
+  /** "8 de 10 clases (80%)", con "hasta hoy" si el grupo sigue en curso. */
+  attendanceText: string | null;
+  /**
+   * 2026-10-29 — La MISMA regla que la constancia (`resultadoDeCursada`):
+   * en curso no hay resultado, y terminado solo con la confirmación del profesor.
+   */
+  approval: ResultadoDeCursada;
   certificateCode: string | null;
-};
-
-const ESTADO: Record<ReportRow["approval"], string> = {
-  aprobado: "Aprobado",
-  reprobado: "No aprobado",
-  pendiente: "En curso",
-  sin_datos: "Sin datos",
 };
 
 /** 040 — Una línea de la ficha; si no hay dato, lo dice en vez de esconder la fila. */
@@ -251,11 +250,11 @@ export function CompaniesClient({
                         <span className="font-medium">{r.employeeName}</span>
                         <span className="text-muted-foreground">{r.cohortName}</span>
                         <span>
-                          {r.attendancePct === null
+                          {r.attendanceText === null
                             ? "sin asistencia registrada"
-                            : `${r.attendancePct}%`}
+                            : `Asistió a ${r.attendanceText}`}
                         </span>
-                        <Badge variant="outline">{ESTADO[r.approval]}</Badge>
+                        <Badge variant="outline">{ETIQUETA_DE_RESULTADO[r.approval]}</Badge>
                         {r.certificateCode && (
                           <Badge variant="secondary">
                             Certificado {r.certificateCode}
@@ -265,6 +264,8 @@ export function CompaniesClient({
                     ))}
                   </ul>
                 )}
+                {/* 2026-10-29 — La constancia en PDF para mandarle a la empresa. */}
+                <CompanyConstancia companyId={c.id} companyName={c.legalName} />
                 {/* 045 — Cursos offline de su gente (acceso directo, 043). */}
                 <CompanyOfflineCourses companyId={c.id} canEdit={canEditAcademic} />
               </div>

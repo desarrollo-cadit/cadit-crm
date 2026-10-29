@@ -19,7 +19,11 @@ const fila = (over: Partial<CompanyReportDto["rows"][number]> = {}) => ({
   email: "ana@x.com",
   cohortName: "Revit MEP 2",
   courseName: "Revit MEP",
+  cohortStatus: "finalizada" as const,
+  attendedClasses: 9,
+  countedClasses: 10,
   attendancePct: 90,
+  attendanceText: "9 de 10 clases (90%)",
   minAttendancePct: 75,
   approval: "aprobado" as const,
   certificateCode: "ABCD-EFGH-IJKL",
@@ -82,7 +86,7 @@ describe("exportCompanyReportCsv — el archivo que sale de la academia", () => 
   it("los valores ausentes quedan vacíos, no como «null»", () => {
     const csv = exportCompanyReportCsv(
       reporte([
-        fila({ email: null, attendancePct: null, minAttendancePct: null, certificateCode: null }),
+        fila({ email: null, attendancePct: null, attendanceText: null, minAttendancePct: null, certificateCode: null }),
       ])
     );
     const linea = csv.split("\n")[1]!;
