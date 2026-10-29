@@ -91,7 +91,7 @@ export async function escolaridadDeContacto(
           organizationId,
           eq(schema.enrollment.contactId, contactId),
           // 033 (FR-021) — Un taller no es una materia de la escolaridad.
-          cursoNoEsTaller(schema.course.kind)
+          cursoNoEsTaller(schema.course.kind, schema.cohort.registrationStatus)
         )
       )
       .orderBy(asc(schema.cohort.startDate)),

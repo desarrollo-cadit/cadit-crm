@@ -127,7 +127,7 @@ async function inscripciones(organizationId: string, condicion: SQL) {
         schema.enrollment.organizationId,
         organizationId,
         condicion,
-        cursoNoEsTaller(schema.course.kind),
+        cursoNoEsTaller(schema.course.kind, schema.cohort.registrationStatus),
         ne(schema.pipelineStage.kind, "lost")
       )
     );
@@ -269,7 +269,7 @@ async function sinFacturarALaEmpresa(organizationId: string, companyId: string) 
         or(isNull(schema.enrollment.companyId), ne(schema.enrollment.companyId, companyId)),
         isNull(schema.enrollment.parentEnrollmentId),
         isNotNull(schema.enrollment.cohortId),
-        cursoNoEsTaller(schema.course.kind),
+        cursoNoEsTaller(schema.course.kind, schema.cohort.registrationStatus),
         ne(schema.pipelineStage.kind, "lost")
       )
     );

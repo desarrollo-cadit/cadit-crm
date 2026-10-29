@@ -59,6 +59,26 @@ describe("033 (FR-021) — los talleres no se mezclan con las cursadas", () => {
     }
   });
 
+  it("solo se excluye la edición de Marketing (con estado de inscripción), no todo curso de tipo taller", () => {
+    const src = leer("src/server/workshop-scope.ts");
+    expect(src).toMatch(/registration_status" is not null/);
+    expect(src).toMatch(/\$\{registrationStatus\} is not null/);
+    // Un filtro por tipo de curso a secas volvería a esconder un taller cursable.
+    expect(src).not.toMatch(/<> 'taller'/);
+  });
+
+  it("el portal del alumno no lista inscripciones sin grupo (leads del pipeline)", () => {
+    const src = leer("src/server/student-portal.ts");
+    const desde = src.indexOf("async function scopedEnrollments");
+    const cuerpo = src.slice(desde, desde + 2500);
+    expect(cuerpo).toMatch(/isNotNull\(schema\.enrollment\.cohortId\)/);
+    // El detalle y el estado de cuenta resuelven por esa misma lista: sin grupo = 404.
+    for (const fn of ["export async function studentCourseDetail", "export async function studentAccount"]) {
+      const d = src.indexOf(fn);
+      expect(src.slice(d, d + 1200), fn).toMatch(/scopedEnrollments\(/);
+    }
+  });
+
   it("Cobranza y Finanzas NO filtran: el taller cobrado tiene que aparecer (FR-016)", () => {
     for (const archivo of ["src/server/billing.ts", "src/server/finanzas-periodo.ts"]) {
       expect(leer(archivo), archivo).not.toMatch(/workshop-scope/);

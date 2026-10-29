@@ -138,7 +138,7 @@ export async function companyReport(
         organizationId,
         eq(schema.enrollment.companyId, companyId),
         // 033 (FR-021) — El reporte habla del avance en cursos, no de talleres.
-        cursoNoEsTaller(schema.course.kind)
+        cursoNoEsTaller(schema.course.kind, schema.cohort.registrationStatus)
       )
     )
     .orderBy(asc(schema.contact.firstName));

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull } from "drizzle-orm";
 import { inscripcionesNoDictadas } from "@/server/cursadas-no-dictadas";
 import { cursoNoEsTaller } from "@/server/workshop-scope";
 import { getDb, schema } from "@/lib/db";
@@ -138,8 +138,11 @@ async function scopedEnrollments(
         schema.enrollment.organizationId,
         organizationId,
         eq(schema.enrollment.contactId, contactId),
-        // 033 (FR-021) — Anotarse a un taller no es cursar: no aparece en el portal.
-        cursoNoEsTaller(schema.course.kind)
+        // Una inscripción sin grupo es un lead del pipeline, no una cursada:
+        // no aparece en el portal ni se puede abrir por su id.
+        isNotNull(schema.enrollment.cohortId),
+        // 033 (FR-021) — Anotarse a un taller de Marketing no es cursar: no aparece en el portal.
+        cursoNoEsTaller(schema.course.kind, schema.cohort.registrationStatus)
       )
     )
     .orderBy(desc(schema.cohort.startDate));
@@ -1730,7 +1733,7 @@ export async function studentNavCourses(
           // cursada: en el menú del alumno sería una fila sin destino.
           gte(schema.cohort.startDate, new Date(0)),
           // 033 (FR-021) — Un taller tampoco: no es una cursada.
-          cursoNoEsTaller(schema.course.kind)
+          cursoNoEsTaller(schema.course.kind, schema.cohort.registrationStatus)
         )
       )
     )

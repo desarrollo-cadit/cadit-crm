@@ -177,7 +177,7 @@ export async function getStudentRecord(
         organizationId,
         eq(schema.enrollment.contactId, contactId),
         // 033 (FR-021) — Sus talleres no son cursadas: no entran al legajo.
-        cursoNoEsTaller(schema.course.kind)
+        cursoNoEsTaller(schema.course.kind, schema.cohort.registrationStatus)
       )
     )
     .orderBy(asc(schema.enrollment.createdAt));
