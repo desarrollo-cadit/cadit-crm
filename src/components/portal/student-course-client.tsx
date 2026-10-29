@@ -139,6 +139,8 @@ type Detail = {
     modules?: Module[];
     /** 043 — Hasta cuándo ve los contenidos. Vencido, el material y los avisos no llegan. */
     access?: StudentAccess;
+    /** 0083 — "En período de entrega · hasta el …". */
+    deliveryPeriod?: { hasta: string; texto: string } | null;
   };
   timezone: string;
   classes: ClassRow[];
@@ -427,7 +429,10 @@ export function StudentCourseClient({
           sin empujar el detalle hacia abajo.
         */}
         <div className="order-1 space-y-5 lg:order-2">
-          <StudentMilestones milestones={data.milestones} />
+          <StudentMilestones
+            milestones={data.milestones}
+            estado={course.deliveryPeriod?.texto ?? null}
+          />
           {course.certificate && !course.certificate.revokedAt && (
             <CertificateCard cert={course.certificate} />
           )}

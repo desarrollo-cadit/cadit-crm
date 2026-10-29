@@ -5,6 +5,12 @@ import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { classInstant } from "@/lib/schedule-time";
 import { admiteAtajo, plantillaDe } from "@/lib/grading-template";
+import {
+  PLAZO_SUPERA_ENTREGA_FINAL,
+  instanteDeEntregaFinal,
+  plazoDeEvaluacion,
+  plazoSuperaEntregaFinal,
+} from "@/lib/entrega-final";
 import { guardarCorreccion } from "@/server/corrections";
 import { teacherCohortDetail } from "@/server/teacher-portal";
 
@@ -220,6 +226,35 @@ async function zonaDeLaOrganizacion(organizationId: string): Promise<string | nu
   return rows[0]?.timezone ?? null;
 }
 
+/**
+ * 0083 — El instante de la entrega final de una cohorte (23:59 de la zona de
+ * la academia), o `null` si no tiene. Las evaluaciones sin plazo propio lo
+ * heredan (`plazoDeEvaluacion`): es el plazo del GRUPO para ellas, y contra
+ * él se marca "fuera de plazo" igual que contra uno cargado a mano.
+ */
+export async function entregaFinalDeCohorte(
+  organizationId: string,
+  cohortId: string
+): Promise<Date | null> {
+  const [fila] = await getDb()
+    .select({
+      deliveryDeadline: schema.cohort.deliveryDeadline,
+      timezone: schema.organization.timezone,
+    })
+    .from(schema.cohort)
+    .innerJoin(schema.organization, eq(schema.cohort.organizationId, schema.organization.id))
+    .where(scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, cohortId)))
+    .limit(1);
+  if (!fila?.deliveryDeadline) return null;
+  return instanteDeEntregaFinal(fila.deliveryDeadline, fila.timezone);
+}
+
+/** Las evaluaciones con su plazo de grupo EFECTIVO (el propio o la entrega final). */
+function conPlazoEfectivo<T extends { dueAt: Date | null }>(evaluaciones: T[], entregaFinal: Date | null): T[] {
+  if (!entregaFinal) return evaluaciones;
+  return evaluaciones.map((a) => ({ ...a, dueAt: plazoDeEvaluacion(a.dueAt, entregaFinal) }));
+}
+
 /* ============================================================
  * Lecturas
  * ============================================================ */
@@ -348,22 +383,25 @@ export async function entregasDeCursada(
   const inscripcion = inscripciones[0];
   if (!inscripcion?.cohortId) return null;
 
-  const evaluaciones = await db
-    .select({
-      id: schema.assessment.id,
-      name: schema.assessment.name,
-      required: schema.assessment.required,
-      dueAt: schema.assessment.dueAt,
-    })
-    .from(schema.assessment)
-    .where(
-      scoped(
-        schema.assessment.organizationId,
-        organizationId,
-        eq(schema.assessment.cohortId, inscripcion.cohortId)
+  const evaluaciones = conPlazoEfectivo(
+    await db
+      .select({
+        id: schema.assessment.id,
+        name: schema.assessment.name,
+        required: schema.assessment.required,
+        dueAt: schema.assessment.dueAt,
+      })
+      .from(schema.assessment)
+      .where(
+        scoped(
+          schema.assessment.organizationId,
+          organizationId,
+          eq(schema.assessment.cohortId, inscripcion.cohortId)
+        )
       )
-    )
-    .orderBy(asc(schema.assessment.position));
+      .orderBy(asc(schema.assessment.position)),
+    await entregaFinalDeCohorte(organizationId, inscripcion.cohortId)
+  );
 
   if (evaluaciones.length === 0) return [];
 
@@ -479,22 +517,25 @@ export async function entregasDeCohorte(
 
   const db = getDb();
 
-  const evaluaciones = await db
-    .select({
-      id: schema.assessment.id,
-      name: schema.assessment.name,
-      required: schema.assessment.required,
-      dueAt: schema.assessment.dueAt,
-    })
-    .from(schema.assessment)
-    .where(
-      scoped(
-        schema.assessment.organizationId,
-        organizationId,
-        eq(schema.assessment.cohortId, cohortId)
+  const evaluaciones = conPlazoEfectivo(
+    await db
+      .select({
+        id: schema.assessment.id,
+        name: schema.assessment.name,
+        required: schema.assessment.required,
+        dueAt: schema.assessment.dueAt,
+      })
+      .from(schema.assessment)
+      .where(
+        scoped(
+          schema.assessment.organizationId,
+          organizationId,
+          eq(schema.assessment.cohortId, cohortId)
+        )
       )
-    )
-    .orderBy(asc(schema.assessment.position));
+      .orderBy(asc(schema.assessment.position)),
+    await entregaFinalDeCohorte(organizationId, cohortId)
+  );
 
   const inscriptos = await db
     .select({
@@ -760,7 +801,13 @@ export async function estudianteEntregar(
     ok: true,
     data: serializar(
       { ...fila, correctedByName: null },
-      fechaVigente(evaluacion.dueAt, prorrogas[0]?.dueAt ?? null)
+      fechaVigente(
+        plazoDeEvaluacion(
+          evaluacion.dueAt,
+          await entregaFinalDeCohorte(organizationId, evaluacion.cohortId)
+        ),
+        prorrogas[0]?.dueAt ?? null
+      )
     ),
   };
 }
@@ -1073,6 +1120,13 @@ export async function fijarPlazoDeGrupo(
         code: "invalid_due_at",
         message: "La fecha o la hora del plazo no son válidas",
       };
+    }
+    /*
+      0083 — El plazo del grupo no pasa la entrega final del grupo: lo que va
+      más allá es de UNA persona, y para eso está la prórroga.
+    */
+    if (plazoSuperaEntregaFinal(dueAt, await entregaFinalDeCohorte(organizationId, cohortId))) {
+      return { ...PLAZO_SUPERA_ENTREGA_FINAL, ok: false };
     }
   }
 

@@ -15,6 +15,7 @@ import {
   tareasDeFacturacion,
   tareasDeGrabaciones,
   tareasDeLeads,
+  tareasDeProrrogas,
   tareasDeSugerenciasDeZoom,
   type ClaseParaTarea,
   type GrupoDeTareas,
@@ -58,6 +59,7 @@ export async function tareasDelDia(
     confirmar: async () => tareasDeConfirmacion(await gruposPorConfirmar(organizationId, now), reloj),
     facturar: async () => tareasDeFacturacion(await ventasSinFactura(organizationId, now), reloj),
     leads: async () => tareasDeLeads(await enviosSinRespuesta(organizationId, now), now),
+    prorrogas: async () => tareasDeProrrogas(await pedidosDeProrrogaPendientes(organizationId), reloj),
   };
 
   const tareas = await Promise.all(reglas.map((r) => lectores[r]()));
@@ -370,6 +372,28 @@ async function enviosSinRespuesta(organizationId: string, now: Date) {
     submittedAt: e.submittedAt,
     ultimaActividad: aFecha(ultimaPorContacto.get(e.contactId)),
   }));
+}
+
+/* ============================================================ prórrogas */
+
+/**
+ * 0083 — Los pedidos de prórroga PENDIENTES, con el grupo de su evaluación,
+ * en una consulta. Sin el motivo ni el alumno: la bandeja no los muestra.
+ */
+async function pedidosDeProrrogaPendientes(organizationId: string) {
+  const r = schema.assessmentExtensionRequest;
+  return getDb()
+    .select({
+      cohortId: schema.assessment.cohortId,
+      cohortName: schema.cohort.name,
+      courseName: schema.course.name,
+      createdAt: r.createdAt,
+    })
+    .from(r)
+    .innerJoin(schema.assessment, eq(r.assessmentId, schema.assessment.id))
+    .innerJoin(schema.cohort, eq(schema.assessment.cohortId, schema.cohort.id))
+    .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
+    .where(scoped(r.organizationId, organizationId, eq(r.status, "pendiente")));
 }
 
 /**

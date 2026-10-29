@@ -170,6 +170,8 @@ export type CohortDto = {
   name: string | null;
   startDate: string;
   endDate: string | null;
+  /** 0083 — La entrega final del grupo (día). `null` = sin entrega final. */
+  deliveryDeadline?: string | null;
   /** 005 iteración 2 — horario "HH:MM" para el calendario; frequency queda como texto libre. */
   startTime: string | null;
   endTime: string | null;

@@ -114,6 +114,18 @@ describe("043 — estadosDeAcceso", () => {
     });
   });
 
+  it("0083 — entrega final + prórroga APROBADA (assessment_extension) de la inscripción", async () => {
+    tablas.organization = [{ timezone: "America/Montevideo" }];
+    tablas.enrollment = [insc("a", "c1"), insc("b", "c1")];
+    tablas.cohort = [{ ...coh("c1", d("2026-11-30")), deliveryDeadline: d("2026-12-15") }];
+    // Solo `a` tiene prórroga: 23:59 del 10/02/2027 en Montevideo.
+    tablas.assessmentExtension = [{ enrollmentId: "a", cohortId: "c1", dueAt: new Date("2027-02-11T02:59:00.000Z") }];
+    const { estadosDeAcceso } = await import("@/server/access-expiry");
+    const e = await estadosDeAcceso(ORG, ["a", "b"], new Date("2027-01-20T12:00:00.000Z"));
+    expect(e.get("a")).toMatchObject({ referencia: "2026-12-15", hasta: "2027-02-10", vencido: false });
+    expect(e.get("b")).toMatchObject({ referencia: "2026-12-15", hasta: "2027-01-15", vencido: true });
+  });
+
   it("cohorte sin fin ni clases: no vence", async () => {
     tablas.organization = [{ timezone: "America/Montevideo" }];
     tablas.enrollment = [insc("a", "c1")];

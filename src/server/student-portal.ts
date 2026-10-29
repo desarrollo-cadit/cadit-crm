@@ -34,6 +34,11 @@ import {
   type MeetingWindow,
 } from "@/lib/schedule-time";
 import { avisoDeAcceso, type AvisoDeAcceso } from "@/lib/access-expiry";
+import {
+  instanteDeEntregaFinal,
+  periodoDeEntrega,
+  textoDePeriodoDeEntrega,
+} from "@/lib/entrega-final";
 import { claseCuentaParaElAlumno, cuentaComoPresente } from "@/lib/attendance-percentage";
 import {
   estadosDeAccesoDeContacto,
@@ -249,6 +254,12 @@ export type StudentCourseDto = {
   license: StudentLicenseDto | null;
   /** 043 — El acceso a los contenidos (no a las notas, que no vencen). */
   access: StudentAccessDto;
+  /**
+   * 0083 — "En período de entrega": las clases terminaron y todavía no pasó
+   * su entrega efectiva (la entrega final del grupo o su prórroga aprobada).
+   * `null` fuera de ese período.
+   */
+  deliveryPeriod: { hasta: string; texto: string } | null;
   /**
    * 034 (FR-020/FR-024) — TODAS las licencias de esta cursada: el paquete de
    * una especialización lleva varias. `license` sigue siendo la primera, para
@@ -482,6 +493,7 @@ export async function studentOverview(
     certificados,
     licencias,
     accesos,
+    prorrogas: await prorrogasDeInscripciones(organizationId, enrollmentIds, enrollments),
     timezone: clock.timezone,
   };
 
@@ -556,6 +568,8 @@ type CrossData = {
   }[];
   /** 043 — El estado de acceso de cada inscripción de la persona. */
   accesos: Map<string, EstadoDeAccesoDeInscripcion>;
+  /** 0083 — Sus prórrogas APROBADAS (`assessment_extension`). */
+  prorrogas?: { assessmentId: string; enrollmentId: string; dueAt: Date }[];
 };
 
 const DIA_MS = 86_400_000;
@@ -726,7 +740,79 @@ function buildCourse(
     license: licencias[0] ?? null,
     licenses: licencias,
     access: accesoParaAlumno(data.accesos.get(enrollment.id), now),
+    deliveryPeriod: periodoDeEntregaDeCursada(
+      cohort,
+      clases,
+      evalsDeLaCohorte,
+      (data.prorrogas ?? []).filter((p) => p.enrollmentId === enrollment.id),
+      data.timezone,
+      now
+    ),
   };
+}
+
+/**
+ * 0083 — El período de entrega de UNA cursada, con la regla pura
+ * (`periodoDeEntrega`): fin del grupo o su última clase no cancelada, la
+ * entrega final y las prórrogas aprobadas de esta inscripción en evaluaciones
+ * de ese grupo.
+ */
+function periodoDeEntregaDeCursada(
+  cohort: { endDate: Date | null; deliveryDeadline: Date | null } | null,
+  clases: { date: Date; endTime: string | null; canceledAt: Date | null }[],
+  evaluaciones: { id: string }[],
+  prorrogas: { assessmentId: string; dueAt: Date }[],
+  timezone: string,
+  now: Date
+): { hasta: string; texto: string } | null {
+  if (!cohort) return null;
+  const ultimaClase =
+    clases
+      .filter((c) => !c.canceledAt)
+      .reduce<{ date: Date; endTime: string | null } | null>(
+        (max, c) => (!max || c.date.getTime() > max.date.getTime() ? c : max),
+        null
+      ) ?? null;
+  const ids = new Set(evaluaciones.map((a) => a.id));
+  const periodo = periodoDeEntrega(
+    {
+      endDate: cohort.endDate,
+      ultimaClase,
+      entregaFinal: instanteDeEntregaFinal(cohort.deliveryDeadline, timezone),
+      prorrogas: prorrogas.filter((p) => ids.has(p.assessmentId)).map((p) => p.dueAt),
+    },
+    timezone,
+    now
+  );
+  return periodo ? { hasta: periodo.hasta, texto: textoDePeriodoDeEntrega(periodo.hasta, timezone) } : null;
+}
+
+/**
+ * 0083 — Las prórrogas aprobadas de las inscripciones de la persona. Solo
+ * importan para el período de entrega, que solo existe en un grupo con
+ * entrega final: sin ninguno, ni se consultan.
+ */
+async function prorrogasDeInscripciones(
+  organizationId: string,
+  enrollmentIds: string[],
+  enrollments: { cohort: { deliveryDeadline: Date | null } | null }[]
+) {
+  if (enrollmentIds.length === 0) return [];
+  if (!enrollments.some((e) => e.cohort?.deliveryDeadline)) return [];
+  return getDb()
+    .select({
+      assessmentId: schema.assessmentExtension.assessmentId,
+      enrollmentId: schema.assessmentExtension.enrollmentId,
+      dueAt: schema.assessmentExtension.dueAt,
+    })
+    .from(schema.assessmentExtension)
+    .where(
+      scoped(
+        schema.assessmentExtension.organizationId,
+        organizationId,
+        inArray(schema.assessmentExtension.enrollmentId, enrollmentIds)
+      )
+    );
 }
 
 /* ============================================================
@@ -1154,6 +1240,7 @@ export async function studentCourseDetail(
     certificados,
     licencias,
     accesos,
+    prorrogas: await prorrogasDeInscripciones(organizationId, enrollmentIds, recorrido),
     timezone: clock.timezone,
   };
 

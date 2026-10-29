@@ -46,6 +46,7 @@ export const ACCION_DE_REGLA: Record<ReglaDeTarea, string> = {
   confirmar: "Confirmar o cancelar",
   facturar: "Ir a facturación",
   leads: "Abrir seguimiento",
+  prorrogas: "Aprobar o rechazar",
 };
 
 /** Presentacional: `null` = cargando. */

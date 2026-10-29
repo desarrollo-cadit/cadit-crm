@@ -77,8 +77,18 @@ const ESTILO: Record<
   },
 };
 
-export function StudentMilestones({ milestones }: { milestones: Milestone[] }) {
-  if (milestones.length === 0) return null;
+export function StudentMilestones({
+  milestones,
+  estado = null,
+}: {
+  milestones: Milestone[];
+  /**
+   * 0083 — Un estado de la cursada que no es un hito: "En período de entrega
+   * · hasta el 15/12". Lo arma el servidor (`deliveryPeriod`).
+   */
+  estado?: string | null;
+}) {
+  if (milestones.length === 0 && !estado) return null;
 
   const logrados = milestones.filter((m) => m.state === "cumplido").length;
   /**
@@ -98,6 +108,12 @@ export function StudentMilestones({ milestones }: { milestones: Milestone[] }) {
           {logrados} / {milestones.length}
         </p>
       </div>
+
+      {estado && (
+        <ChipDeEstado tono="aviso" className="mt-3">
+          {estado}
+        </ChipDeEstado>
+      )}
 
       <ol className="mt-5">
         {milestones.map((m, i) => {

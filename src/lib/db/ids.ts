@@ -53,6 +53,8 @@ const prefixes = {
   // individual que le corre el plazo a UNA persona en UNA evaluación.
   submission: "sub",
   assessmentExtension: "ext",
+  /** 0083 — el pedido de prórroga del alumno (Coordinación lo decide). */
+  assessmentExtensionRequest: "exr",
   // cursos-offline — the LearnDash content library, its quizzes, the attempts
   // and who can read each course.
   offlineCourse: "ocrs",

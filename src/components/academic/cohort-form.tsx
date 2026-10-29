@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { notify } from "@/lib/notify";
+import { entregaFinalValida } from "@/lib/entrega-final";
 import { Modal, useDirty } from "@/components/ui/modal";
 import { MoneyInput } from "@/components/ui/money-input";
 import type { CronogramaAutomatico } from "@/lib/cronograma-automatico";
@@ -101,6 +102,10 @@ export function CohortForm({
   );
   const [endDate, setEndDate] = useState(
     toDateInput(initial?.endDate ?? moduloDe?.endDate ?? null)
+  );
+  // 0083 — La entrega final del grupo: posterior al fin (lo valida el servidor).
+  const [deliveryDeadline, setDeliveryDeadline] = useState(
+    toDateInput(initial?.deliveryDeadline ?? null)
   );
   const [teacherId, setTeacherId] = useState(initial?.teacher?.id ?? "");
   const [cost, setCost] = useState<number | null>(initial?.cost ?? null);
@@ -195,7 +200,7 @@ export function CohortForm({
   const [warnings, setWarnings] = useState<string[] | null>(null);
   const changed = useDirty({
     origenDelModulo, nombreDelModulo, incluirModulos, courseId, name, startDate,
-    endDate, teacherId, cost, frequency, startTime, endTime, daysOfWeek,
+    endDate, deliveryDeadline, teacherId, cost, frequency, startTime, endTime, daysOfWeek,
     classroom, virtualRoomId, meetingUrl, capacity, minAttendancePct,
     whatsappGroupLink, softwareIds, tipo, newTeacherName,
   });
@@ -260,6 +265,16 @@ export function CohortForm({
       setError("Falta elegir el curso y la fecha de inicio.");
       return;
     }
+    // 0083 — La misma regla que el servidor (que igual responde 422).
+    if (
+      !esEspecializacion &&
+      deliveryDeadline &&
+      endDate &&
+      !entregaFinalValida(new Date(`${endDate}T00:00:00Z`), new Date(`${deliveryDeadline}T00:00:00Z`))
+    ) {
+      setError("La entrega final tiene que ser posterior a la fecha de fin.");
+      return;
+    }
     setSaving(true);
     setError(null);
     /**
@@ -270,6 +285,7 @@ export function CohortForm({
     const operativo = esEspecializacion
       ? {}
       : {
+          deliveryDeadline: deliveryDeadline || null,
           teacherId: teacherId || null,
           frequency: frequency.trim() || null,
           startTime: startTime || null,
@@ -557,6 +573,24 @@ export function CohortForm({
               />
             </div>
           </div>
+
+          {!esEspecializacion && (
+            <div className="space-y-1.5">
+              <Label htmlFor="cohort-delivery">Entrega final</Label>
+              <Input
+                id="cohort-delivery"
+                type="date"
+                value={deliveryDeadline}
+                min={endDate || undefined}
+                onChange={(e) => setDeliveryDeadline(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Opcional. Posterior a la fecha de fin. Las evaluaciones sin
+                fecha límite propia vencen ese día a las 23:59, y el acceso a
+                los contenidos dura un mes más desde esa fecha.
+              </p>
+            </div>
+          )}
 
           {!esEspecializacion && (
           <div className="space-y-1.5">

@@ -30,6 +30,11 @@ function rutas(dir: string): string[] {
 /** Contenido: vence. Ruta → la marca que prueba que su módulo corta. */
 const CONTENIDO: Record<string, { modulo: string; marca: string }> = {
   "route.ts": { modulo: "src/server/student-portal.ts", marca: "accesoVencido(accesos" },
+  // 0083 — Con el acceso vencido no hay pedido de prórroga (404).
+  "assessments/[id]/extension-request/route.ts": {
+    modulo: "src/server/extension-requests.ts",
+    marca: "estadosDeAcceso(organizationId, [inscripcion.id], now)",
+  },
   "cursadas/[id]/route.ts": { modulo: "src/server/student-portal.ts", marca: "vencida ? null" },
   "offline-courses/route.ts": { modulo: "src/server/offline-courses/student.ts", marca: "offlineAccessForContact(" },
   "offline-courses/[id]/route.ts": { modulo: "src/server/offline-courses/student.ts", marca: "readableCourse(" },
