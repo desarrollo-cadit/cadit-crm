@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { CohortDto, CourseDto, SoftwareDto, TeacherDto } from "@/lib/types";
 import { cn, WEEKDAY_LABELS } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
@@ -107,6 +108,10 @@ export function CohortForm({
   const [deliveryDeadline, setDeliveryDeadline] = useState(
     toDateInput(initial?.deliveryDeadline ?? null)
   );
+  // 2026-10-29 — Solo los grupos de curso TALLER (default: ambas marcadas).
+  const [hasAssessments, setHasAssessments] = useState(initial?.hasAssessments ?? true);
+  const [issuesCertificate, setIssuesCertificate] = useState(initial?.issuesCertificate ?? true);
+  const esTaller = courses.find((c) => c.id === courseId)?.kind === "taller";
   const [teacherId, setTeacherId] = useState(initial?.teacher?.id ?? "");
   const [cost, setCost] = useState<number | null>(initial?.cost ?? null);
   const [frequency, setFrequency] = useState(initial?.frequency ?? "");
@@ -200,7 +205,7 @@ export function CohortForm({
   const [warnings, setWarnings] = useState<string[] | null>(null);
   const changed = useDirty({
     origenDelModulo, nombreDelModulo, incluirModulos, courseId, name, startDate,
-    endDate, deliveryDeadline, teacherId, cost, frequency, startTime, endTime, daysOfWeek,
+    endDate, deliveryDeadline, hasAssessments, issuesCertificate, teacherId, cost, frequency, startTime, endTime, daysOfWeek,
     classroom, virtualRoomId, meetingUrl, capacity, minAttendancePct,
     whatsappGroupLink, softwareIds, tipo, newTeacherName,
   });
@@ -286,6 +291,8 @@ export function CohortForm({
       ? {}
       : {
           deliveryDeadline: deliveryDeadline || null,
+          // El servidor las ignora si el curso no es un taller.
+          ...(esTaller ? { hasAssessments, issuesCertificate } : {}),
           teacherId: teacherId || null,
           frequency: frequency.trim() || null,
           startTime: startTime || null,
@@ -589,6 +596,40 @@ export function CohortForm({
                 fecha límite propia vencen ese día a las 23:59, y el acceso a
                 los contenidos dura un mes más desde esa fecha.
               </p>
+            </div>
+          )}
+
+          {!esEspecializacion && esTaller && !moduloNuevo && (
+            <div className="space-y-2">
+              <label className="flex items-start gap-2.5 rounded-md border p-3">
+                <Checkbox
+                  className="mt-0.5"
+                  checked={hasAssessments}
+                  onChange={(e) => setHasAssessments(e.target.checked)}
+                />
+                <span className="space-y-0.5">
+                  <span className="block text-sm font-medium">Tiene evaluaciones</span>
+                  <span className="block text-xs text-muted-foreground">
+                    Destildalo si este taller no se evalúa: el grupo no muestra
+                    evaluaciones, entregas ni resultados. Con evaluaciones
+                    cargadas no se puede destildar.
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2.5 rounded-md border p-3">
+                <Checkbox
+                  className="mt-0.5"
+                  checked={issuesCertificate}
+                  onChange={(e) => setIssuesCertificate(e.target.checked)}
+                />
+                <span className="space-y-0.5">
+                  <span className="block text-sm font-medium">Emite certificado</span>
+                  <span className="block text-xs text-muted-foreground">
+                    Destildalo si este taller no entrega certificado. Los ya
+                    emitidos siguen vigentes; solo se frena la emisión nueva.
+                  </span>
+                </span>
+              </label>
             </div>
           )}
 

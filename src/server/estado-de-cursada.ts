@@ -29,6 +29,12 @@ export type InscripcionParaAprobar = {
   waiverAuthorName: string | null;
   cohortMinPct: number | null;
   courseMinPct: number | null;
+  /**
+   * 2026-10-29 — `false` = taller configurado SIN evaluaciones. Regla: no hay
+   * resultado que afirmar (ni aprobado ni reprobado ni pendiente): el estado
+   * es `sin_datos`; la asistencia se sigue informando. Omitido = sí.
+   */
+  tieneEvaluaciones?: boolean;
 };
 
 export type PiezasDeCursada = {
@@ -103,6 +109,17 @@ export function estadoDeAprobacionDeCursada(
     minPct,
     dispensa
   );
+
+  if (inscripcion.tieneEvaluaciones === false) {
+    return {
+      attendancePct: pct,
+      minAttendancePct: minPct,
+      assessments: [],
+      dispensa,
+      state: "sin_datos",
+      reasons: ["Este grupo no tiene evaluaciones"],
+    };
+  }
 
   return { attendancePct: pct, minAttendancePct: minPct, assessments, dispensa, state, reasons };
 }

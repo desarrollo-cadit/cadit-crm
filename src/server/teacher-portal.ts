@@ -18,6 +18,7 @@ import {
 import { modulosConOrdinal } from "@/server/program-modules";
 import type { ResourceKind } from "@/lib/db/schema";
 import { grupoTieneEvaluacionesPorId } from "@/server/taller-config";
+import { grupoTieneEvaluaciones } from "@/lib/taller-config";
 
 /**
  * 014 (fase 3) — El ALCANCE del profesor: qué cohortes puede tocar.
@@ -175,6 +176,8 @@ export type TeacherCohortDto = {
   virtualRoom: { name: string } | null;
   status: "planificada" | "en_curso" | "finalizada";
   role: "titular" | "suplente";
+  /** 2026-10-29 — `grupoTieneEvaluaciones`: sin evaluaciones no hay pestañas Evaluaciones ni Entregas. */
+  tieneEvaluaciones: boolean;
   students: number;
   /**
    * 028 (FR-029) — **Lo único que este portal gana con las especializaciones**:
@@ -257,6 +260,9 @@ export async function listTeacherCohorts(
       roomName: schema.virtualRoom.name,
       parentCohortId: schema.cohort.parentCohortId,
       position: schema.cohort.position,
+      courseKind: schema.course.kind,
+      registrationStatus: schema.cohort.registrationStatus,
+      hasAssessments: schema.cohort.hasAssessments,
     })
     .from(schema.cohort)
     .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
@@ -354,6 +360,7 @@ export async function listTeacherCohorts(
       virtualRoom: c.roomName ? { name: c.roomName } : null,
       status: computeCohortStatus(c.startDate, c.endDate),
       role: c.teacherId === teacherId ? ("titular" as const) : ("suplente" as const),
+      tieneEvaluaciones: grupoTieneEvaluaciones(c),
       students: cuantos.get(c.id) ?? 0,
       program: nombreDelPrograma(
         c.parentCohortId,

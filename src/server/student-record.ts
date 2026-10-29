@@ -7,6 +7,7 @@ import type { Capability } from "@/lib/capabilities";
 import type { Currency } from "@/lib/db/schema";
 import { columnasDeClaseConLista, relojDeAsistencia } from "@/server/attendance";
 import { estadoDeAprobacionDeCursada } from "@/server/estado-de-cursada";
+import { grupoTieneEvaluaciones } from "@/lib/taller-config";
 import {
   programApprovalState,
   razonDeModulo,
@@ -382,6 +383,11 @@ export async function getStudentRecord(
         waiverAuthorName: waiverAuthor,
         cohortMinPct: cohort?.minAttendancePct ?? null,
         courseMinPct: course?.minAttendancePct ?? null,
+        tieneEvaluaciones: grupoTieneEvaluaciones({
+          courseKind: course?.kind,
+          registrationStatus: cohort?.registrationStatus,
+          hasAssessments: cohort?.hasAssessments,
+        }),
       },
       {
         clases: clases.filter((c) => c.cohortId === cohort?.id),

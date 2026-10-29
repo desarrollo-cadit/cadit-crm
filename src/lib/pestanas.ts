@@ -51,13 +51,22 @@ export const ALIAS_DEL_GRUPO: Readonly<Record<string, PestanaDelGrupo>> = {
 export function pestanasDelGrupo(opts: {
   esEspecializacion: boolean;
   verCursosOffline: boolean;
+  /**
+   * 2026-10-29 — Taller configurado sin evaluaciones / sin certificado
+   * (`src/lib/taller-config.ts`). Omitidos = sí. La pestaña `evaluacion` sigue
+   * SOLO si el grupo tiene evaluaciones o emite certificado (en ese último
+   * caso se muestra como lista de certificados).
+   */
+  tieneEvaluaciones?: boolean;
+  emiteCertificado?: boolean;
 }): PestanaDelGrupo[] {
+  const conEvaluacion = (opts.tieneEvaluaciones ?? true) || (opts.emiteCertificado ?? true);
   return [
     ...(opts.esEspecializacion ? (["recorrido"] as const) : []),
     "alumnos",
     "clases",
     "asistencia",
-    "evaluacion",
+    ...(conEvaluacion ? (["evaluacion"] as const) : []),
     "avisos",
     ...(opts.verCursosOffline ? (["cursos-offline"] as const) : []),
   ];
@@ -100,6 +109,12 @@ export type PestanaMarketing = (typeof PESTANAS_MARKETING)[number];
 
 /** `/portal/cohortes/[id]` — el grupo como lo ve el profesor. */
 export const PESTANAS_PORTAL_GRUPO = ["clases", "evaluaciones", "entregas", "material"] as const;
+/** 2026-10-29 — Las pestañas del profesor de un grupo; sin evaluaciones no hay Evaluaciones ni Entregas. */
+export function pestanasPortalGrupo(opts: { tieneEvaluaciones: boolean }): PestanaPortalGrupo[] {
+  return PESTANAS_PORTAL_GRUPO.filter(
+    (p) => opts.tieneEvaluaciones || (p !== "evaluaciones" && p !== "entregas")
+  );
+}
 export type PestanaPortalGrupo = (typeof PESTANAS_PORTAL_GRUPO)[number];
 export const ALIAS_PORTAL_GRUPO: Readonly<Record<string, PestanaPortalGrupo>> = {
   evaluacion: "evaluaciones",
@@ -118,3 +133,7 @@ export const PESTANAS_PORTAL_CURSADA = [
   "avisos",
 ] as const;
 export type PestanaPortalCursada = (typeof PESTANAS_PORTAL_CURSADA)[number];
+/** 2026-10-29 — Las del alumno; sin evaluaciones no hay Evaluaciones. */
+export function pestanasPortalCursada(opts: { tieneEvaluaciones: boolean }): PestanaPortalCursada[] {
+  return PESTANAS_PORTAL_CURSADA.filter((p) => opts.tieneEvaluaciones || p !== "evaluaciones");
+}

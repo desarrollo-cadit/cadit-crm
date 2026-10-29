@@ -28,6 +28,7 @@ type Cohort = {
   courseName: string;
   status: "planificada" | "en_curso" | "finalizada";
   role: "titular" | "suplente";
+  tieneEvaluaciones?: boolean;
   students: number;
   /**
    * 023 (FR-010) / 025 — El aula: SOLO el nombre. Ni la cuenta ni su enlace.
@@ -228,7 +229,14 @@ export function PortalCohortClient({
             { key: "entregas", label: "Entregas" },
             { key: "material", label: "Material" },
           ] as const
-        ).map((t) => (
+        )
+          // 2026-10-29 — Taller sin evaluaciones: ni Evaluaciones ni Entregas.
+          .filter(
+            (t) =>
+              datos.cohort.tieneEvaluaciones !== false ||
+              (t.key !== "evaluaciones" && t.key !== "entregas")
+          )
+          .map((t) => (
           <button
             key={t.key}
             type="button"

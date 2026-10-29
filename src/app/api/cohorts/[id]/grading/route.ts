@@ -2,7 +2,8 @@ import { z } from "zod";
 import { apiError, parseBody, requireCapability } from "@/lib/api";
 import { evaluacionesCongeladas } from "@/server/corrections";
 import { cohortGrading, createAssessment } from "@/server/grading";
-import { exigirEvaluacionesDeGrupo } from "@/server/taller-config";
+import { configDeGrupo } from "@/server/taller-config";
+import { grupoEmiteCertificado, grupoTieneEvaluaciones, GRUPO_SIN_EVALUACIONES } from "@/lib/taller-config";
 
 export const dynamic = "force-dynamic";
 
@@ -21,10 +22,13 @@ export const GET = requireCapability(
   const { id } = await ctx.params;
   const data = await cohortGrading(session.organizationId, id);
   if (!data) return apiError(404, "not_found", "Grupo no encontrado");
-  // 2026-10-29 — Taller sin evaluaciones: la planilla no existe (409). El
-  // certificado lee `cohortGrading` directo, sin pasar por esta ruta.
-  const sinEvaluaciones = await exigirEvaluacionesDeGrupo(session.organizationId, id);
-  if (sinEvaluaciones) return apiError(sinEvaluaciones.status, sinEvaluaciones.code, sinEvaluaciones.message);
+  // 2026-10-29 — Taller sin evaluaciones Y sin certificado: la planilla no
+  // existe (409). Si emite certificado la pestaña sigue como lista de
+  // certificados (sin evaluaciones: crear/copiar/corregir ya dan 409).
+  const config = await configDeGrupo(session.organizationId, id);
+  if (config && !grupoTieneEvaluaciones(config) && !grupoEmiteCertificado(config)) {
+    return apiError(GRUPO_SIN_EVALUACIONES.status, GRUPO_SIN_EVALUACIONES.code, GRUPO_SIN_EVALUACIONES.message);
+  }
   /*
     031 (DV-008) — Qué plantillas quedaron congeladas, para que el editor las
     abra así y nadie arme un cambio entero para enterarse del 409 al final.

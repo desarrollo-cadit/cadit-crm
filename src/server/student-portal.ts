@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, gte, inArray, isNotNull } from "drizzle-orm";
+import { grupoTieneEvaluaciones } from "@/lib/taller-config";
 import { inscripcionesNoDictadas } from "@/server/cursadas-no-dictadas";
 import { cursoNoEsTaller } from "@/server/workshop-scope";
 import { getDb, schema } from "@/lib/db";
@@ -248,6 +249,8 @@ export type StudentCourseDto = {
   approval: ApprovalState | "sin_datos";
   approvalReasons: string[];
   assessments: StudentAssessmentDto[];
+  /** 2026-10-29 — `false` = taller sin evaluaciones: no hay pestaña ni resultado. */
+  tieneEvaluaciones: boolean;
   certificate: {
     code: string;
     issuedAt: string;
@@ -644,7 +647,15 @@ function buildCourse(
     course?.minAttendancePct ?? null
   );
 
-  const evalsDeLaCohorte = data.evaluaciones.filter((a) => a.cohortId === cohort?.id);
+  // 2026-10-29 — Taller sin evaluaciones: sin lista y sin resultado (sin_datos).
+  const tieneEvaluaciones = grupoTieneEvaluaciones({
+    courseKind: course?.kind,
+    registrationStatus: cohort?.registrationStatus,
+    hasAssessments: cohort?.hasAssessments,
+  });
+  const evalsDeLaCohorte = tieneEvaluaciones
+    ? data.evaluaciones.filter((a) => a.cohortId === cohort?.id)
+    : [];
   const assessments: StudentAssessmentDto[] = evalsDeLaCohorte.map((a) => {
     const mio = data.resultados.find(
       (r) => r.assessmentId === a.id && r.enrollmentId === enrollment.id
@@ -681,7 +692,7 @@ function buildCourse(
 
   // 030 — `estadoDeModulo` decide `sin_datos` con la MISMA regla que el
   // legajo, la grilla del Recorrido y el certificado general.
-  const sinDatos = state === "sin_datos";
+  const sinDatos = state === "sin_datos" || !tieneEvaluaciones;
 
   const cert = data.certificados.find((c) => c.enrollmentId === enrollment.id);
   // 034 (FR-020) — Varias por cursada; las asignadas primero.
@@ -724,7 +735,10 @@ function buildCourse(
     ).length,
     minAttendancePct,
     approval: sinDatos ? "sin_datos" : state,
-    approvalReasons: sinDatos
+    tieneEvaluaciones,
+    approvalReasons: !tieneEvaluaciones
+      ? []
+      : sinDatos
       ? ["Todavía no hay asistencia ni evaluaciones cargadas para este curso"]
       : reasons.map(reasonForStudent),
     assessments,
