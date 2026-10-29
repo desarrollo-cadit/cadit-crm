@@ -101,10 +101,20 @@ vi.mock("@/lib/db", () => ({
   ),
 }));
 
+/**
+ * 0086 — El resultado final CONFIRMADO por el profesor, fuera de la cola: la
+ * emisión lo exige (la sugerencia de la planilla no alcanza).
+ */
+const confirmados = vi.hoisted(() => new Map<string, "aprobado" | "reprobado">());
+vi.mock("@/server/resultados-confirmados", async () =>
+  (await import("../fixtures/resultados-confirmados-doble")).dobleDeResultados(confirmados)
+);
+
 beforeEach(() => {
   selectQueue.length = 0;
   updates.length = 0;
   inserts.length = 0;
+  confirmados.clear();
   vi.resetModules();
 });
 
@@ -180,6 +190,7 @@ describe("issueCertificate — el curso que no otorga certificado (regla del due
    * se toca.
    */
   it("un curso sin módulos que sí otorga emite igual que en el ciclo 010", async () => {
+    confirmados.set("enr_1", "aprobado");
     selectQueue.push([inscripcion()]);
     selectQueue.push([]); // no hay certificado previo
     selectQueue.push([]); // tieneHijas → no es madre
@@ -309,7 +320,8 @@ describe("issueCertificate — el certificado general de la especialización (FR
    * La condición vive en el servidor: no se puede emitir llamando al endpoint
    * directamente.
    */
-  it("NO se emite con una hija pendiente", async () => {
+  it("NO se emite con una hija sin resultado final confirmado", async () => {
+    confirmados.set("enr_m1", "aprobado");
     colaDeMadre(
       [hija(), hija({ id: "enr_m2", cohortId: "coh_m2" })],
       [{ id: "as_1", cohortId: "coh_m2", required: true }],
@@ -322,9 +334,24 @@ describe("issueCertificate — el certificado general de la especialización (FR
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.status).toBe(422);
-      expect(r.code).toBe("not_approved");
+      expect(r.code).toBe("resultado_sin_confirmar");
       expect(r.message).toContain("módulo");
     }
+    expect(inserts).toHaveLength(0);
+  });
+
+  /**
+   * 0086 — Decisión del dueño (2026-10-23): las SUGERENCIAS aprobadas de todos
+   * los módulos no alcanzan. Sin la confirmación del profesor no hay general.
+   */
+  it("NO se emite con todas las sugerencias aprobadas pero sin confirmar", async () => {
+    colaDeMadreAprobada();
+
+    const { issueCertificate } = await import("@/server/certificates");
+    const r = await issueCertificate("org_1", "enr_madre");
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.code).toBe("resultado_sin_confirmar");
     expect(inserts).toHaveLength(0);
   });
 
@@ -333,7 +360,8 @@ describe("issueCertificate — el certificado general de la especialización (FR
    * `sin_datos`, no `aprobado`. El general no se emite, y el motivo nombra el
    * módulo al que le falta el dato. La condición vive en el servidor.
    */
-  it("NO se emite con un módulo sin datos, y el motivo lo nombra", async () => {
+  it("NO se emite con un módulo sin confirmar, y el motivo lo nombra", async () => {
+    confirmados.set("enr_m1", "aprobado");
     colaDeMadre(
       [hija(), hija({ id: "enr_m2", cohortId: "coh_m2", cohortName: "Módulo 2 — MEP" })],
       [{ id: "as_1", cohortId: "coh_m1", required: true }],
@@ -345,15 +373,17 @@ describe("issueCertificate — el certificado general de la especialización (FR
 
     expect(r.ok).toBe(false);
     if (!r.ok) {
-      expect(r.code).toBe("not_approved");
+      expect(r.code).toBe("resultado_sin_confirmar");
       expect(r.message).toContain("Módulo 2 — MEP");
-      expect(r.message).toContain("sin datos");
+      expect(r.message).toContain("sin confirmar");
     }
     expect(inserts).toHaveLength(0);
   });
 
   /** FR-038, segunda mitad — con una hija reprobada tampoco. */
   it("NO se emite con una hija reprobada", async () => {
+    confirmados.set("enr_m1", "aprobado");
+    confirmados.set("enr_m2", "reprobado");
     colaDeMadre(
       [hija(), hija({ id: "enr_m2", cohortId: "coh_m2" })],
       [{ id: "as_1", cohortId: "coh_m2", required: true }],
@@ -372,7 +402,9 @@ describe("issueCertificate — el certificado general de la especialización (FR
    * DV-005 — una madre SIN hijas cargadas no es una madre: `tieneHijas`
    * responde por la presencia de filas (FR-033). Cae al camino de siempre.
    */
-  it("se emite con TODAS las hijas aprobadas", async () => {
+  it("se emite con TODAS las hijas aprobadas (confirmadas)", async () => {
+    confirmados.set("enr_m1", "aprobado");
+    confirmados.set("enr_m2", "aprobado");
     colaDeMadreAprobada();
 
     const { issueCertificate } = await import("@/server/certificates");
@@ -398,6 +430,8 @@ describe("issueCertificate — el certificado general de la especialización (FR
    * reprobó un módulo del programa recibiría el general.
    */
   it("un módulo que no otorga certificado, REPROBADO, igual impide el general", async () => {
+    confirmados.set("enr_m1", "aprobado");
+    confirmados.set("enr_m2", "reprobado");
     colaDeMadre(
       [hija(), hija({ id: "enr_m2", cohortId: "coh_m2" })],
       [{ id: "as_1", cohortId: "coh_m2", required: true }],
@@ -418,6 +452,8 @@ describe("issueCertificate — el certificado general de la especialización (FR
    * eso lo prueba el bloque A—, pero el recorrido está completo.
    */
   it("un módulo que no otorga certificado, APROBADO, deja emitir el general", async () => {
+    confirmados.set("enr_m1", "aprobado");
+    confirmados.set("enr_m2", "aprobado");
     colaDeMadreAprobada();
 
     const { issueCertificate } = await import("@/server/certificates");
@@ -477,6 +513,7 @@ describe("issueCertificate — la dispensa no infla el porcentaje congelado (FR-
    */
   it("congela el porcentaje real de quien aprobó con dispensa", async () => {
     const OTORGADA = new Date("2026-09-07T12:00:00.000Z");
+    confirmados.set("enr_1", "aprobado");
     selectQueue.push([
       inscripcion({
         attendanceWaiverAt: OTORGADA,

@@ -111,11 +111,17 @@ describe("recorridoComercialDelContacto", () => {
       },
     ]);
     selectQueue.push([{ timezone: "America/Montevideo" }]); // reloj
-    selectQueue.push([]); // clases
+    // 2026-10-29 — con la lista tomada: un grupo sin asistencia completa no tiene resultado.
+    selectQueue.push([
+      { id: "cs_1", cohortId: "coh_arq", date: new Date("2025-03-05T00:00:00Z"), endTime: "21:00", canceledAt: null, tomada: true },
+    ]); // clases
     selectQueue.push([]); // asistencias
     selectQueue.push([]); // evaluaciones
     selectQueue.push([]); // resultados
-    selectQueue.push([{ enrollmentId: "enr_1", revokedAt: null }]); // certificado vigente
+    selectQueue.push([{ enrollmentId: "enr_1", revokedAt: null }]); // certificado
+    // 0086 — "aprobó" solo con el resultado final CONFIRMADO (el certificado sin
+    // confirmación está suspendido y no cuenta).
+    selectQueue.push([{ enrollmentId: "enr_1", result: "aprobado" }]); // resultado final
     selectQueue.push([]); // cursadas históricas (046 US6)
     selectQueue.push([{ fromCourseId: "arq", toCourseId: "mep", position: 0 }]); // rutas
     selectQueue.push([{ id: "mep", name: "Revit MEP", published: true, kind: "curso" }]); // cursos sugeridos

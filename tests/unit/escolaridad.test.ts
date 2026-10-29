@@ -31,6 +31,8 @@ function cursada(p: Partial<CursadaInput> & { enrollmentId: string }): CursadaIn
     dispensa: null,
     posicion: null,
     evaluaciones: [],
+    resultadoConfirmado: null,
+    grupoSinResultado: false,
     ...p,
   };
 }
@@ -50,7 +52,7 @@ describe("armarEscolaridad — el estado de cada cursada", () => {
   it("un curso aprobado y otro en curso: cada uno con sus notas y su estado", () => {
     const e = armarEscolaridad(
       input([
-        cursada({ enrollmentId: "e1", evaluaciones: [NUMERICA_80] }),
+        cursada({ enrollmentId: "e1", evaluaciones: [NUMERICA_80], resultadoConfirmado: "aprobado" }),
         cursada({
           enrollmentId: "e2",
           curso: "AutoCAD",
@@ -99,6 +101,7 @@ describe("armarEscolaridad — el estado de cada cursada", () => {
             NUMERICA_80,
             { nombre: "Extra", obligatoria: false, escala: "pass_fail", nota: null, aprobada: false },
           ],
+          resultadoConfirmado: "aprobado",
         }),
       ])
     );
@@ -106,14 +109,37 @@ describe("armarEscolaridad — el estado de cada cursada", () => {
     expect(e.cursadas[0]!.evaluaciones).toHaveLength(2);
   });
 
-  it("una obligatoria desaprobada reprueba", () => {
+  it("una obligatoria desaprobada reprueba (confirmado por el profesor)", () => {
     const e = armarEscolaridad(
       input([
         cursada({
           enrollmentId: "e1",
           evaluaciones: [{ ...NUMERICA_80, nota: 40, aprobada: false }],
+          resultadoConfirmado: "reprobado",
         }),
       ])
+    );
+    expect(e.cursadas[0]!.estado).toBe("reprobado");
+  });
+
+  it("0086 — sin resultado confirmado NO es aprobado aunque todo esté bien: pendiente", () => {
+    const e = armarEscolaridad(input([cursada({ enrollmentId: "e1", evaluaciones: [NUMERICA_80] })]));
+    expect(e.cursadas[0]!.estado).toBe("pendiente");
+    expect(e.cursadas[0]!.terminada).toBe(true);
+  });
+
+  it("2026-10-29 — grupo terminado sin asistencia completa: «Sin datos», aunque haya un aprobado viejo", () => {
+    const e = armarEscolaridad(
+      input([
+        cursada({ enrollmentId: "e1", evaluaciones: [NUMERICA_80], resultadoConfirmado: "aprobado", grupoSinResultado: true }),
+      ])
+    );
+    expect(e.cursadas[0]!.estado).toBe("sin_datos");
+  });
+
+  it("0086 — el profesor puede reprobar aunque la sugerencia sea aprobado", () => {
+    const e = armarEscolaridad(
+      input([cursada({ enrollmentId: "e1", evaluaciones: [NUMERICA_80], resultadoConfirmado: "reprobado" })])
     );
     expect(e.cursadas[0]!.estado).toBe("reprobado");
   });
@@ -145,6 +171,7 @@ describe("armarEscolaridad — el estado de cada cursada", () => {
           curso: "Módulo Revit",
           posicion: 1,
           evaluaciones: [NUMERICA_80],
+          resultadoConfirmado: "aprobado",
         }),
       ])
     );
@@ -219,14 +246,22 @@ describe("renderEscolaridadHtml — el documento", () => {
     expect(h).toContain("1.234.567-8");
   });
 
-  it("dice los estados en palabras: Aprobado, No aprobado, En curso, Sin datos", () => {
+  it("dice los estados en palabras: Aprobado, No aprobado, En curso, Resultado pendiente, Sin datos", () => {
     const h = html([
-      cursada({ enrollmentId: "a", evaluaciones: [NUMERICA_80] }),
-      cursada({ enrollmentId: "b", evaluaciones: [{ ...NUMERICA_80, nota: 10, aprobada: false }] }),
-      cursada({ enrollmentId: "c", evaluaciones: [{ ...NUMERICA_80, nota: null, aprobada: null }] }),
+      cursada({ enrollmentId: "a", evaluaciones: [NUMERICA_80], resultadoConfirmado: "aprobado" }),
+      cursada({
+        enrollmentId: "b",
+        evaluaciones: [{ ...NUMERICA_80, nota: 10, aprobada: false }],
+        resultadoConfirmado: "reprobado",
+      }),
+      cursada({ enrollmentId: "c", hasta: null, evaluaciones: [{ ...NUMERICA_80, nota: null, aprobada: null }] }),
       cursada({ enrollmentId: "d", asistenciaPct: null }),
+      // 0086 — terminó y nadie confirmó: no está "En curso", espera.
+      cursada({ enrollmentId: "e", evaluaciones: [NUMERICA_80] }),
     ]);
-    for (const t of ["Aprobado", "No aprobado", "En curso", "Sin datos"]) expect(h).toContain(t);
+    for (const t of ["Aprobado", "No aprobado", "En curso", "Resultado pendiente", "Sin datos"]) {
+      expect(h).toContain(t);
+    }
     // Los identificadores pueden ser clases de CSS, nunca el texto que se lee.
     expect(h).not.toMatch(/>\s*(sin_datos|reprobado|pendiente)\s*</);
   });

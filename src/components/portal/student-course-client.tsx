@@ -100,6 +100,8 @@ type Module = {
   completedClasses: number;
   approval: ApprovalValue;
   approvalReasons: string[];
+  /** 0086 — terminó y falta confirmar el resultado final. */
+  awaitingConfirmation?: boolean;
   assessments: {
     id: string;
     name: string;
@@ -128,6 +130,8 @@ type Detail = {
     minAttendancePct: number | null;
     approval: ApprovalValue;
     approvalReasons: string[];
+    /** 0086 — terminó y falta confirmar el resultado final. */
+    awaitingConfirmation?: boolean;
     assessments: {
       id: string;
       name: string;
@@ -292,7 +296,7 @@ export function StudentCourseClient({
             {course.teacherName && ` · ${course.teacherName}`}
           </>
         }
-        acciones={<ApprovalBadge value={course.approval} />}
+        acciones={<ApprovalBadge value={course.approval} awaitingConfirmation={course.awaitingConfirmation} />}
       />
 
       <AvisoDeAcceso access={course.access} />
@@ -665,7 +669,7 @@ function ModulosTab({ modules }: { modules: Module[] }) {
               {m.certificate && !m.certificate.revokedAt && (
                 <span className="hidden text-xs text-text-3 sm:inline">Certificado</span>
               )}
-              <ApprovalBadge value={m.approval} />
+              <ApprovalBadge value={m.approval} awaitingConfirmation={m.awaitingConfirmation} />
             </span>
           </Link>
         </li>

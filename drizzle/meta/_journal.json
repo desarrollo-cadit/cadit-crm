@@ -603,6 +603,13 @@
       "when": 1793300000000,
       "tag": "0085_empresas_unificar",
       "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1793310000000,
+      "tag": "0086_resultado_final",
+      "breakpoints": true
     }
   ]
 }

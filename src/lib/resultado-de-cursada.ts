@@ -30,11 +30,18 @@ export function resultadoDeCursada(input: {
   estadoDelGrupo: EstadoDeGrupo | null;
   /** El resultado final confirmado por el profesor; `null` = sin confirmar. */
   resultadoConfirmado: ResultadoConfirmado;
+  /**
+   * 0086 (decisión del dueño 2026-10-29) — `grupoCompleto` de
+   * `src/lib/resultado-final.ts`: toda clase dictada con la lista tomada. Un
+   * grupo terminado e incompleto no tiene resultado: "Sin datos".
+   */
+  grupoCompleto: boolean;
 }): ResultadoDeCursada {
   if (input.estadoDelGrupo === null) return "sin_datos";
   if (input.estadoDelGrupo === "planificada") return "por_comenzar";
   // Mientras el grupo no terminó no hay resultado, aunque alguien lo haya cargado.
   if (input.estadoDelGrupo === "en_curso") return "en_curso";
+  if (!input.grupoCompleto) return "sin_datos";
   return input.resultadoConfirmado ?? "pendiente";
 }
 

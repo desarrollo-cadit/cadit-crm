@@ -107,8 +107,24 @@ export function attendancePercentage(
   enrolledAt: Date | null,
   reloj: RelojDeAsistencia
 ): number | null {
+  const { presentes, cuentan } = conteoDeAsistencia(sessions, enrolledAt, reloj);
+  if (cuentan === 0) return null;
+  return Math.round((presentes / cuentan) * 100);
+}
+
+/**
+ * 0086 — "X de Y clases": las mismas clases que cuentan para el porcentaje
+ * (`claseCuentaParaElAlumno`), dichas como cantidades. El cierre de cursada
+ * las muestra al lado de la sugerencia.
+ */
+export function conteoDeAsistencia(
+  sessions: readonly ClaseParaAsistencia[],
+  enrolledAt: Date | null,
+  reloj: RelojDeAsistencia
+): { presentes: number; cuentan: number } {
   const cuentan = sessions.filter((s) => claseCuentaParaElAlumno(s, enrolledAt, reloj));
-  if (cuentan.length === 0) return null;
-  const presentes = cuentan.filter((s) => cuentaComoPresente(s.status)).length;
-  return Math.round((presentes / cuentan.length) * 100);
+  return {
+    presentes: cuentan.filter((s) => cuentaComoPresente(s.status)).length,
+    cuentan: cuentan.length,
+  };
 }
