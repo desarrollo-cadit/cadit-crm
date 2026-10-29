@@ -48,6 +48,7 @@ const CAPABILITY_LABELS: Record<string, string> = {
   "cobranza.ver": "Ver cuotas, pagos y finanzas",
   "cobranza.editar": "Registrar y anular pagos",
   "empresas.editar": "Crear y editar empresas y sus datos de facturación",
+  "empresas.unificar": "Unificar empresas duplicadas",
   "facturacion.editar": "Registrar números de factura y de recibo (sin tocar montos)",
   "inbox.ver": "Ver conversaciones",
   "inbox.responder": "Responder conversaciones",

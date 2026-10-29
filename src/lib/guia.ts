@@ -164,6 +164,10 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
     que: "dar de alta una empresa y completar sus datos de facturación: razón social, RUT, dirección fiscal, a quién se le manda la factura y si paga contado o a crédito",
     donde: "/empresas",
   },
+  "empresas.unificar": {
+    que: "unificar dos empresas que son la misma (cargada dos veces): sus contactos, inscripciones, accesos a cursos offline y cursadas históricas pasan a la que queda y la duplicada se borra. No se puede deshacer, por eso siempre muestra antes qué va a pasar. Por defecto la tienen Dirección, Coordinación y Soporte",
+    donde: "Empresas → la empresa → Unificar con…",
+  },
   /**
    * 042 — Lo que Administración no podía hacer con `cobranza.ver`: anotar el
    * número de la factura que emitió, sin poder tocar ningún monto.

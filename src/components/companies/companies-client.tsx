@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Building2, Download, Pencil, Plus } from "lucide-react";
+import { Building2, Combine, Download, Pencil, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CompanyForm } from "@/components/companies/company-form";
 import { CompanyOfflineCourses } from "@/components/companies/company-offline-courses";
+import { MergeCompaniesDialog } from "@/components/companies/merge-companies-dialog";
 import { condicionDePago } from "@/lib/company";
 import type { CompanyDto } from "@/lib/types";
 
@@ -77,12 +78,17 @@ function FichaDeFacturacion({ c }: { c: CompanyDto }) {
  * 040 — Suma el alta y la edición con los datos de facturación. Los botones
  * se dibujan solo con `empresas.editar` (lo decide el servidor y baja como
  * booleano); las rutas tienen su propio `requireCapability`.
+ *
+ * 2026-10-29 — «Unificar con…» solo con `empresas.unificar` (`canMerge`).
  */
 export function CompaniesClient({
   canEdit,
   canEditAcademic,
+  canMerge = false,
 }: {
   canEdit: boolean;
+  /** 2026-10-29 — `empresas.unificar`: juntar dos empresas duplicadas. */
+  canMerge?: boolean;
   /** 045 — `academico.editar`: asignar, extender y quitar cursos offline de la empresa. */
   canEditAcademic: boolean;
 }) {
@@ -94,6 +100,8 @@ export function CompaniesClient({
   const [cargandoReporte, setCargandoReporte] = useState(false);
   /** `"nueva"` = alta; un id = editando esa empresa; `null` = ningún formulario. */
   const [editando, setEditando] = useState<string | null>(null);
+  /** La empresa desde la que se abrió «Unificar con…» (la que queda por defecto). */
+  const [unificando, setUnificando] = useState<CompanyDto | null>(null);
 
   const refetch = useCallback(async () => {
     const res = await fetch("/api/companies").catch(() => null);
@@ -207,6 +215,11 @@ export function CompaniesClient({
                   <Pencil className="h-4 w-4" /> Editar
                 </Button>
               )}
+              {canMerge && companies.length > 1 && (
+                <Button variant="ghost" size="sm" onClick={() => setUnificando(c)}>
+                  <Combine className="h-4 w-4" aria-hidden /> Unificar con…
+                </Button>
+              )}
               {/* El CSV es la misma ruta con `?format=csv`: misma información,
                   distinto envase. */}
               <a
@@ -259,6 +272,20 @@ export function CompaniesClient({
           </li>
         ))}
       </ul>
+
+      {canMerge && unificando && (
+        <MergeCompaniesDialog
+          company={unificando}
+          companies={companies}
+          onClose={() => setUnificando(null)}
+          onMerged={() => {
+            setUnificando(null);
+            setEditando(null);
+            setAbierta(null);
+            void refetch();
+          }}
+        />
+      )}
     </div>
   );
 }
