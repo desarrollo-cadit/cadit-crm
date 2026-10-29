@@ -12,12 +12,28 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import {
   TODOS_LOS_ANIOS,
-  aniosDisponibles,
-  coincideAnio,
   leerFiltroDeAnio,
   type FiltroDeAnio,
 } from "@/lib/academic-filters";
+import {
+  contadoresDeTalleres,
+  filtrarTalleres,
+  seccionesDeTalleres,
+} from "@/lib/workshop-filters";
 import { notify } from "@/lib/notify";
+import { cn } from "@/lib/utils";
+import {
+  Buscador,
+  Desplegable,
+  EncabezadoDeSeccion,
+  OpcionUnica,
+  Resaltado,
+  ResumenDeFiltros,
+  SinCoincidencias,
+  TarjetaDeFiltros,
+  type FiltroActivo,
+} from "@/components/listados/filtros";
+import { AvatarDeCurso, TONO_DE_ESTADO } from "@/components/listados/curso-visual";
 import {
   WORKSHOP_REGISTRATION_LABEL,
   type WorkshopAttendeeStatus,
@@ -79,6 +95,7 @@ export function WorkshopsClient({ canEdit }: { canEdit: boolean }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [anio, setAnio] = useState<FiltroDeAnio>(TODOS_LOS_ANIOS);
+  const [busqueda, setBusqueda] = useState("");
   const [creando, setCreando] = useState<null | "nuevo" | "edicion">(null);
 
   const refetch = useCallback(async () => {
@@ -99,8 +116,7 @@ export function WorkshopsClient({ canEdit }: { canEdit: boolean }) {
     void refetch();
   }, [refetch]);
 
-  function elegirAnio(raw: string) {
-    const valor = leerFiltroDeAnio(raw);
+  function elegirAnio(valor: FiltroDeAnio) {
     setAnio(valor);
     try {
       window.localStorage.setItem(CLAVE_ANIO, String(valor));
@@ -109,13 +125,33 @@ export function WorkshopsClient({ canEdit }: { canEdit: boolean }) {
     }
   }
 
-  const anios = useMemo(
-    () => aniosDisponibles(editions, new Date().getFullYear()),
-    [editions]
+  /**
+   * 2026-10-29 — Como la pestaña Grupos de Académico: buscador y año en UNA
+   * tarjeta, resumen "Mostrando N de M" con etiquetas quitables. La lógica es
+   * de `src/lib/workshop-filters.ts` (pura, con tests).
+   */
+  const anioActual = new Date().getFullYear();
+  const visibles = filtrarTalleres(editions, { busqueda, anio }, textosDeTaller);
+  const { proximos, realizados } = seccionesDeTalleres(visibles);
+  const contadores = useMemo(
+    () => contadoresDeTalleres(editions, busqueda, textosDeTaller, anioActual),
+    [editions, busqueda, anioActual]
   );
-  const visibles = editions.filter((e) => coincideAnio(e, anio));
-  const proximos = visibles.filter((e) => !e.started);
-  const realizados = visibles.filter((e) => e.started);
+  const etiquetaDeAnio = (a: FiltroDeAnio) =>
+    a === TODOS_LOS_ANIOS ? "Todos" : a === anioActual ? "Este año" : String(a);
+
+  const filtrosActivos: FiltroActivo[] = [
+    ...(busqueda.trim()
+      ? [{ clave: "q", etiqueta: `“${busqueda.trim()}”`, quitar: () => setBusqueda("") }]
+      : []),
+    ...(anio !== TODOS_LOS_ANIOS
+      ? [{ clave: "anio", etiqueta: `Año: ${etiquetaDeAnio(anio)}`, quitar: () => elegirAnio(TODOS_LOS_ANIOS) }]
+      : []),
+  ];
+  function limpiarFiltros() {
+    setBusqueda("");
+    elegirAnio(TODOS_LOS_ANIOS);
+  }
 
   if (loading) {
     return (
@@ -139,22 +175,6 @@ export function WorkshopsClient({ canEdit }: { canEdit: boolean }) {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Label htmlFor="talleres-anio" className="sr-only">
-            Año
-          </Label>
-          <Select
-            id="talleres-anio"
-            className="w-40"
-            value={String(anio)}
-            onChange={(e) => elegirAnio(e.target.value)}
-          >
-            <option value={TODOS_LOS_ANIOS}>Todos los años</option>
-            {anios.map((a) => (
-              <option key={a} value={a}>
-                {a}
-              </option>
-            ))}
-          </Select>
           {canEdit && (
             <>
               <Button size="sm" onClick={() => setCreando("nuevo")}>
@@ -203,44 +223,187 @@ export function WorkshopsClient({ canEdit }: { canEdit: boolean }) {
         </p>
       )}
 
-      {proximos.length > 0 && <Lista titulo="Próximos" filas={proximos} />}
-      {realizados.length > 0 && <Lista titulo="Realizados" filas={realizados} />}
-      {editions.length > 0 && visibles.length === 0 && (
-        <p className="text-sm text-muted-foreground">No hay talleres en ese año.</p>
+      {!error && editions.length > 0 && (
+        <TarjetaDeFiltros
+          pie={
+            <ResumenDeFiltros
+              mostrando={visibles.length}
+              total={editions.length}
+              sustantivo={{ uno: "taller", varios: "talleres" }}
+              activos={filtrosActivos}
+              onLimpiar={limpiarFiltros}
+            />
+          }
+        >
+          <Buscador
+            value={busqueda}
+            onChange={setBusqueda}
+            placeholder="Buscar taller por nombre, día, modalidad o costo…"
+          />
+          {/* 033 — año: el mismo criterio de 032; se recuerda por navegador. */}
+          <Desplegable etiqueta="Año" valor={etiquetaDeAnio(anio)} activo={anio !== TODOS_LOS_ANIOS}>
+            {(cerrar) => (
+              <>
+                <OpcionUnica
+                  elegida={anio === TODOS_LOS_ANIOS}
+                  cantidad={contadores.todosLosAnios}
+                  onElegir={() => {
+                    elegirAnio(TODOS_LOS_ANIOS);
+                    cerrar();
+                  }}
+                >
+                  Todos los años
+                </OpcionUnica>
+                {contadores.anios.map(({ anio: a, count }) => (
+                  <OpcionUnica
+                    key={a}
+                    elegida={anio === a}
+                    cantidad={count}
+                    onElegir={() => {
+                      elegirAnio(a);
+                      cerrar();
+                    }}
+                  >
+                    {a === anioActual ? `Este año (${a})` : a}
+                  </OpcionUnica>
+                ))}
+              </>
+            )}
+          </Desplegable>
+        </TarjetaDeFiltros>
+      )}
+
+      {editions.length > 0 && visibles.length === 0 ? (
+        <SinCoincidencias
+          mensaje="Ningún taller coincide con la búsqueda y los filtros."
+          onLimpiar={limpiarFiltros}
+        />
+      ) : (
+        <div className="space-y-5">
+          {proximos.length > 0 && (
+            <Lista id="talleres-proximos" titulo="Próximos" tono="planificada" filas={proximos} busqueda={busqueda} />
+          )}
+          {realizados.length > 0 && (
+            <Lista id="talleres-realizados" titulo="Realizados" tono="finalizada" filas={realizados} busqueda={busqueda} />
+          )}
+        </div>
       )}
     </div>
   );
 }
 
-function Lista({ titulo, filas }: { titulo: string; filas: EditionRow[] }) {
+/**
+ * Lo que la fila MUESTRA, que es lo que se busca: nombre, curso, día,
+ * horario, modalidad, costo e inscripción. El formato es el de la fila.
+ */
+function textosDeTaller(e: EditionRow): string[] {
+  return [
+    e.displayName,
+    e.courseName,
+    workshopDay(e.startDate),
+    horario(e.startTime, e.endTime),
+    modalityLabel(e.modality),
+    costLabel(e.cost, e.currency),
+    ...(e.registrationStatus ? [WORKSHOP_REGISTRATION_LABEL[e.registrationStatus]] : []),
+  ];
+}
+
+/** "8 de 20 inscriptos"; lleno, en el tono de advertencia. Sin cupo, solo la cantidad. */
+function CupoDeTaller({ inscriptos, cupo }: { inscriptos: number; cupo: number | null }) {
+  if (cupo === null || cupo <= 0) {
+    return (
+      <span className="text-[12.5px] text-text-2">
+        {inscriptos} {inscriptos === 1 ? "inscripto" : "inscriptos"}
+      </span>
+    );
+  }
+  const completo = inscriptos >= cupo;
   return (
-    <section className="space-y-2">
-      <h3 className="text-sm font-semibold text-muted-foreground">{titulo}</h3>
-      <ul className="divide-y rounded-md border">
-        {filas.map((e) => (
-          <li key={e.id}>
-            <Link
-              href={`/talleres/${e.id}`}
-              className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-sm hover:bg-accent"
-            >
-              <span className="min-w-0 flex-1 font-medium">{e.displayName}</span>
-              <span className="text-muted-foreground">
-                {workshopDay(e.startDate)} · {horario(e.startTime, e.endTime)}
-              </span>
-              <span>{modalityLabel(e.modality)}</span>
-              <span>{costLabel(e.cost, e.currency)}</span>
-              <span>
-                {e.occupied} inscripto{e.occupied === 1 ? "" : "s"}
-                {e.capacity !== null ? ` de ${e.capacity}` : ""}
-              </span>
-              {e.registrationStatus && (
-                <Badge variant={REGISTRATION_BADGE[e.registrationStatus]}>
-                  {WORKSHOP_REGISTRATION_LABEL[e.registrationStatus]}
-                </Badge>
-              )}
-            </Link>
-          </li>
-        ))}
+    <span className={cn("text-[12.5px] tabular-nums", completo ? "font-medium text-warning" : "text-text-2")}>
+      {inscriptos} de {cupo}
+      {completo ? " · completo" : " inscriptos"}
+    </span>
+  );
+}
+
+/**
+ * 2026-10-29 — Una sección como las de estado de Académico: título en el
+ * tono (próximos = planificado, realizados = finalizado), pastilla con la
+ * cantidad y filas en grilla: avatar del curso | nombre + día y horario |
+ * modalidad y costo | cupo | inscripción. En pantallas angostas quedan
+ * avatar, nombre e inscripción.
+ */
+function Lista({
+  id,
+  titulo,
+  tono,
+  filas,
+  busqueda,
+}: {
+  id: string;
+  titulo: string;
+  tono: "planificada" | "finalizada";
+  filas: EditionRow[];
+  busqueda: string;
+}) {
+  const colores = TONO_DE_ESTADO[tono];
+  return (
+    <section aria-labelledby={id}>
+      <EncabezadoDeSeccion
+        id={id}
+        titulo={titulo}
+        cantidad={filas.length}
+        claseTexto={colores.texto}
+        clasePastilla={colores.pastilla}
+      />
+      <ul className="divide-y overflow-hidden rounded-lg border bg-card">
+        {filas.map((e) => {
+          const nombreDelCurso =
+            e.courseName && !e.displayName.toLowerCase().includes(e.courseName.toLowerCase())
+              ? e.courseName
+              : null;
+          return (
+            <li key={e.id}>
+              <Link
+                href={`/talleres/${e.id}`}
+                className="grid grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-x-3.5 px-4 py-[11px] transition-colors hover:bg-subtle md:grid-cols-[38px_minmax(0,2.2fr)_minmax(0,1.4fr)_minmax(0,1fr)_auto]"
+              >
+                <AvatarDeCurso courseId={e.courseId} nombre={e.courseName} apagado={e.started} />
+                <div className="min-w-0">
+                  <p className="truncate font-medium leading-snug">
+                    <Resaltado texto={e.displayName} busqueda={busqueda} />
+                  </p>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                    {nombreDelCurso && (
+                      <>
+                        <Resaltado texto={nombreDelCurso} busqueda={busqueda} />
+                        {" · "}
+                      </>
+                    )}
+                    <Resaltado texto={workshopDay(e.startDate)} busqueda={busqueda} />
+                    {" · "}
+                    <Resaltado texto={horario(e.startTime, e.endTime)} busqueda={busqueda} />
+                  </p>
+                </div>
+                <div className="hidden min-w-0 truncate text-[13px] text-text-2 md:block">
+                  <Resaltado texto={modalityLabel(e.modality)} busqueda={busqueda} />
+                  {" · "}
+                  <Resaltado texto={costLabel(e.cost, e.currency)} busqueda={busqueda} />
+                </div>
+                <div className="hidden md:block">
+                  <CupoDeTaller inscriptos={e.occupied} cupo={e.capacity} />
+                </div>
+                <div className="flex items-center justify-end">
+                  {e.registrationStatus && (
+                    <Badge variant={REGISTRATION_BADGE[e.registrationStatus]}>
+                      {WORKSHOP_REGISTRATION_LABEL[e.registrationStatus]}
+                    </Badge>
+                  )}
+                </div>
+              </Link>
+            </li>
+          );
+        })}
       </ul>
     </section>
   );
