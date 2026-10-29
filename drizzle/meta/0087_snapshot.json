@@ -1,6 +1,6 @@
 {
-  "id": "eea6f81c-27ae-4f41-8406-58f88011f43f",
-  "prevId": "fa009e56-f37d-45b0-b375-2794f97a3314",
+  "id": "fae0b87e-657a-400b-a7c1-17c7437b8155",
+  "prevId": "7c72e5e8-700f-4927-a7d9-72019a49ad97",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -6717,6 +6717,155 @@
         "enrollment_madre_distinta_de_si": {
           "name": "enrollment_madre_distinta_de_si",
           "value": "\"enrollment\".\"parent_enrollment_id\" is null or \"enrollment\".\"parent_enrollment_id\" <> \"enrollment\".\"id\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.enrollment_final_result": {
+      "name": "enrollment_final_result",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "enrollment_id": {
+          "name": "enrollment_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "result": {
+          "name": "result",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "suggested_result": {
+          "name": "suggested_result",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "confirmed_by": {
+          "name": "confirmed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "confirmed_at": {
+          "name": "confirmed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "enrollment_final_result_org_idx": {
+          "name": "enrollment_final_result_org_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "enrollment_final_result_organization_id_organization_id_fk": {
+          "name": "enrollment_final_result_organization_id_organization_id_fk",
+          "tableFrom": "enrollment_final_result",
+          "tableTo": "organization",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "enrollment_final_result_enrollment_id_enrollment_id_fk": {
+          "name": "enrollment_final_result_enrollment_id_enrollment_id_fk",
+          "tableFrom": "enrollment_final_result",
+          "tableTo": "enrollment",
+          "columnsFrom": [
+            "enrollment_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "enrollment_final_result_confirmed_by_user_id_fk": {
+          "name": "enrollment_final_result_confirmed_by_user_id_fk",
+          "tableFrom": "enrollment_final_result",
+          "tableTo": "user",
+          "columnsFrom": [
+            "confirmed_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "enrollment_final_result_enrollment_id_unique": {
+          "name": "enrollment_final_result_enrollment_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "enrollment_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "enrollment_final_result_result_valid": {
+          "name": "enrollment_final_result_result_valid",
+          "value": "\"enrollment_final_result\".\"result\" in ('aprobado', 'reprobado')"
+        },
+        "enrollment_final_result_suggested_valid": {
+          "name": "enrollment_final_result_suggested_valid",
+          "value": "\"enrollment_final_result\".\"suggested_result\" in ('aprobado', 'reprobado', 'pendiente')"
         }
       },
       "isRLSEnabled": false

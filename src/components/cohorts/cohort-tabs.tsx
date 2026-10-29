@@ -38,6 +38,7 @@ export function CohortTabs({
   canEditGrading,
   canEditEnrollments,
   canIssueCertificates,
+  canConfirmResults = false,
   canManageAccess,
   canFollowUp = false,
   canInvoice = false,
@@ -96,6 +97,8 @@ export function CohortTabs({
   canEditEnrollments: boolean;
   /** 024 — `certificados.emitir`: emitir y anular son la MISMA capacidad. */
   canIssueCertificates: boolean;
+  /** 0086 — `correcciones.aprobar`: confirmar o corregir el resultado final. */
+  canConfirmResults?: boolean;
   /** 2026-10-05 — `accesos.gestionar`: el acceso al portal a toda la cohorte. */
   canManageAccess: boolean;
   /**
@@ -193,6 +196,7 @@ export function CohortTabs({
             kind={tab === "asistencia" ? "attendance" : "grading"}
             canEditGrading={canEditGrading}
             canIssueCertificates={canIssueCertificates}
+            canConfirmResults={canConfirmResults}
             canEditAttendance={canEditAttendance}
           />
         ) : tab === "clases" ? (
@@ -210,6 +214,7 @@ export function CohortTabs({
             cohortId={cohortId}
             canEdit={canEditGrading}
             canIssueCertificates={canIssueCertificates && emiteCertificado}
+            canConfirmResults={canConfirmResults}
             sinEvaluaciones={!tieneEvaluaciones}
           />
         ) : (

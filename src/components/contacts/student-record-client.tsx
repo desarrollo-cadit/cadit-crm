@@ -27,7 +27,15 @@ type RecordCourse = {
   approval: "aprobado" | "reprobado" | "pendiente" | "sin_datos";
   approvalReasons: string[];
   assessments: { name: string; passed: boolean | null }[];
-  certificate: { code: string; issuedAt: string; revokedAt: string | null; suspended?: boolean } | null;
+  /** 0086 — `suspended`: emitido, pero sin resultado final confirmado como aprobado. */
+  certificate: {
+    code: string;
+    issuedAt: string;
+    revokedAt: string | null;
+    suspended?: boolean;
+    /** 2026-10-29 — su grupo terminó sin la asistencia completa: cuenta como anulado. */
+    annulledIncompleteGroup?: boolean;
+  } | null;
 };
 
 type StudentRecord = {
@@ -194,12 +202,22 @@ export function StudentRecordClient({
             <div className="flex flex-wrap items-center gap-2">
               <p className="font-medium">{c.cohortName}</p>
               <Badge variant={APROBACION[c.approval].variant}>
-                {APROBACION[c.approval].label}
+                {/* 0086 — Terminó y nadie confirmó: es una espera, no "En curso". */}
+                {c.approval === "pendiente" && c.endDate && new Date(c.endDate).getTime() < Date.now()
+                  ? "Resultado pendiente"
+                  : APROBACION[c.approval].label}
               </Badge>
-              {c.certificate?.suspended && !c.certificate.revokedAt && (
-                <Badge variant="outline">Certificado suspendido (el grupo no emite)</Badge>
+              {/* 0086 — Suspendido hasta que se confirme el resultado final: no se descarga. */}
+              {c.certificate && !c.certificate.revokedAt && c.certificate.annulledIncompleteGroup && (
+                <Badge variant="outline">Certificado anulado (grupo sin asistencia completa)</Badge>
               )}
-              {c.certificate && !c.certificate.revokedAt && !c.certificate.suspended && (
+              {c.certificate && !c.certificate.revokedAt && !c.certificate.annulledIncompleteGroup && c.certificate.suspended && (
+                <Badge variant="outline">Certificado suspendido · falta confirmar el resultado</Badge>
+              )}
+              {c.certificate &&
+                !c.certificate.revokedAt &&
+                !c.certificate.suspended &&
+                !c.certificate.annulledIncompleteGroup && (
                 <>
                   <Badge variant="secondary">
                     <Award className="mr-1 h-3 w-3" />

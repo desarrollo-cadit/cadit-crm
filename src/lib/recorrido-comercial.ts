@@ -217,7 +217,12 @@ function estadoDeCursada(
   }
   if (c.sinEvaluaciones) return { estado: "curso_historico", sinResultado: false };
   if (aprobacion === "aprobado" || c.certificadoVigente) return { estado: "aprobo", sinResultado: false };
-  return { estado: "curso_sin_aprobar", sinResultado: aprobacion === "sin_datos" };
+  // 0086 — `pendiente` en un grupo terminado = el resultado final no se
+  // confirmó todavía: cursó, pero no hay resultado que afirmar.
+  return {
+    estado: "curso_sin_aprobar",
+    sinResultado: aprobacion === "sin_datos" || aprobacion === "pendiente",
+  };
 }
 
 /**

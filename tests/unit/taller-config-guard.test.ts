@@ -16,6 +16,8 @@ const EVALUACIONES: Record<string, RegExp> = {
   "src/server/extension-requests.ts": /exigirEvaluacionesDeEvaluacion\(|grupoTieneEvaluacionesPorId\(/,
   "src/server/teacher-portal.ts": /grupoTieneEvaluacionesPorId\(/,
   "src/app/api/cohorts/[id]/extension-requests/route.ts": /exigirEvaluacionesDeGrupo\(/,
+  "src/server/final-results.ts": /exigirEvaluacionesDeGrupo\(/,
+  "src/app/api/cohorts/[id]/final-results/route.ts": /exigirEvaluacionesDeGrupo\(/,
 };
 
 describe("taller sin evaluaciones / sin certificado: validación en el backend", () => {
@@ -37,11 +39,9 @@ describe("taller sin evaluaciones / sin certificado: validación en el backend",
     expect(src.indexOf("grupoEmiteCertificado(enrollment)")).toBeLessThan(src.indexOf("if (existing[0])"));
   });
 
-  it("la lectura de certificados suspendidos pasa por la regla (PDF, listado, verificar, portal)", () => {
-    expect(leer("src/server/certificate-pdf.ts")).toContain("grupoEmiteCertificadoSql(");
-    expect(leer("src/server/certificates.ts")).toContain("valid: !row.certificate.revokedAt && grupoEmiteCertificado(row)");
-    const sp = leer("src/server/student-portal.ts");
-    expect(sp.split("grupoEmiteCertificado").length - 1).toBeGreaterThanOrEqual(3);
+  it("la lectura de certificados suspendidos pasa por la visibilidad de resultado-final (noEmite)", () => {
+    expect(leer("src/lib/resultado-final.ts")).toContain("afirmado?.noEmite");
+    expect(leer("src/server/resultados-confirmados.ts")).toContain("noEmite: noEmite(id)");
   });
 
   it("la emisión masiva exige que el grupo emita", () => {

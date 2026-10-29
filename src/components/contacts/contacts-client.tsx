@@ -9,9 +9,20 @@ import {
   ChevronRight,
   GraduationCap,
   MessageSquareText,
-  Search,
   Trash2,
 } from "lucide-react";
+import { digitosDeTelefonoBuscado } from "@/lib/contact-search";
+import {
+  Buscador,
+  Desplegable,
+  OpcionUnica,
+  Resaltado,
+  ResumenDeFiltros,
+  Segmentado,
+  SinCoincidencias,
+  TarjetaDeFiltros,
+  type FiltroActivo,
+} from "@/components/listados/filtros";
 import type { ContactDto } from "@/lib/types";
 import { cn, formatPhone, fullName } from "@/lib/utils";
 import { esLlegadaReciente } from "@/lib/form-arrivals";
@@ -49,6 +60,10 @@ const PESTANAS: { key: Pestana; label: string }[] = [
   { key: "alumno_activo", label: "Alumnos activos" },
   { key: "exalumno", label: "Exalumnos" },
 ];
+const ETIQUETA_DE_PESTANA = Object.fromEntries(PESTANAS.map((p) => [p.key, p.label])) as Record<
+  Pestana,
+  string
+>;
 const VARIANTE_TIPO: Record<TipoDeContacto, "outline" | "success" | "secondary"> = {
   lead: "outline",
   alumno_activo: "success",
@@ -225,44 +240,42 @@ export function ContactsClient({
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
+  /**
+   * 2026-10-29 — La misma tarjeta de filtros que Académico. La búsqueda y los
+   * filtros siguen en el SERVIDOR (paginados): acá solo se dibujan, y el total
+   * del resumen es el que devuelve `GET /api/contacts`.
+   */
+  const busqueda = query.trim();
+  const busquedaDeTelefono = digitosDeTelefonoBuscado(busqueda) ?? busqueda;
+  const filtrosActivos: FiltroActivo[] = [
+    ...(busqueda ? [{ clave: "q", etiqueta: `“${busqueda}”`, quitar: () => setQuery("") }] : []),
+    ...(pestana !== "todos"
+      ? [{ clave: "tipo", etiqueta: ETIQUETA_DE_PESTANA[pestana], quitar: () => setPestana("todos") }]
+      : []),
+    ...(showArchived
+      ? [{ clave: "archivados", etiqueta: "Con archivados", quitar: () => setShowArchived(false) }]
+      : []),
+  ];
+  const hayFiltros = filtrosActivos.length > 0;
+  function limpiarFiltros() {
+    setQuery("");
+    setPestana("todos");
+    setShowArchived(false);
+  }
+  // Con más de una página, el rango de ESTA página ("21–40 de 57").
+  const desde = (page - 1) * PAGE_SIZE + 1;
+  const mostrando =
+    total > PAGE_SIZE && contacts.length > 0
+      ? `${desde}–${desde + contacts.length - 1}`
+      : contacts.length;
+  // Sin contactos de verdad (no por un filtro): la tarjeta no tiene nada que filtrar.
+  const sinContactos = !loading && !hayFiltros && total === 0;
+
   return (
     <div className="flex h-full flex-col">
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-4 border-b px-6 py-4">
-        {/*
-          021 — El total estaba SOLO al pie: había que recorrer las 340 filas
-          para saber cuántas eran. Arriba, junto al título, es donde se busca.
-          Y cuando hay una búsqueda activa el número dice lo que ENCONTRÓ, que
-          es la pregunta que se está haciendo en ese momento.
-        */}
-        <div className="flex items-baseline gap-2">
-          <h2 className="font-semibold">Alumnos</h2>
-          {!loading && (
-            <span className="text-sm text-muted-foreground">
-              {query.trim()
-                ? `${total} ${total === 1 ? "resultado" : "resultados"}`
-                : total}
-            </span>
-          )}
-        </div>
+        <h2 className="font-semibold">Alumnos</h2>
         <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2 text-xs text-muted-foreground">
-            <input
-              type="checkbox"
-              checked={showArchived}
-              onChange={(e) => setShowArchived(e.target.checked)}
-              className="accent-primary"
-            />
-            Ver archivados
-          </label>
-          <div className="relative w-full sm:w-auto">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Buscar por nombre, apellido o teléfono…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className="w-full pl-8 sm:w-72"
-            />
-          </div>
           {canEnroll && (
             <EnrollLauncher
               className="flex flex-col items-end"
@@ -274,27 +287,6 @@ export function ContactsClient({
         </div>
       </header>
 
-      {/* 046 US7 — Todos / Leads / Alumnos activos / Exalumnos: el filtro lo hace el servidor. */}
-      <nav className="flex shrink-0 gap-1 overflow-x-auto border-b px-6" aria-label="Tipo de contacto">
-        {PESTANAS.map((p) => (
-          <button
-            key={p.key}
-            type="button"
-            aria-current={pestana === p.key ? "page" : undefined}
-            onClick={() => setPestana(p.key)}
-            className={cn(
-              "-mb-px border-b-2 px-3 py-2 text-sm",
-              pestana === p.key
-                ? "border-primary font-medium text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            )}
-          >
-            {p.label}
-            {cantidades ? <span className="ml-1.5 text-xs text-muted-foreground">{cantidades[p.key]}</span> : null}
-          </button>
-        ))}
-      </nav>
-
       {/*
         2026-10-26 — La tabla usa TODO el alto que queda. Antes tenía un tope
         alto máximo calculado a ojo sobre la ventana y sobraba pantalla. Desde
@@ -304,12 +296,83 @@ export function ContactsClient({
         entera, como siempre.
       */}
       <div className="min-h-0 flex-1 overflow-y-auto p-6 md:flex md:flex-col md:overflow-hidden">
+        {/*
+          2026-10-29 — Buscar, tipo (Todos / Leads / Alumnos activos /
+          Exalumnos, con las cantidades del servidor) y archivados en UNA
+          tarjeta, como en Académico. El tipo sigue en `?tab=`.
+        */}
+        {!sinContactos && (
+          <TarjetaDeFiltros
+            className="mb-4 shrink-0"
+            pie={
+              <ResumenDeFiltros
+                mostrando={mostrando}
+                total={total}
+                sustantivo={{ uno: "contacto", varios: "contactos" }}
+                activos={filtrosActivos}
+                onLimpiar={limpiarFiltros}
+              />
+            }
+          >
+            <Buscador
+              value={query}
+              onChange={setQuery}
+              placeholder="Buscar por nombre, apellido, correo o teléfono…"
+            />
+            <Segmentado<Pestana>
+              etiqueta="Tipo de contacto"
+              opciones={PESTANAS.map((p) => ({
+                clave: p.key,
+                etiqueta: p.label,
+                cantidad: cantidades?.[p.key] ?? null,
+              }))}
+              encendida={(clave) => clave === pestana}
+              onElegir={setPestana}
+            />
+            <Desplegable
+              etiqueta="Archivados"
+              valor={showArchived ? "Incluidos" : "Ocultos"}
+              activo={showArchived}
+              alinear="derecha"
+            >
+              {(cerrar) => (
+                <>
+                  <OpcionUnica
+                    elegida={!showArchived}
+                    onElegir={() => {
+                      setShowArchived(false);
+                      cerrar();
+                    }}
+                  >
+                    Ocultar archivados
+                  </OpcionUnica>
+                  <OpcionUnica
+                    elegida={showArchived}
+                    onElegir={() => {
+                      setShowArchived(true);
+                      cerrar();
+                    }}
+                  >
+                    Incluir archivados
+                  </OpcionUnica>
+                </>
+              )}
+            </Desplegable>
+          </TarjetaDeFiltros>
+        )}
+
         {loading ? (
           <div className="space-y-2">
             {Array.from({ length: 6 }).map((_, i) => (
               <Skeleton key={i} className="h-12 w-full" />
             ))}
           </div>
+        ) : contacts.length === 0 && hayFiltros ? (
+          // Vacía POR los filtros: no es "no hay contactos".
+          <SinCoincidencias
+            mensaje="Ningún contacto coincide con la búsqueda y los filtros."
+            onLimpiar={limpiarFiltros}
+          />
         ) : contacts.length === 0 ? (
           <div className="flex h-full flex-1 flex-col items-center justify-center gap-2 text-center">
             <p className="text-sm font-medium">Sin alumnos</p>
@@ -320,13 +383,13 @@ export function ContactsClient({
           </div>
         ) : (
           <>
-            <Table containerClassName="rounded-lg border md:min-h-0 md:flex-1">
+            <Table containerClassName="rounded-lg border bg-card md:min-h-0 md:flex-1">
               {/*
                 021 — Encabezado FIJO. Con 340 filas paginadas de a decenas,
                 bajar media pantalla y quedarse sin saber qué columna es cuál
                 es un defecto de uso, no un detalle estético.
               */}
-              <TableHeader className="sticky top-0 z-10 bg-card">
+              <TableHeader className="sticky top-0 z-10 bg-subtle">
                 <TableRow>
                   <TableHead className="w-8">
                     <input
@@ -350,7 +413,7 @@ export function ContactsClient({
                   // Los mismos que cuenta el número de "Alumnos" en el menú.
                   const nuevo = esLlegadaReciente(c);
                   return (
-                  <TableRow key={c.id} className={cn(nuevo && "bg-brand-tint")}>
+                  <TableRow key={c.id} className={cn("hover:bg-subtle", nuevo && "bg-brand-tint")}>
                     <TableCell>
                       <input
                         type="checkbox"
@@ -373,7 +436,7 @@ export function ContactsClient({
                               href={`/contacts/${c.id}/legajo`}
                               className="truncate text-sm font-medium hover:underline"
                             >
-                              {fullName(c)}
+                              <Resaltado texto={fullName(c)} busqueda={busqueda} />
                             </Link>
                             {nuevo && (
                               <Badge variant="default" title="Llegó por un formulario en las últimas 48 horas">
@@ -395,11 +458,15 @@ export function ContactsClient({
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {formatPhone(c.phone)}
+                    <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                      {c.phone ? (
+                        <Resaltado texto={formatPhone(c.phone)} busqueda={busquedaDeTelefono} />
+                      ) : (
+                        formatPhone(c.phone)
+                      )}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {c.email ?? "—"}
+                      {c.email ? <Resaltado texto={c.email} busqueda={busqueda} /> : "—"}
                     </TableCell>
                     <TableCell>
                       <SourceBadge source={c.source} />

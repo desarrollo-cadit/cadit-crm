@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Award, Ban, BookCopy, ClipboardList, Copy, FileText, Plus } from "lucide-react";
 import { IssueAllCertificates } from "@/components/cohorts/issue-all-certificates";
+import { FinalResultsPanel } from "@/components/grading/final-results-panel";
 import { ConsignaEditor } from "@/components/grading/consigna-editor";
 import { CorrectionPanel } from "@/components/grading/correction-panel";
 import type { ConsignaInput } from "@/lib/assessment-consigna";
@@ -51,8 +52,11 @@ type Student = {
   /** 031 (DV-004) — La nota de las evaluaciones numéricas. Informativa. */
   scores?: Record<string, number | null>;
   attendancePct: number | null;
+  /** 0086 — La SUGERENCIA del sistema: el hecho es `finalResult`. */
   state: State;
   reasons: string[];
+  /** 0086 — El resultado final confirmado; `null` = sin confirmar. */
+  finalResult?: { result: "aprobado" | "reprobado" } | null;
   certificate: {
     code: string;
     issuedAt: string;
@@ -60,7 +64,10 @@ type Student = {
     /** 024 — Por qué se anuló y de quién fue la decisión. */
     revokeReason: string | null;
     revokedByName: string | null;
+    /** 0086 — Emitido, pero sin resultado final confirmado como aprobado. */
     suspended?: boolean;
+    /** 2026-10-29 — su grupo terminó sin la asistencia completa: cuenta como anulado. */
+    annulledIncompleteGroup?: boolean;
   } | null;
 };
 
@@ -77,9 +84,10 @@ type Sheet = {
 /** 014 — Lo mínimo del listado de cohortes para poder elegir el origen. */
 type CohortOption = { id: string; name: string; courseId: string; courseName: string };
 
+/** 0086 — Es la SUGERENCIA (notas + asistencia), y se rotula como tal. */
 const STATE_BADGE: Record<State, { label: string; variant: "success" | "destructive" | "warning" }> = {
-  aprobado: { label: "Aprobado", variant: "success" },
-  reprobado: { label: "Reprobado", variant: "destructive" },
+  aprobado: { label: "Sugiere aprobado", variant: "success" },
+  reprobado: { label: "Sugiere reprobado", variant: "destructive" },
   pendiente: { label: "Pendiente", variant: "warning" },
 };
 
@@ -99,6 +107,7 @@ export function GradingClient({
   canEdit,
   canIssueCertificates,
   sinEvaluaciones = false,
+  canConfirmResults = false,
 }: {
   cohortId: string;
   /**
@@ -119,6 +128,11 @@ export function GradingClient({
    * `requireCapability` y esto sólo decide qué se dibuja.
    */
   canIssueCertificates: boolean;
+  /**
+   * 0086 — `correcciones.aprobar`: confirmar o corregir el resultado final
+   * (Coordinación a veces cierra el grupo). Sin ella, la lista se ve.
+   */
+  canConfirmResults?: boolean;
 }) {
   const [sheet, setSheet] = useState<Sheet | null>(null);
   const [loading, setLoading] = useState(true);
@@ -362,6 +376,15 @@ export function GradingClient({
 
   return (
     <div className="space-y-3 p-6">
+      {/* 0086 — El resultado final de cada alumno: lo confirma una persona, nunca el cálculo. */}
+      {sheet.students.length > 0 && !sinEvaluaciones && (
+        <FinalResultsPanel
+          endpoint={`/api/cohorts/${cohortId}/final-results`}
+          canConfirm={canConfirmResults}
+          audiencia="staff"
+          onCambio={() => void refetch()}
+        />
+      )}
       {/* 038 (FR-009) — la cohorte entera en una sola acción, con su resultado. */}
       {canIssueCertificates && sheet.students.length > 0 && (
         <IssueAllCertificates cohortId={cohortId} onDone={() => void refetch()} />
@@ -507,7 +530,8 @@ export function GradingClient({
                   </TableHead>
                 ))}
                 <TableHead className="text-right">Asist.</TableHead>
-                <TableHead>Estado</TableHead>
+                <TableHead>Sugerencia</TableHead>
+                <TableHead>Resultado final</TableHead>
                 <TableHead>Certificado</TableHead>
               </TableRow>
             </TableHeader>
@@ -583,13 +607,29 @@ export function GradingClient({
                     )}
                   </TableCell>
                   <TableCell className="text-xs">
+                    {st.finalResult ? (
+                      <Badge variant={st.finalResult.result === "aprobado" ? "success" : "destructive"}>
+                        {st.finalResult.result === "aprobado" ? "Aprobado" : "Reprobado"}
+                      </Badge>
+                    ) : (
+                      <span className="text-muted-foreground">Sin confirmar</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-xs">
                     {st.certificate ? (
                       <div className="space-y-1">
-                        {/* 038 (FR-007/FR-015) — el PDF del diseño; el anulado no se descarga. */}
+                        {/* 038 (FR-007/FR-015) — el PDF del diseño; el anulado no se descarga.
+                            0086 — el suspendido tampoco: falta confirmar el resultado. */}
                         {st.certificate.revokedAt ? (
                           <span title={st.certificate.code}>anulado</span>
+                        ) : st.certificate.annulledIncompleteGroup ? (
+                          <span className="text-danger" title={st.certificate.code}>
+                            anulado (grupo sin asistencia completa)
+                          </span>
                         ) : st.certificate.suspended ? (
-                          <span title={st.certificate.code}>suspendido (el grupo no emite)</span>
+                          <span className="text-warning" title={st.certificate.code}>
+                            suspendido · falta confirmar el resultado
+                          </span>
                         ) : (
                           <a
                             href={`/api/enrollments/${st.enrollmentId}/certificate/print`}
@@ -628,7 +668,7 @@ export function GradingClient({
                           </Button>
                         ) : null}
                       </div>
-                    ) : st.state === "aprobado" && canIssueCertificates ? (
+                    ) : st.finalResult?.result === "aprobado" && canIssueCertificates ? (
                       <Button
                         variant="outline"
                         size="sm"
@@ -699,7 +739,8 @@ export function GradingClient({
 
       <p className="text-xs text-muted-foreground">
         Una evaluación sin corregir deja al alumno <strong>pendiente</strong>, nunca
-        reprobado. El certificado se emite solo a los aprobados.
+        reprobado. La columna Sugerencia es un cálculo: el certificado se emite solo
+        con el resultado final <strong>confirmado</strong> como aprobado.
       </p>
     </div>
   );

@@ -332,13 +332,17 @@ describe("armarConstancia — por comenzar y sin registro", () => {
     expect(b.tabla[0]!.resultado).toBe("Por comenzar");
   });
 
-  it("dictadas sin lista tomada: sin asistencia registrada, nunca 0%", () => {
+  /**
+   * 2026-10-29 — Además, un grupo TERMINADO sin la lista completa no tiene
+   * resultado: "Sin datos", nunca "Resultado pendiente".
+   */
+  it("dictadas sin lista tomada: sin asistencia registrada, nunca 0%, y sin resultado", () => {
     const c = armarConstancia(
       entrada({
         grupos: [grupo({ clases: clases.map((x) => ({ ...x, tomada: false })), alumnos: [alumno(["B", "B"], {})] })],
       })
     );
-    expect(c.bloques[0]!.alumnos[0]).toBe("B, B: sin asistencia registrada. Resultado pendiente.");
+    expect(c.bloques[0]!.alumnos[0]).toBe("B, B: sin asistencia registrada. Sin datos.");
     expect(c.bloques[0]!.tabla[0]).toMatchObject({ asistencia: "—", porcentaje: "—", faltas: "—" });
   });
 });

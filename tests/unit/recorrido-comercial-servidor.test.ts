@@ -36,20 +36,71 @@ function inscripcion(id: string, p: { parent?: string | null; cohortId?: string;
   };
 }
 
+/** 2026-10-29 — Una clase con lista por grupo: sin ella el grupo terminó INCOMPLETO y no tiene resultado. */
+const conLista = (cohortId: string) => ({
+  id: `s_${cohortId}`,
+  cohortId,
+  date: new Date("2025-03-05T00:00:00Z"),
+  endTime: "21:00",
+  canceledAt: null,
+  tomada: true,
+});
+
 const vacias = {
-  clases: [],
+  clases: [conLista("coh_e1"), conLista("coh_e2")],
   asistencias: [],
   evaluaciones: [],
   resultados: [],
   certificados: [],
+  resultadosFinales: [],
   noDictadas: new Set<string>(),
   reloj,
 };
 
 describe("armarCursadasComerciales", () => {
+  it("aprobado SOLO con el resultado final confirmado (0086): la sugerencia no alcanza", () => {
+    const piezas = {
+      ...vacias,
+      inscripciones: [inscripcion("e1")],
+      evaluaciones: [{ id: "a1", cohortId: "coh_e1", name: "Final", required: true }],
+      resultados: [{ enrollmentId: "e1", assessmentId: "a1", passed: true }],
+    };
+    expect(armarCursadasComerciales(piezas)[0]?.aprobacion).toBe("pendiente");
+    expect(
+      armarCursadasComerciales({ ...piezas, resultadosFinales: [{ enrollmentId: "e1", result: "reprobado" }] })[0]
+        ?.aprobacion
+    ).toBe("reprobado");
+  });
+
+  it("un certificado SUSPENDIDO (sin resultado confirmado) no es vigente; el confirmado aprobado sí", () => {
+    const filas = armarCursadasComerciales({
+      ...vacias,
+      inscripciones: [inscripcion("e1"), inscripcion("e2")],
+      certificados: [
+        { enrollmentId: "e1", revokedAt: null },
+        { enrollmentId: "e2", revokedAt: null },
+      ],
+      resultadosFinales: [{ enrollmentId: "e2", result: "aprobado" }],
+    });
+    expect(filas.map((f) => f.certificadoVigente)).toEqual([false, true]);
+  });
+
+  it("2026-10-29 — grupo terminado sin la asistencia completa: sin resultado y su certificado no vale", () => {
+    const [c] = armarCursadasComerciales({
+      ...vacias,
+      clases: [{ ...conLista("coh_e1"), tomada: false }],
+      inscripciones: [inscripcion("e1")],
+      certificados: [{ enrollmentId: "e1", revokedAt: null }],
+      resultadosFinales: [{ enrollmentId: "e1", result: "aprobado" }],
+    });
+    expect(c?.aprobacion).toBe("sin_datos");
+    expect(c?.certificadoVigente).toBe(false);
+  });
+
   it("calcula la aprobación de cada cursada con la regla del legajo", () => {
     const [c] = armarCursadasComerciales({
       ...vacias,
+      resultadosFinales: [{ enrollmentId: "e1", result: "aprobado" }],
       inscripciones: [inscripcion("e1")],
       clases: [
         { id: "s1", cohortId: "coh_e1", date: new Date("2025-03-02T00:00:00Z"), endTime: "21:00", canceledAt: null, tomada: true },
@@ -106,6 +157,10 @@ describe("armarCursadasComerciales", () => {
       certificados: [
         { enrollmentId: "e1", revokedAt: new Date("2025-06-01") },
         { enrollmentId: "e2", revokedAt: null },
+      ],
+      resultadosFinales: [
+        { enrollmentId: "e1", result: "aprobado" },
+        { enrollmentId: "e2", result: "aprobado" },
       ],
     });
     expect(filas.map((f) => f.certificadoVigente)).toEqual([false, true]);

@@ -108,11 +108,12 @@ export type PestanaMarketing = (typeof PESTANAS_MARKETING)[number];
 /* ---------------------------------------------------------------- portal */
 
 /** `/portal/cohortes/[id]` — el grupo como lo ve el profesor. */
-export const PESTANAS_PORTAL_GRUPO = ["clases", "evaluaciones", "entregas", "material"] as const;
-/** 2026-10-29 — Las pestañas del profesor de un grupo; sin evaluaciones no hay Evaluaciones ni Entregas. */
+/** 0086 — `cierre`: el resultado final de cada alumno, que confirma el profesor. */
+export const PESTANAS_PORTAL_GRUPO = ["clases", "evaluaciones", "entregas", "cierre", "material"] as const;
+/** 2026-10-29 — Las pestañas del profesor de un grupo; sin evaluaciones no hay Evaluaciones, Entregas ni Cierre. */
 export function pestanasPortalGrupo(opts: { tieneEvaluaciones: boolean }): PestanaPortalGrupo[] {
   return PESTANAS_PORTAL_GRUPO.filter(
-    (p) => opts.tieneEvaluaciones || (p !== "evaluaciones" && p !== "entregas")
+    (p) => opts.tieneEvaluaciones || (p !== "evaluaciones" && p !== "entregas" && p !== "cierre")
   );
 }
 export type PestanaPortalGrupo = (typeof PESTANAS_PORTAL_GRUPO)[number];

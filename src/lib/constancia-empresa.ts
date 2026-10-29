@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { grupoCompleto } from "@/lib/resultado-final";
 import {
   attendancePercentage,
   claseCuentaParaElAlumno,
@@ -456,6 +457,7 @@ function bloque(g: GrupoDeConstancia, e: EntradaDeConstancia): BloqueDeConstanci
           estadoDelGrupo: estado,
           resultadoConfirmado: a.resultadoConfirmado,
           tieneEvaluaciones: g.tieneEvaluaciones,
+          grupoCompleto: grupoCompleto(g.clases, reloj),
         })
       ];
     const asis = asistenciaDeAlumno(g, a, reloj);

@@ -11,6 +11,8 @@ import {
   resolveMinAttendance,
 } from "@/server/attendance";
 import { listProgramClasses } from "@/server/classes";
+import { afirmadoConSugerencia } from "@/lib/resultado-final";
+import { resultadoConfirmadoPorInscripcion } from "@/server/resultados-confirmados";
 import { ACADEMY_TIME_ZONE, classEndsAt } from "@/lib/schedule-time";
 import {
   dispensaDeInscripcion,
@@ -432,6 +434,8 @@ async function grillaDeAlumnos(
   const inscripcionIds = hijas.map((h) => h.id);
 
   const reloj = await relojDeAsistencia(organizationId);
+  // 0086 — El resultado final CONFIRMADO de cada módulo: lo único que se afirma.
+  const confirmados = await resultadoConfirmadoPorInscripcion(organizationId, inscripcionIds);
   const [sesiones, marcas, evaluaciones, resultados] = await Promise.all([
     cohorteIds.length
       ? db
@@ -561,7 +565,11 @@ async function grillaDeAlumnos(
       );
 
       const dispensa = dispensaDeInscripcion(h);
-      const { state, reasons } = estadoDeModulo(evaluadas, pct, minPct, dispensa);
+      // 0086 — El cálculo es una SUGERENCIA; el estado es el confirmado.
+      const { state, reasons } = afirmadoConSugerencia(
+        confirmados.get(h.id) ?? null,
+        estadoDeModulo(evaluadas, pct, minPct, dispensa)
+      );
       const cohortName = h.cohortName ?? h.courseName ?? "Módulo sin nombre";
       const enElPrograma =
         (h.cohortId ? ordinalDelPrograma.get(`cohorte:${h.cohortId}`) : undefined) ??

@@ -38,14 +38,20 @@ export function resultadoDeCursada(input: {
    * tiene resultado que informar.
    */
   tieneEvaluaciones?: boolean;
+  /**
+   * 0086 (decisión del dueño 2026-10-29) — `grupoCompleto` de
+   * `src/lib/resultado-final.ts`: toda clase dictada con la lista tomada. Un
+   * grupo terminado e incompleto no tiene resultado: "Sin datos".
+   */
+  grupoCompleto: boolean;
 }): ResultadoDeCursada {
   if (input.estadoDelGrupo === null) return "sin_datos";
   if (input.estadoDelGrupo === "planificada") return "por_comenzar";
   // Mientras el grupo no terminó no hay resultado, aunque alguien lo haya cargado.
   if (input.estadoDelGrupo === "en_curso") return "en_curso";
-  return (
-    input.resultadoConfirmado ?? (input.tieneEvaluaciones === false ? "sin_evaluacion" : "pendiente")
-  );
+  if (!input.grupoCompleto) return "sin_datos";
+  if (input.resultadoConfirmado) return input.resultadoConfirmado;
+  return input.tieneEvaluaciones === false ? "sin_evaluacion" : "pendiente";
 }
 
 export const ETIQUETA_DE_RESULTADO: Record<ResultadoDeCursada, string> = {

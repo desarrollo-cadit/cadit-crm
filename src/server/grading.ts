@@ -1,5 +1,4 @@
 import { randomBytes } from "node:crypto";
-import { grupoEmiteCertificado } from "@/lib/taller-config";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
@@ -45,6 +44,13 @@ import {
   lugaresDelPrograma,
   modulosConOrdinal,
 } from "@/server/program-modules";
+import { conteoDeAsistencia } from "@/lib/attendance-percentage";
+import { grupoCompleto, grupoSinResultado, visibilidadSegun } from "@/lib/resultado-final";
+import {
+  estadosAfirmados,
+  resultadosConfirmados,
+  type ResultadoConfirmadoDto,
+} from "@/server/resultados-confirmados";
 
 /**
  * 010 — Evaluación y certificados.
@@ -90,12 +96,21 @@ export type StudentGrading = {
    */
   scores: Record<string, number | null>;
   attendancePct: number | null;
+  /** 0086 — "X de Y clases": las mismas que cuentan para el porcentaje. */
+  attendance: { presentes: number; cuentan: number };
+  /**
+   * 0086 — La SUGERENCIA del sistema (notas + asistencia), nunca un hecho:
+   * lo que se afirma sobre el alumno es `finalResult`, que confirma una
+   * persona cuando el grupo terminó (decisión del dueño 2026-10-23).
+   */
   state: ApprovalState;
   /**
    * Qué falló, para poder decírselo al alumno sin que nadie tenga que
    * reconstruirlo mirando dos pantallas (FR-004).
    */
   reasons: string[];
+  /** 0086 — El resultado final CONFIRMADO; `null` = sin confirmar. */
+  finalResult: ResultadoConfirmadoDto | null;
   /**
    * 024 (SC-004) — El certificado, y si está anulado, POR QUÉ y de quién fue
    * la decisión.
@@ -116,8 +131,15 @@ export type StudentGrading = {
     revokedAt: string | null;
     revokeReason: string | null;
     revokedByName: string | null;
-    /** 2026-10-29 — El grupo ya no emite: existe, pero está suspendido (sin PDF). */
-    suspended?: boolean;
+    /** 010 (DV-004) — emisión histórica: no se suspende. */
+    historical: boolean;
+    /**
+     * 0086 — Emitido pero sin resultado final confirmado como aprobado: el
+     * alumno no lo ve y la verificación pública no lo valida.
+     */
+    suspended: boolean;
+    /** 2026-10-29 — su grupo terminó sin la asistencia completa: cuenta como anulado. */
+    annulledIncompleteGroup: boolean;
   } | null;
 };
 
@@ -1166,6 +1188,14 @@ export type CohortGradingDto = {
    * la academia), o `null`. Las evaluaciones sin plazo propio la heredan.
    */
   entregaFinalAt?: string | null;
+  /**
+   * 2026-10-29 — `grupoCompleto` (`src/lib/resultado-final.ts`): toda clase
+   * dictada tiene la asistencia tomada. Solo un grupo completo entra al
+   * circuito del resultado final.
+   */
+  grupoCompleto: boolean;
+  /** Terminó sin estar completo: no tiene resultado ni se emiten certificados. */
+  grupoSinResultado: boolean;
   students: StudentGrading[];
 };
 
@@ -1182,11 +1212,10 @@ export async function cohortGrading(
       minAttendancePct: schema.cohort.minAttendancePct,
       courseMinPct: schema.course.minAttendancePct,
       deliveryDeadline: schema.cohort.deliveryDeadline,
+      startDate: schema.cohort.startDate,
+      endDate: schema.cohort.endDate,
       // 016 (FR-005e) — En la MISMA consulta: la zona no paga un viaje aparte.
       timezone: schema.organization.timezone,
-      courseKind: schema.course.kind,
-      registrationStatus: schema.cohort.registrationStatus,
-      issuesCertificate: schema.cohort.issuesCertificate,
     })
     .from(schema.cohort)
     .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
@@ -1200,7 +1229,6 @@ export async function cohortGrading(
   if (!cohort) return null;
 
   const minPct = resolveMinAttendance(cohort.minAttendancePct, cohort.courseMinPct);
-  const emiteCertificadoElGrupo = grupoEmiteCertificado(cohort);
   const assessments = await listAssessments(organizationId, cohortId);
 
   const enrollments = await db
@@ -1315,36 +1343,54 @@ export async function cohortGrading(
   }
 
   const certByEnrollment = new Map(certs.map((c) => [c.certificate.enrollmentId, c]));
+  // 0086 — Lo CONFIRMADO, y lo afirmado (la madre, desde sus módulos), en lote.
+  const enrollmentIds = enrollments.map((e) => e.id);
+  const [confirmados, afirmados] = await Promise.all([
+    resultadosConfirmados(organizationId, enrollmentIds),
+    estadosAfirmados(organizationId, enrollmentIds),
+  ]);
   const obligatorias = assessments.filter((a) => a.required);
   // Solo cuentan las clases ya dictadas (la misma regla que la planilla de asistencia).
   const relojDeLaPlanilla = { timeZone: cohort.timezone, now: new Date() };
+  // 2026-10-29 — La MISMA noción de "tomada" que el porcentaje: alguien pasó lista.
+  const clasesDelGrupo = sessions.map((s) => ({
+    date: s.date,
+    endTime: s.endTime,
+    canceledAt: s.canceledAt,
+    tomada: clasesConLista.has(s.id),
+  }));
+  const completo = grupoCompleto(clasesDelGrupo, relojDeLaPlanilla);
+  const sinResultado = grupoSinResultado(
+    { startDate: cohort.startDate ?? null, endDate: cohort.endDate ?? null },
+    clasesDelGrupo,
+    relojDeLaPlanilla
+  );
 
   return {
     assessments,
     minAttendancePct: minPct,
     timezone: cohort.timezone,
+    grupoCompleto: completo,
+    grupoSinResultado: sinResultado,
     entregaFinalAt:
       instanteDeEntregaFinal(cohort.deliveryDeadline ?? null, cohort.timezone)?.toISOString() ?? null,
     students: enrollments.map((e) => {
       const mine = resultsByEnrollment.get(e.id) ?? new Map<string, boolean | null>();
       const asistencia = attendanceByEnrollment.get(e.id) ?? new Map<string, string>();
 
-      const pct = attendancePercentage(
-        sessions.map((s) => ({
-          sessionDate: s.date,
-          endTime: s.endTime,
-          canceled: Boolean(s.canceledAt),
-          tomada: clasesConLista.has(s.id),
-          status: (asistencia.get(s.id) ?? null) as
-            | "presente"
-            | "tarde"
-            | "ausente"
-            | "justificado"
-            | null,
-        })),
-        e.enrolledAt,
-        relojDeLaPlanilla
-      );
+      const clases = sessions.map((s) => ({
+        sessionDate: s.date,
+        endTime: s.endTime,
+        canceled: Boolean(s.canceledAt),
+        tomada: clasesConLista.has(s.id),
+        status: (asistencia.get(s.id) ?? null) as
+          | "presente"
+          | "tarde"
+          | "ausente"
+          | "justificado"
+          | null,
+      }));
+      const pct = attendancePercentage(clases, e.enrolledAt, relojDeLaPlanilla);
 
       // Solo las obligatorias definen la aprobación; una evaluación sin
       // resultado cargado cuenta como pendiente, no como reprobada.
@@ -1365,8 +1411,11 @@ export async function cohortGrading(
         results: Object.fromEntries(mine),
         scores: Object.fromEntries(scoresByEnrollment.get(e.id) ?? new Map<string, number | null>()),
         attendancePct: pct,
+        attendance: conteoDeAsistencia(clases, e.enrolledAt, relojDeLaPlanilla),
         state,
         reasons,
+        // 2026-10-29 — Un grupo terminado incompleto no tiene resultado.
+        finalResult: sinResultado ? null : (confirmados.get(e.id) ?? null),
         certificate: cert
           ? {
               code: cert.certificate.code,
@@ -1374,7 +1423,10 @@ export async function cohortGrading(
               revokedAt: cert.certificate.revokedAt?.toISOString() ?? null,
               revokeReason: cert.certificate.revokeReason,
               revokedByName: cert.revokedByName,
-              suspended: !emiteCertificadoElGrupo,
+              historical: cert.certificate.historical,
+              suspended: visibilidadSegun(cert.certificate.revokedAt, afirmados.get(e.id)) === "suspendido",
+              annulledIncompleteGroup:
+                visibilidadSegun(cert.certificate.revokedAt, afirmados.get(e.id)) === "anulado_sin_asistencia",
             }
           : null,
       };

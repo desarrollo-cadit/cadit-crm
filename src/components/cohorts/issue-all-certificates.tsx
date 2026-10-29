@@ -22,7 +22,7 @@ type Resultado = {
   enrollmentId: string;
   alumno: string;
   certificado: string;
-  estado: "emitido" | "ya_emitido" | "no_aprobado" | "no_terminado" | "no_emitido";
+  estado: "emitido" | "ya_emitido" | "no_aprobado" | "sin_confirmar" | "grupo_incompleto" | "no_terminado" | "no_emitido";
   motivo: string | null;
 };
 
@@ -30,6 +30,8 @@ const GRUPOS: { estado: Resultado["estado"]; titulo: string; variant: "success" 
   { estado: "emitido", titulo: "Emitidos ahora", variant: "success" },
   { estado: "ya_emitido", titulo: "Ya lo tenían", variant: "secondary" },
   { estado: "no_terminado", titulo: "La cursada no terminó", variant: "outline" },
+  { estado: "sin_confirmar", titulo: "Resultado final sin confirmar", variant: "outline" },
+  { estado: "grupo_incompleto", titulo: "Grupo sin asistencia completa", variant: "outline" },
   { estado: "no_aprobado", titulo: "No aprobados", variant: "destructive" },
   { estado: "no_emitido", titulo: "No se emitió", variant: "outline" },
 ];

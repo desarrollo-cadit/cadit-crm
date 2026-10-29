@@ -14,6 +14,11 @@ import {
   type GradingResult,
 } from "@/server/grading";
 import { dispensaVigente, listarHijasDeVarias, tieneHijas } from "@/server/program-modules";
+import { programaConfirmado, visibilidadSegun } from "@/lib/resultado-final";
+import {
+  estadosAfirmados,
+  resultadoConfirmadoPorInscripcion,
+} from "@/server/resultados-confirmados";
 
 /**
  * 010 — Emisión y verificación de certificados.
@@ -252,14 +257,36 @@ async function emitirCertificado(
       if (!programa) {
         return { ok: false, status: 404, code: "not_found", message: "Alumno no encontrado" };
       }
-      if (programa.state !== "aprobado") {
+      // 2026-10-29 — Algún módulo terminó sin la asistencia completa: no hay general.
+      const afirmadoMadre = (await estadosAfirmados(organizationId, [enrollmentId])).get(enrollmentId);
+      if (afirmadoMadre?.sinResultado) return grupoIncompleto();
+      /**
+       * 0086 — El general sale de los resultados CONFIRMADOS de los módulos
+       * (`programaConfirmado`), nunca del cálculo: la planilla del programa
+       * es una sugerencia.
+       */
+      const confirmados = await resultadoConfirmadoPorInscripcion(
+        organizationId,
+        programa.modules.map((m) => m.enrollmentId)
+      );
+      const compuesto = programaConfirmado(
+        programa.modules.map((m) => confirmados.get(m.enrollmentId) ?? null)
+      );
+      if (compuesto.state !== "aprobado") {
+        // SC-010 — las razones nombran el módulo que las causó.
+        const culpables = programa.modules.flatMap((m) => {
+          const c = confirmados.get(m.enrollmentId) ?? null;
+          if (compuesto.state === "reprobado") return c === "reprobado" ? [`${m.label}: reprobado`] : [];
+          return c === null ? [`${m.label}: sin confirmar`] : [];
+        });
+        const razones = [...compuesto.reasons, ...culpables];
         return {
           ok: false,
           status: 422,
-          code: "not_approved",
+          code: compuesto.state === "reprobado" ? "not_approved" : "resultado_sin_confirmar",
           message:
-            programa.reasons.length > 0
-              ? `No se puede emitir: ${programa.reasons.join("; ")}`
+            razones.length > 0
+              ? `No se puede emitir: ${razones.join("; ")}`
               : "No se puede emitir: faltan módulos por aprobar",
         };
       }
@@ -286,15 +313,29 @@ async function emitirCertificado(
       if (!student) {
         return { ok: false, status: 404, code: "not_found", message: "Alumno no encontrado" };
       }
-      if (student.state !== "aprobado") {
+      // 2026-10-29 — Grupo terminado sin la asistencia completa: no hay resultado ni certificado.
+      if (grading && grading.grupoSinResultado) return grupoIncompleto();
+      /**
+       * 0086 — Se emite SOLO con el resultado final CONFIRMADO como aprobado
+       * (decisión del dueño 2026-10-23). La sugerencia de la planilla
+       * (`student.state`) no alcanza: la aprobación nunca es automática.
+       */
+      const confirmado = student.finalResult?.result ?? null;
+      if (confirmado === null) {
+        return {
+          ok: false,
+          status: 422,
+          code: "resultado_sin_confirmar",
+          message:
+            "Todavía no se puede emitir: falta confirmar el resultado final del alumno.",
+        };
+      }
+      if (confirmado !== "aprobado") {
         return {
           ok: false,
           status: 422,
           code: "not_approved",
-          message:
-            student.reasons.length > 0
-              ? `No se puede emitir: ${student.reasons.join("; ")}`
-              : "Todavía no se puede emitir: el alumno no figura como aprobado.",
+          message: "No se puede emitir: el resultado final confirmado es reprobado.",
         };
       }
       /**
@@ -335,6 +376,17 @@ async function emitirCertificado(
   };
 }
 
+/** 2026-10-29 — El 422 de un grupo terminado sin la asistencia completa. */
+function grupoIncompleto(): { ok: false; status: 422; code: string; message: string } {
+  return {
+    ok: false,
+    status: 422,
+    code: "grupo_incompleto",
+    message:
+      "No se puede emitir: el grupo terminó sin la asistencia completa. Primero hay que pasar lista en todas las clases dictadas y confirmar el resultado final.",
+  };
+}
+
 /** 038 (FR-008) — El 422 que dice CUÁNDO se va a poder emitir. */
 function noTermino(fin: Date | null): { ok: false; status: 422; code: string; message: string } {
   return {
@@ -356,7 +408,14 @@ export type ResultadoDeEmision = {
   alumno: string;
   /** Qué certificado: el curso, el módulo o "Certificado general". */
   certificado: string;
-  estado: "emitido" | "ya_emitido" | "no_aprobado" | "no_terminado" | "no_emitido";
+  estado:
+    | "emitido"
+    | "ya_emitido"
+    | "no_aprobado"
+    | "sin_confirmar"
+    | "grupo_incompleto"
+    | "no_terminado"
+    | "no_emitido";
   /** Por qué no, en palabras de la emisión de a uno. `null` si salió. */
   motivo: string | null;
 };
@@ -366,6 +425,9 @@ function estadoDe(
 ): Pick<ResultadoDeEmision, "estado" | "motivo"> {
   if (r.ok) return { estado: r.data.created ? "emitido" : "ya_emitido", motivo: null };
   if (r.code === "not_approved") return { estado: "no_aprobado", motivo: r.message };
+  // 0086 — Sin resultado final confirmado: se saltea y se informa.
+  if (r.code === "resultado_sin_confirmar") return { estado: "sin_confirmar", motivo: r.message };
+  if (r.code === "grupo_incompleto") return { estado: "grupo_incompleto", motivo: r.message };
   if (r.code === "cursada_no_terminada") return { estado: "no_terminado", motivo: r.message };
   return { estado: "no_emitido", motivo: r.message };
 }
@@ -560,16 +622,30 @@ export async function revokeEnrollmentCertificate(
   return revokeCertificate(organizationId, certificateId, input);
 }
 
-export type PublicCertificate = {
-  code: string;
-  student: string;
-  course: string;
-  cohort: string | null;
-  issuedAt: string;
-  hours: string | null;
-  valid: boolean;
-  revokedAt: string | null;
-};
+export type PublicCertificate =
+  | {
+      code: string;
+      status: "valido" | "anulado";
+      student: string;
+      course: string;
+      cohort: string | null;
+      issuedAt: string;
+      hours: string | null;
+      valid: boolean;
+      revokedAt: string | null;
+    }
+  | {
+      /**
+       * 0086 — SUSPENDIDO: emitido, pero el resultado final todavía no está
+       * confirmado como aprobado. No se valida y no viaja NINGÚN dato de la
+       * persona ni del curso: solo que no está disponible por ahora.
+       */
+      code: string;
+      /** `no_valido` (2026-10-29): grupo terminado sin asistencia completa; cuenta como anulado. */
+      status: "suspendido";
+      valid: false;
+    }
+  | { code: string; status: "no_valido"; valid: false };
 
 /**
  * 010 (FR-009) — Verificación pública por código.
@@ -608,6 +684,29 @@ export async function verifyCertificate(code: string): Promise<PublicCertificate
   const row = rows[0];
   if (!row) return null;
 
+  /**
+   * 0086 — Un certificado sin resultado final confirmado como aprobado está
+   * SUSPENDIDO: no se valida y no se dice de quién es ni de qué curso.
+   */
+  const visibilidad = visibilidadSegun(
+    row.certificate.revokedAt,
+    row.certificate.revokedAt
+      ? undefined
+      : (await estadosAfirmados(row.certificate.organizationId, [row.certificate.enrollmentId])).get(
+          row.certificate.enrollmentId
+        )
+  );
+  if (visibilidad === "suspendido") {
+    return { code: row.certificate.code, status: "suspendido", valid: false };
+  }
+  /**
+   * 2026-10-29 — Grupo terminado sin la asistencia completa: el certificado
+   * NO es válido (se trata como anulado al leer) y no se dice de quién es.
+   */
+  if (visibilidad === "anulado_sin_asistencia") {
+    return { code: row.certificate.code, status: "no_valido", valid: false };
+  }
+
   // DV-005 — las horas del CURSO (lo que figura en la web y lo que el alumno
   // compró), no las efectivamente dictadas. Desde 0075 es la duración total
   // guardada en el curso ("37,5 horas"), no semanas × horas por semana.
@@ -616,13 +715,13 @@ export async function verifyCertificate(code: string): Promise<PublicCertificate
 
   return {
     code: row.certificate.code,
+    status: visibilidad,
     student: fullName(row.contact),
     course: row.courseName,
     cohort: row.cohortName,
     issuedAt: row.certificate.issuedAt.toISOString(),
     hours,
-    // 2026-10-29 — Suspendido (el grupo ya no emite): no valida, sin anular la fila.
-    valid: !row.certificate.revokedAt && grupoEmiteCertificado(row),
+    valid: !row.certificate.revokedAt,
     revokedAt: row.certificate.revokedAt?.toISOString() ?? null,
   };
 }

@@ -25,6 +25,8 @@ import {
 } from "@/lib/resultado-de-cursada";
 import { csvField } from "@/server/enrollments";
 import { grupoTieneEvaluaciones } from "@/lib/taller-config";
+import { grupoCompleto, visibilidadSegun } from "@/lib/resultado-final";
+import { estadosAfirmados } from "@/server/resultados-confirmados";
 
 /**
  * 013 (T032, FR-010c) — Reporte por EMPRESA.
@@ -106,6 +108,7 @@ export function filaDeReporte(input: {
       estadoDelGrupo: estado,
       resultadoConfirmado: input.resultadoConfirmado,
       tieneEvaluaciones: input.tieneEvaluaciones,
+      grupoCompleto: grupoCompleto(input.clases, input.reloj),
     }),
     certificateCode: input.certificateCode,
   };
@@ -192,6 +195,14 @@ export async function companyReport(
       ),
   ]);
 
+  // 0086 — El resultado AFIRMADO (confirmado; la madre, desde sus módulos).
+  const afirmados = await estadosAfirmados(organizationId, enrollmentIds);
+  const confirmadoDe = (id: string): ResultadoConfirmado => {
+    const a = afirmados.get(id);
+    if (!a || a.sinResultado) return null;
+    return a.state === "aprobado" || a.state === "reprobado" ? a.state : null;
+  };
+
   const rows: CompanyReportRow[] = inscripciones.map(({ enrollment, contact, cohort, course }) =>
     filaDeReporte({
       employeeName: fullName(contact),
@@ -215,19 +226,20 @@ export async function companyReport(
         cohort?.minAttendancePct ?? null,
         course?.minAttendancePct ?? null
       ),
-      /**
-       * Todavía no existe el resultado final CONFIRMADO por el profesor
-       * (decisión del dueño 2026-10-23, sin implementar): hasta entonces
-       * ningún grupo terminado se informa como Aprobado/Reprobado.
-       */
-      resultadoConfirmado: null,
+      // 0086 — El resultado final CONFIRMADO por el profesor (decisión del dueño 2026-10-23).
+      resultadoConfirmado: confirmadoDe(enrollment.id),
+      // 0086 — Un certificado suspendido (sin resultado confirmado) no se informa.
       tieneEvaluaciones: grupoTieneEvaluaciones({
         courseKind: course?.kind,
         registrationStatus: cohort?.registrationStatus,
         hasAssessments: cohort?.hasAssessments,
       }),
       certificateCode:
-        certificados.find((c) => c.enrollmentId === enrollment.id && !c.revokedAt)?.code ?? null,
+        certificados.find(
+          (c) =>
+            c.enrollmentId === enrollment.id &&
+            visibilidadSegun(c.revokedAt, afirmados.get(enrollment.id)) === "valido"
+        )?.code ?? null,
       reloj,
     })
   );

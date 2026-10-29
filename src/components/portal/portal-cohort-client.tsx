@@ -21,6 +21,7 @@ import { Modal, useDirty } from "@/components/ui/modal";
 import { conZona } from "@/lib/schedule-time";
 import type { PestanaPortalGrupo } from "@/lib/pestanas";
 import { usePestanaEnUrl } from "@/components/use-pestana-en-url";
+import { FinalResultsPanel } from "@/components/grading/final-results-panel";
 
 type Cohort = {
   id: string;
@@ -227,14 +228,16 @@ export function PortalCohortClient({
             // 016 — Entregas va ANTES de Material: es trabajo pendiente del
             // profesor, y Material es consulta. Lo que hay que hacer primero.
             { key: "entregas", label: "Entregas" },
+            // 0086 — El profesor confirma el resultado final de cada alumno.
+            { key: "cierre", label: "Resultado final" },
             { key: "material", label: "Material" },
           ] as const
         )
-          // 2026-10-29 — Taller sin evaluaciones: ni Evaluaciones ni Entregas.
+          // 2026-10-29 — Taller sin evaluaciones: ni Evaluaciones, Entregas ni Resultado final.
           .filter(
             (t) =>
               datos.cohort.tieneEvaluaciones !== false ||
-              (t.key !== "evaluaciones" && t.key !== "entregas")
+              (t.key !== "evaluaciones" && t.key !== "entregas" && t.key !== "cierre")
           )
           .map((t) => (
           <button
@@ -265,6 +268,12 @@ export function PortalCohortClient({
         </div>
       ) : tab === "entregas" ? (
         <PortalSubmissions cohortId={cohortId} />
+      ) : tab === "cierre" ? (
+        <FinalResultsPanel
+          endpoint={`/api/portal/cohorts/${cohortId}/final-results`}
+          canConfirm
+          audiencia="profesor"
+        />
       ) : (
         <Material cohortId={cohortId} />
       )}

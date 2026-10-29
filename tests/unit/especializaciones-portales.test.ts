@@ -60,6 +60,14 @@ vi.mock("@/lib/db", () => ({
 }));
 
 /**
+ * 0086 — El resultado final CONFIRMADO se lee fuera de la cola posicional.
+ */
+const confirmados = vi.hoisted(() => new Map<string, "aprobado" | "reprobado">());
+vi.mock("@/server/resultados-confirmados", async () =>
+  (await import("../fixtures/resultados-confirmados-doble")).dobleDeResultados(confirmados)
+);
+
+/**
  * 043 — El vencimiento de accesos hace sus propias consultas; acá no se
  * prueba (lo prueban `vencimiento-de-accesos*.test.ts`) y no debe correr la
  * cola posicional. Sin estado, nada vence.
@@ -70,6 +78,7 @@ vi.mock("@/server/access-expiry", () => ({
 
 beforeEach(() => {
   selectQueue.length = 0;
+  confirmados.clear();
   vi.resetModules();
 });
 
@@ -334,6 +343,7 @@ describe("028 — la cursada de una especialización en el portal del alumno", (
       camadas: [{ id: "coh_ebim14", name: "EBIM 14" }],
     });
 
+    confirmados.set("enr_m2", "aprobado");
     const { studentOverview } = await import("@/server/student-portal");
     const r = await studentOverview(ORG, CONTACTO, AHORA);
     const m2 = r!.courses[0]!.modules![0]!;
@@ -412,19 +422,31 @@ describe("028 — la cursada de una especialización en el portal del alumno", (
       });
     }
 
-    it("con dispensa vigente el módulo figura aprobado, con motivo, autor y fecha", async () => {
+    /**
+     * 0086 — Desde que ninguna aprobación es automática, al alumno se le
+     * afirma SOLO el resultado final confirmado. La dispensa sigue entrando en
+     * la SUGERENCIA que ve el profesor/staff, no en el portal.
+     */
+    it("sin confirmar, el módulo dispensado NO figura aprobado: pendiente de confirmación", async () => {
       moduloDispensado();
       const { studentOverview } = await import("@/server/student-portal");
       const r = await studentOverview(ORG, CONTACTO, AHORA);
       const m1 = r!.courses[0]!.modules![0]!;
 
       expect(m1.attendancePct).toBe(50); // FR-026: el real, no inflado
+      expect(m1.approval).toBe("pendiente");
+      expect(m1.approvalReasons).toEqual(["Resultado pendiente de confirmación"]);
+    });
+
+    it("con dispensa y el resultado confirmado aprobado, figura aprobado (asistencia real)", async () => {
+      confirmados.set("enr_m1", "aprobado");
+      moduloDispensado();
+      const { studentOverview } = await import("@/server/student-portal");
+      const r = await studentOverview(ORG, CONTACTO, AHORA);
+      const m1 = r!.courses[0]!.modules![0]!;
+
+      expect(m1.attendancePct).toBe(50);
       expect(m1.approval).toBe("aprobado");
-      const razon = m1.approvalReasons.join(" | ");
-      expect(razon).toContain("Licencia médica documentada");
-      expect(razon).toContain("Coordinación Uno");
-      expect(razon).toContain("20/8/2026");
-      expect(razon).toContain("50%");
     });
 
     it("el alumno no recibe ids ni columnas crudas de la dispensa", async () => {
@@ -436,7 +458,8 @@ describe("028 — la cursada de una especialización en el portal del alumno", (
       expect(json).not.toMatch(/attendanceWaiver|waiverAuthor|dispensada/);
     });
 
-    it("con la evaluación obligatoria desaprobada la dispensa NO lo salva", async () => {
+    it("el profesor confirmó reprobado: el alumno lo ve reprobado", async () => {
+      confirmados.set("enr_m1", "reprobado");
       moduloDispensado({ passed: false });
       const { studentOverview } = await import("@/server/student-portal");
       const r = await studentOverview(ORG, CONTACTO, AHORA);
@@ -444,7 +467,8 @@ describe("028 — la cursada de una especialización en el portal del alumno", (
       expect(r!.courses[0]!.modules![0]!.approval).toBe("reprobado");
     });
 
-    it("una dispensa REVOCADA no cuenta: vuelve a reprobar por asistencia", async () => {
+    it("una dispensa REVOCADA no cuenta: el motivo no viaja", async () => {
+      confirmados.set("enr_m1", "reprobado");
       moduloDispensado({
         waiver: { ...dispensa, attendanceWaiverRevokedAt: new Date("2026-08-25T00:00:00.000Z") },
       });
@@ -471,6 +495,8 @@ describe("028 — la cursada de una especialización en el portal del alumno", (
       ],
     });
 
+    // 0086 — un certificado se ve solo con el resultado final confirmado aprobado.
+    confirmados.set("enr_m1", "aprobado");
     const { studentOverview } = await import("@/server/student-portal");
     const r = await studentOverview(ORG, CONTACTO, AHORA);
     const [m1, m2] = r!.courses[0]!.modules!;
@@ -479,6 +505,27 @@ describe("028 — la cursada de una especialización en el portal del alumno", (
     expect(m2!.certificate).toBeNull();
     // El general es de la MADRE y todavía no está.
     expect(r!.courses[0]!.certificate).toBeNull();
+  });
+
+  /** 0086 — un certificado SUSPENDIDO (sin resultado confirmado) no viaja al alumno. */
+  it("el certificado de un módulo sin resultado confirmado está suspendido: no viaja", async () => {
+    const { madre, modulo } = recorridoEbim13();
+    colaDeOverview([madre, modulo(1)], {
+      certificados: [
+        {
+          enrollmentId: "enr_m1",
+          code: "ABCD-EFGH-JKMN",
+          issuedAt: new Date("2026-06-01T00:00:00.000Z"),
+          revokedAt: null,
+        },
+      ],
+    });
+
+    const { studentOverview } = await import("@/server/student-portal");
+    const r = await studentOverview(ORG, CONTACTO, AHORA);
+
+    expect(r!.courses[0]!.modules![0]!.certificate).toBeNull();
+    expect(JSON.stringify(r)).not.toContain("ABCD-EFGH-JKMN");
   });
 
   /**
@@ -517,6 +564,8 @@ describe("028 — la cursada de una especialización en el portal del alumno", (
 
   /** SC-010 — las razones de la madre NOMBRAN el módulo que las causó. */
   it("la razón de la madre nombra el módulo culpable", async () => {
+    confirmados.set("enr_m1", "aprobado");
+    confirmados.set("enr_m2", "reprobado");
     const { madre, modulo } = recorridoEbim13();
     colaDeOverview([madre, modulo(1), modulo(2)], {
       evaluaciones: [
@@ -791,6 +840,7 @@ describe("FR-032 — la cursada simple del alumno no cambia", () => {
   }
 
   it("una inscripción sin madre y sin hijas no declara módulos", async () => {
+    confirmados.set("enr_1", "reprobado");
     colaDeOverview([alumnoSimple()], {
       sesiones: [1, 2].map((n) => ({
         id: `cls_${n}`,
@@ -821,6 +871,50 @@ describe("FR-032 — la cursada simple del alumno no cambia", () => {
     expect(curso.minAttendancePct).toBe(75);
     expect(curso.approval).toBe("reprobado");
     expect(curso.totalClasses).toBe(2);
+  });
+
+  /**
+   * 2026-10-29 (decisión del dueño) — Un grupo TERMINADO sin la asistencia
+   * completa (importado, nunca se trabajó) no tiene resultado: ni aprobado
+   * aunque haya un confirmado viejo, ni "pendiente de confirmación".
+   */
+  it("grupo terminado sin la lista completa: sin resultado y sin esperar confirmación", async () => {
+    confirmados.set("enr_1", "aprobado");
+    colaDeOverview(
+      [
+        fila(
+          inscripcion({ id: "enr_1", cohortId: "coh_1", parentEnrollmentId: null }),
+          camada({ id: "coh_1", name: "Revit MEP 1", endDate: new Date("2026-06-30T00:00:00.000Z"), confirmedAt: new Date("2026-03-01T00:00:00.000Z") }),
+          "Revit MEP"
+        ),
+      ],
+      {
+        sesiones: [
+          {
+            id: "cls_1",
+            cohortId: "coh_1",
+            number: 1,
+            date: new Date("2026-05-01T00:00:00.000Z"),
+            canceledAt: null,
+            startTime: null,
+            endTime: null,
+            topic: null,
+            cancelReason: null,
+            meetingUrl: null,
+            recordingUrl: null,
+            tomada: false,
+          },
+        ],
+      }
+    );
+
+    const { studentOverview } = await import("@/server/student-portal");
+    const r = await studentOverview(ORG, CONTACTO, AHORA);
+    const curso = r!.courses[0]!;
+
+    expect(curso.approval).toBe("sin_datos");
+    expect(curso.awaitingConfirmation).toBe(false);
+    expect(curso.approvalReasons.join(" ")).toContain("asistencia completa");
   });
 
   /**

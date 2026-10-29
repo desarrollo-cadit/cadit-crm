@@ -310,11 +310,13 @@ describe("024 SC-004 — qué dice la verificación PÚBLICA de un anulado", () 
 
     expect(pub).not.toBeNull();
     expect(pub!.valid).toBe(false);
-    expect(pub!.revokedAt).toBe("2026-09-10T12:00:00.000Z");
+    if (!pub || !("revokedAt" in pub)) throw new Error("un anulado a mano trae su fecha");
+    expect(pub.status).toBe("anulado");
+    expect(pub.revokedAt).toBe("2026-09-10T12:00:00.000Z");
     // Las horas del CURSO (duración total), con coma decimal.
     expect(pub!.hours).toBe("37,5 horas");
     expect(Object.keys(pub!).sort()).toEqual(
-      ["code", "cohort", "course", "hours", "issuedAt", "revokedAt", "student", "valid"].sort()
+      ["code", "cohort", "course", "hours", "issuedAt", "revokedAt", "status", "student", "valid"].sort()
     );
     expect(JSON.stringify(pub)).not.toContain("persona equivocada");
     expect(JSON.stringify(pub)).not.toContain("user_1");

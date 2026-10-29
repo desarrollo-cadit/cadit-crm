@@ -7,7 +7,12 @@ import type { Capability } from "@/lib/capabilities";
 import type { Currency } from "@/lib/db/schema";
 import { columnasDeClaseConLista, relojDeAsistencia } from "@/server/attendance";
 import { estadoDeAprobacionDeCursada } from "@/server/estado-de-cursada";
-import { grupoEmiteCertificado, grupoTieneEvaluaciones } from "@/lib/taller-config";
+import { grupoTieneEvaluaciones } from "@/lib/taller-config";
+import { visibilidadSegun, type EstadoAfirmado } from "@/lib/resultado-final";
+import {
+  estadosAfirmados,
+  resultadoConfirmadoPorInscripcion,
+} from "@/server/resultados-confirmados";
 import {
   programApprovalState,
   razonDeModulo,
@@ -61,7 +66,15 @@ export type RecordCourse = {
   approval: ApprovalState | "sin_datos";
   approvalReasons: string[];
   assessments: { name: string; passed: boolean | null }[];
-  certificate: { code: string; issuedAt: string; revokedAt: string | null; suspended?: boolean } | null;
+  /** 0086 — `suspended`: emitido, sin resultado final confirmado como aprobado. */
+  certificate: {
+    code: string;
+    issuedAt: string;
+    revokedAt: string | null;
+    suspended: boolean;
+    /** 2026-10-29 — su grupo terminó sin la asistencia completa: cuenta como anulado. */
+    annulledIncompleteGroup: boolean;
+  } | null;
   /**
    * 028 (FR-022) — `true` cuando esta inscripción tiene una dispensa vigente.
    * La dispensa es POR MÓDULO, así que en las 33 cohortes simples y en la
@@ -108,7 +121,15 @@ export type RecordModule = {
   approval: ApprovalState | "sin_datos";
   approvalReasons: string[];
   assessments: { name: string; passed: boolean | null }[];
-  certificate: { code: string; issuedAt: string; revokedAt: string | null; suspended?: boolean } | null;
+  /** 0086 — `suspended`: emitido, sin resultado final confirmado como aprobado. */
+  certificate: {
+    code: string;
+    issuedAt: string;
+    revokedAt: string | null;
+    suspended: boolean;
+    /** 2026-10-29 — su grupo terminó sin la asistencia completa: cuenta como anulado. */
+    annulledIncompleteGroup: boolean;
+  } | null;
   /** `true` cuando este módulo tiene una dispensa vigente (FR-022). */
   dispensada: boolean;
 };
@@ -321,6 +342,18 @@ export async function getStudentRecord(
         : [],
     ]);
 
+  /**
+   * 0086 — El resultado final CONFIRMADO (lo único que el legajo afirma) y el
+   * estado afirmado de cada inscripción, que decide si su certificado está
+   * suspendido. En lote, sobre las inscripciones ya leídas.
+   */
+  const [confirmados, afirmados] = await Promise.all([
+    resultadoConfirmadoPorInscripcion(organizationId, enrollmentIds),
+    certificados.length > 0
+      ? estadosAfirmados(organizationId, certificados.map((c) => c.enrollmentId))
+      : Promise.resolve(new Map<string, EstadoAfirmado>()),
+  ]);
+
   const camadaNombre = new Map<string, string>([
     ...enrollments
       .map((e) => e.cohort)
@@ -388,6 +421,8 @@ export async function getStudentRecord(
           registrationStatus: cohort?.registrationStatus,
           hasAssessments: cohort?.hasAssessments,
         }),
+        resultadoConfirmado: confirmados.get(enrollment.id) ?? null,
+        grupo: { startDate: cohort?.startDate ?? null, endDate: cohort?.endDate ?? null },
       },
       {
         clases: clases.filter((c) => c.cohortId === cohort?.id),
@@ -427,12 +462,10 @@ export async function getStudentRecord(
             code: cert.code,
             issuedAt: cert.issuedAt.toISOString(),
             revokedAt: cert.revokedAt?.toISOString() ?? null,
-            // 2026-10-29 — El grupo ya no emite: el staff lo ve marcado, sin PDF.
-            suspended: !grupoEmiteCertificado({
-              courseKind: course?.kind,
-              registrationStatus: cohort?.registrationStatus,
-              issuesCertificate: cohort?.issuesCertificate,
-            }),
+            suspended: visibilidadSegun(cert.revokedAt, afirmados.get(enrollment.id)) === "suspendido",
+            // 2026-10-29 — grupo terminado sin asistencia completa: cuenta como anulado.
+            annulledIncompleteGroup:
+              visibilidadSegun(cert.revokedAt, afirmados.get(enrollment.id)) === "anulado_sin_asistencia",
           }
         : null,
     };

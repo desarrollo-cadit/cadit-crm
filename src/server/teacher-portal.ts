@@ -19,6 +19,12 @@ import { modulosConOrdinal } from "@/server/program-modules";
 import type { ResourceKind } from "@/lib/db/schema";
 import { grupoTieneEvaluacionesPorId } from "@/server/taller-config";
 import { grupoTieneEvaluaciones } from "@/lib/taller-config";
+import type { ConfirmacionDeResultado } from "@/lib/resultado-final";
+import {
+  cierreDeCursada,
+  confirmarResultados,
+  type CierreDeCursadaDto,
+} from "@/server/final-results";
 
 /**
  * 014 (fase 3) — El ALCANCE del profesor: qué cohortes puede tocar.
@@ -690,6 +696,56 @@ export async function teacherRecordResult(
   const r = await recordResults(organizationId, assessmentId, validos, userId);
   if (!r.ok) return { ok: false, status: 422, code: r.code, message: r.message };
   return { ok: true, data: r.data };
+}
+
+/* ============================================================
+ * 0086 — Cerrar la cursada: el resultado final de cada alumno
+ * ============================================================ */
+
+/**
+ * La lista de cierre como la ve el profesor: asistencia, evaluaciones
+ * obligatorias, la SUGERENCIA y lo confirmado. Sin certificados (son de la
+ * academia) y sin datos de contacto. `null` si no alcanza el grupo.
+ */
+export async function teacherFinalResults(
+  organizationId: string,
+  teacherId: string,
+  cohortId: string,
+  now: Date = new Date()
+): Promise<CierreDeCursadaDto | null> {
+  if (!(await teacherReachesCohort(organizationId, teacherId, cohortId))) return null;
+  // 2026-10-29 — Taller sin evaluaciones: ausencia = 404.
+  if (!(await grupoTieneEvaluacionesPorId(organizationId, cohortId))) return null;
+  const cierre = await cierreDeCursada(organizationId, cohortId, now);
+  if (!cierre) return null;
+  return {
+    ...cierre,
+    // No viaja: el certificado es de la academia.
+    alumnos: cierre.alumnos.map(({ certificado: _certificado, ...fila }) => fila),
+  };
+}
+
+/**
+ * El profesor confirma o corrige el resultado final de SU grupo. Un grupo que
+ * no alcanza responde igual que uno que no existe (404, nunca otra cosa).
+ */
+export async function teacherConfirmFinalResults(
+  organizationId: string,
+  teacherId: string,
+  userId: string,
+  cohortId: string,
+  entries: readonly ConfirmacionDeResultado[],
+  now: Date = new Date()
+): Promise<PortalResult<{ confirmados: number; certificadosAnulados: number }>> {
+  if (
+    !(await teacherReachesCohort(organizationId, teacherId, cohortId)) ||
+    !(await grupoTieneEvaluacionesPorId(organizationId, cohortId))
+  ) {
+    return { ok: false, status: 404, code: "not_found", message: "Grupo no encontrado" };
+  }
+  const r = await confirmarResultados(organizationId, cohortId, entries, userId, now);
+  // Ya descartado arriba el 409 de "sin evaluaciones": en el portal la ausencia es 404.
+  return r.ok ? r : { ...r, status: r.status === 409 ? 404 : r.status };
 }
 
 export type TeacherContentDto = {

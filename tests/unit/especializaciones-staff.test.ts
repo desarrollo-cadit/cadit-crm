@@ -80,8 +80,17 @@ vi.mock("@/lib/db", () => ({
   ),
 }));
 
+/**
+ * 0086 — El resultado final CONFIRMADO se lee fuera de la cola posicional.
+ */
+const confirmados = vi.hoisted(() => new Map<string, "aprobado" | "reprobado">());
+vi.mock("@/server/resultados-confirmados", async () =>
+  (await import("../fixtures/resultados-confirmados-doble")).dobleDeResultados(confirmados)
+);
+
 beforeEach(() => {
   selectQueue.length = 0;
+  confirmados.clear();
   updates.length = 0;
   inserts.length = 0;
   deletes.length = 0;
@@ -505,6 +514,9 @@ describe("camadaDeEspecializacion — la especialización se ve entera", () => {
       ],
     });
 
+    // 0086 — el estado de cada módulo es el CONFIRMADO; sin confirmar, pendiente.
+    confirmados.set("enr_hija_m1", "aprobado");
+    confirmados.set("enr_hija_m2", "reprobado");
     const { camadaDeEspecializacion } = await import("@/server/program-staff");
     const r = await camadaDeEspecializacion(ORG, "coh_padre", TODAS_LAS_CAPS, AHORA);
 

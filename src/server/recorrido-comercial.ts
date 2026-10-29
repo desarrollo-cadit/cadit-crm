@@ -15,6 +15,14 @@ import {
 import { asistenciaTomadaSql, relojDeAsistencia, type AttendanceStatus, type RelojDeAsistencia } from "@/server/attendance";
 import { inscripcionesNoDictadas } from "@/server/cursadas-no-dictadas";
 import { estadoDeAprobacionDeCursada } from "@/server/estado-de-cursada";
+import {
+  estadoAfirmado,
+  grupoSinResultado,
+  programaConfirmado,
+  visibilidadSegun,
+  type EstadoAfirmado,
+  type ResultadoFinal,
+} from "@/lib/resultado-final";
 
 /**
  * 046 (DV-003; research R3) — La lectura del recorrido comercial.
@@ -81,6 +89,11 @@ export type PiezasDelRecorrido = {
   evaluaciones: readonly { id: string; cohortId: string; name: string; required: boolean }[];
   resultados: readonly { enrollmentId: string; assessmentId: string; passed: boolean | null }[];
   certificados: readonly { enrollmentId: string; revokedAt: Date | null }[];
+  /**
+   * 0086 — Los resultados finales CONFIRMADOS. "Aprobó" sale de acá (y de un
+   * certificado que no esté suspendido), nunca del cálculo.
+   */
+  resultadosFinales: readonly { enrollmentId: string; result: ResultadoFinal }[];
   reloj: RelojDeAsistencia;
 };
 
@@ -104,7 +117,51 @@ export function armarCursadasComerciales(p: PiezasDelRecorrido): CursadaComercia
   const marcasPorInscripcion = agrupar(p.asistencias, (a) => a.enrollmentId);
   const evaluacionesPorGrupo = agrupar(p.evaluaciones, (e) => e.cohortId);
   const resultadosPorInscripcion = agrupar(p.resultados, (r) => r.enrollmentId);
-  const certificadoVigente = new Set(p.certificados.filter((c) => !c.revokedAt).map((c) => c.enrollmentId));
+  const confirmado = new Map(p.resultadosFinales.map((r) => [r.enrollmentId, r.result]));
+  const hijasDe = agrupar(
+    p.inscripciones.filter((i) => i.enrollment.parentEnrollmentId !== null),
+    (i) => i.enrollment.parentEnrollmentId!
+  );
+  /** 2026-10-29 — El grupo de la inscripción terminó sin la asistencia completa. */
+  const porId = new Map(p.inscripciones.map((i) => [i.enrollment.id, i]));
+  const sinResultadoDe = (enrollmentId: string) => {
+    const i = porId.get(enrollmentId);
+    if (!i) return false;
+    return grupoSinResultado(
+      { startDate: i.cohort.startDate, endDate: i.cohort.endDate },
+      (clasesPorGrupo.get(i.cohort.id) ?? []).map((c) => ({
+        date: c.date,
+        endTime: c.endTime,
+        canceledAt: c.canceledAt,
+        tomada: c.tomada,
+      })),
+      p.reloj
+    );
+  };
+  /** 0086 — Lo afirmado: el confirmado; en la madre, desde sus módulos confirmados. */
+  const afirmado = (enrollmentId: string): EstadoAfirmado => {
+    const hijas = hijasDe.get(enrollmentId) ?? [];
+    if (hijas.length > 0) {
+      return {
+        state: programaConfirmado(
+          hijas.map((h) => (sinResultadoDe(h.enrollment.id) ? null : (confirmado.get(h.enrollment.id) ?? null)))
+        ).state,
+        sinResultado: hijas.some((h) => sinResultadoDe(h.enrollment.id)),
+      };
+    }
+    const sinResultado = sinResultadoDe(enrollmentId);
+    return {
+      state: sinResultado ? "pendiente" : estadoAfirmado(confirmado.get(enrollmentId) ?? null).state,
+      sinResultado,
+    };
+  };
+  // 0086 — Un certificado SUSPENDIDO (sin resultado confirmado) o de un grupo
+  // sin asistencia completa (anulado) no es vigente.
+  const certificadoVigente = new Set(
+    p.certificados
+      .filter((c) => visibilidadSegun(c.revokedAt, afirmado(c.enrollmentId)) === "valido")
+      .map((c) => c.enrollmentId)
+  );
 
   return p.inscripciones.map(({ enrollment, waiverAuthorName, stageKind, cohort, course }) => {
     const { state } = estadoDeAprobacionDeCursada(
@@ -121,6 +178,8 @@ export function armarCursadasComerciales(p: PiezasDelRecorrido): CursadaComercia
           registrationStatus: cohort.registrationStatus,
           hasAssessments: cohort.hasAssessments,
         }),
+        resultadoConfirmado: confirmado.get(enrollment.id) ?? null,
+        grupo: { startDate: cohort.startDate, endDate: cohort.endDate },
       },
       {
         clases: clasesPorGrupo.get(cohort.id) ?? [],
@@ -245,8 +304,9 @@ export async function cargarCursadasComerciales(
   const as = schema.assessment;
   const ar = schema.assessmentResult;
   const ce = schema.certificate;
+  const fr = schema.enrollmentFinalResult;
 
-  const [reloj, clases, asistencias, evaluaciones, resultados, certificados] = await Promise.all([
+  const [reloj, clases, asistencias, evaluaciones, resultados, certificados, resultadosFinales] = await Promise.all([
     relojDeAsistencia(organizationId, now),
     db
       .select({
@@ -275,6 +335,10 @@ export async function cargarCursadasComerciales(
       .select({ enrollmentId: ce.enrollmentId, revokedAt: ce.revokedAt })
       .from(ce)
       .where(scoped(ce.organizationId, organizationId, porContacto ? inArray(ce.enrollmentId, enrollmentIds) : undefined)),
+    db
+      .select({ enrollmentId: fr.enrollmentId, result: fr.result })
+      .from(fr)
+      .where(scoped(fr.organizationId, organizationId, porContacto ? inArray(fr.enrollmentId, enrollmentIds) : undefined)),
   ]);
 
   return armarCursadasComerciales({
@@ -315,6 +379,7 @@ export async function cargarCursadasComerciales(
     evaluaciones: evaluaciones.flatMap((a) => (a.cohortId ? [{ ...a, cohortId: a.cohortId }] : [])),
     resultados,
     certificados: certificados.flatMap((c) => (c.enrollmentId ? [{ ...c, enrollmentId: c.enrollmentId }] : [])),
+    resultadosFinales,
     reloj,
   });
 }

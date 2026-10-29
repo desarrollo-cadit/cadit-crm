@@ -12,8 +12,9 @@ import {
 } from "@/lib/certificado";
 import { modulosConOrdinal } from "@/lib/program-order";
 import { fullName } from "@/lib/utils";
-import { grupoEmiteCertificadoSql } from "@/server/taller-config";
 import { lugaresDelPrograma, tieneHijas } from "@/server/program-modules";
+import { visibilidadSegun } from "@/lib/resultado-final";
+import { estadosAfirmados } from "@/server/resultados-confirmados";
 
 /**
  * 038 — Los hechos del certificado, leídos de la base.
@@ -182,28 +183,25 @@ async function certificadoVigente(
     })
     .from(schema.certificate)
     .innerJoin(schema.enrollment, eq(schema.certificate.enrollmentId, schema.enrollment.id))
-    .leftJoin(schema.cohort, eq(schema.enrollment.cohortId, schema.cohort.id))
-    .leftJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
     .where(
       scoped(
         schema.certificate.organizationId,
         organizationId,
-        // 2026-10-29 — Un grupo de taller que NO emite deja sus certificados
-        // SUSPENDIDOS: sin PDF (la fila no se toca; si vuelve a "emite", vale).
-        and(
-          condicion,
-          isNull(schema.certificate.revokedAt),
-          grupoEmiteCertificadoSql(
-            schema.course.kind,
-            schema.cohort.registrationStatus,
-            schema.cohort.issuesCertificate
-          )
-        )
+        and(condicion, isNull(schema.certificate.revokedAt))
       )
     )
     .limit(1);
   const fila = rows[0];
   if (!fila) return null;
+
+  /**
+   * 0086 — SUSPENDIDO (sin resultado final confirmado como aprobado): no se
+   * entrega a nadie, ni al alumno ni al staff, para que no circule un papel
+   * que todavía no vale. Se responde igual que "no existe".
+   */
+  // 2026-10-29 — Igual con el grupo terminado sin la asistencia completa: cuenta como anulado.
+  const afirmado = (await estadosAfirmados(organizationId, [fila.enrollmentId])).get(fila.enrollmentId);
+  if (visibilidadSegun(null, afirmado) !== "valido") return null;
 
   const snapshot =
     leerSnapshot(fila.snapshot) ?? (await snapshotActual(organizationId, fila.enrollmentId));

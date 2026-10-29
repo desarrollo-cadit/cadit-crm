@@ -40,9 +40,9 @@ describe("configuración de un grupo de taller", () => {
 
   it("sin evaluaciones el grupo terminado no es 'Resultado pendiente'", () => {
     expect(
-      resultadoDeCursada({ estadoDelGrupo: "finalizada", resultadoConfirmado: null, tieneEvaluaciones: false })
+      resultadoDeCursada({ estadoDelGrupo: "finalizada", resultadoConfirmado: null, tieneEvaluaciones: false, grupoCompleto: true })
     ).toBe("sin_evaluacion");
-    expect(resultadoDeCursada({ estadoDelGrupo: "finalizada", resultadoConfirmado: null })).toBe("pendiente");
+    expect(resultadoDeCursada({ estadoDelGrupo: "finalizada", resultadoConfirmado: null, grupoCompleto: true })).toBe("pendiente");
   });
 
   it("las pestañas se ocultan", () => {
