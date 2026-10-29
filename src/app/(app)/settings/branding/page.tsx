@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSessionOrNull } from "@/lib/auth/session";
 import { sessionCapabilities } from "@/lib/capabilities";
 import { BrandingClient } from "@/components/settings/branding-client";
+import { ConstanciaSettings } from "@/components/settings/constancia-settings";
 
 export const dynamic = "force-dynamic";
 
@@ -20,5 +21,11 @@ export default async function BrandingSettingsPage() {
   if (!session) redirect("/login");
   if (!sessionCapabilities(session).includes("configuracion.editar")) redirect("/settings");
 
-  return <BrandingClient />;
+  return (
+    <div className="space-y-6">
+      <BrandingClient />
+      {/* 2026-10-29 — Firma, ciudad y pie de las constancias para empresas. */}
+      <ConstanciaSettings />
+    </div>
+  );
 }

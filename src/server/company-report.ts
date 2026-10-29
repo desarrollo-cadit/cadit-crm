@@ -4,12 +4,25 @@ import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { fullName } from "@/lib/utils";
 import {
-  attendancePercentage,
   columnasDeClaseConLista,
   relojDeAsistencia,
   resolveMinAttendance,
+  type AttendanceStatus,
+  type RelojDeAsistencia,
 } from "@/server/attendance";
-import { approvalState } from "@/server/grading";
+import {
+  asistenciaDeAlumno,
+  estadoDeGrupoAlCorte,
+  type ClaseDeConstancia,
+} from "@/lib/constancia-empresa";
+import {
+  ETIQUETA_DE_RESULTADO,
+  resultadoDeCursada,
+  textoDeAsistencia,
+  type EstadoDeGrupo,
+  type ResultadoConfirmado,
+  type ResultadoDeCursada,
+} from "@/lib/resultado-de-cursada";
 import { csvField } from "@/server/enrollments";
 
 /**
@@ -22,6 +35,12 @@ import { csvField } from "@/server/enrollments";
  *
  * Alcance medido: **14 inscripciones con empresa, 5 empresas reales**. Para
  * ese tamaño, un portal habría sido construir un edificio para una persona.
+ *
+ * 2026-10-29 — El resultado ya NO sale de `approvalState` (que daba
+ * "Aprobado" a quien estaba en un grupo EN CURSO sin evaluaciones
+ * obligatorias): sale de `resultadoDeCursada`, la misma función que la
+ * constancia en PDF. La asistencia se informa como "X de Y clases (Z%)", con
+ * "hasta hoy" mientras el grupo no terminó.
  */
 
 export type CompanyReportRow = {
@@ -29,9 +48,16 @@ export type CompanyReportRow = {
   email: string | null;
   cohortName: string;
   courseName: string;
+  /** Estado del grupo HOY; `null` = la inscripción no tiene grupo. */
+  cohortStatus: EstadoDeGrupo | null;
+  /** Clases a las que asistió, de las dictadas que cuentan para esta persona. */
+  attendedClasses: number | null;
+  countedClasses: number | null;
   attendancePct: number | null;
+  /** "8 de 10 clases (80%)", con "hasta hoy" si el grupo sigue en curso. */
+  attendanceText: string | null;
   minAttendancePct: number | null;
-  approval: "aprobado" | "reprobado" | "pendiente" | "sin_datos";
+  approval: ResultadoDeCursada;
   certificateCode: string | null;
 };
 
@@ -39,6 +65,47 @@ export type CompanyReportDto = {
   company: { id: string; name: string };
   rows: CompanyReportRow[];
 };
+
+/**
+ * Una fila, pura: la asistencia con la regla única y el resultado con
+ * `resultadoDeCursada`. Separada para poder probar el bug que corrige.
+ */
+export function filaDeReporte(input: {
+  employeeName: string;
+  email: string | null;
+  cohort: { name: string | null; startDate: Date; endDate: Date | null } | null;
+  courseName: string | null;
+  enrolledAt: Date | null;
+  clases: readonly ClaseDeConstancia[];
+  marcas: readonly { classSessionId: string; status: AttendanceStatus }[];
+  minAttendancePct: number | null;
+  resultadoConfirmado: ResultadoConfirmado;
+  certificateCode: string | null;
+  reloj: RelojDeAsistencia;
+}): CompanyReportRow {
+  const estado = input.cohort ? estadoDeGrupoAlCorte(input.cohort, input.reloj) : null;
+  const asis = input.cohort
+    ? asistenciaDeAlumno({ clases: input.clases }, { enrolledAt: input.enrolledAt, marcas: input.marcas }, input.reloj)
+    : null;
+  const conDatos = asis !== null && asis.pct !== null;
+  return {
+    employeeName: input.employeeName,
+    email: input.email,
+    cohortName: input.cohort?.name ?? input.courseName ?? "Sin grupo",
+    courseName: input.courseName ?? "—",
+    cohortStatus: estado,
+    attendedClasses: conDatos ? asis.presentes : null,
+    countedClasses: conDatos ? asis.cuentan : null,
+    attendancePct: conDatos ? asis.pct : null,
+    attendanceText: asis ? textoDeAsistencia(asis, estado === "en_curso") : null,
+    minAttendancePct: input.minAttendancePct,
+    approval: resultadoDeCursada({
+      estadoDelGrupo: estado,
+      resultadoConfirmado: input.resultadoConfirmado,
+    }),
+    certificateCode: input.certificateCode,
+  };
+}
 
 export async function companyReport(
   organizationId: string,
@@ -86,127 +153,78 @@ export async function companyReport(
     .filter((id): id is string => Boolean(id));
 
   const reloj = await relojDeAsistencia(organizationId);
-  const [asistencias, clases, resultados, evaluaciones, certificados] =
-    await Promise.all([
-      db
-        .select()
-        .from(schema.attendance)
-        .where(
-          scoped(
-            schema.attendance.organizationId,
-            organizationId,
-            inArray(schema.attendance.enrollmentId, enrollmentIds)
-          )
-        ),
-      cohortIds.length
-        ? db
-            .select(columnasDeClaseConLista())
-            .from(schema.classSession)
-            .where(
-              scoped(
-                schema.classSession.organizationId,
-                organizationId,
-                inArray(schema.classSession.cohortId, cohortIds)
-              )
+  const [asistencias, clases, certificados] = await Promise.all([
+    db
+      .select()
+      .from(schema.attendance)
+      .where(
+        scoped(
+          schema.attendance.organizationId,
+          organizationId,
+          inArray(schema.attendance.enrollmentId, enrollmentIds)
+        )
+      ),
+    cohortIds.length
+      ? db
+          .select(columnasDeClaseConLista())
+          .from(schema.classSession)
+          .where(
+            scoped(
+              schema.classSession.organizationId,
+              organizationId,
+              inArray(schema.classSession.cohortId, cohortIds)
             )
-        : [],
-      db
-        .select()
-        .from(schema.assessmentResult)
-        .where(
-          scoped(
-            schema.assessmentResult.organizationId,
-            organizationId,
-            inArray(schema.assessmentResult.enrollmentId, enrollmentIds)
           )
-        ),
-      cohortIds.length
-        ? db
-            .select()
-            .from(schema.assessment)
-            .where(
-              scoped(
-                schema.assessment.organizationId,
-                organizationId,
-                inArray(schema.assessment.cohortId, cohortIds)
-              )
-            )
-        : [],
-      db
-        .select()
-        .from(schema.certificate)
-        .where(
-          scoped(
-            schema.certificate.organizationId,
-            organizationId,
-            inArray(schema.certificate.enrollmentId, enrollmentIds)
-          )
-        ),
-    ]);
+      : [],
+    db
+      .select()
+      .from(schema.certificate)
+      .where(
+        scoped(
+          schema.certificate.organizationId,
+          organizationId,
+          inArray(schema.certificate.enrollmentId, enrollmentIds)
+        )
+      ),
+  ]);
 
-  const rows: CompanyReportRow[] = inscripciones.map(
-    ({ enrollment, contact, cohort, course }) => {
-      const clasesDeLaCohorte = clases.filter((c) => c.cohortId === cohort?.id);
-      // Mismo criterio que el legajo: sin marcas de asistencia no hay
-      // porcentaje que informar. 0% sin lista tomada acusa a quien no faltó.
-      const asistenciaDeEste = asistencias.filter((a) => a.enrollmentId === enrollment.id);
-      const pct = asistenciaDeEste.length === 0 ? null : attendancePercentage(
-        clasesDeLaCohorte.map((c) => ({
-          sessionDate: c.date,
+  const rows: CompanyReportRow[] = inscripciones.map(({ enrollment, contact, cohort, course }) =>
+    filaDeReporte({
+      employeeName: fullName(contact),
+      email: contact.email,
+      cohort: cohort ? { name: cohort.name, startDate: cohort.startDate, endDate: cohort.endDate } : null,
+      courseName: course?.name ?? null,
+      enrolledAt: enrollment.enrolledAt,
+      clases: clases
+        .filter((c) => c.cohortId === cohort?.id)
+        .map((c) => ({
+          id: c.id,
+          date: c.date,
           endTime: c.endTime,
-          canceled: Boolean(c.canceledAt),
+          canceledAt: c.canceledAt,
           tomada: Boolean(c.tomada),
-          status:
-            asistenciaDeEste.find((a) => a.classSessionId === c.id)?.status ?? null,
         })),
-        enrollment.enrolledAt,
-        reloj
-      );
-
-      const minPct = resolveMinAttendance(
+      marcas: asistencias
+        .filter((a) => a.enrollmentId === enrollment.id)
+        .map((a) => ({ classSessionId: a.classSessionId, status: a.status })),
+      minAttendancePct: resolveMinAttendance(
         cohort?.minAttendancePct ?? null,
         course?.minAttendancePct ?? null
-      );
-
-      const obligatorias = evaluaciones
-        .filter((a) => a.cohortId === cohort?.id && a.required)
-        .map(
-          (a) =>
-            resultados.find(
-              (r) => r.assessmentId === a.id && r.enrollmentId === enrollment.id
-            )?.passed ?? null
-        );
-
-      const { state } = approvalState(obligatorias, pct, minPct);
-      // Mismo criterio que el legajo: sin datos no se afirma nada.
-      const sinDatos = obligatorias.length === 0 && pct === null;
-
-      const cert = certificados.find(
-        (c) => c.enrollmentId === enrollment.id && !c.revokedAt
-      );
-
-      return {
-        employeeName: fullName(contact),
-        email: contact.email,
-        cohortName: cohort?.name ?? course?.name ?? "Sin grupo",
-        courseName: course?.name ?? "—",
-        attendancePct: pct,
-        minAttendancePct: minPct,
-        approval: sinDatos ? "sin_datos" : state,
-        certificateCode: cert?.code ?? null,
-      };
-    }
+      ),
+      /**
+       * Todavía no existe el resultado final CONFIRMADO por el profesor
+       * (decisión del dueño 2026-10-23, sin implementar): hasta entonces
+       * ningún grupo terminado se informa como Aprobado/Reprobado.
+       */
+      resultadoConfirmado: null,
+      certificateCode:
+        certificados.find((c) => c.enrollmentId === enrollment.id && !c.revokedAt)?.code ?? null,
+      reloj,
+    })
   );
 
   return { company, rows };
 }
-
-const APROBACION_CSV: Record<CompanyReportRow["approval"], string> = {
-  aprobado: "Aprobado",
-  reprobado: "No aprobado",
-  pendiente: "En curso",
-  sin_datos: "Sin datos",
-};
 
 /**
  * 013 (T032) — El reporte en CSV, para mandárselo a la empresa.
@@ -227,6 +245,7 @@ export function exportCompanyReportCsv(report: CompanyReportDto): string {
     "Correo",
     "Curso",
     "Grupo",
+    "Asistencia",
     "Asistencia %",
     "Mínimo %",
     "Estado",
@@ -239,9 +258,10 @@ export function exportCompanyReportCsv(report: CompanyReportDto): string {
       csvField(r.email),
       csvField(r.courseName),
       csvField(r.cohortName),
+      csvField(r.attendanceText ?? ""),
       csvField(r.attendancePct === null ? "" : String(r.attendancePct)),
       csvField(r.minAttendancePct === null ? "" : String(r.minAttendancePct)),
-      csvField(APROBACION_CSV[r.approval]),
+      csvField(ETIQUETA_DE_RESULTADO[r.approval]),
       csvField(r.certificateCode),
     ].join(",")
   );
