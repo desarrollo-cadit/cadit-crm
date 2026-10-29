@@ -8,6 +8,10 @@
  * carga del mismo día. Con cualquier rastro, no se borra. **Ante la duda no se
  * destruye.**
  *
+ * La asistencia NO bloquea (2026-10-29): una inscripción duplicada a la que
+ * se le pasó lista impedía unificar contactos. Se borra con la inscripción y
+ * la vista previa dice cuántas clases se van.
+ *
  * Qué es historia (bloquea) y qué es derivado (se va con la inscripción) está
  * clasificado tabla por tabla en `src/server/enrollment-cancel.ts`. El
  * servidor cuenta la historia de la madre MÁS la de sus módulos hijos y llama
@@ -21,8 +25,6 @@ export type HistorialDeInscripcion = {
   pagos: number;
   /** Certificados, anulados incluidos: un anulado también es un documento. */
   certificados: number;
-  /** Marcas de asistencia (cualquier estado: "ausente" también es un dato). */
-  asistencias: number;
   /** Resultados de evaluación (`assessment_result`). */
   resultados: number;
   /** Correcciones en cualquier estado: borrador, enviada o publicada. */
@@ -36,7 +38,6 @@ export type HistorialDeInscripcion = {
 export const HISTORIAL_VACIO: HistorialDeInscripcion = {
   pagos: 0,
   certificados: 0,
-  asistencias: 0,
   resultados: 0,
   correcciones: 0,
   entregas: 0,
@@ -58,6 +59,8 @@ export type InscripcionACancelar = {
   cuotas: number;
   /** Programas con licencia ASIGNADA que vuelven al stock. */
   licencias: string[];
+  /** Marcas de asistencia (cualquier estado) que se borran con ella: avisa, no bloquea. */
+  asistencias: number;
   historial: HistorialDeInscripcion;
 };
 
@@ -67,6 +70,7 @@ export type DetalleDeCancelacion = HistorialDeInscripcion & {
   modulos: number;
   cuotas: number;
   licencias: string[];
+  asistencias: number;
 };
 
 export type CodigoDeBloqueo =
@@ -95,9 +99,6 @@ function partesDeHistorial(h: HistorialDeInscripcion): string[] {
   if (h.certificados > 0) {
     partes.push(plural(h.certificados, "certificado emitido", "certificados emitidos"));
   }
-  if (h.asistencias > 0) {
-    partes.push(`asistencia en ${plural(h.asistencias, "clase", "clases")}`);
-  }
   if (h.resultados > 0) partes.push(plural(h.resultados, "nota cargada", "notas cargadas"));
   if (h.correcciones > 0) partes.push(plural(h.correcciones, "corrección", "correcciones"));
   if (h.entregas > 0) partes.push(plural(h.entregas, "entrega", "entregas"));
@@ -115,6 +116,7 @@ export function decidirCancelacion(i: InscripcionACancelar): DecisionDeCancelaci
     modulos: i.modulos,
     cuotas: i.cuotas,
     licencias: [...i.licencias],
+    asistencias: i.asistencias,
   };
 
   if (!i.tieneGrupo) {
@@ -170,6 +172,9 @@ export function decidirCancelacion(i: InscripcionACancelar): DecisionDeCancelaci
     arrastra.push(
       `${i.licencias.length === 1 ? "la licencia" : "las licencias"} de ${enumerar(i.licencias)}`
     );
+  }
+  if (i.asistencias > 0) {
+    arrastra.push(`la asistencia de ${plural(i.asistencias, "clase", "clases")}`);
   }
   if (i.modulos > 0) {
     arrastra.push(`su inscripción a ${plural(i.modulos, "módulo", "módulos")}`);

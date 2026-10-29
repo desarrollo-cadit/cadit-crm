@@ -21,7 +21,7 @@ import { onLeadActivity } from "@/server/inbox/lead-activity";
  * |----------------------------|-----------|-------------------------------------------------|
  * | payment (aun anulado)      | HISTORIA  | plata que entró, o que entró y se anuló         |
  * | certificate (aun anulado)  | HISTORIA  | documento entregado                             |
- * | attendance                 | HISTORIA  | lo que pasó en el aula                          |
+ * | attendance                 | DERIVADO  | se va con ella; la vista previa la cuenta       |
  * | assessment_result          | HISTORIA  | nota oficial                                    |
  * | correction (todo estado)   | HISTORIA  | trabajo de quien corrige                        |
  * | submission                 | HISTORIA  | trabajo del alumno                              |
@@ -180,7 +180,6 @@ async function leerHechos(
   const historial: HistorialDeInscripcion = {
     pagos: pagos?.n ?? 0,
     certificados,
-    asistencias,
     resultados,
     correcciones,
     entregas,
@@ -196,6 +195,7 @@ async function leerHechos(
     modulos: hijas.length,
     cuotas,
     licencias: [...new Set(licencias.map((l) => l.name))],
+    asistencias,
     historial,
   });
 
