@@ -4,7 +4,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { aproboConNota, notaDeCorreccion, type Template } from "@/lib/grading-template";
+import {
+  ETIQUETA_DE_NIVEL,
+  NIVELES,
+  aproboConNota,
+  notaDeCorreccion,
+  puntosDeNivel,
+  type Nivel,
+  type Template,
+} from "@/lib/grading-template";
+import { cn } from "@/lib/utils";
 
 /**
  * 031 (T023, DV-013) — El formulario de corrección. PRESENTACIONAL.
@@ -27,7 +36,8 @@ export type CorreccionEnEdicion = {
   /** Solo aprobado/no aprobado. En numérica se deriva de la nota. */
   passed: boolean | null;
   feedback: string;
-  criterionScores: { criterionId: string; points: number | null; comment: string }[];
+  /** 0084 — `level`: el nivel de la rúbrica elegido (los puntos se pueden ajustar). */
+  criterionScores: { criterionId: string; points: number | null; comment: string; level: Nivel | null }[];
   textValues: { fieldId: string; value: string }[];
 };
 
@@ -37,9 +47,37 @@ export type VersionGuardada = {
   score: number | null;
   passed: boolean | null;
   feedback: string | null;
-  criterionScores: { criterionId: string; points: number | null; comment: string | null }[];
+  criterionScores: {
+    criterionId: string;
+    points: number | null;
+    comment: string | null;
+    level?: Nivel | null;
+  }[];
   textValues: { fieldId: string; value: string }[];
 };
+
+/**
+ * 0084 — Elige el nivel del criterio `i`: los puntos pasan a ser los del
+ * nivel (el corrector los puede ajustar después). Elegir el mismo otra vez lo
+ * quita, junto con sus puntos.
+ */
+export function elegirNivel(
+  t: Template,
+  v: CorreccionEnEdicion,
+  i: number,
+  nivel: Nivel
+): CorreccionEnEdicion {
+  const c = t.criteria[i];
+  if (!c) return v;
+  return {
+    ...v,
+    criterionScores: v.criterionScores.map((s, j) => {
+      if (j !== i) return s;
+      if (s.level === nivel) return { ...s, level: null, points: null };
+      return { ...s, level: nivel, points: puntosDeNivel(nivel, c.maxPoints) };
+    }),
+  };
+}
 
 /**
  * Un lugar por cada ejercicio y campo de la plantilla, en su orden, con lo
@@ -57,7 +95,12 @@ export function borradorDeCorreccion(
     feedback: v?.feedback ?? "",
     criterionScores: t.criteria.map((c) => {
       const s = v?.criterionScores.find((x) => x.criterionId === c.id);
-      return { criterionId: c.id, points: s?.points ?? null, comment: s?.comment ?? "" };
+      return {
+        criterionId: c.id,
+        points: s?.points ?? null,
+        comment: s?.comment ?? "",
+        level: s?.level ?? null,
+      };
     }),
     textValues: t.textFields.map((f) => ({
       fieldId: f.id,
@@ -147,6 +190,38 @@ export function CorrectionForm({
                     onChange={(e) => setPuntaje(i, { points: numeroONulo(e.target.value) })}
                   />
                   <span className="text-xs text-muted-foreground">de {c.maxPoints}</span>
+                </div>
+                {/*
+                  0084 — Los cuatro niveles fijos. Elegir uno pone sus puntos;
+                  el número de arriba se puede ajustar a mano.
+                */}
+                <div
+                  role="group"
+                  aria-label={`Nivel de ${c.name}`}
+                  className="grid grid-cols-2 gap-1.5 sm:grid-cols-4"
+                >
+                  {NIVELES.map((n) => {
+                    const elegido = s?.level === n;
+                    const frase = c.levels?.[n];
+                    return (
+                      <button
+                        key={n}
+                        type="button"
+                        aria-pressed={elegido}
+                        onClick={() => onChange(elegirNivel(template, value, i, n))}
+                        className={cn(
+                          "rounded-md border px-2 py-1.5 text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                          elegido
+                            ? "border-brand bg-brand-tint text-brand-text"
+                            : "text-muted-foreground hover:bg-accent"
+                        )}
+                      >
+                        <span className="font-medium">{ETIQUETA_DE_NIVEL[n]}</span>
+                        <span className="ml-1">· {puntosDeNivel(n, c.maxPoints)} pts</span>
+                        {frase && <span className="mt-0.5 block text-[11px] leading-snug">{frase}</span>}
+                      </button>
+                    );
+                  })}
                 </div>
                 <Input
                   aria-label={`Comentario sobre ${c.name}`}

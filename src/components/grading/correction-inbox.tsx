@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import type { Template } from "@/lib/grading-template";
+import { ETIQUETA_DE_NIVEL, type Nivel, type Template } from "@/lib/grading-template";
 import { notify } from "@/lib/notify";
 import { cn } from "@/lib/utils";
 
@@ -43,7 +43,12 @@ type Version = {
   score: number | null;
   passed: boolean | null;
   feedback: string | null;
-  criterionScores: { criterionId: string; points: number | null; comment: string | null }[];
+  criterionScores: {
+    criterionId: string;
+    points: number | null;
+    comment: string | null;
+    level?: Nivel | null;
+  }[];
   textValues: { fieldId: string; value: string }[];
   correctedByName: string | null;
   submittedAt: string | null;
@@ -333,6 +338,12 @@ function DetalleDeCorreccion({ id, onResuelta }: { id: string; onResuelta: () =>
                   <div className="flex justify-between gap-2">
                     <span>{cr.name}</span>
                     <span className="font-medium">
+                      {/* 0084 — el nivel de la rúbrica elegido, si lo hay. */}
+                      {s?.level && (
+                        <span className="mr-2 text-xs font-normal text-muted-foreground">
+                          {ETIQUETA_DE_NIVEL[s.level]}
+                        </span>
+                      )}
                       {s?.points ?? "—"}/{cr.maxPoints}
                     </span>
                   </div>

@@ -105,6 +105,7 @@ export function CorrectionPanel({
           criterionId: c.criterionId,
           points: c.points,
           comment: c.comment.trim() || null,
+          level: c.level,
         })),
         textValues: valor.textValues,
       }),

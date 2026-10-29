@@ -107,6 +107,14 @@ const envSchema = z.object({
    */
   STAFF_NOTICES_INTERVAL_MIN: z.coerce.number().int().min(0).default(0),
   /**
+   * 0084 — Minutos entre pasadas del recordatorio por CORREO a los alumnos que
+   * no entregaron una evaluación cuyo plazo vigente está cerca; 0 lo apaga.
+   * Default 0: se enciende a propósito (p. ej. 60) con M365 configurado.
+   */
+  ASSESSMENT_REMINDER_INTERVAL_MIN: z.coerce.number().int().min(0).default(0),
+  /** 0084 — Cuántos días antes del plazo vigente se recuerda. Default 2. */
+  ASSESSMENT_REMINDER_DAYS: z.coerce.number().int().min(1).max(30).default(2),
+  /**
    * 033 (FR-019) — Confirmación por WhatsApp al anotarse a un taller. Apagada
    * salvo `true` (decisión del dueño, 2026-10-15: por ahora sin WhatsApp).
    */

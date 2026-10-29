@@ -4,7 +4,10 @@ import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { classInstant } from "@/lib/schedule-time";
-import { admiteAtajo, plantillaDe } from "@/lib/grading-template";
+import { admiteAtajo, leerPlantilla, plantillaDe } from "@/lib/grading-template";
+import { rubricaParaElAlumno, type RubricaDelAlumno } from "@/lib/assessment-consigna";
+import { estadosDeAcceso } from "@/server/access-expiry";
+import { adjuntosPorContenedor, type AdjuntoDto } from "@/server/resources";
 import {
   PLAZO_SUPERA_ENTREGA_FINAL,
   instanteDeEntregaFinal,
@@ -68,14 +71,10 @@ export type EntregaVigente = {
  * Las dos en `null` es un estado legítimo (DV-001): no todas las evaluaciones
  * tienen plazo, y sin plazo no hay "tardía" que marcar.
  */
-export function fechaVigente(
-  grupo: Date | null,
-  individual: Date | null
-): Date | null {
-  if (!grupo) return individual;
-  if (!individual) return grupo;
-  return individual.getTime() > grupo.getTime() ? individual : grupo;
-}
+// 0084 — La regla vive en `src/lib/fecha-vigente.ts`; se re-exporta acá para
+// que los llamadores de siempre no cambien.
+export { fechaVigente } from "@/lib/fecha-vigente";
+import { fechaVigente } from "@/lib/fecha-vigente";
 
 /**
  * FR-005d — **"Fuera de plazo" se calcula AL MOSTRAR**, contra la fecha
@@ -164,6 +163,15 @@ export type EntregaDeEvaluacionDto = {
   puedeEntregar: boolean;
   /** FR-008 — el historial completo, la más reciente primero. */
   entregas: EntregaDto[];
+  /** 0084 — La consigna (gramática en línea; la pantalla la dibuja con `<Markdown>`). */
+  instructionsMd: string;
+  /** 0084 — La rúbrica que se va a usar, visible ANTES de entregar. */
+  rubrica: RubricaDelAlumno;
+  /**
+   * 0084 — Los adjuntos de la consigna. Son CONTENIDO (043): con el acceso
+   * vencido no se consultan y viajan vacíos, como el resto del material.
+   */
+  adjuntos: AdjuntoDto[];
 };
 
 export type EntregaResult<T> =
@@ -308,9 +316,17 @@ function porEvaluacion(filas: FilaDeEntrega[]): Map<string, FilaDeEntrega[]> {
 }
 
 function armarEvaluacion(
-  evaluacion: { id: string; name: string; required: boolean; dueAt: Date | null },
+  evaluacion: {
+    id: string;
+    name: string;
+    required: boolean;
+    dueAt: Date | null;
+    instructionsMd: string;
+    rubrica: RubricaDelAlumno;
+  },
   entregas: FilaDeEntrega[],
-  prorroga: ProrrogaDto | null
+  prorroga: ProrrogaDto | null,
+  adjuntos: AdjuntoDto[]
 ): EntregaDeEvaluacionDto {
   const vigente = fechaVigente(
     evaluacion.dueAt,
@@ -328,6 +344,9 @@ function armarEvaluacion(
     estado: estadoDeEntrega(actual, vigente),
     puedeEntregar: puedeEntregar(actual),
     entregas: entregas.map((e) => serializar(e, vigente)),
+    instructionsMd: evaluacion.instructionsMd,
+    rubrica: evaluacion.rubrica,
+    adjuntos,
   };
 }
 
@@ -390,6 +409,13 @@ export async function entregasDeCursada(
         name: schema.assessment.name,
         required: schema.assessment.required,
         dueAt: schema.assessment.dueAt,
+        // 0084 — la consigna y la plantilla, para la rúbrica previa.
+        instructionsMd: schema.assessment.instructionsMd,
+        scale: schema.assessment.scale,
+        minScore: schema.assessment.minScore,
+        requiresApproval: schema.assessment.requiresApproval,
+        criteria: schema.assessment.criteria,
+        textFields: schema.assessment.textFields,
       })
       .from(schema.assessment)
       .where(
@@ -404,6 +430,17 @@ export async function entregasDeCursada(
   );
 
   if (evaluaciones.length === 0) return [];
+
+  /*
+    0084 — Los adjuntos de la consigna son CONTENIDO (043): vencido el acceso
+    no se consultan. La consigna y la rúbrica sí viajan: dicen qué se pidió y
+    con qué vara se corrigió, que es parte del logro.
+  */
+  const accesos = await estadosDeAcceso(organizationId, [inscripcion.id]);
+  const vencida = accesos.get(inscripcion.id)?.vencido === true;
+  const adjuntos = vencida
+    ? new Map<string, AdjuntoDto[]>()
+    : await adjuntosPorContenedor(organizationId, "assessment", evaluaciones.map((a) => a.id));
 
   const [prorrogas, entregas] = await Promise.all([
     db
@@ -441,7 +478,14 @@ export async function entregasDeCursada(
   return evaluaciones.map((a) => {
     const p = prorrogas.find((x) => x.assessmentId === a.id);
     return armarEvaluacion(
-      a,
+      {
+        id: a.id,
+        name: a.name,
+        required: a.required,
+        dueAt: a.dueAt,
+        instructionsMd: a.instructionsMd,
+        rubrica: rubricaParaElAlumno(leerPlantilla(a)),
+      },
       historial.get(a.id) ?? [],
       p
         ? {
@@ -449,7 +493,8 @@ export async function entregasDeCursada(
             reason: p.reason,
             grantedByName: p.grantedByName,
           }
-        : null
+        : null,
+      adjuntos.get(a.id) ?? []
     );
   });
 }

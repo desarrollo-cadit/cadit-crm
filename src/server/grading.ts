@@ -8,6 +8,7 @@ import {
   admiteAtajo,
   completarIds,
   leerPlantilla,
+  normalizarPlantilla,
   plantillaCongelada,
   plantillaDe,
   validarPlantilla,
@@ -16,6 +17,13 @@ import {
   type Template,
   type TextField,
 } from "@/lib/grading-template";
+import { validarConsigna, type ConsignaInput } from "@/lib/assessment-consigna";
+import {
+  adjuntosPorContenedor,
+  copiarAdjuntos,
+  reemplazarAdjuntos,
+  type AdjuntoDto,
+} from "@/server/resources";
 import {
   asistenciaTomadaSql,
   attendanceByModule,
@@ -178,6 +186,12 @@ export type AssessmentDto = {
   requiresApproval?: boolean;
   criteria?: Criterion[];
   textFields?: TextField[];
+  /**
+   * 0084 — La consigna (gramática en línea). Opcional por la misma razón que
+   * la plantilla: los fixtures puros no tienen por qué conocerla. No se
+   * congela y SÍ se copia.
+   */
+  instructionsMd?: string;
 };
 
 type FilaAssessment = typeof schema.assessment.$inferSelect;
@@ -189,7 +203,34 @@ function assessmentDto(a: FilaAssessment): AssessmentDto {
     position: a.position,
     required: a.required,
     dueAt: a.dueAt?.toISOString() ?? null,
+    instructionsMd: a.instructionsMd ?? "",
     ...leerPlantilla(a),
+  };
+}
+
+/**
+ * 0084 — Una evaluación MODELO del curso, leída como evaluación de origen
+ * para `planAssessmentCopy`: tomar del curso es copiar, con la MISMA regla de
+ * duplicados por nombre normalizado. Sin plazo: el modelo no tiene fecha.
+ */
+export function modeloComoEvaluacion(m: {
+  id: string;
+  name: string;
+  position: number;
+  required: boolean;
+  instructionsMd: string;
+} & Template): AssessmentDto {
+  return {
+    id: m.id,
+    name: m.name,
+    position: m.position,
+    required: m.required,
+    instructionsMd: m.instructionsMd,
+    scale: m.scale,
+    minScore: m.minScore,
+    requiresApproval: m.requiresApproval,
+    criteria: m.criteria,
+    textFields: m.textFields,
   };
 }
 
@@ -270,7 +311,9 @@ export async function guardarPlantilla(
     return { ok: false, status: 404, code: "not_found", message: "Evaluación no encontrada" };
   }
 
-  const plantilla = completarIds(entrada);
+  // 0084 — Normalizar antes de comparar: un espacio de más en una frase de la
+  // rúbrica no es un cambio de plantilla.
+  const plantilla = normalizarPlantilla(completarIds(entrada));
   const valida = validarPlantilla(plantilla);
   if (!valida.ok) {
     return { ok: false, status: 422, code: "plantilla_invalida", message: valida.mensaje };
@@ -482,7 +525,13 @@ export type CopyPlan = {
    * DV-009). El plazo no viaja: la fecha de una camada no significa nada en la
    * siguiente.
    */
-  aCopiar: ({ name: string; required: boolean; position: number } & Template)[];
+  aCopiar: ({ name: string; required: boolean; position: number; instructionsMd: string } & Template)[];
+  /**
+   * 0084 — De qué evaluación de origen sale cada copia, alineado con
+   * `aCopiar`. Va APARTE y no adentro de cada fila: el insert nunca lleva un
+   * id de origen. Sirve para copiar los adjuntos de la consigna.
+   */
+  origenIds: string[];
   /** Las que ya existían en el destino, por nombre. */
   omitidas: string[];
   /** Qué contar cuando no se copió nada. Nunca es un error. */
@@ -515,6 +564,7 @@ export function planAssessmentCopy(
   if (origen.length === 0) {
     return {
       aCopiar: [],
+      origenIds: [],
       omitidas: [],
       aviso: "El grupo de origen no tiene evaluaciones cargadas: no hay nada que copiar.",
     };
@@ -522,6 +572,7 @@ export function planAssessmentCopy(
 
   const yaEstan = new Set(destino.map((a) => claveDeNombre(a.name)));
   const aCopiar: CopyPlan["aCopiar"] = [];
+  const origenIds: string[] = [];
   const omitidas: string[] = [];
 
   // Se agregan DESPUÉS de las que ya hay, respetando el orden del origen.
@@ -548,11 +599,21 @@ export function planAssessmentCopy(
       },
       generarId
     );
-    aCopiar.push({ name: a.name.trim(), required: a.required, position: position++, ...nueva });
+    // 0084 — Las frases de cada nivel viajan con el criterio (`...c`); la
+    // consigna, como texto.
+    aCopiar.push({
+      name: a.name.trim(),
+      required: a.required,
+      position: position++,
+      instructionsMd: a.instructionsMd ?? "",
+      ...nueva,
+    });
+    origenIds.push(a.id);
   }
 
   return {
     aCopiar,
+    origenIds,
     omitidas,
     aviso:
       aCopiar.length === 0
@@ -619,24 +680,7 @@ export async function copyAssessments(
   ]);
 
   const plan = planAssessmentCopy(origen, destino);
-
-  if (plan.aCopiar.length > 0) {
-    await db.insert(schema.assessment).values(
-      plan.aCopiar.map((a) => ({
-        id: newId("assessment"),
-        organizationId,
-        cohortId: haciaCohorteId,
-        name: a.name,
-        position: a.position,
-        required: a.required,
-        scale: a.scale,
-        minScore: a.minScore,
-        requiresApproval: a.requiresApproval,
-        criteria: a.criteria,
-        textFields: a.textFields,
-      }))
-    );
-  }
+  await insertarCopias(organizationId, haciaCohorteId, plan, "assessment");
 
   return {
     ok: true,
@@ -647,6 +691,159 @@ export async function copyAssessments(
       assessments: await listAssessments(organizationId, haciaCohorteId),
     },
   };
+}
+
+/**
+ * Inserta lo que decidió el plan y copia los adjuntos de la consigna de cada
+ * origen (0084): filas NUEVAS de `resource`, la copia no comparte nada.
+ */
+async function insertarCopias(
+  organizationId: string,
+  cohortId: string,
+  plan: CopyPlan,
+  origen: "assessment" | "courseAssessmentTemplate"
+): Promise<void> {
+  if (plan.aCopiar.length === 0) return;
+  const filas = plan.aCopiar.map((a) => ({
+    id: newId("assessment"),
+    organizationId,
+    cohortId,
+    name: a.name,
+    position: a.position,
+    required: a.required,
+    instructionsMd: a.instructionsMd,
+    scale: a.scale,
+    minScore: a.minScore,
+    requiresApproval: a.requiresApproval,
+    criteria: a.criteria,
+    textFields: a.textFields,
+  }));
+  await getDb().insert(schema.assessment).values(filas);
+  await copiarAdjuntos(
+    organizationId,
+    filas.map((f, i) => ({
+      desde:
+        origen === "assessment"
+          ? { assessmentId: plan.origenIds[i]! }
+          : { courseAssessmentTemplateId: plan.origenIds[i]! },
+      hacia: { assessmentId: f.id },
+    }))
+  );
+}
+
+/**
+ * 0084 — "Tomar del curso": copia las evaluaciones MODELO del curso del grupo
+ * con la misma regla que copiar de otro grupo (nombre normalizado). Copiar,
+ * nunca heredar: después de esto, cambiar el modelo no toca al grupo.
+ */
+export async function tomarEvaluacionesDelCurso(
+  organizationId: string,
+  cohortId: string
+): Promise<GradingResult<CopyAssessmentsDto>> {
+  const db = getDb();
+  const [cohorte] = await db
+    .select({ id: schema.cohort.id, courseId: schema.cohort.courseId })
+    .from(schema.cohort)
+    .where(scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, cohortId)))
+    .limit(1);
+  if (!cohorte) {
+    return { ok: false, status: 404, code: "not_found", message: "Grupo no encontrado" };
+  }
+
+  const modelos = await db
+    .select()
+    .from(schema.courseAssessmentTemplate)
+    .where(
+      scoped(
+        schema.courseAssessmentTemplate.organizationId,
+        organizationId,
+        eq(schema.courseAssessmentTemplate.courseId, cohorte.courseId)
+      )
+    )
+    .orderBy(asc(schema.courseAssessmentTemplate.position));
+
+  const origen = modelos.map((m) =>
+    modeloComoEvaluacion({
+      id: m.id,
+      name: m.name,
+      position: m.position,
+      required: m.required,
+      instructionsMd: m.instructionsMd,
+      ...leerPlantilla(m),
+    })
+  );
+  const plan = planAssessmentCopy(origen, await listAssessments(organizationId, cohortId));
+  await insertarCopias(organizationId, cohortId, plan, "courseAssessmentTemplate");
+
+  return {
+    ok: true,
+    data: {
+      copiadas: plan.aCopiar.length,
+      omitidas: plan.omitidas,
+      aviso:
+        origen.length === 0
+          ? "El curso no tiene evaluaciones modelo: no hay nada que tomar."
+          : plan.aCopiar.length === 0
+            ? "El grupo ya tenía todas las evaluaciones del curso: no se tomó ninguna."
+            : null,
+      assessments: await listAssessments(organizationId, cohortId),
+    },
+  };
+}
+
+/* ============================================================
+ * 0084 — La consigna de una evaluación del grupo
+ * ============================================================ */
+
+export type ConsignaDto = { instructionsMd: string; adjuntos: AdjuntoDto[] };
+
+/** La consigna con sus adjuntos, para el editor del staff. `null` si no existe. */
+export async function leerConsigna(
+  organizationId: string,
+  assessmentId: string
+): Promise<ConsignaDto | null> {
+  const [fila] = await getDb()
+    .select({ instructionsMd: schema.assessment.instructionsMd })
+    .from(schema.assessment)
+    .where(
+      scoped(schema.assessment.organizationId, organizationId, eq(schema.assessment.id, assessmentId))
+    )
+    .limit(1);
+  if (!fila) return null;
+  const adjuntos = await adjuntosPorContenedor(organizationId, "assessment", [assessmentId]);
+  return { instructionsMd: fila.instructionsMd, adjuntos: adjuntos.get(assessmentId) ?? [] };
+}
+
+/**
+ * Guarda la consigna y reemplaza sus adjuntos. NO se congela (decisión del
+ * dueño): aclarar qué hay que hacer no le mueve la nota a nadie; la rúbrica
+ * sí se congela, y vive en `guardarPlantilla`.
+ *
+ * Lanza si los adjuntos no validan DESPUÉS de haber escrito: la validación de
+ * cada enlace corre antes (`validarConsigna`), así que en la práctica no pasa.
+ */
+export async function guardarConsigna(
+  organizationId: string,
+  assessmentId: string,
+  entrada: ConsignaInput
+): Promise<GradingResult<ConsignaDto>> {
+  const valida = validarConsigna(entrada);
+  if (!valida.ok) return { ok: false, status: 422, code: valida.code, message: valida.mensaje };
+
+  const actualizada = await getDb()
+    .update(schema.assessment)
+    .set({ instructionsMd: valida.data.instructionsMd, updatedAt: new Date() })
+    .where(
+      scoped(schema.assessment.organizationId, organizationId, eq(schema.assessment.id, assessmentId))
+    )
+    .returning({ id: schema.assessment.id });
+  if (!actualizada[0]) {
+    return { ok: false, status: 404, code: "not_found", message: "Evaluación no encontrada" };
+  }
+
+  const r = await reemplazarAdjuntos(organizationId, { assessmentId }, valida.data.adjuntos);
+  if (!r.ok) throw new Error(`0084: adjuntos inválidos tras validar (${r.code})`);
+  return { ok: true, data: { instructionsMd: valida.data.instructionsMd, adjuntos: r.data } };
 }
 
 /* ============================================================

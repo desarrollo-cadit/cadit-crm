@@ -1,5 +1,5 @@
 import { httpUrl } from "@/lib/url-schema";
-import { asc, eq, or } from "drizzle-orm";
+import { asc, eq, inArray, or } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
@@ -25,6 +25,13 @@ export type ResourceDto = {
   courseModuleId: string | null;
 };
 
+/**
+ * 0084 — Un adjunto de la CONSIGNA de una evaluación (o de una evaluación
+ * modelo del curso). Es un `resource` con su propio contenedor, y viaja con
+ * lo mínimo: título, enlace y tipo.
+ */
+export type AdjuntoDto = { id: string; title: string; url: string; kind: ResourceKind };
+
 export type ResourceResult<T> =
   | { ok: true; data: T }
   | { ok: false; status: 404 | 422; code: string; message: string };
@@ -38,6 +45,10 @@ export type ResourceInput = {
   cohortId?: string | null;
   classSessionId?: string | null;
   courseModuleId?: string | null;
+  /** 0084 — Adjunto de la consigna de una evaluación del grupo. */
+  assessmentId?: string | null;
+  /** 0084 — Adjunto de una evaluación modelo del curso. */
+  courseAssessmentTemplateId?: string | null;
 };
 
 /**
@@ -58,9 +69,14 @@ export function validateResource(input: ResourceInput): ResourceResult<ResourceI
    * de a pares: con tres opciones, `a === b` deja de alcanzar y escribir las
    * combinaciones a mano es como se olvida una.
    */
-  const contenedores = [input.courseId, input.cohortId, input.classSessionId].filter(
-    Boolean
-  ).length;
+  const contenedores = [
+    input.courseId,
+    input.cohortId,
+    input.classSessionId,
+    // 0084 — los adjuntos de una consigna: cuarto y quinto contenedor.
+    input.assessmentId,
+    input.courseAssessmentTemplateId,
+  ].filter(Boolean).length;
 
   if (contenedores !== 1) {
     return {
@@ -331,6 +347,8 @@ export async function createResource(
       cohortId: input.cohortId ?? null,
       classSessionId: input.classSessionId ?? null,
       courseModuleId: input.courseModuleId ?? null,
+      assessmentId: input.assessmentId ?? null,
+      courseAssessmentTemplateId: input.courseAssessmentTemplateId ?? null,
       title: input.title.trim(),
       url: input.url.trim(),
       kind: input.kind ?? "enlace",
@@ -357,6 +375,129 @@ export async function deleteResource(
     return { ok: false, status: 404, code: "not_found", message: "Material no encontrado" };
   }
   return { ok: true, data: { id } };
+}
+
+/* ============================================================
+ * 0084 — Los adjuntos de la consigna de una evaluación
+ * ============================================================
+ *
+ * Reusan `resource` (enlaces, nunca archivos: constitución II) con dos
+ * contenedores propios —`assessment_id` y `course_assessment_template_id`—
+ * para que no aparezcan como material del grupo o del curso. Quien llama ya
+ * verificó que la evaluación (o el modelo) es de la organización.
+ */
+
+export type ContenedorDeAdjuntos =
+  | { assessmentId: string }
+  | { courseAssessmentTemplateId: string };
+
+export type AdjuntoInput = { title: string; url: string };
+
+function condicionDeContenedor(c: ContenedorDeAdjuntos) {
+  return "assessmentId" in c
+    ? eq(schema.resource.assessmentId, c.assessmentId)
+    : eq(schema.resource.courseAssessmentTemplateId, c.courseAssessmentTemplateId);
+}
+
+/** Los adjuntos de varias evaluaciones (o modelos) en UNA consulta, por contenedor. */
+export async function adjuntosPorContenedor(
+  organizationId: string,
+  tipo: "assessment" | "courseAssessmentTemplate",
+  ids: readonly string[]
+): Promise<Map<string, AdjuntoDto[]>> {
+  const out = new Map<string, AdjuntoDto[]>();
+  if (ids.length === 0) return out;
+  const columna =
+    tipo === "assessment" ? schema.resource.assessmentId : schema.resource.courseAssessmentTemplateId;
+  const rows = await getDb()
+    .select({
+      id: schema.resource.id,
+      title: schema.resource.title,
+      url: schema.resource.url,
+      kind: schema.resource.kind,
+      contenedor: columna,
+    })
+    .from(schema.resource)
+    .where(scoped(schema.resource.organizationId, organizationId, inArray(columna, [...ids])))
+    .orderBy(asc(schema.resource.position), asc(schema.resource.createdAt));
+  for (const r of rows) {
+    if (!r.contenedor) continue;
+    const lista = out.get(r.contenedor) ?? [];
+    lista.push({ id: r.id, title: r.title, url: r.url, kind: r.kind });
+    out.set(r.contenedor, lista);
+  }
+  return out;
+}
+
+/**
+ * Reemplaza TODOS los adjuntos de un contenedor (la lista entera, en orden).
+ * Nadie apunta a un `resource` por su id, así que borrar y volver a insertar
+ * no rompe ninguna referencia. Cada enlace pasa por `validateResource`: la
+ * misma regla de URL que el resto del material.
+ */
+export async function reemplazarAdjuntos(
+  organizationId: string,
+  contenedor: ContenedorDeAdjuntos,
+  adjuntos: readonly AdjuntoInput[]
+): Promise<ResourceResult<AdjuntoDto[]>> {
+  for (const a of adjuntos) {
+    const v = validateResource({ ...a, ...contenedor });
+    if (!v.ok) return v;
+  }
+  const db = getDb();
+  await db
+    .delete(schema.resource)
+    .where(scoped(schema.resource.organizationId, organizationId, condicionDeContenedor(contenedor)));
+  if (adjuntos.length === 0) return { ok: true, data: [] };
+  const inserted = await db
+    .insert(schema.resource)
+    .values(
+      adjuntos.map((a, i) => ({
+        id: newId("resource"),
+        organizationId,
+        assessmentId: "assessmentId" in contenedor ? contenedor.assessmentId : null,
+        courseAssessmentTemplateId:
+          "courseAssessmentTemplateId" in contenedor ? contenedor.courseAssessmentTemplateId : null,
+        title: a.title.trim(),
+        url: a.url.trim(),
+        kind: "enlace" as const,
+        position: i,
+      }))
+    )
+    .returning();
+  return {
+    ok: true,
+    data: inserted.map((r) => ({ id: r.id, title: r.title, url: r.url, kind: r.kind })),
+  };
+}
+
+/** Copia los adjuntos de un contenedor a otro (filas NUEVAS: la copia no comparte nada). */
+export async function copiarAdjuntos(
+  organizationId: string,
+  pares: readonly { desde: ContenedorDeAdjuntos; hacia: ContenedorDeAdjuntos }[]
+): Promise<void> {
+  const db = getDb();
+  for (const { desde, hacia } of pares) {
+    const origen = await db
+      .select({ title: schema.resource.title, url: schema.resource.url, kind: schema.resource.kind })
+      .from(schema.resource)
+      .where(scoped(schema.resource.organizationId, organizationId, condicionDeContenedor(desde)))
+      .orderBy(asc(schema.resource.position), asc(schema.resource.createdAt));
+    if (origen.length === 0) continue;
+    await db.insert(schema.resource).values(
+      origen.map((r, i) => ({
+        id: newId("resource"),
+        organizationId,
+        assessmentId: "assessmentId" in hacia ? hacia.assessmentId : null,
+        courseAssessmentTemplateId:
+          "courseAssessmentTemplateId" in hacia ? hacia.courseAssessmentTemplateId : null,
+        title: r.title,
+        url: r.url,
+        kind: r.kind,
+        position: i,
+      }))
+    );
+  }
 }
 
 /* ============================================================

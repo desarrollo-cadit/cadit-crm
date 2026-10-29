@@ -118,6 +118,9 @@ const prefixes = {
   /** 046 US6 — importaciones de historial y cursadas históricas. */
   historicalImportBatch: "hib",
   historicalCourseTaking: "hct",
+  /** 0084 — evaluaciones modelo de un curso y correos al alumno sobre sus evaluaciones. */
+  courseAssessmentTemplate: "casm",
+  assessmentNotice: "asn",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

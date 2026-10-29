@@ -32,9 +32,9 @@ const PUBLICADA: CorreccionPublicada = {
     passed: true,
     feedback: "Muy buen trabajo en general.",
     criterionScores: [
-      { criterionId: "c1", points: 35, comment: "Prolijo" },
-      { criterionId: "c2", points: 20, comment: null },
-      { criterionId: "c3", points: 25, comment: null },
+      { criterionId: "c1", points: 35, comment: "Prolijo", level: null },
+      { criterionId: "c2", points: 20, comment: null, level: null },
+      { criterionId: "c3", points: 25, comment: null, level: null },
     ],
     textValues: [{ fieldId: "f1", value: "Las cotas del corte" }],
     correctedByName: "Ana Profe",
@@ -56,6 +56,29 @@ describe("CorreccionDelAlumno", () => {
     expect(html).toContain("Las cotas del corte");
     expect(html).toContain("Muy buen trabajo en general.");
     expect(html).toContain("Ana Profe");
+  });
+
+  it("0084 — publicada con rúbrica: por criterio, el nivel, los puntos, la frase del nivel y el comentario", () => {
+    const html = render({
+      ...PUBLICADA,
+      criteria: [
+        { id: "c1", name: "Modelado", maxPoints: 40, levels: { bueno: "Errores menores" } },
+        { id: "c2", name: "Planos", maxPoints: 30 },
+        { id: "c3", name: "Render", maxPoints: 30 },
+      ],
+      correction: {
+        ...PUBLICADA.correction,
+        criterionScores: [
+          { criterionId: "c1", points: 30, comment: "Revisá muros", level: "bueno" },
+          { criterionId: "c2", points: 20, comment: null, level: null },
+          { criterionId: "c3", points: 25, comment: null, level: null },
+        ],
+      },
+    });
+    expect(html).toContain("Bueno");
+    expect(html).toContain("30 de 40");
+    expect(html).toContain("Errores menores");
+    expect(html).toContain("Revisá muros");
   });
 
   it("sin corrección publicada dice «Pendiente de corrección», nunca desaprobada", () => {
