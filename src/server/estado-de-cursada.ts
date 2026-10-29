@@ -6,6 +6,7 @@ import {
 } from "@/server/attendance";
 import { dispensaDeInscripcion, estadoDeModulo } from "@/server/grading";
 import type { DispensaDeAsistencia, ModuleState } from "@/lib/approval";
+import { afirmadoConSugerencia, grupoSinResultado, type ResultadoFinal } from "@/lib/resultado-final";
 
 /**
  * 046 (research R2) — La aprobación de UNA cursada, tal como la decide el
@@ -29,6 +30,16 @@ export type InscripcionParaAprobar = {
   waiverAuthorName: string | null;
   cohortMinPct: number | null;
   courseMinPct: number | null;
+  /**
+   * 0086 — El resultado final CONFIRMADO (`enrollment_final_result`), o
+   * `null`. Es lo único que esta función devuelve como hecho en `state`.
+   */
+  resultadoConfirmado: ResultadoFinal | null;
+  /**
+   * 2026-10-29 — Las fechas del grupo: si TERMINÓ sin la asistencia completa
+   * (`grupoSinResultado`, sobre `piezas.clases`) no hay resultado.
+   */
+  grupo: { startDate: Date | null; endDate: Date | null };
 };
 
 export type PiezasDeCursada = {
@@ -51,8 +62,16 @@ export type AprobacionDeCursada = {
   minAttendancePct: number | null;
   assessments: { name: string; passed: boolean | null; required: boolean }[];
   dispensa: DispensaDeAsistencia | null;
+  /**
+   * 0086 — Lo AFIRMADO: el resultado confirmado; sin confirmar, `pendiente`
+   * (o `sin_datos` si no hay nada cargado). Nunca el cálculo.
+   */
   state: ModuleState;
   reasons: string[];
+  /** 0086 — La sugerencia del sistema (notas + asistencia), solo para el staff. */
+  sugerencia: { state: ModuleState; reasons: string[] };
+  /** 2026-10-29 — El grupo terminó sin la asistencia completa: no hay resultado. */
+  sinResultado: boolean;
 };
 
 export function estadoDeAprobacionDeCursada(
@@ -97,12 +116,33 @@ export function estadoDeAprobacionDeCursada(
     attendanceWaiverRevokedAt: inscripcion.attendanceWaiverRevokedAt,
     attendanceWaiverByName: inscripcion.waiverAuthorName,
   });
-  const { state, reasons } = estadoDeModulo(
+  const sugerencia = estadoDeModulo(
     assessments.filter((r) => r.required).map((r) => r.passed),
     pct,
     minPct,
     dispensa
   );
 
-  return { attendancePct: pct, minAttendancePct: minPct, assessments, dispensa, state, reasons };
+  /**
+   * 0086 (decisión del dueño 2026-10-23) — Ninguna aprobación es automática:
+   * lo que se afirma es el resultado CONFIRMADO. Sin confirmar, el legajo y el
+   * recorrido dicen `pendiente` (o `sin_datos`, que no afirma nada).
+   */
+  const sinResultado = grupoSinResultado(
+    inscripcion.grupo,
+    piezas.clases.map((c) => ({ date: c.date, endTime: c.endTime, canceledAt: c.canceledAt, tomada: c.tomada })),
+    piezas.reloj
+  );
+  const { state, reasons } = afirmadoConSugerencia(inscripcion.resultadoConfirmado, sugerencia, sinResultado);
+
+  return {
+    attendancePct: pct,
+    minAttendancePct: minPct,
+    assessments,
+    dispensa,
+    state,
+    reasons,
+    sugerencia,
+    sinResultado,
+  };
 }

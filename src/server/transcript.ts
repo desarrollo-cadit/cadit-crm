@@ -11,6 +11,8 @@ import {
 } from "@/server/attendance";
 import { getBranding } from "@/server/branding";
 import { dispensaDeInscripcion } from "@/server/grading";
+import { resultadoConfirmadoPorInscripcion } from "@/server/resultados-confirmados";
+import { grupoSinResultado } from "@/lib/resultado-final";
 
 /**
  * 031 (T038, DV-011) — Las LECTURAS de la escolaridad.
@@ -91,7 +93,7 @@ export async function escolaridadDeContacto(
           organizationId,
           eq(schema.enrollment.contactId, contactId),
           // 033 (FR-021) — Un taller no es una materia de la escolaridad.
-          cursoNoEsTaller(schema.course.kind)
+          cursoNoEsTaller(schema.course.kind, schema.cohort.registrationStatus)
         )
       )
       .orderBy(asc(schema.cohort.startDate)),
@@ -172,6 +174,9 @@ export async function escolaridadDeContacto(
       ])
     : [[], [], [], []];
 
+  // 0086 — El resultado final CONFIRMADO: lo único que la escolaridad afirma.
+  const confirmados = await resultadoConfirmadoPorInscripcion(organizationId, enrollmentIds);
+
   // Solo las clases ya dictadas cuentan: la zona de la academia y el ahora.
   const reloj = { timeZone: academia[0]?.timezone ?? "America/Montevideo", now: new Date() };
   const cursadas: CursadaInput[] = inscripciones.map(({ enrollment, cohort, course, waiverAuthor }) => {
@@ -207,6 +212,15 @@ export async function escolaridadDeContacto(
       ),
       dispensa: dispensaDeInscripcion({ ...enrollment, attendanceWaiverByName: waiverAuthor }),
       posicion: cohort.position ?? null,
+      resultadoConfirmado: confirmados.get(enrollment.id) ?? null,
+      // 2026-10-29 — Terminó sin la asistencia completa: sin resultado.
+      grupoSinResultado: grupoSinResultado(
+        { startDate: cohort.startDate, endDate: cohort.endDate ?? null },
+        clases
+          .filter((c) => c.cohortId === cohort.id)
+          .map((c) => ({ date: c.date, endTime: c.endTime, canceledAt: c.canceledAt, tomada: Boolean(c.tomada) })),
+        reloj
+      ),
       evaluaciones: evaluaciones
         .filter((a) => a.cohortId === cohort.id)
         .map((a) => {

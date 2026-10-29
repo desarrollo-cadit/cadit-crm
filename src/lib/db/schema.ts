@@ -2523,6 +2523,57 @@ export const certificate = pgTable(
   (t) => [index("certificate_org_idx").on(t.organizationId)]
 );
 
+export const FINAL_RESULTS = ["aprobado", "reprobado"] as const;
+export type FinalResult = (typeof FINAL_RESULTS)[number];
+
+/**
+ * 0086 — El RESULTADO FINAL de una cursada, CONFIRMADO por una persona
+ * (decisión del dueño 2026-10-23: ninguna aprobación es automática).
+ *
+ * `approvalState` (notas + asistencia) pasa a ser una SUGERENCIA: se guarda
+ * acá como `suggested_result` en el momento de confirmar, para que quede
+ * escrito si la persona siguió la sugerencia o la corrigió. Lo que se afirma
+ * como hecho —certificados, escolaridad, legajo, portal, recorrido, reportes,
+ * constancia— sale de `result`.
+ *
+ * Una fila por inscripción (`enrollment_id` UNIQUE). Corregir un resultado ya
+ * confirmado PISA la fila con el nuevo autor y la nueva fecha (no hay
+ * historial de versiones). La madre de una especialización no tiene fila: su
+ * resultado se compone de los resultados confirmados de sus módulos.
+ */
+export const enrollmentFinalResult = pgTable(
+  "enrollment_final_result",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    enrollmentId: text("enrollment_id")
+      .notNull()
+      .unique()
+      .references(() => enrollment.id, { onDelete: "cascade" }),
+    result: text("result").$type<FinalResult>().notNull(),
+    /** Lo que el sistema sugería al confirmar: aprobado | reprobado | pendiente. */
+    suggestedResult: text("suggested_result").notNull(),
+    note: text("note"),
+    confirmedBy: text("confirmed_by").references(() => user.id, { onDelete: "set null" }),
+    confirmedAt: timestamp("confirmed_at").notNull().defaultNow(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("enrollment_final_result_org_idx").on(t.organizationId),
+    check(
+      "enrollment_final_result_result_valid",
+      sql`${t.result} in ('aprobado', 'reprobado')`
+    ),
+    check(
+      "enrollment_final_result_suggested_valid",
+      sql`${t.suggestedResult} in ('aprobado', 'reprobado', 'pendiente')`
+    ),
+  ]
+);
+
 /* ============================================================
  * 012 — Identidad de portal y roles de staff
  * ============================================================ */

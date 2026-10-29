@@ -30,7 +30,8 @@ export type ReglaDeTarea =
   | "confirmar"
   | "facturar"
   | "leads"
-  | "prorrogas";
+  | "prorrogas"
+  | "resultados";
 export type Urgencia = "alta" | "media";
 
 export type TareaDeHoy = {
@@ -120,6 +121,16 @@ export const REGLAS_DE_TAREAS = [
     capacidades: ["evaluacion.editar"],
     titulo: "Prórrogas por resolver",
     unidad: ["pedido de prórroga", "pedidos de prórroga"],
+    porGrupo: true,
+  },
+  {
+    // 0086 — Ninguna aprobación es automática: los grupos terminados con
+    // alumnos sin resultado final confirmado. La MISMA capacidad con la que
+    // el staff confirma (`PUT /api/cohorts/[id]/final-results`).
+    id: "resultados",
+    capacidades: ["correcciones.aprobar"],
+    titulo: "Resultados finales sin confirmar",
+    unidad: ["alumno sin resultado final", "alumnos sin resultado final"],
     porGrupo: true,
   },
 ] as const satisfies readonly {
@@ -514,6 +525,57 @@ export function tareasDeProrrogas(
       cantidad: n,
     } satisfies TareaDeHoy;
   });
+}
+
+/* ============================================================ 6. resultados finales */
+
+/** Un grupo con cuántos alumnos todavía no tienen resultado final confirmado. */
+export type GrupoParaCerrar = {
+  cohortId: string;
+  cohortName: string | null;
+  courseName: string;
+  courseKind: CourseKind | null;
+  startDate: Date;
+  endDate: Date | null;
+  /** Inscripciones (no madres) sin `enrollment_final_result`. */
+  sinConfirmar: number;
+  /**
+   * 2026-10-29 — `grupoCompleto`: toda clase dictada con la lista tomada.
+   * Un grupo incompleto (importado, nunca se trabajó) no tiene resultado y
+   * no entra a la bandeja.
+   */
+  completo: boolean;
+};
+
+/**
+ * 0086 — Los grupos TERMINADOS (`computeCohortStatus`, la regla de Académico)
+ * y COMPLETOS (`grupoCompleto`, decisión del dueño 2026-10-29: sin ventana de
+ * días; los incompletos no tienen resultado) con alumnos sin resultado final
+ * confirmado. Una
+ * tarea por grupo que abre su pestaña de evaluación (donde está el cierre);
+ * alta si terminó hace más de 7 días. Sin talleres.
+ */
+export function tareasDeResultadosFinales(
+  grupos: readonly GrupoParaCerrar[],
+  reloj: RelojDeAsistencia
+): TareaDeHoy[] {
+  const out: TareaDeHoy[] = [];
+  for (const g of grupos) {
+    if (g.courseKind === "taller" || g.sinConfirmar <= 0 || !g.endDate || !g.completo) continue;
+    if (computeCohortStatus(g.startDate, g.endDate, reloj.now, reloj.timeZone) !== "finalizada") continue;
+    const hace = Math.max(0, -(diasHastaElInicio(g.endDate, reloj.now, reloj.timeZone) ?? 0));
+    const alumnos = g.sinConfirmar === 1 ? "1 alumno sin resultado final" : `${g.sinConfirmar} alumnos sin resultado final`;
+    out.push({
+      ruleId: "resultados",
+      titulo: nombreDeGrupo(g.courseName, g.cohortName),
+      detalle: `${alumnos} · terminó ${deHace(hace)}`,
+      href: `/cohorts/${g.cohortId}?tab=evaluacion`,
+      urgencia: hace > 7 ? "alta" : "media",
+      fecha: diaGuardado(g.endDate),
+      cantidad: g.sinConfirmar,
+    });
+  }
+  return out;
 }
 
 /* ============================================================ la bandeja */

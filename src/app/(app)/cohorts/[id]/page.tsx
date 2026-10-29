@@ -115,6 +115,8 @@ export default async function CohortPage({
           canEditGrading={caps.includes("evaluacion.editar")}
           canEditEnrollments={caps.includes("inscripciones.editar")}
           canIssueCertificates={caps.includes("certificados.emitir")}
+          // 0086 — confirmar o corregir el resultado final (Coordinación cierra grupos).
+          canConfirmResults={caps.includes("correcciones.aprobar")}
           canManageAccess={caps.includes("accesos.gestionar")}
           // 040 (DV-001) — checklist y correos; el rol Ventas no la tiene.
           canFollowUp={caps.includes("inscripciones.seguimiento")}

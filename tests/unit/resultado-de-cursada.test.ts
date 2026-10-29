@@ -16,19 +16,27 @@ import { filaDeReporte, exportCompanyReportCsv } from "@/server/company-report";
 
 describe("resultadoDeCursada — la regla compartida", () => {
   it("en curso nunca es aprobado, aunque haya un resultado cargado", () => {
-    expect(resultadoDeCursada({ estadoDelGrupo: "en_curso", resultadoConfirmado: null })).toBe("en_curso");
-    expect(resultadoDeCursada({ estadoDelGrupo: "en_curso", resultadoConfirmado: "aprobado" })).toBe("en_curso");
+    expect(resultadoDeCursada({ estadoDelGrupo: "en_curso", resultadoConfirmado: null, grupoCompleto: true })).toBe("en_curso");
+    expect(resultadoDeCursada({ estadoDelGrupo: "en_curso", resultadoConfirmado: "aprobado", grupoCompleto: true })).toBe("en_curso");
   });
   it("por comenzar", () => {
-    expect(resultadoDeCursada({ estadoDelGrupo: "planificada", resultadoConfirmado: null })).toBe("por_comenzar");
+    expect(resultadoDeCursada({ estadoDelGrupo: "planificada", resultadoConfirmado: null, grupoCompleto: true })).toBe("por_comenzar");
   });
   it("terminado: solo con confirmación del profesor", () => {
-    expect(resultadoDeCursada({ estadoDelGrupo: "finalizada", resultadoConfirmado: null })).toBe("pendiente");
-    expect(resultadoDeCursada({ estadoDelGrupo: "finalizada", resultadoConfirmado: "aprobado" })).toBe("aprobado");
-    expect(resultadoDeCursada({ estadoDelGrupo: "finalizada", resultadoConfirmado: "reprobado" })).toBe("reprobado");
+    expect(resultadoDeCursada({ estadoDelGrupo: "finalizada", resultadoConfirmado: null, grupoCompleto: true })).toBe("pendiente");
+    expect(resultadoDeCursada({ estadoDelGrupo: "finalizada", resultadoConfirmado: "aprobado", grupoCompleto: true })).toBe("aprobado");
+    expect(resultadoDeCursada({ estadoDelGrupo: "finalizada", resultadoConfirmado: "reprobado", grupoCompleto: true })).toBe("reprobado");
+  });
+  it("2026-10-29 — terminado SIN la asistencia completa: sin datos, nunca aprobado ni pendiente", () => {
+    expect(
+      resultadoDeCursada({ estadoDelGrupo: "finalizada", resultadoConfirmado: "aprobado", grupoCompleto: false })
+    ).toBe("sin_datos");
+    expect(resultadoDeCursada({ estadoDelGrupo: "finalizada", resultadoConfirmado: null, grupoCompleto: false })).toBe(
+      "sin_datos"
+    );
   });
   it("sin grupo no se puede decir nada", () => {
-    expect(resultadoDeCursada({ estadoDelGrupo: null, resultadoConfirmado: null })).toBe("sin_datos");
+    expect(resultadoDeCursada({ estadoDelGrupo: null, resultadoConfirmado: null, grupoCompleto: true })).toBe("sin_datos");
   });
   it("etiquetas", () => {
     expect(ETIQUETA_DE_RESULTADO.pendiente).toBe("Resultado pendiente");

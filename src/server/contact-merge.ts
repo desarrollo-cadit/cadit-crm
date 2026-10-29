@@ -94,6 +94,8 @@ const DEPENDIENTES_DE_INSCRIPCION: readonly [string, string][] = [
   ["assessment_extension", "enrollment_id"],
   // 0083 — el pedido de prórroga del alumno (pendiente o decidido).
   ["assessment_extension_request", "enrollment_id"],
+  // 0086 — el resultado final confirmado de la cursada.
+  ["enrollment_final_result", "enrollment_id"],
   ["correction", "enrollment_id"],
   ["certificate", "enrollment_id"],
   ["offline_quiz_attempt", "enrollment_id"],

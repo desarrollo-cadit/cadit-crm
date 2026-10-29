@@ -15,6 +15,8 @@ const cursada = (over: Partial<CursadaInput>): CursadaInput => ({
   minAsistenciaPct: 75,
   dispensa: null,
   posicion: null,
+  resultadoConfirmado: null,
+  grupoSinResultado: false,
   evaluaciones: [
     { nombre: "Entrega final — modelo completo", obligatoria: true, escala: "numeric", nota: 80, aprobada: true },
     { nombre: "Práctico de familias", obligatoria: false, escala: "pass_fail", nota: null, aprobada: null },

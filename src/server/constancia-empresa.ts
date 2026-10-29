@@ -24,6 +24,7 @@ import { columnasDeClaseConLista } from "@/server/attendance";
 import { parseMetadata } from "@/server/branding";
 import { leerRecesos } from "@/server/recesses";
 import { cursoNoEsTaller } from "@/server/workshop-scope";
+import { resultadoConfirmadoPorInscripcion } from "@/server/resultados-confirmados";
 
 /**
  * 2026-10-29 — Lectura de la constancia para una empresa. Solo LEE y le pasa
@@ -127,7 +128,7 @@ async function inscripciones(organizationId: string, condicion: SQL) {
         schema.enrollment.organizationId,
         organizationId,
         condicion,
-        cursoNoEsTaller(schema.course.kind),
+        cursoNoEsTaller(schema.course.kind, schema.cohort.registrationStatus),
         ne(schema.pipelineStage.kind, "lost")
       )
     );
@@ -196,6 +197,9 @@ async function leerEmpresa(organizationId: string, companyId: string): Promise<L
     leerRecesos(db, organizationId, cohortIds),
   ]);
 
+  // 0086 — El resultado final CONFIRMADO por el profesor (decisión del dueño 2026-10-23).
+  const confirmados = await resultadoConfirmadoPorInscripcion(organizationId, enrollmentIds);
+
   const grupos: GrupoDeConstancia[] = cohortIds.map((cohortId) => {
     const deEste = filas.filter((f) => f.cohortId === cohortId);
     const g = deEste[0]!;
@@ -208,12 +212,11 @@ async function leerEmpresa(organizationId: string, companyId: string): Promise<L
         .filter((m) => m.enrollmentId === f.enrollmentId)
         .map((m) => ({ classSessionId: m.classSessionId, status: m.status })),
       /**
-       * El resultado final CONFIRMADO por el profesor todavía no existe en el
-       * sistema (decisión del dueño 2026-10-23, sin implementar). Hasta
-       * entonces, un grupo terminado se informa "Resultado pendiente": nunca
-       * se deriva "Aprobado" de la asistencia ni de las notas.
+       * 0086 — El resultado final CONFIRMADO por el profesor. Sin confirmar,
+       * un grupo terminado se informa "Resultado pendiente": nunca se deriva
+       * "Aprobado" de la asistencia ni de las notas.
        */
-      resultadoConfirmado: null,
+      resultadoConfirmado: confirmados.get(f.enrollmentId) ?? null,
     }));
     return {
       cohortId,
@@ -269,7 +272,7 @@ async function sinFacturarALaEmpresa(organizationId: string, companyId: string) 
         or(isNull(schema.enrollment.companyId), ne(schema.enrollment.companyId, companyId)),
         isNull(schema.enrollment.parentEnrollmentId),
         isNotNull(schema.enrollment.cohortId),
-        cursoNoEsTaller(schema.course.kind),
+        cursoNoEsTaller(schema.course.kind, schema.cohort.registrationStatus),
         ne(schema.pipelineStage.kind, "lost")
       )
     );

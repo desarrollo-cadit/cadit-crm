@@ -100,8 +100,20 @@ describe("escolaridadDeContacto", () => {
       { enrollmentId: "enr_1", classSessionId: "cls_2", status: "ausente" },
     ]);
     responder("classSession", [
-      { id: "cls_1", cohortId: "coh_1", date: new Date("2026-03-02T00:00:00.000Z"), canceledAt: null },
-      { id: "cls_2", cohortId: "coh_1", date: new Date("2026-03-04T00:00:00.000Z"), canceledAt: null },
+      // Lista tomada en todas las clases: el grupo está COMPLETO (0086).
+      { id: "cls_1", cohortId: "coh_1", date: new Date("2026-03-02T00:00:00.000Z"), canceledAt: null, tomada: true },
+      { id: "cls_2", cohortId: "coh_1", date: new Date("2026-03-04T00:00:00.000Z"), canceledAt: null, tomada: true },
+    ]);
+    // 0086 — La escolaridad afirma el resultado CONFIRMADO, nunca el calculado.
+    responder("enrollmentFinalResult", [
+      {
+        enrollmentId: "enr_1",
+        result: "reprobado",
+        suggestedResult: "reprobado",
+        note: null,
+        confirmedAt: new Date("2026-07-01T00:00:00.000Z"),
+        confirmedByName: "Coordinación",
+      },
     ]);
     responder("assessment", [
       { id: "asm_1", cohortId: "coh_1", name: "Trabajo final", required: true, scale: "numeric", position: 0 },
@@ -122,8 +134,26 @@ describe("escolaridadDeContacto", () => {
       { nombre: "Trabajo final", obligatoria: true, escala: "numeric", nota: 80, aprobada: true },
       { nombre: "Parcial", obligatoria: true, escala: "pass_fail", nota: null, aprobada: null },
     ]);
-    // Asistencia 50% con mínimo 75 → no aprobado; el parcial pendiente no lo salva.
+    // Grupo completo con el resultado confirmado: eso es lo que se afirma.
     expect(c.estado).toBe("reprobado");
+  });
+
+  it("grupo completo SIN confirmar: no afirma reprobado aunque la sugerencia lo diga", async () => {
+    responder("contact", [{ firstName: "Ana", lastName: null, nationalId: null }]);
+    responder("organization", [{ name: "CAD IT", timezone: "America/Montevideo" }]);
+    responder("enrollment", [
+      { enrollment: INSCRIPCION, cohort: COHORTE, course: CURSO, waiverAuthor: null },
+    ]);
+    responder("attendance", [
+      { enrollmentId: "enr_1", classSessionId: "cls_1", status: "ausente" },
+    ]);
+    responder("classSession", [
+      { id: "cls_1", cohortId: "coh_1", date: new Date("2026-03-02T00:00:00.000Z"), canceledAt: null, tomada: true },
+    ]);
+
+    const r = await escolaridadDeContacto(ORG, "ct_1");
+    expect(r!.escolaridad.cursadas[0]!.estado).not.toBe("reprobado");
+    expect(r!.escolaridad.cursadas[0]!.estado).not.toBe("aprobado");
   });
 
   it("sin marcas de asistencia el porcentaje es null, no 0%", async () => {

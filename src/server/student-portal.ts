@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull } from "drizzle-orm";
 import { inscripcionesNoDictadas } from "@/server/cursadas-no-dictadas";
 import { cursoNoEsTaller } from "@/server/workshop-scope";
 import { getDb, schema } from "@/lib/db";
@@ -19,7 +19,20 @@ import {
   programApprovalState,
   type ApprovalState,
 } from "@/server/grading";
-import { reasonForStudent } from "@/server/student-reasons";
+import { computeCohortStatus } from "@/lib/cohort-status";
+import {
+  RAZON_GRUPO_INCOMPLETO,
+  certificadoVisibleParaElAlumno,
+  estadoAfirmado,
+  grupoCompleto,
+  visibilidadSegun,
+  type EstadoAfirmado,
+  type ResultadoFinal,
+} from "@/lib/resultado-final";
+import {
+  estadosAfirmados,
+  resultadoConfirmadoPorInscripcion,
+} from "@/server/resultados-confirmados";
 import {
   listAnnouncements,
   listCohortMaterial,
@@ -138,8 +151,11 @@ async function scopedEnrollments(
         schema.enrollment.organizationId,
         organizationId,
         eq(schema.enrollment.contactId, contactId),
-        // 033 (FR-021) — Anotarse a un taller no es cursar: no aparece en el portal.
-        cursoNoEsTaller(schema.course.kind)
+        // Una inscripción sin grupo es un lead del pipeline, no una cursada:
+        // no aparece en el portal ni se puede abrir por su id.
+        isNotNull(schema.enrollment.cohortId),
+        // 033 (FR-021) — Anotarse a un taller de Marketing no es cursar: no aparece en el portal.
+        cursoNoEsTaller(schema.course.kind, schema.cohort.registrationStatus)
       )
     )
     .orderBy(desc(schema.cohort.startDate));
@@ -242,8 +258,17 @@ export type StudentCourseDto = {
   totalClasses: number;
   completedClasses: number;
   minAttendancePct: number | null;
+  /**
+   * 0086 — El resultado AFIRMADO: el final confirmado por el profesor, o
+   * `pendiente` hasta entonces. Nunca el cálculo de notas + asistencia.
+   */
   approval: ApprovalState | "sin_datos";
   approvalReasons: string[];
+  /**
+   * 0086 — El grupo terminó y el resultado final todavía no se confirmó: la
+   * pantalla dice "Resultado pendiente de confirmación" y no "En curso".
+   */
+  awaitingConfirmation: boolean;
   assessments: StudentAssessmentDto[];
   certificate: {
     code: string;
@@ -490,7 +515,7 @@ export async function studentOverview(
     asistencias,
     evaluaciones,
     resultados,
-    certificados,
+    ...(await resultadoYCertificadosVisibles(organizationId, enrollmentIds, certificados)),
     licencias,
     accesos,
     prorrogas: await prorrogasDeInscripciones(organizationId, enrollmentIds, enrollments),
@@ -558,7 +583,14 @@ type CrossData = {
   asistencias: (typeof schema.attendance.$inferSelect)[];
   evaluaciones: (typeof schema.assessment.$inferSelect)[];
   resultados: (typeof schema.assessmentResult.$inferSelect)[];
+  /** 0086 — Solo los que el alumno puede ver: los SUSPENDIDOS no viajan. */
   certificados: (typeof schema.certificate.$inferSelect)[];
+  /**
+   * 0086 — El resultado final CONFIRMADO de cada inscripción. Es lo único que
+   * se le afirma al alumno: sin confirmar, "Resultado pendiente de
+   * confirmación" (decisión del dueño 2026-10-23).
+   */
+  confirmados: Map<string, ResultadoFinal>;
   licencias: {
     enrollmentId: string;
     assigned: boolean;
@@ -573,6 +605,33 @@ type CrossData = {
 };
 
 const DIA_MS = 86_400_000;
+
+/**
+ * 0086 — El resultado CONFIRMADO de cada inscripción y los certificados que
+ * el alumno puede ver. Un certificado SUSPENDIDO (sin resultado final
+ * confirmado como aprobado) no viaja: no se consulta en otra forma, no se
+ * arma y no llega a la pantalla. El anulado sí viaja, como siempre, con su
+ * fecha.
+ */
+async function resultadoYCertificadosVisibles(
+  organizationId: string,
+  enrollmentIds: string[],
+  certificados: (typeof schema.certificate.$inferSelect)[]
+): Promise<Pick<CrossData, "certificados" | "confirmados">> {
+  const [confirmados, afirmados] = await Promise.all([
+    resultadoConfirmadoPorInscripcion(organizationId, enrollmentIds),
+    certificados.length > 0
+      ? estadosAfirmados(organizationId, certificados.map((c) => c.enrollmentId))
+      : Promise.resolve(new Map<string, EstadoAfirmado>()),
+  ]);
+  return {
+    confirmados,
+    // 2026-10-29 — Tampoco viaja el de un grupo terminado sin asistencia completa (anulado).
+    certificados: certificados.filter((c) =>
+      certificadoVisibleParaElAlumno(visibilidadSegun(c.revokedAt, afirmados.get(c.enrollmentId)))
+    ),
+  };
+}
 
 /**
  * 043 — ¿Venció el acceso a los contenidos de esta inscripción? Sin estado
@@ -669,16 +728,34 @@ function buildCourse(
     ...enrollment,
     attendanceWaiverByName: waiverAuthorName,
   });
-  const { state, reasons } = estadoDeModulo(
+  const { state: sugerido } = estadoDeModulo(
     assessments.filter((a) => a.required).map((a) => a.passed),
     attendancePct,
     minAttendancePct,
     dispensa
   );
 
-  // 030 — `estadoDeModulo` decide `sin_datos` con la MISMA regla que el
-  // legajo, la grilla del Recorrido y el certificado general.
-  const sinDatos = state === "sin_datos";
+  /**
+   * 0086 — Al alumno se le afirma SOLO el resultado final confirmado. El
+   * cálculo de arriba es una sugerencia para el staff y el profesor: acá solo
+   * decide `sin_datos` (030), que no afirma nada sobre la persona.
+   */
+  const grupoTermino =
+    cohort?.startDate != null &&
+    computeCohortStatus(cohort.startDate, cohort.endDate ?? null, now, data.timezone) === "finalizada";
+  /**
+   * 2026-10-29 — Un grupo TERMINADO sin la asistencia completa no tiene
+   * resultado: ni aprobado, ni reprobado, ni pendiente de confirmación.
+   */
+  const sinResultado =
+    grupoTermino &&
+    !grupoCompleto(
+      clases.map((c) => ({ date: c.date, endTime: c.endTime, canceledAt: c.canceledAt, tomada: Boolean(c.tomada) })),
+      reloj
+    );
+  const confirmado = sinResultado ? null : (data.confirmados.get(enrollment.id) ?? null);
+  const sinDatos = sinResultado || (confirmado === null && sugerido === "sin_datos");
+  const { state, reasons } = estadoAfirmado(confirmado);
 
   const cert = data.certificados.find((c) => c.enrollmentId === enrollment.id);
   // 034 (FR-020) — Varias por cursada; las asignadas primero.
@@ -721,9 +798,12 @@ function buildCourse(
     ).length,
     minAttendancePct,
     approval: sinDatos ? "sin_datos" : state,
-    approvalReasons: sinDatos
-      ? ["Todavía no hay asistencia ni evaluaciones cargadas para este curso"]
-      : reasons.map(reasonForStudent),
+    approvalReasons: sinResultado
+      ? [RAZON_GRUPO_INCOMPLETO]
+      : sinDatos
+        ? ["Todavía no hay asistencia ni evaluaciones cargadas para este curso"]
+        : reasons,
+    awaitingConfirmation: confirmado === null && grupoTermino && !sinResultado,
     assessments,
     certificate: cert
       ? {
@@ -988,6 +1068,8 @@ function componerEspecializacion(
     eligibleCount: 0,
     approval: state,
     approvalReasons: reasons,
+    // 0086 — La madre no se confirma: espera mientras algún módulo espere.
+    awaitingConfirmation: state === "pendiente" && curso.awaitingConfirmation,
     modules,
   };
 }
@@ -1237,7 +1319,7 @@ export async function studentCourseDetail(
     asistencias,
     evaluaciones,
     resultados,
-    certificados,
+    ...(await resultadoYCertificadosVisibles(organizationId, enrollmentIds, certificados)),
     licencias,
     accesos,
     prorrogas: await prorrogasDeInscripciones(organizationId, enrollmentIds, recorrido),
@@ -1650,6 +1732,7 @@ export async function studentCertificates(
   const rows = await db
     .select({
       code: schema.certificate.code,
+      enrollmentId: schema.certificate.enrollmentId,
       issuedAt: schema.certificate.issuedAt,
       revokedAt: schema.certificate.revokedAt,
       courseName: schema.course.name,
@@ -1671,7 +1754,19 @@ export async function studentCertificates(
     )
     .orderBy(desc(schema.certificate.issuedAt));
 
-  return rows.map((r) => ({
+  /**
+   * 0086 — Los SUSPENDIDOS (sin resultado final confirmado como aprobado) no
+   * viajan: hasta que el profesor confirme, para el alumno no hay papel.
+   */
+  const afirmados =
+    rows.length > 0
+      ? await estadosAfirmados(organizationId, rows.map((r) => r.enrollmentId))
+      : new Map<string, EstadoAfirmado>();
+  const visibles = rows.filter((r) =>
+    certificadoVisibleParaElAlumno(visibilidadSegun(r.revokedAt, afirmados.get(r.enrollmentId)))
+  );
+
+  return visibles.map((r) => ({
     code: r.code,
     issuedAt: r.issuedAt.toISOString(),
     revokedAt: r.revokedAt?.toISOString() ?? null,
@@ -1730,7 +1825,7 @@ export async function studentNavCourses(
           // cursada: en el menú del alumno sería una fila sin destino.
           gte(schema.cohort.startDate, new Date(0)),
           // 033 (FR-021) — Un taller tampoco: no es una cursada.
-          cursoNoEsTaller(schema.course.kind)
+          cursoNoEsTaller(schema.course.kind, schema.cohort.registrationStatus)
         )
       )
     )

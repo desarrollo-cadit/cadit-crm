@@ -39,6 +39,14 @@ vi.mock("@/lib/db", () => ({
   ),
 }));
 
+/**
+ * 0086 — El resultado final CONFIRMADO se lee fuera de la cola posicional.
+ */
+const confirmados = vi.hoisted(() => new Map<string, "aprobado" | "reprobado">());
+vi.mock("@/server/resultados-confirmados", async () =>
+  (await import("../fixtures/resultados-confirmados-doble")).dobleDeResultados(confirmados)
+);
+
 const CONTACTO = {
   id: "ct_1",
   firstName: "Ana",

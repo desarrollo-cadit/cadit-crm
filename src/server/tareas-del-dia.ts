@@ -1,4 +1,4 @@
-import { count, eq, gte, inArray, isNull, lte, max, min, ne } from "drizzle-orm";
+import { count, eq, gte, inArray, isNull, lte, max, min, ne, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import type { Capability } from "@/lib/capabilities";
@@ -16,6 +16,7 @@ import {
   tareasDeGrabaciones,
   tareasDeLeads,
   tareasDeProrrogas,
+  tareasDeResultadosFinales,
   tareasDeSugerenciasDeZoom,
   type ClaseParaTarea,
   type GrupoDeTareas,
@@ -23,6 +24,7 @@ import {
   type TareaDeHoy,
 } from "@/lib/tareas-del-dia";
 import { organizationTimezone } from "@/server/finanzas-periodo";
+import { gruposSinResultado } from "@/server/resultados-confirmados";
 
 /**
  * 2026-10-26 — La lectura de "Hoy". Las reglas viven en
@@ -60,6 +62,8 @@ export async function tareasDelDia(
     facturar: async () => tareasDeFacturacion(await ventasSinFactura(organizationId, now), reloj),
     leads: async () => tareasDeLeads(await enviosSinRespuesta(organizationId, now), now),
     prorrogas: async () => tareasDeProrrogas(await pedidosDeProrrogaPendientes(organizationId), reloj),
+    resultados: async () =>
+      tareasDeResultadosFinales(await gruposSinResultadoFinal(organizationId, now), reloj),
   };
 
   const tareas = await Promise.all(reglas.map((r) => lectores[r]()));
@@ -394,6 +398,58 @@ async function pedidosDeProrrogaPendientes(organizationId: string) {
     .innerJoin(schema.cohort, eq(schema.assessment.cohortId, schema.cohort.id))
     .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
     .where(scoped(r.organizationId, organizationId, eq(r.status, "pendiente")));
+}
+
+/* ============================================================ resultados finales */
+
+/**
+ * 0086 — Los grupos que ya terminaron (con un día de margen) y cuántas
+ * inscripciones tienen sin resultado final confirmado, en UNA consulta
+ * agregada, y si el grupo está COMPLETO (`gruposSinResultado`, una lectura
+ * más en lote). La madre de una especialización no cuenta: se confirma en sus
+ * módulos. El corte exacto (`finalizada`) lo hace la regla.
+ */
+async function gruposSinResultadoFinal(organizationId: string, now: Date) {
+  const e = schema.enrollment;
+  const fr = schema.enrollmentFinalResult;
+  const filas = await getDb()
+    .select({
+      cohortId: schema.cohort.id,
+      cohortName: schema.cohort.name,
+      courseName: schema.course.name,
+      courseKind: schema.course.kind,
+      startDate: schema.cohort.startDate,
+      endDate: schema.cohort.endDate,
+      sinConfirmar: count(),
+    })
+    .from(e)
+    .innerJoin(schema.cohort, eq(e.cohortId, schema.cohort.id))
+    .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
+    .leftJoin(fr, eq(fr.enrollmentId, e.id))
+    .where(
+      scoped(
+        e.organizationId,
+        organizationId,
+        isNull(fr.id),
+        ne(schema.course.kind, "taller"),
+        lte(schema.cohort.endDate, new Date(now.getTime() + DIA_MS)),
+        sql`not exists (select 1 from ${e} as hija where hija.parent_enrollment_id = ${e.id} and hija.organization_id = ${organizationId})`
+      )
+    )
+    .groupBy(
+      schema.cohort.id,
+      schema.cohort.name,
+      schema.course.name,
+      schema.course.kind,
+      schema.cohort.startDate,
+      schema.cohort.endDate
+    );
+  const incompletos = await gruposSinResultado(organizationId, filas.map((f) => f.cohortId), now);
+  return filas.map((f) => ({
+    ...f,
+    sinConfirmar: Number(f.sinConfirmar),
+    completo: !incompletos.has(f.cohortId),
+  }));
 }
 
 /**

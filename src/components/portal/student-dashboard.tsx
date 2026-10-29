@@ -89,6 +89,8 @@ type Course = {
   minAttendancePct: number | null;
   approval: ApprovalValue;
   approvalReasons: string[];
+  /** 0086 — terminó y falta confirmar el resultado final. */
+  awaitingConfirmation?: boolean;
   assessments: Assessment[];
   certificate: { code: string; issuedAt: string; revokedAt: string | null } | null;
   license: License | null;
@@ -340,7 +342,7 @@ export function StudentDashboard() {
                     )}
                   </span>
                   <span className="flex shrink-0 items-center gap-3">
-                    <ApprovalBadge value={c.approval} />
+                    <ApprovalBadge value={c.approval} awaitingConfirmation={c.awaitingConfirmation} />
                     <ChevronRight className="h-4 w-4 text-text-4" strokeWidth={1.7} />
                   </span>
                 </Link>
@@ -535,7 +537,7 @@ function ResumenDeCurso({
             {[course.teacherName, course.cohortName].filter(Boolean).join(" · ")}
           </p>
         </div>
-        <ApprovalBadge value={course.approval} />
+        <ApprovalBadge value={course.approval} awaitingConfirmation={course.awaitingConfirmation} />
       </div>
 
       {course.deliveryPeriod && (
@@ -658,7 +660,7 @@ function ModulesList({ modules }: { modules: Module[] }) {
               {m.otraCamada && ` · cursado con ${m.camadaName ? `el grupo ${m.camadaName}` : "otro grupo"}`}
             </span>
           </span>
-          <ApprovalBadge value={m.approval} />
+          <ApprovalBadge value={m.approval} awaitingConfirmation={m.awaitingConfirmation} />
         </li>
       ))}
     </ol>

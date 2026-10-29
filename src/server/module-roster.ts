@@ -3,6 +3,8 @@ import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { fullName } from "@/lib/utils";
 import { estadoDeModulo, type ModuleState } from "@/lib/approval";
+import { afirmadoConSugerencia } from "@/lib/resultado-final";
+import { resultadoConfirmadoPorInscripcion } from "@/server/resultados-confirmados";
 import { resumirLicencias } from "@/lib/license-rules";
 import { softwareDelGrupo } from "@/server/licenses";
 import {
@@ -199,6 +201,8 @@ export async function rosterDeModulo(
   );
   const madrePorId = new Map(madres.map((m) => [m.id, m]));
   const obligatorias = evaluaciones.filter((a) => a.required);
+  // 0086 — El resultado final CONFIRMADO de cada alumno del módulo.
+  const confirmados = await resultadoConfirmadoPorInscripcion(organizationId, ids);
 
   return {
     ...base,
@@ -207,7 +211,11 @@ export async function rosterDeModulo(
       const evaluadas = obligatorias.map(
         (a) => resultados.find((r) => r.assessmentId === a.id && r.enrollmentId === h.id)?.passed ?? null
       );
-      const { state, reasons } = estadoDeModulo(evaluadas, pct, minPct, dispensaDeInscripcion(h));
+      // 0086 — El cálculo es una SUGERENCIA; el estado es el confirmado.
+      const { state, reasons } = afirmadoConSugerencia(
+        confirmados.get(h.id) ?? null,
+        estadoDeModulo(evaluadas, pct, minPct, dispensaDeInscripcion(h))
+      );
       const madre = h.parentEnrollmentId ? madrePorId.get(h.parentEnrollmentId) : undefined;
       const otra = madre && madre.cohortId !== cohorte.parentCohortId;
       return {

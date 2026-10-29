@@ -1,7 +1,7 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage, type RGB } from "pdf-lib";
 import type { ModuleState } from "@/lib/approval";
 import {
-  ESTADO,
+  textoDeEstado,
   periodo,
   resultado,
   type Escolaridad,
@@ -117,7 +117,7 @@ function cursada(l: Lienzo, c: FilaDeCursada, sangria = 0) {
   const x = MARGEN + sangria;
   const ancho = ANCHO - sangria;
   const esModulo = sangria > 0;
-  const estado = ESTADO[c.estado];
+  const estado = textoDeEstado(c);
   const tamTitulo = esModulo ? 10.5 : 12;
   const anchoEstado = l.negrita.widthOfTextAtSize(estado, 9.5);
 

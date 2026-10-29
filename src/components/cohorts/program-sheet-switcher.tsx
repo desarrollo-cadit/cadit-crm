@@ -33,12 +33,15 @@ export function ProgramSheetSwitcher({
   kind,
   canEditGrading,
   canIssueCertificates,
+  canConfirmResults = false,
   canEditAttendance = false,
 }: {
   cohortId: string;
   kind: "attendance" | "grading";
   canEditGrading: boolean;
   canIssueCertificates: boolean;
+  /** 0086 — `correcciones.aprobar`: confirmar el resultado final de cada módulo. */
+  canConfirmResults?: boolean;
   /** 040 (DV-008) — `asistencia.editar`: pasar lista en la planilla del módulo. */
   canEditAttendance?: boolean;
 }) {
@@ -148,6 +151,7 @@ export function ProgramSheetSwitcher({
             cohortId={elegido}
             canEdit={canEditGrading}
             canIssueCertificates={canIssueCertificates}
+            canConfirmResults={canConfirmResults}
           />
         )}
       </div>

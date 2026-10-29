@@ -38,6 +38,30 @@ export default async function VerificarPage({
               XXXX-XXXX-XXXX.
             </p>
           </div>
+        ) : cert.status === "no_valido" ? (
+          // 2026-10-29 — Grupo terminado sin asistencia completa: no es válido,
+          // y no se dice de quién es ni de qué curso.
+          <div className="mt-6">
+            <p className="rounded-md bg-danger-soft px-3 py-2 text-sm font-medium text-destructive">
+              Certificado no válido
+            </p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Este certificado no es válido. Si tenés dudas, comunicate con la academia.
+            </p>
+          </div>
+        ) : cert.status === "suspendido" ? (
+          // 0086 — Emitido pero sin resultado final confirmado: no se valida y
+          // no se dice de quién es ni de qué curso.
+          <div className="mt-6">
+            <p className="rounded-md bg-subtle px-3 py-2 text-sm font-medium text-foreground">
+              Certificado no disponible por el momento
+            </p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Este certificado está pendiente de confirmación por la academia y
+              todavía no se puede validar. Si lo necesitás, comunicate con la
+              academia.
+            </p>
+          </div>
         ) : (
           <div className="mt-6 space-y-4">
             {cert.valid ? (

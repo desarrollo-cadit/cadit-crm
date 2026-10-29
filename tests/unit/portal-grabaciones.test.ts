@@ -84,6 +84,8 @@ describe("030 US6 — los portales no leen las tablas de Zoom", () => {
         "cohorts/[id]/classes/route.ts",
         "cohorts/[id]/content/route.ts",
         "cohorts/[id]/entregas/route.ts",
+        // 0086 — el profesor confirma el resultado final; no lee tablas de Zoom.
+        "cohorts/[id]/final-results/route.ts",
         "cohorts/[id]/grading/route.ts",
         "cohorts/[id]/offline-attempts/route.ts",
         "cohorts/[id]/resources/route.ts",

@@ -121,6 +121,8 @@ const prefixes = {
   /** 0084 — evaluaciones modelo de un curso y correos al alumno sobre sus evaluaciones. */
   courseAssessmentTemplate: "casm",
   assessmentNotice: "asn",
+  /** 0086 — el resultado final de una cursada, confirmado por una persona. */
+  enrollmentFinalResult: "efr",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

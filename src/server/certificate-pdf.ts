@@ -13,6 +13,8 @@ import {
 import { modulosConOrdinal } from "@/lib/program-order";
 import { fullName } from "@/lib/utils";
 import { lugaresDelPrograma, tieneHijas } from "@/server/program-modules";
+import { visibilidadSegun } from "@/lib/resultado-final";
+import { estadosAfirmados } from "@/server/resultados-confirmados";
 
 /**
  * 038 — Los hechos del certificado, leídos de la base.
@@ -191,6 +193,15 @@ async function certificadoVigente(
     .limit(1);
   const fila = rows[0];
   if (!fila) return null;
+
+  /**
+   * 0086 — SUSPENDIDO (sin resultado final confirmado como aprobado): no se
+   * entrega a nadie, ni al alumno ni al staff, para que no circule un papel
+   * que todavía no vale. Se responde igual que "no existe".
+   */
+  // 2026-10-29 — Igual con el grupo terminado sin la asistencia completa: cuenta como anulado.
+  const afirmado = (await estadosAfirmados(organizationId, [fila.enrollmentId])).get(fila.enrollmentId);
+  if (visibilidadSegun(null, afirmado) !== "valido") return null;
 
   const snapshot =
     leerSnapshot(fila.snapshot) ?? (await snapshotActual(organizationId, fila.enrollmentId));

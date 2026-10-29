@@ -1,4 +1,5 @@
-import { estadoDeModulo, programApprovalState, type DispensaDeAsistencia, type ModuleState } from "@/lib/approval";
+import { estadoDeModulo, type DispensaDeAsistencia, type ModuleState } from "@/lib/approval";
+import { programaConfirmado, type ResultadoFinal } from "@/lib/resultado-final";
 import type { Scale } from "@/lib/grading-template";
 import { escapeHtml } from "@/lib/utils";
 
@@ -44,6 +45,18 @@ export type CursadaInput = {
   /** Orden del módulo dentro de su programa (028); `null` en una cursada suelta. */
   posicion: number | null;
   evaluaciones: EvaluacionInput[];
+  /**
+   * 0086 — El resultado final CONFIRMADO por el profesor; `null` = sin
+   * confirmar. Es lo ÚNICO que la escolaridad afirma como Aprobado / No
+   * aprobado: el cálculo de notas + asistencia es una sugerencia y acá solo
+   * decide "Sin datos".
+   */
+  resultadoConfirmado: ResultadoFinal | null;
+  /**
+   * 2026-10-29 — El grupo TERMINÓ sin la asistencia completa
+   * (`grupoSinResultado`): no hay resultado, se dice "Sin datos".
+   */
+  grupoSinResultado: boolean;
 };
 
 export type EscolaridadInput = {
@@ -59,6 +72,8 @@ export type FilaDeCursada = {
   desde: Date | null;
   hasta: Date | null;
   estado: ModuleState;
+  /** 0086 — Ya terminó (al emitir): un `pendiente` es una espera de confirmación. */
+  terminada: boolean;
   asistenciaPct: number | null;
   dispensada: boolean;
   evaluaciones: EvaluacionInput[];
@@ -80,20 +95,32 @@ function porInicio(a: { desde: Date | null }, b: { desde: Date | null }): number
   return x - y;
 }
 
-function fila(c: CursadaInput): FilaDeCursada {
-  const { state } = estadoDeModulo(
+const DIA_MS = 86_400_000;
+
+/** El fin es un DÍA (medianoche UTC): terminó cuando ese día ya pasó entero. */
+function termino(hasta: Date | null, emitidaEl: Date): boolean {
+  return hasta !== null && hasta.getTime() + DIA_MS <= emitidaEl.getTime();
+}
+
+function fila(c: CursadaInput, emitidaEl: Date): FilaDeCursada {
+  const { state: sugerido } = estadoDeModulo(
     // Solo las obligatorias deciden (010): una opcional informa, no aprueba ni reprueba.
     c.evaluaciones.filter((e) => e.obligatoria).map((e) => e.aprobada),
     c.asistenciaPct,
     c.minAsistenciaPct,
     c.dispensa
   );
+  // 0086 — Solo lo CONFIRMADO es un hecho; sin confirmar, "Sin datos" o pendiente.
+  const estado: ModuleState = c.grupoSinResultado
+    ? "sin_datos"
+    : (c.resultadoConfirmado ?? (sugerido === "sin_datos" ? "sin_datos" : "pendiente"));
   return {
     curso: c.curso,
     cohorte: c.cohorte,
     desde: c.desde,
     hasta: c.hasta,
-    estado: state,
+    estado,
+    terminada: termino(c.hasta, emitidaEl),
     asistenciaPct: c.asistenciaPct,
     dispensada: c.dispensa !== null,
     evaluaciones: c.evaluaciones,
@@ -113,7 +140,7 @@ export function armarEscolaridad(input: EscolaridadInput): Escolaridad {
     .sort(porInicio)
     .map((c): FilaDeCursada => {
       const modulos = hijas.get(c.enrollmentId);
-      if (!modulos || modulos.length === 0) return fila(c);
+      if (!modulos || modulos.length === 0) return fila(c, input.emitidaEl);
 
       const filas = [...modulos]
         .sort((a, b) =>
@@ -121,13 +148,18 @@ export function armarEscolaridad(input: EscolaridadInput): Escolaridad {
             ? a.posicion - b.posicion
             : porInicio(a, b)
         )
-        .map(fila);
+        .map((m) => fila(m, input.emitidaEl));
       // El estado de la madre se COMPONE: su cohorte no tiene evaluaciones ni
       // clases propias, y preguntarle a la regla daría un default sobre nada.
-      const { state } = programApprovalState(filas.map((m) => m.estado));
+      // 0086 — Sobre los resultados CONFIRMADOS de los módulos.
+      const { state } = programaConfirmado(
+        modulos.map((m) => (m.grupoSinResultado ? null : m.resultadoConfirmado))
+      );
+      const propia = fila(c, input.emitidaEl);
       return {
-        ...fila(c),
+        ...propia,
         estado: state,
+        terminada: propia.terminada || filas.every((m) => m.terminada),
         // No existe "la asistencia de la especialización": cada módulo la suya.
         asistenciaPct: null,
         dispensada: false,
@@ -154,6 +186,15 @@ export const ESTADO: Record<ModuleState, string> = {
   pendiente: "En curso",
   sin_datos: "Sin datos",
 };
+
+/**
+ * 0086 — La palabra que se imprime: una cursada TERMINADA sin resultado
+ * confirmado no está "En curso", espera la confirmación del profesor.
+ */
+export function textoDeEstado(c: Pick<FilaDeCursada, "estado" | "terminada">): string {
+  if (c.estado === "pendiente" && c.terminada) return "Resultado pendiente";
+  return ESTADO[c.estado];
+}
 
 /**
  * Las fechas de una cohorte son DÍAS (medianoche UTC, como las guarda el
@@ -212,7 +253,7 @@ ${c.evaluaciones
       <h${modulo ? 3 : 2}>${escapeHtml(c.curso)}</h${modulo ? 3 : 2}>
       <p class="sub">${escapeHtml(c.cohorte)} · ${escapeHtml(periodo(c))}</p>
     </div>
-    <p class="estado estado-${c.estado}">${ESTADO[c.estado]}</p>
+    <p class="estado estado-${c.estado}">${textoDeEstado(c)}</p>
   </div>
   ${asistencia ? `<p class="sub">${escapeHtml(asistencia)}</p>` : ""}
   ${tabla}

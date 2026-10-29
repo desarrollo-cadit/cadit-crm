@@ -37,6 +37,8 @@ describe("reglasPermitidas — cada regla pide SU capacidad", () => {
       ["facturar", ["cobranza.ver"]],
       ["leads", ["inscripciones.seguimiento"]],
       ["prorrogas", ["evaluacion.editar"]],
+      // 0086 — grupos terminados con resultados finales sin confirmar.
+      ["resultados", ["correcciones.aprobar"]],
     ]);
   });
 

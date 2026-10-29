@@ -99,7 +99,8 @@ export type PestanaMarketing = (typeof PESTANAS_MARKETING)[number];
 /* ---------------------------------------------------------------- portal */
 
 /** `/portal/cohortes/[id]` — el grupo como lo ve el profesor. */
-export const PESTANAS_PORTAL_GRUPO = ["clases", "evaluaciones", "entregas", "material"] as const;
+/** 0086 — `cierre`: el resultado final de cada alumno, que confirma el profesor. */
+export const PESTANAS_PORTAL_GRUPO = ["clases", "evaluaciones", "entregas", "cierre", "material"] as const;
 export type PestanaPortalGrupo = (typeof PESTANAS_PORTAL_GRUPO)[number];
 export const ALIAS_PORTAL_GRUPO: Readonly<Record<string, PestanaPortalGrupo>> = {
   evaluacion: "evaluaciones",

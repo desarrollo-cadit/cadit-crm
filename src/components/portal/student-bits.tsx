@@ -164,7 +164,20 @@ const APROBACION: Record<
   sin_datos: { label: "Sin registro", tone: "neutro" },
 };
 
-export function ApprovalBadge({ value }: { value: ApprovalValue }) {
+export function ApprovalBadge({
+  value,
+  awaitingConfirmation = false,
+}: {
+  value: ApprovalValue;
+  /**
+   * 0086 — El grupo terminó y el profesor todavía no confirmó el resultado
+   * final: no es "En curso" ni "Aprobado", es una espera.
+   */
+  awaitingConfirmation?: boolean;
+}) {
+  if (awaitingConfirmation && value !== "aprobado" && value !== "reprobado") {
+    return <ChipDeEstado tono="neutro">Resultado pendiente de confirmación</ChipDeEstado>;
+  }
   const { label, tone } = APROBACION[value];
   return <ChipDeEstado tono={tone}>{label}</ChipDeEstado>;
 }
