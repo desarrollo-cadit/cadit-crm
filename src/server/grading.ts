@@ -3,6 +3,11 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
+import {
+  evaluacionEsDeGrupoConEvaluaciones,
+  exigirEvaluacionesDeEvaluacion,
+  exigirEvaluacionesDeGrupo,
+} from "@/server/taller-config";
 import { instanteDeEntregaFinal } from "@/lib/entrega-final";
 import {
   admiteAtajo,
@@ -267,6 +272,8 @@ export async function createAssessment(
   if (!cohortRows[0]) {
     return { ok: false, status: 404, code: "not_found", message: "Grupo no encontrado" };
   }
+  const sinEvaluaciones = await exigirEvaluacionesDeGrupo(organizationId, cohortId);
+  if (sinEvaluaciones) return sinEvaluaciones;
 
   const existing = await listAssessments(organizationId, cohortId);
   const inserted = await db
@@ -310,6 +317,8 @@ export async function guardarPlantilla(
   if (!fila) {
     return { ok: false, status: 404, code: "not_found", message: "Evaluación no encontrada" };
   }
+  const sinEvaluaciones = await exigirEvaluacionesDeEvaluacion(organizationId, assessmentId);
+  if (sinEvaluaciones) return sinEvaluaciones;
 
   // 0084 — Normalizar antes de comparar: un espacio de más en una frase de la
   // rúbrica no es un cambio de plantilla.
@@ -415,6 +424,8 @@ export async function recordResults(
   if (!evaluacion) {
     return { ok: false, status: 404, code: "not_found", message: "Evaluación no encontrada" };
   }
+  const sinEvaluaciones = await exigirEvaluacionesDeEvaluacion(organizationId, assessmentId);
+  if (sinEvaluaciones) return sinEvaluaciones;
   if (!desdeCorreccion && !admiteAtajo(plantillaDe({
     scale: evaluacion.scale === "numeric" ? "numeric" : "pass_fail",
     requiresApproval: evaluacion.requiresApproval,
@@ -673,6 +684,8 @@ export async function copyAssessments(
       message: "El grupo de origen no existe",
     };
   }
+  const sinEvaluaciones = await exigirEvaluacionesDeGrupo(organizationId, haciaCohorteId);
+  if (sinEvaluaciones) return sinEvaluaciones;
 
   const [origen, destino] = await Promise.all([
     listAssessments(organizationId, desdeCohorteId),
@@ -749,6 +762,8 @@ export async function tomarEvaluacionesDelCurso(
   if (!cohorte) {
     return { ok: false, status: 404, code: "not_found", message: "Grupo no encontrado" };
   }
+  const sinEvaluaciones = await exigirEvaluacionesDeGrupo(organizationId, cohortId);
+  if (sinEvaluaciones) return sinEvaluaciones;
 
   const modelos = await db
     .select()
@@ -810,6 +825,8 @@ export async function leerConsigna(
     )
     .limit(1);
   if (!fila) return null;
+  // Taller sin evaluaciones: ausencia (la ruta responde 404).
+  if (!(await evaluacionEsDeGrupoConEvaluaciones(organizationId, assessmentId))) return null;
   const adjuntos = await adjuntosPorContenedor(organizationId, "assessment", [assessmentId]);
   return { instructionsMd: fila.instructionsMd, adjuntos: adjuntos.get(assessmentId) ?? [] };
 }
@@ -827,6 +844,8 @@ export async function guardarConsigna(
   assessmentId: string,
   entrada: ConsignaInput
 ): Promise<GradingResult<ConsignaDto>> {
+  const sinEvaluaciones = await exigirEvaluacionesDeEvaluacion(organizationId, assessmentId);
+  if (sinEvaluaciones) return sinEvaluaciones;
   const valida = validarConsigna(entrada);
   if (!valida.ok) return { ok: false, status: 422, code: valida.code, message: valida.mensaje };
 

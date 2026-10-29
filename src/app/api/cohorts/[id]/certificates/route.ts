@@ -1,5 +1,6 @@
 import { apiError, requireCapability } from "@/lib/api";
 import { emitirATodos } from "@/server/certificates";
+import { exigirCertificadoDeGrupo } from "@/server/taller-config";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,9 @@ export const POST = requireCapability(
   "certificados.emitir",
   async (session, _req: Request, ctx: Params) => {
     const { id } = await ctx.params;
+    // 2026-10-29 — Un grupo que no emite certificado rechaza la emisión masiva (409).
+    const sinCertificado = await exigirCertificadoDeGrupo(session.organizationId, id);
+    if (sinCertificado) return apiError(sinCertificado.status, sinCertificado.code, sinCertificado.message);
     const resultados = await emitirATodos(session.organizationId, id, {
       issuedBy: session.userId,
     });

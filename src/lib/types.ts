@@ -172,6 +172,9 @@ export type CohortDto = {
   endDate: string | null;
   /** 0083 — La entrega final del grupo (día). `null` = sin entrega final. */
   deliveryDeadline?: string | null;
+  /** 0087 — Valores efectivos (solo un taller cursable puede ser `false`). */
+  hasAssessments?: boolean;
+  issuesCertificate?: boolean;
   /** 005 iteración 2 — horario "HH:MM" para el calendario; frequency queda como texto libre. */
   startTime: string | null;
   endTime: string | null;

@@ -17,6 +17,7 @@ import {
 } from "@/server/resources";
 import { modulosConOrdinal } from "@/server/program-modules";
 import type { ResourceKind } from "@/lib/db/schema";
+import { grupoTieneEvaluacionesPorId } from "@/server/taller-config";
 
 /**
  * 014 (fase 3) — El ALCANCE del profesor: qué cohortes puede tocar.
@@ -619,6 +620,8 @@ export async function teacherCohortGrading(
 ): Promise<TeacherGradingDto | null> {
   const detalle = await teacherCohortDetail(organizationId, teacherId, cohortId);
   if (!detalle) return null;
+  // 2026-10-29 — Taller sin evaluaciones: ausencia = 404 (jamás 403).
+  if (!(await grupoTieneEvaluacionesPorId(organizationId, cohortId))) return null;
 
   const planilla = await cohortGrading(organizationId, cohortId);
   if (!planilla) return null;
@@ -661,7 +664,7 @@ export async function teacherRecordResult(
   }
 
   const detalle = await teacherCohortDetail(organizationId, teacherId, asignada.cohortId);
-  if (!detalle) {
+  if (!detalle || !(await grupoTieneEvaluacionesPorId(organizationId, asignada.cohortId))) {
     // Misma respuesta que si no existiera: no se confirma que exista.
     return { ok: false, status: 404, code: "not_found", message: "Evaluación no encontrada" };
   }

@@ -76,6 +76,8 @@ export type GrupoDeConstancia = {
   startTime: string | null;
   endTime: string | null;
   clases: readonly ClaseDeConstancia[];
+  /** 2026-10-29 — `grupoTieneEvaluaciones`: un taller sin evaluaciones no informa resultado. */
+  tieneEvaluaciones?: boolean;
   /** Los recesos que alcanzan a este grupo (`recesosDeCohorte`). */
   recesos: readonly Pick<Receso, "fromDate" | "toDate">[];
   alumnos: readonly AlumnoDeConstancia[];
@@ -450,7 +452,11 @@ function bloque(g: GrupoDeConstancia, e: EntradaDeConstancia): BloqueDeConstanci
     const nombre = nombreDeAlumno(a);
     const resultado =
       ETIQUETA_DE_RESULTADO[
-        resultadoDeCursada({ estadoDelGrupo: estado, resultadoConfirmado: a.resultadoConfirmado })
+        resultadoDeCursada({
+          estadoDelGrupo: estado,
+          resultadoConfirmado: a.resultadoConfirmado,
+          tieneEvaluaciones: g.tieneEvaluaciones,
+        })
       ];
     const asis = asistenciaDeAlumno(g, a, reloj);
     const texto = textoDeAsistencia(asis, false);

@@ -1,4 +1,5 @@
 import { asc, eq } from "drizzle-orm";
+import { GRUPO_SIN_CERTIFICADO, grupoEmiteCertificado } from "@/lib/taller-config";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
@@ -119,6 +120,10 @@ async function emitirCertificado(
       id: schema.enrollment.id,
       cohortId: schema.enrollment.cohortId,
       grantsCertificate: schema.course.grantsCertificate,
+      // 2026-10-29 — Config del grupo si es un taller (`src/lib/taller-config.ts`).
+      courseKind: schema.course.kind,
+      registrationStatus: schema.cohort.registrationStatus,
+      issuesCertificate: schema.cohort.issuesCertificate,
       // 038 (FR-008) — la fecha de fin viaja en la MISMA consulta.
       cohortEndDate: schema.cohort.endDate,
       attendanceWaiverAt: schema.enrollment.attendanceWaiverAt,
@@ -197,6 +202,15 @@ async function emitirCertificado(
    * Lo que la bandera dice es qué vende la academia, y de eso no hay cohorte
    * vieja que exima.
    */
+  /**
+   * 2026-10-29 — Un grupo de taller configurado como "no emite certificado"
+   * no emite NUEVOS. Va después del certificado existente a propósito: lo ya
+   * emitido sigue vigente (descarga y /verificar) aunque alguien apague la
+   * casilla después; solo se frena la emisión.
+   */
+  if (!grupoEmiteCertificado(enrollment)) {
+    return { ok: false, ...GRUPO_SIN_CERTIFICADO };
+  }
   if (enrollment.grantsCertificate === false) {
     return {
       ok: false,

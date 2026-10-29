@@ -29,6 +29,12 @@ import {
 } from "@/server/program-modules";
 import { planDeReorden, siguientePosicion } from "@/lib/program-order";
 import { COURSE_KINDS, type CourseKind } from "@/lib/course-kind";
+import {
+  GRUPO_CON_EVALUACIONES,
+  configAGuardar,
+  grupoEmiteCertificado,
+  grupoTieneEvaluaciones,
+} from "@/lib/taller-config";
 import { courseDurationSchema, horasParaDb } from "@/lib/course-duration";
 import { MAX_DESCRIPCION_CERTIFICADO } from "@/lib/certificado";
 
@@ -383,6 +389,13 @@ export type CohortInput = {
    * (`entregaFinalValida`, `src/lib/entrega-final.ts`).
    */
   deliveryDeadline?: Date | null;
+  /**
+   * 0087 — Solo para grupos de curso TALLER (`src/lib/taller-config.ts`):
+   * ¿tiene evaluaciones? ¿emite certificado? En cualquier otro grupo el
+   * servidor los IGNORA y guarda "sí". Omitido en el alta = sí.
+   */
+  hasAssessments?: boolean;
+  issuesCertificate?: boolean;
   /** 005 (DV-005) — reemplaza el `professor` texto libre de 004. */
   teacherId?: string | null;
   /** 005 — en centésimos (DV-008, `src/lib/money.ts`). */
@@ -470,6 +483,9 @@ export const cohortInputSchema = {
   endDate: z.coerce.date().nullable().optional(),
   /** 0083 — "Entrega final"; la coherencia con el fin la valida el servidor. */
   deliveryDeadline: z.coerce.date().nullable().optional(),
+  /** 0087 — Solo talleres: el servidor las ignora en cualquier otro curso. */
+  hasAssessments: z.boolean().optional(),
+  issuesCertificate: z.boolean().optional(),
   teacherId: z.string().min(1).nullable().optional(),
   cost: minorAmount.nullable().optional(),
   currency: z.enum(CURRENCIES).optional(),
@@ -652,6 +668,27 @@ async function validateCohortForeignKeys(
   return null;
 }
 
+async function kindDelCurso(db: DbOrTx, organizationId: string, courseId: string): Promise<string | null> {
+  const [c] = await db
+    .select({ kind: schema.course.kind })
+    .from(schema.course)
+    .where(scoped(schema.course.organizationId, organizationId, eq(schema.course.id, courseId)))
+    .limit(1);
+  return c?.kind ?? null;
+}
+
+/** 0087 — Lo que se guarda en el alta: un grupo que no es un taller cursable vale "sí". */
+async function configDelAlta(
+  db: DbOrTx,
+  organizationId: string,
+  input: Pick<CohortInput, "courseId" | "hasAssessments" | "issuesCertificate">
+) {
+  return configAGuardar(
+    { courseKind: await kindDelCurso(db, organizationId, input.courseId), registrationStatus: null },
+    input
+  );
+}
+
 /** 004/005 — Alta de una cohorte (edición concreta de un curso). */
 export async function createCohort(
   organizationId: string,
@@ -728,6 +765,7 @@ export async function createCohort(
     startDate: input.startDate,
     endDate: input.endDate ?? null,
     deliveryDeadline: input.deliveryDeadline ?? null,
+    ...(await configDelAlta(db, organizationId, input)),
     teacherId: input.teacherId ?? null,
     cost: input.cost ?? null,
     currency: input.currency ?? "UYU",
@@ -862,7 +900,8 @@ export type UpdateCohortResult =
       scheduleWarnings: ScheduleConflict[];
     }
   | { ok: false; status: 404; code: "not_found"; message: string }
-  | { ok: false; status: 422; code: "invalid_body" | "entrega_final_antes_del_fin"; message: string };
+  | { ok: false; status: 422; code: "invalid_body" | "entrega_final_antes_del_fin"; message: string }
+  | { ok: false; status: 409; code: "grupo_con_evaluaciones"; message: string };
 
 /** 005 (T008) — Edición de una cohorte; solo toca los campos presentes en `input`. */
 export async function updateCohort(
@@ -938,9 +977,61 @@ export async function updateCohort(
     }
   }
 
+  /**
+   * 0087 — Configuración de taller. Se recalcula si el pedido toca las
+   * casillas o cambia el curso (de taller a otro tipo vuelve a "sí").
+   */
+  let configTaller: { hasAssessments: boolean; issuesCertificate: boolean } | null = null;
+  if (
+    input.hasAssessments !== undefined ||
+    input.issuesCertificate !== undefined ||
+    input.courseId !== undefined
+  ) {
+    const [actual] = await db
+      .select({
+        courseId: schema.cohort.courseId,
+        registrationStatus: schema.cohort.registrationStatus,
+        hasAssessments: schema.cohort.hasAssessments,
+        issuesCertificate: schema.cohort.issuesCertificate,
+        courseKind: schema.course.kind,
+      })
+      .from(schema.cohort)
+      .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
+      .where(scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, cohortId)))
+      .limit(1);
+    if (actual) {
+      const kind =
+        input.courseId !== undefined && input.courseId !== actual.courseId
+          ? await kindDelCurso(db, organizationId, input.courseId)
+          : actual.courseKind;
+      configTaller = configAGuardar(
+        { courseKind: kind, registrationStatus: actual.registrationStatus },
+        {
+          hasAssessments: input.hasAssessments ?? actual.hasAssessments,
+          issuesCertificate: input.issuesCertificate ?? actual.issuesCertificate,
+        }
+      );
+      // Apagar "tiene evaluaciones" con evaluaciones cargadas: 409, nada se borra en silencio.
+      const teniaEvaluaciones = grupoTieneEvaluaciones({
+        courseKind: actual.courseKind,
+        registrationStatus: actual.registrationStatus,
+        hasAssessments: actual.hasAssessments,
+      });
+      if (teniaEvaluaciones && !configTaller.hasAssessments) {
+        const [hay] = await db
+          .select({ id: schema.assessment.id })
+          .from(schema.assessment)
+          .where(scoped(schema.assessment.organizationId, organizationId, eq(schema.assessment.cohortId, cohortId)))
+          .limit(1);
+        if (hay) return { ok: false, ...GRUPO_CON_EVALUACIONES };
+      }
+    }
+  }
+
   const updated = await db
     .update(schema.cohort)
     .set({
+      ...(configTaller ?? {}),
       ...(input.courseId !== undefined ? { courseId: input.courseId } : {}),
       ...(input.parentCohortId !== undefined
         ? { parentCohortId: input.parentCohortId }
@@ -1172,6 +1263,20 @@ function serializeCohort(
     endDate: cohort.endDate?.toISOString() ?? null,
     /** 0083 — La entrega final del grupo (día). */
     deliveryDeadline: cohort.deliveryDeadline?.toISOString() ?? null,
+    /**
+     * 0087 — Valores EFECTIVOS (`src/lib/taller-config.ts`): un grupo que no
+     * es un taller cursable siempre dice `true`, sea lo que sea que haya en la fila.
+     */
+    hasAssessments: grupoTieneEvaluaciones({
+      courseKind: course.kind,
+      registrationStatus: cohort.registrationStatus,
+      hasAssessments: cohort.hasAssessments,
+    }),
+    issuesCertificate: grupoEmiteCertificado({
+      courseKind: course.kind,
+      registrationStatus: cohort.registrationStatus,
+      issuesCertificate: cohort.issuesCertificate,
+    }),
     startTime: cohort.startTime,
     endTime: cohort.endTime,
     daysOfWeek: cohort.daysOfWeek,

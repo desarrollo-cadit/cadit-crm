@@ -801,6 +801,14 @@ export const cohort = pgTable(
     confirmedAt: timestamp("confirmed_at"),
     /** Quién la confirmó. `set null`: que alguien deje la academia no borra el acto. */
     confirmedBy: text("confirmed_by").references(() => user.id, { onDelete: "set null" }),
+    /**
+     * 0087 — Configuración de un grupo de curso TALLER (`src/lib/taller-config.ts`):
+     * ¿tiene evaluaciones? ¿emite certificado? Default true: ningún grupo
+     * existente cambia hasta que alguien lo configure. Para un grupo que no es
+     * un taller cursable se IGNORAN (valen "sí" siempre).
+     */
+    hasAssessments: boolean("has_assessments").notNull().default(true),
+    issuesCertificate: boolean("issues_certificate").notNull().default(true),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

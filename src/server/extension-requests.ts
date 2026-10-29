@@ -5,6 +5,7 @@ import { scoped } from "@/lib/db/tenant";
 import type { ExtensionRequestStatus } from "@/lib/db/schema";
 import { plazoDeEvaluacion, validarPedidoDeProrroga } from "@/lib/entrega-final";
 import { estadosDeAcceso, zonaDeLaOrganizacion } from "@/server/access-expiry";
+import { exigirEvaluacionesDeEvaluacion, grupoTieneEvaluacionesPorId } from "@/server/taller-config";
 import {
   componerPlazo,
   entregaFinalDeCohorte,
@@ -129,6 +130,8 @@ async function evaluacionDelAlumno(
     )
     .limit(1);
   if (!inscripcion) return null;
+  // 2026-10-29 — Taller sin evaluaciones: ausencia (404).
+  if (!(await grupoTieneEvaluacionesPorId(organizationId, evaluacion.cohortId))) return null;
 
   // 043 — Vencido el acceso, no hay pedido que hacer ni que mirar.
   const accesos = await estadosDeAcceso(organizationId, [inscripcion.id], now);
@@ -341,13 +344,20 @@ export async function decidirPedido(
   const r = schema.assessmentExtensionRequest;
 
   const [pedido] = await db
-    .select({ id: r.id, status: r.status, requestedDueAt: r.requestedDueAt })
+    .select({
+      id: r.id,
+      assessmentId: r.assessmentId,
+      status: r.status,
+      requestedDueAt: r.requestedDueAt,
+    })
     .from(r)
     .where(scoped(r.organizationId, organizationId, eq(r.id, requestId)))
     .limit(1);
   if (!pedido) {
     return { ok: false, status: 404, code: "not_found", message: "Pedido no encontrado" };
   }
+  const sinEvaluaciones = await exigirEvaluacionesDeEvaluacion(organizationId, pedido.assessmentId);
+  if (sinEvaluaciones) return sinEvaluaciones;
 
   let dueAt: Date | null = null;
   if (input.decision === "aprobar") {

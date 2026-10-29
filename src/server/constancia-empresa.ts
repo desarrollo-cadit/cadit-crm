@@ -24,6 +24,7 @@ import { columnasDeClaseConLista } from "@/server/attendance";
 import { parseMetadata } from "@/server/branding";
 import { leerRecesos } from "@/server/recesses";
 import { cursoNoEsTaller } from "@/server/workshop-scope";
+import { grupoTieneEvaluaciones } from "@/lib/taller-config";
 
 /**
  * 2026-10-29 — Lectura de la constancia para una empresa. Solo LEE y le pasa
@@ -111,6 +112,9 @@ function columnas() {
     startTime: schema.cohort.startTime,
     endTime: schema.cohort.endTime,
     courseName: schema.course.name,
+    courseKind: schema.course.kind,
+    registrationStatus: schema.cohort.registrationStatus,
+    hasAssessments: schema.cohort.hasAssessments,
   };
 }
 
@@ -222,6 +226,7 @@ async function leerEmpresa(organizationId: string, companyId: string): Promise<L
       startDate: g.startDate,
       endDate: g.endDate,
       daysOfWeek: g.daysOfWeek,
+      tieneEvaluaciones: grupoTieneEvaluaciones(g),
       startTime: g.startTime,
       endTime: g.endTime,
       clases: clases
