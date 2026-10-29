@@ -16,7 +16,7 @@ import {
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import type { Capability } from "@/lib/capabilities";
-import type { Criterion, Scale, TextField } from "@/lib/grading-template";
+import type { Criterion, Nivel, Scale, TextField } from "@/lib/grading-template";
 import type { CertificadoSnapshot } from "@/lib/certificado";
 // Relativo y no `@/`: drizzle-kit carga este archivo fuera de Next y una
 // importación de VALOR (no de tipo) tiene que resolverse sin alias.
@@ -2060,6 +2060,13 @@ export const assessment = pgTable(
     requiresApproval: boolean("requires_approval").notNull().default(false),
     criteria: jsonb("criteria").$type<Criterion[]>().notNull().default(sql`'[]'::jsonb`),
     textFields: jsonb("text_fields").$type<TextField[]>().notNull().default(sql`'[]'::jsonb`),
+    /**
+     * 0084 — La CONSIGNA: qué hay que hacer, en la gramática en línea de
+     * `src/lib/markdown-inline.ts` (nunca HTML). No se congela: aclarar una
+     * consigna no le mueve la nota a nadie. Los adjuntos son `resource` con
+     * `assessment_id`.
+     */
+    instructionsMd: text("instructions_md").notNull().default(""),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -2070,6 +2077,49 @@ export const assessment = pgTable(
     // nadie, y un mínimo en pass_fail sería un número que nadie lee.
     check(
       "assessment_min_score_by_scale",
+      sql`(${t.scale} = 'pass_fail' and ${t.minScore} is null) or (${t.scale} = 'numeric' and ${t.minScore} between 1 and 100)`
+    ),
+  ]
+);
+
+/**
+ * 0084 — Las evaluaciones MODELO de un curso.
+ *
+ * Tabla propia y no un `assessment.cohort_id` nulo: las evaluaciones son por
+ * grupo por diseño (014), y eso es lo que impide que editar un curso altere
+ * un grupo en marcha. Un grupo las TOMA (copia, nunca hereda) con la misma
+ * regla de `planAssessmentCopy`: deduplicar por nombre normalizado. Mismas
+ * columnas de plantilla que `assessment`; los adjuntos son `resource` con
+ * `course_assessment_template_id`. No tienen plazo ni correcciones, así que
+ * nunca se congelan.
+ */
+export const courseAssessmentTemplate = pgTable(
+  "course_assessment_template",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    courseId: text("course_id")
+      .notNull()
+      .references(() => course.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    position: integer("position").notNull().default(0),
+    required: boolean("required").notNull().default(true),
+    instructionsMd: text("instructions_md").notNull().default(""),
+    scale: text("scale").$type<Scale>().notNull().default("pass_fail"),
+    minScore: integer("min_score"),
+    requiresApproval: boolean("requires_approval").notNull().default(false),
+    criteria: jsonb("criteria").$type<Criterion[]>().notNull().default(sql`'[]'::jsonb`),
+    textFields: jsonb("text_fields").$type<TextField[]>().notNull().default(sql`'[]'::jsonb`),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("course_assessment_template_org_course_idx").on(t.organizationId, t.courseId, t.position),
+    check("course_assessment_template_scale_valid", sql`${t.scale} in ('pass_fail', 'numeric')`),
+    check(
+      "course_assessment_template_min_score_by_scale",
       sql`(${t.scale} = 'pass_fail' and ${t.minScore} is null) or (${t.scale} = 'numeric' and ${t.minScore} between 1 and 100)`
     ),
   ]
@@ -2376,7 +2426,10 @@ export const correction = pgTable(
     /** La devolución general: el alumno la ve al publicarse. */
     feedback: text("feedback"),
     criterionScores: jsonb("criterion_scores")
-      .$type<{ criterionId: string; points: number | null; comment: string | null }[]>()
+      // 0084 — `level`: el nivel de la rúbrica elegido (opcional; las viejas no lo traen).
+      .$type<
+        { criterionId: string; points: number | null; comment: string | null; level?: Nivel | null }[]
+      >()
       .notNull()
       .default(sql`'[]'::jsonb`),
     textValues: jsonb("text_values")
@@ -2647,6 +2700,13 @@ export const resource = pgTable(
     courseModuleId: text("course_module_id").references(() => courseModule.id, {
       onDelete: "set null",
     }),
+    /** 0084 — Adjunto de la consigna de una evaluación del grupo. */
+    assessmentId: text("assessment_id").references(() => assessment.id, { onDelete: "cascade" }),
+    /** 0084 — Adjunto de una evaluación modelo del curso. */
+    courseAssessmentTemplateId: text("course_assessment_template_id").references(
+      () => courseAssessmentTemplate.id,
+      { onDelete: "cascade" }
+    ),
     title: text("title").notNull(),
     /** El enlace. El sistema NO almacena el archivo (FR-007). */
     url: text("url").notNull(),
@@ -2659,8 +2719,14 @@ export const resource = pgTable(
     index("resource_org_course_idx").on(t.organizationId, t.courseId),
     index("resource_org_class_idx").on(t.organizationId, t.classSessionId),
     index("resource_org_cohort_idx").on(t.organizationId, t.cohortId),
+    index("resource_org_assessment_idx").on(t.organizationId, t.assessmentId),
+    index("resource_org_course_assessment_template_idx").on(
+      t.organizationId,
+      t.courseAssessmentTemplateId
+    ),
     /**
-     * 023 — Exactamente UN contenedor: curso, camada o clase.
+     * 023 — Exactamente UN contenedor: curso, camada o clase (0084: o la
+     * consigna de una evaluación, del grupo o modelo del curso).
      *
      * Con dos, el material aparecería duplicado en dos pantallas; con
      * ninguno, no aparecería en ninguna. La suma de banderas dice "uno y solo
@@ -2671,7 +2737,9 @@ export const resource = pgTable(
       "resource_contenedor_unico",
       sql`(case when ${t.courseId} is not null then 1 else 0 end)
         + (case when ${t.cohortId} is not null then 1 else 0 end)
-        + (case when ${t.classSessionId} is not null then 1 else 0 end) = 1`
+        + (case when ${t.classSessionId} is not null then 1 else 0 end)
+        + (case when ${t.assessmentId} is not null then 1 else 0 end)
+        + (case when ${t.courseAssessmentTemplateId} is not null then 1 else 0 end) = 1`
     ),
   ]
 );
@@ -3565,6 +3633,55 @@ export const staffNotice = pgTable(
     check(
       "staff_notice_status_valid",
       sql`${t.status} IN ('pending','sent','skipped','failed','cancelled')`
+    ),
+  ]
+);
+
+/**
+ * 0084 — Los correos al ALUMNO sobre sus evaluaciones (solo correo, nunca
+ * WhatsApp): el recordatorio antes del plazo y "tu corrección fue publicada".
+ *
+ * Tabla propia y no `staff_notice`: aquella es de avisos al EQUIPO, con sus
+ * propios CHECK de tipo y sujeto. Acá la llave (`dedup_key`, única por
+ * organización) es la idempotencia: el recordatorio es por (evaluación,
+ * inscripción, plazo vigente) — si el plazo se corre, toca otro — y el aviso
+ * de publicación es por versión publicada. Se reclama ANTES de llamar a
+ * Graph; un fallo se reintenta hasta 3 veces (`src/server/email/assessment-notices.ts`).
+ */
+export const assessmentNotice = pgTable(
+  "assessment_notice",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: ["recordatorio", "correccion_publicada"] }).notNull(),
+    assessmentId: text("assessment_id")
+      .notNull()
+      .references(() => assessment.id, { onDelete: "cascade" }),
+    enrollmentId: text("enrollment_id")
+      .notNull()
+      .references(() => enrollment.id, { onDelete: "cascade" }),
+    /** Solo en `correccion_publicada`: la versión que se publicó. */
+    correctionId: text("correction_id").references(() => correction.id, { onDelete: "cascade" }),
+    /** Solo en `recordatorio`: el plazo vigente contra el que se recordó. */
+    dueAt: timestamp("due_at"),
+    dedupKey: text("dedup_key").notNull(),
+    status: text("status", { enum: ["enviando", "enviado", "fallido", "omitido"] }).notNull(),
+    attempts: integer("attempts").notNull().default(1),
+    /** Motivo de Graph u omisión; jamás secretos. */
+    error: text("error"),
+    sentAt: timestamp("sent_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("assessment_notice_org_dedup_uq").on(t.organizationId, t.dedupKey),
+    index("assessment_notice_org_assessment_idx").on(t.organizationId, t.assessmentId),
+    check("assessment_notice_kind_valid", sql`${t.kind} IN ('recordatorio','correccion_publicada')`),
+    check(
+      "assessment_notice_status_valid",
+      sql`${t.status} IN ('enviando','enviado','fallido','omitido')`
     ),
   ]
 );

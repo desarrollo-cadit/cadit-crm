@@ -103,6 +103,23 @@ export async function startStaffNoticesOnBoot(): Promise<void> {
 }
 
 /**
+ * 0084 — El recordatorio por correo a los alumnos que no entregaron, si
+ * `ASSESSMENT_REMINDER_INTERVAL_MIN > 0`. La MISMA guarda que las demás
+ * (`shouldStartScheduler`): nunca en tests ni en `next build`, y nada puede
+ * tumbar el arranque.
+ */
+export async function startAssessmentRemindersOnBoot(): Promise<void> {
+  try {
+    const { shouldStartScheduler } = await import("@/server/zoom/scheduler");
+    if (!shouldStartScheduler(process.env)) return;
+    const { startAssessmentReminderScheduler } = await import("@/server/email/assessment-notices");
+    startAssessmentReminderScheduler();
+  } catch (err) {
+    console.error("[boot] recordatorio de evaluaciones no arrancó:", err instanceof Error ? err.name : "error");
+  }
+}
+
+/**
  * 045 (DV-003; US3-5) — Campañas de marketing: retoma las que quedaron
  * `enviando` tras un reinicio y enciende la periódica (`MARKETING_TICK_SEC`;
  * 0 = solo al arrancar). La MISMA guarda que las demás (`shouldStartScheduler`,

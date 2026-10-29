@@ -11,6 +11,7 @@ export async function register(): Promise<void> {
     warnIfWebhookSignatureDisabled();
     const {
       cleanupOrphanRuns,
+      startAssessmentRemindersOnBoot,
       startMarketingOnBoot,
       startStaffNoticesOnBoot,
       startWorkshopRemindersOnBoot,
@@ -22,6 +23,7 @@ export async function register(): Promise<void> {
     await startZoomAttendanceOnBoot();
     await startWorkshopRemindersOnBoot();
     await startStaffNoticesOnBoot();
+    await startAssessmentRemindersOnBoot();
     await startMarketingOnBoot();
   }
 }

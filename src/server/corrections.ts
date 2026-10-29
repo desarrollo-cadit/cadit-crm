@@ -4,13 +4,17 @@ import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import {
+  completarPuntosDeNivel,
   correctionInputSchema,
   leerPlantilla,
   modoDeCorreccion,
   validarCorreccion,
+  type Nivel,
   type Template,
 } from "@/lib/grading-template";
+import { onAfterCommit } from "@/lib/db/tenant-context";
 import { fullName } from "@/lib/utils";
+import { avisarCorreccionPublicada } from "@/server/email/assessment-notices";
 import { recordResults } from "@/server/grading";
 import { teacherCohortDetail, teacherReachesCohort } from "@/server/teacher-portal";
 
@@ -33,6 +37,26 @@ import { teacherCohortDetail, teacherReachesCohort } from "@/server/teacher-port
 
 export type CorrectionStatus = "draft" | "pending" | "published" | "superseded";
 
+/** 0084 — Puntos, comentario y (si se eligió) el nivel de la rúbrica de un criterio. */
+export type PuntajeDeCriterio = {
+  criterionId: string;
+  points: number | null;
+  comment: string | null;
+  level: Nivel | null;
+};
+
+/** Las versiones viejas no traen `level`: se lee como `null`, nunca se inventa. */
+function puntajesConNivel(
+  s: readonly { criterionId: string; points: number | null; comment: string | null; level?: Nivel | null }[] | null | undefined
+): PuntajeDeCriterio[] {
+  return (s ?? []).map((c) => ({
+    criterionId: c.criterionId,
+    points: c.points,
+    comment: c.comment ?? null,
+    level: c.level ?? null,
+  }));
+}
+
 export type CorrectionDto = {
   id: string;
   status: CorrectionStatus;
@@ -40,7 +64,7 @@ export type CorrectionDto = {
   score: number | null;
   passed: boolean | null;
   feedback: string | null;
-  criterionScores: { criterionId: string; points: number | null; comment: string | null }[];
+  criterionScores: PuntajeDeCriterio[];
   textValues: { fieldId: string; value: string }[];
   correctedByName: string | null;
   submittedAt: string | null;
@@ -151,7 +175,7 @@ function aDto(f: Partial<FilaDeCorreccion>, quienes: Map<string, string>): Corre
     score: f.score ?? null,
     passed: f.passed ?? null,
     feedback: f.feedback ?? null,
-    criterionScores: f.criterionScores ?? [],
+    criterionScores: puntajesConNivel(f.criterionScores),
     textValues: f.textValues ?? [],
     correctedByName: (f.correctedBy && quienes.get(f.correctedBy)) || null,
     submittedAt: iso(f.submittedAt),
@@ -330,6 +354,13 @@ export async function publicarCorreccion(
       );
   }
 
+  /*
+    0084 — "Tu corrección fue publicada", por correo y DESPUÉS del commit: si
+    la transacción revierte, no se avisa nada, y un fallo del envío nunca
+    rompe la publicación (`avisarCorreccionPublicada` no lanza).
+  */
+  onAfterCommit(() => void avisarCorreccionPublicada(organizationId, correctionId));
+
   return { ...version, ...publicadas[0], status: "published", publishedAt: ahora, publishedBy: userId };
 }
 
@@ -419,7 +450,10 @@ async function guardarConContexto(
     if (!propia[0]) return { ...NO_ENCONTRADA, message: "Entrega no encontrada" };
   }
 
-  const valida = validarCorreccion(template, input, input.action);
+  // 0084 — Un nivel elegido sin puntos toma los puntos del nivel; los cargados
+  // a mano ganan. Se completa ANTES de validar: la nota sigue siendo la suma.
+  const puntajes = completarPuntosDeNivel(template, input.criterionScores ?? []);
+  const valida = validarCorreccion(template, { ...input, criterionScores: puntajes }, input.action);
   if (!valida.ok) {
     return { ok: false, status: 422, code: valida.code, message: valida.mensaje };
   }
@@ -431,10 +465,12 @@ async function guardarConContexto(
     score: valida.score,
     passed: valida.passed,
     feedback: input.feedback?.trim() ? input.feedback.trim() : null,
-    criterionScores: (input.criterionScores ?? []).map((c) => ({
+    criterionScores: puntajes.map((c) => ({
       criterionId: c.criterionId,
       points: c.points,
       comment: c.comment?.trim() ? c.comment.trim() : null,
+      // 0084 — el nivel de la rúbrica (las correcciones viejas no lo traen).
+      level: c.level ?? null,
     })),
     textValues: (input.textValues ?? []).map((v) => ({ fieldId: v.fieldId, value: v.value })),
     correctedBy: userId,
@@ -946,7 +982,8 @@ export type StudentCorrectionDto = {
   score: number | null;
   passed: boolean | null;
   feedback: string | null;
-  criterionScores: { criterionId: string; points: number | null; comment: string | null }[];
+  /** 0084 — por criterio: nivel, puntos y comentario. Solo de lo PUBLICADO. */
+  criterionScores: PuntajeDeCriterio[];
   textValues: { fieldId: string; value: string }[];
   correctedByName: string | null;
   publishedAt: string | null;
@@ -1061,7 +1098,7 @@ export async function correccionesPublicadasDeCursada(
         score: c.score ?? null,
         passed: c.passed ?? null,
         feedback: c.feedback ?? null,
-        criterionScores: c.criterionScores ?? [],
+        criterionScores: puntajesConNivel(c.criterionScores),
         textValues: c.textValues ?? [],
         correctedByName: (c.correctedBy && quienes.get(c.correctedBy)) || null,
         publishedAt: c.publishedAt?.toISOString() ?? null,

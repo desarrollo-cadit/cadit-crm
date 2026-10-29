@@ -589,6 +589,13 @@
       "when": 1793216704477,
       "tag": "0083_entrega_final",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1793276325945,
+      "tag": "0084_evaluaciones_consigna_rubrica",
+      "breakpoints": true
     }
   ]
 }

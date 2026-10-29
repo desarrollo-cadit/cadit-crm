@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Award, Ban, ClipboardList, Copy, Plus } from "lucide-react";
+import { Award, Ban, BookCopy, ClipboardList, Copy, FileText, Plus } from "lucide-react";
 import { IssueAllCertificates } from "@/components/cohorts/issue-all-certificates";
+import { ConsignaEditor } from "@/components/grading/consigna-editor";
 import { CorrectionPanel } from "@/components/grading/correction-panel";
+import type { ConsignaInput } from "@/lib/assessment-consigna";
 import { TemplateEditor } from "@/components/grading/template-editor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -122,6 +124,7 @@ export function GradingClient({
   const [origenes, setOrigenes] = useState<CohortOption[] | null>(null);
   const [origenId, setOrigenId] = useState("");
   const [copiando, setCopiando] = useState(false);
+  const [tomando, setTomando] = useState(false);
   /** 031 (T025) — Qué corrección está abierta: una evaluación de un alumno. */
   const [corrigiendo, setCorrigiendo] = useState<{
     assessmentId: string;
@@ -208,6 +211,31 @@ export function GradingClient({
       notify.warning(data.aviso);
     } else {
       notify.success(`Se copiaron ${data.copiadas} evaluaciones.`, {
+        ...(data.omitidas.length > 0 ? { description: `Ya estaban: ${data.omitidas.join(", ")}` } : {}),
+      });
+    }
+    void refetch();
+  }
+
+  /**
+   * 0084 — "Tomar del curso": copia las evaluaciones modelo del curso, con la
+   * misma regla de duplicados que copiar de otro grupo. Copia, no hereda.
+   */
+  async function tomarDelCurso() {
+    setTomando(true);
+    const res = await fetch(`/api/cohorts/${cohortId}/assessments/from-course`, {
+      method: "POST",
+    }).catch(() => null);
+    setTomando(false);
+    if (!res?.ok) {
+      notify.error(await readError(res, "No se pudieron tomar las evaluaciones del curso"));
+      return;
+    }
+    const data = (await res.json()) as { copiadas: number; omitidas: string[]; aviso: string | null };
+    if (data.aviso) {
+      notify.warning(data.aviso);
+    } else {
+      notify.success(`Se tomaron ${data.copiadas} evaluaciones del curso.`, {
         ...(data.omitidas.length > 0 ? { description: `Ya estaban: ${data.omitidas.join(", ")}` } : {}),
       });
     }
@@ -367,6 +395,15 @@ export function GradingClient({
                 </Button>
               </>
             )}
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={tomando}
+              title="Copia las evaluaciones modelo del curso a este grupo"
+              onClick={() => void tomarDelCurso()}
+            >
+              <BookCopy className="h-4 w-4" /> {tomando ? "Tomando…" : "Tomar del curso"}
+            </Button>
             <Input
               placeholder="Nueva evaluación…"
               className="h-8 w-52"
@@ -431,9 +468,9 @@ export function GradingClient({
           {canEdit ? (
             <>
               Sin evaluaciones todavía. Agregá la primera arriba — por ejemplo
-              &quot;Trabajo final&quot;
+              &quot;Trabajo final&quot; —, tomá las evaluaciones modelo del curso
               {origenes && origenes.length > 0
-                ? ", o copiá las de otro grupo del mismo curso."
+                ? " o copiá las de otro grupo del mismo curso."
                 : "."}
               <span className="mt-2 block text-xs">
                 Copiar no ata los dos grupos: quedan independientes, así que
@@ -678,14 +715,59 @@ function PlantillasDeCorreccion({
   const [abierta, setAbierta] = useState<string | null>(null);
   const [borrador, setBorrador] = useState<Template | null>(null);
   const [guardando, setGuardando] = useState(false);
+  /** 0084 — La consigna abierta (texto + adjuntos), una evaluación a la vez. */
+  const [consignaDe, setConsignaDe] = useState<string | null>(null);
+  const [consigna, setConsigna] = useState<ConsignaInput | null>(null);
 
   function abrir(a: Assessment) {
+    setConsignaDe(null);
     if (abierta === a.id) {
       setAbierta(null);
       return;
     }
     setAbierta(a.id);
     setBorrador(plantillaDe(a));
+  }
+
+  async function abrirConsigna(a: Assessment) {
+    setAbierta(null);
+    if (consignaDe === a.id) {
+      setConsignaDe(null);
+      return;
+    }
+    setConsignaDe(a.id);
+    setConsigna(null);
+    const res = await fetch(`/api/assessments/${a.id}/consigna`).catch(() => null);
+    if (!res?.ok) {
+      notify.error("No se pudo cargar la consigna.");
+      setConsignaDe(null);
+      return;
+    }
+    const data = (await res.json()) as { instructionsMd: string; adjuntos: { title: string; url: string }[] };
+    setConsigna({
+      instructionsMd: data.instructionsMd,
+      adjuntos: data.adjuntos.map((x) => ({ title: x.title, url: x.url })),
+    });
+  }
+
+  async function guardarConsigna(assessmentId: string) {
+    if (!consigna) return;
+    setGuardando(true);
+    const res = await fetch(`/api/assessments/${assessmentId}/consigna`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(consigna),
+    }).catch(() => null);
+    setGuardando(false);
+    if (!res?.ok) {
+      const body = (await res?.json().catch(() => null)) as { error?: { message?: string } } | null;
+      notify.error(body?.error?.message ?? "No se pudo guardar la consigna");
+      return;
+    }
+    notify.success("Consigna guardada.");
+    setConsignaDe(null);
+    setConsigna(null);
+    onCambio();
   }
 
   async function guardar(assessmentId: string) {
@@ -714,7 +796,7 @@ function PlantillasDeCorreccion({
   return (
     <div className="rounded-lg border">
       <p className="border-b bg-subtle px-3 py-2 text-xs font-medium">
-        Cómo se corrige cada evaluación
+        Qué se pide y cómo se corrige cada evaluación
       </p>
       <ul className="divide-y">
         {assessments.map((a) => (
@@ -729,12 +811,37 @@ function PlantillasDeCorreccion({
                 </span>
               </span>
               {canEdit && (
-                <Button size="sm" variant="outline" onClick={() => abrir(a)}>
-                  <ClipboardList className="h-4 w-4" />
-                  {abierta === a.id ? "Cerrar" : "Plantilla"}
-                </Button>
+                <div className="flex gap-1.5">
+                  <Button size="sm" variant="outline" onClick={() => void abrirConsigna(a)}>
+                    <FileText className="h-4 w-4" />
+                    {consignaDe === a.id ? "Cerrar" : "Consigna"}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => abrir(a)}>
+                    <ClipboardList className="h-4 w-4" />
+                    {abierta === a.id ? "Cerrar" : "Plantilla"}
+                  </Button>
+                </div>
               )}
             </div>
+            {canEdit && consignaDe === a.id && (
+              <div className="space-y-3 rounded-lg border bg-card p-4">
+                {consigna ? (
+                  <>
+                    <ConsignaEditor value={consigna} onChange={setConsigna} disabled={guardando} />
+                    <div className="flex gap-2">
+                      <Button size="sm" loading={guardando} onClick={() => void guardarConsigna(a.id)}>
+                        {guardando ? "Guardando…" : "Guardar consigna"}
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setConsignaDe(null)}>
+                        Cancelar
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <Skeleton className="h-24 w-full" />
+                )}
+              </div>
+            )}
             {canEdit && abierta === a.id && borrador && (
               <TemplateEditor
                 value={borrador}

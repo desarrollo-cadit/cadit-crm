@@ -10,6 +10,7 @@ import {
   Pencil,
   Plus,
   Route,
+  ClipboardList,
   Trash2,
 } from "lucide-react";
 import type {
@@ -44,6 +45,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { CohortForm } from "@/components/academic/cohort-form";
 import { CourseForm } from "@/components/academic/course-form";
 import { NextCoursesDialog } from "@/components/academic/next-courses-dialog";
+import { AssessmentModelsDialog } from "@/components/academic/assessment-models-dialog";
 import { TeacherForm } from "@/components/academic/teacher-form";
 import { RoomsPanel } from "@/components/academic/rooms-panel";
 import {
@@ -292,6 +294,8 @@ export function AcademicClient({
   /** 046 (US2) — Rutas entre cursos: origen → siguientes en orden. */
   const [rutas, setRutas] = useState<Map<string, string[]>>(new Map());
   const [rutaDe, setRutaDe] = useState<CourseDto | null>(null);
+  /** 0084 — De qué curso están abiertas las evaluaciones modelo. */
+  const [modelosDe, setModelosDe] = useState<CourseDto | null>(null);
   const [showCourseForm, setShowCourseForm] = useState<
     { mode: "create" } | { mode: "edit"; course: CourseDto } | null
   >(null);
@@ -1111,6 +1115,18 @@ export function AcademicClient({
                               <Route className="h-3.5 w-3.5" strokeWidth={1.8} />
                             </Button>
                           )}
+                          {c.kind !== "taller" && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              aria-label={`Evaluaciones modelo de ${c.name}`}
+                              title="Evaluaciones modelo"
+                              onClick={() => setModelosDe(c)}
+                            >
+                              <ClipboardList className="h-3.5 w-3.5" strokeWidth={1.8} />
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="icon"
@@ -1262,6 +1278,10 @@ export function AcademicClient({
             setRutaDe(null);
           }}
         />
+      )}
+
+      {modelosDe && (
+        <AssessmentModelsDialog course={modelosDe} onClose={() => setModelosDe(null)} />
       )}
 
       {cohortForm && (

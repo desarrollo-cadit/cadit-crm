@@ -8,6 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyNote, PortalCard, formatDate } from "@/components/portal/student-bits";
+import { ConsignaView } from "@/components/grading/consigna-view";
+import type { RubricaDelAlumno } from "@/lib/assessment-consigna";
+import { ETIQUETA_DE_NIVEL, type Criterion, type Nivel } from "@/lib/grading-template";
 import { notify } from "@/lib/notify";
 
 /**
@@ -46,6 +49,10 @@ type EvaluacionConEntregas = {
   estado: Estado;
   puedeEntregar: boolean;
   entregas: Entrega[];
+  /** 0084 — La consigna, la rúbrica (antes de entregar) y los adjuntos (vacíos si venció el acceso). */
+  instructionsMd: string;
+  rubrica: RubricaDelAlumno;
+  adjuntos: { id: string; title: string; url: string }[];
 };
 
 /**
@@ -57,7 +64,7 @@ export type CorreccionPublicada = {
   assessmentId: string;
   scale: "pass_fail" | "numeric";
   minScore: number | null;
-  criteria: { id: string; name: string; maxPoints: number }[];
+  criteria: Criterion[];
   textFields: { id: string; name: string; required: boolean }[];
   correction: {
     id: string;
@@ -65,7 +72,13 @@ export type CorreccionPublicada = {
     score: number | null;
     passed: boolean | null;
     feedback: string | null;
-    criterionScores: { criterionId: string; points: number | null; comment: string | null }[];
+    /** 0084 — por criterio: nivel de la rúbrica (si se eligió), puntos y comentario. */
+    criterionScores: {
+      criterionId: string;
+      points: number | null;
+      comment: string | null;
+      level: Nivel | null;
+    }[];
     textValues: { fieldId: string; value: string }[];
     correctedByName: string | null;
     publishedAt: string | null;
@@ -251,6 +264,15 @@ function EvaluacionItem({
       </div>
 
       <Plazo evaluacion={entregas} zona={zona} />
+
+      {/* 0084 — Qué hay que hacer y con qué rúbrica se corrige, antes de entregar. */}
+      {entregas && (
+        <ConsignaView
+          instructionsMd={entregas.instructionsMd}
+          adjuntos={entregas.adjuntos}
+          rubrica={entregas.rubrica}
+        />
+      )}
 
       {/* 0083 — Pedir más tiempo: lo decide Coordinación. */}
       <SolicitudDeProrroga assessmentId={resumen.id} zona={zona} onDecidido={onCambio} />
@@ -456,9 +478,18 @@ export function CorreccionDelAlumno({
                 <div className="flex items-baseline justify-between gap-2 text-sm">
                   <span>{criterio.name}</span>
                   <span className="shrink-0 font-medium">
+                    {/* 0084 — el nivel de la rúbrica, si quien corrigió lo eligió. */}
+                    {p?.level && (
+                      <span className="mr-2 text-xs font-normal text-text-3">
+                        {ETIQUETA_DE_NIVEL[p.level]}
+                      </span>
+                    )}
                     {p?.points ?? "—"} de {criterio.maxPoints}
                   </span>
                 </div>
+                {p?.level && criterio.levels?.[p.level] && (
+                  <p className="text-xs text-text-3">{criterio.levels[p.level]}</p>
+                )}
                 {p?.comment && (
                   <p className="whitespace-pre-line text-xs text-text-2">{p.comment}</p>
                 )}

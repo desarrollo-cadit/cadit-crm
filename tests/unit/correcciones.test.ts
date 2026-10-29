@@ -133,6 +133,18 @@ vi.mock("@/server/grading", async (original) => ({
   },
 }));
 
+/**
+ * 0084 — El correo "Tu corrección fue publicada" se agenda DESPUÉS del commit
+ * (`onAfterCommit`; fuera de un alcance, al instante). Se dobla para ver que
+ * se agenda y para que un envío nunca toque las colas de esta base de mentira.
+ */
+let avisosDePublicacion: { organizationId: string; correctionId: string }[] = [];
+vi.mock("@/server/email/assessment-notices", () => ({
+  avisarCorreccionPublicada: async (organizationId: string, correctionId: string) => {
+    avisosDePublicacion.push({ organizationId, correctionId });
+  },
+}));
+
 const {
   aprobarCorreccion,
   detalleParaAprobar,
@@ -153,6 +165,7 @@ beforeEach(() => {
   escrituras = [];
   filaDeUpdate = {};
   llamadasAResultados = [];
+  avisosDePublicacion = [];
   resultadoDeEvaluacion = { ok: true, data: { recorded: 1 } };
   alcanzaLaCohorte = true;
   detalleDeCohorte = { editable: true };
@@ -310,6 +323,49 @@ describe("DV-003 — publicar es la ÚNICA escritura del resultado oficial", () 
     await expect(
       guardarCorreccion(ORG, ASM, ENR, USR, { action: "publish", criterionScores: PUNTAJES_80 }, false)
     ).rejects.toThrow(/not_found/);
+  });
+});
+
+describe("0084 — corregir por nivel y avisar al publicar", () => {
+  it("guarda el nivel de cada criterio; sin puntos, toma los del nivel", async () => {
+    contexto(NUMERICA);
+    responder("correction", []);
+
+    const r = await guardarCorreccion(ORG, ASM, ENR, USR, {
+      action: "draft",
+      criterionScores: [
+        { criterionId: "c1", points: null, level: "bueno", comment: " Bien " },
+        { criterionId: "c2", points: 25, level: "excelente" },
+      ],
+    }, false);
+
+    expect(r.ok).toBe(true);
+    const insert = escriturasEn("correction").find((e) => e.op === "insert");
+    expect(insert?.data.criterionScores).toEqual([
+      { criterionId: "c1", points: 30, comment: "Bien", level: "bueno" },
+      { criterionId: "c2", points: 25, comment: null, level: "excelente" },
+    ]);
+  });
+
+  it("publicar agenda el correo al alumno con la versión publicada", async () => {
+    contexto(NUMERICA);
+    responder("correction", []);
+    responder("correction", [
+      { id: "cor_nueva", assessmentId: ASM, enrollmentId: ENR, submissionId: null, status: "draft", score: 80, passed: true, feedback: null },
+    ]);
+
+    await guardarCorreccion(ORG, ASM, ENR, USR, { action: "publish", criterionScores: PUNTAJES_80 }, false);
+
+    const insertada = escriturasEn("correction").find((e) => e.op === "insert")?.data.id;
+    expect(insertada).toBeTruthy();
+    expect(avisosDePublicacion).toEqual([{ organizationId: ORG, correctionId: insertada }]);
+  });
+
+  it("un borrador no avisa nada", async () => {
+    contexto(NUMERICA);
+    responder("correction", []);
+    await guardarCorreccion(ORG, ASM, ENR, USR, { action: "draft" }, false);
+    expect(avisosDePublicacion).toEqual([]);
   });
 });
 
@@ -592,7 +648,8 @@ describe("DV-010 — el alumno ve solo lo publicado, y solo lo suyo", () => {
       score: 80,
       passed: true,
       feedback: "Buen trabajo",
-      criterionScores: [{ criterionId: "c1", points: 35, comment: "Prolijo" }],
+      // 0084 — una versión sin nivel (anterior a la rúbrica) lo lee como `null`.
+      criterionScores: [{ criterionId: "c1", points: 35, comment: "Prolijo", level: null }],
       textValues: [{ fieldId: "f1", value: "Las cotas" }],
       correctedByName: "Ana Profe",
       publishedAt: "2026-10-11T12:00:00.000Z",

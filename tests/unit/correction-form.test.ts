@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   CorrectionForm,
   borradorDeCorreccion,
+  elegirNivel,
   type CorreccionEnEdicion,
 } from "@/components/grading/correction-form";
 import type { Template } from "@/lib/grading-template";
@@ -63,6 +64,7 @@ const conPuntajes = (p: (number | null)[]): CorreccionEnEdicion => ({
     criterionId: c.id,
     points: p[i] ?? null,
     comment: "",
+    level: null,
   })),
 });
 
@@ -132,12 +134,62 @@ describe("borradorDeCorreccion", () => {
     });
     expect(b.submissionId).toBe("sub_1");
     expect(b.feedback).toBe("Bien");
+    // 0084 — cada lugar lleva también el nivel (null si no se eligió).
     expect(b.criterionScores).toEqual([
-      { criterionId: "c1", points: null, comment: "" },
-      { criterionId: "c2", points: 20, comment: "ok" },
-      { criterionId: "c3", points: null, comment: "" },
+      { criterionId: "c1", points: null, comment: "", level: null },
+      { criterionId: "c2", points: 20, comment: "ok", level: null },
+      { criterionId: "c3", points: null, comment: "", level: null },
     ]);
     expect(b.textValues).toEqual([{ fieldId: "f1", value: "Cotas" }]);
+  });
+
+  it("0084 — conserva el nivel guardado", () => {
+    const b = borradorDeCorreccion(NUMERICA, {
+      submissionId: null,
+      score: null,
+      passed: null,
+      feedback: null,
+      criterionScores: [{ criterionId: "c1", points: 30, comment: null, level: "bueno" }],
+      textValues: [],
+    });
+    expect(b.criterionScores[0]).toEqual({ criterionId: "c1", points: 30, comment: "", level: "bueno" });
+  });
+});
+
+/**
+ * 0084 — Corregir con la rúbrica: se elige un nivel por criterio, los puntos
+ * salen del nivel y se pueden ajustar a mano. La nota sigue siendo la suma.
+ */
+describe("0084 — el nivel por criterio", () => {
+  const RUBRICA: Template = {
+    ...NUMERICA,
+    criteria: [
+      { id: "c1", name: "Modelado", maxPoints: 40, levels: { bueno: "Errores menores" } },
+      { id: "c2", name: "Planos", maxPoints: 30 },
+      { id: "c3", name: "Render", maxPoints: 30 },
+    ],
+  };
+
+  it("ofrece los cuatro niveles con sus puntos y la frase del nivel", () => {
+    const html = render(RUBRICA, borradorDeCorreccion(RUBRICA, null));
+    for (const n of ["Excelente", "Bueno", "Suficiente", "Insuficiente"]) expect(html).toContain(n);
+    expect(html).toContain("Errores menores");
+    expect(html).toContain("30 pts"); // Bueno = 75 % de 40
+  });
+
+  it("elegir un nivel pone sus puntos; elegir de nuevo el mismo lo quita", () => {
+    const v = borradorDeCorreccion(RUBRICA, null);
+    const conBueno = elegirNivel(RUBRICA, v, 0, "bueno");
+    expect(conBueno.criterionScores[0]).toMatchObject({ level: "bueno", points: 30 });
+    const sin = elegirNivel(RUBRICA, conBueno, 0, "bueno");
+    expect(sin.criterionScores[0]).toMatchObject({ level: null, points: null });
+  });
+
+  it("el nivel elegido aparece marcado", () => {
+    const v = elegirNivel(RUBRICA, borradorDeCorreccion(RUBRICA, null), 0, "excelente");
+    const html = render(RUBRICA, v);
+    expect(html).toMatch(/aria-pressed="true"[^>]*><span[^>]*>Excelente/);
+    expect(html).not.toMatch(/aria-pressed="true"[^>]*><span[^>]*>Bueno/);
   });
 });
 

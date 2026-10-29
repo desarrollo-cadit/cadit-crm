@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { planAssessmentCopy, type AssessmentDto } from "@/server/grading";
+import { modeloComoEvaluacion, planAssessmentCopy, type AssessmentDto } from "@/server/grading";
 
 /**
  * 014 (T014, DV-009) — Copiar las evaluaciones de una cohorte a otra.
@@ -149,6 +149,8 @@ describe("T014 — lo que NO se copia", () => {
     const plan = planAssessmentCopy([{ ...ev("Parcial 1", 0), dueAt: "2026-10-01T21:00:00.000Z" }], []);
     expect(Object.keys(plan.aCopiar[0] ?? {}).sort()).toEqual([
       "criteria",
+      // 0084 — la consigna viaja con la evaluación (los adjuntos, aparte).
+      "instructionsMd",
       "minScore",
       "name",
       "position",
@@ -227,5 +229,68 @@ describe("T009 — copiar trae la plantilla", () => {
       []
     ).aCopiar;
     expect(copia).not.toHaveProperty("dueAt");
+  });
+});
+
+/**
+ * 0084 — Copiar (de otro grupo o del curso) trae también la consigna y las
+ * frases de cada nivel de la rúbrica. Los adjuntos se copian aparte, por eso
+ * el plan dice de qué evaluación de origen sale cada copia (`origenIds`,
+ * alineado con `aCopiar`) sin meter el id de origen en el insert.
+ */
+describe("0084 — copiar trae consigna y rúbrica", () => {
+  const conRubrica: AssessmentDto = {
+    ...ev("Entrega final", 0),
+    instructionsMd: "Modelá la **planta baja**.",
+    scale: "numeric",
+    minScore: 60,
+    requiresApproval: false,
+    criteria: [
+      { id: "c1", name: "Modelado", maxPoints: 100, levels: { excelente: "Sin errores", bueno: "Detalles" } },
+    ],
+    textFields: [],
+  };
+
+  it("copia la consigna y los descriptores, con ids nuevos", () => {
+    const [copia] = planAssessmentCopy([conRubrica], []).aCopiar;
+    expect(copia?.instructionsMd).toBe("Modelá la **planta baja**.");
+    expect(copia?.criteria[0]?.levels).toEqual({ excelente: "Sin errores", bueno: "Detalles" });
+    expect(copia?.criteria[0]?.id).not.toBe("c1");
+  });
+
+  it("sin consigna se copia vacía", () => {
+    const [copia] = planAssessmentCopy([ev("Parcial", 0)], []).aCopiar;
+    expect(copia?.instructionsMd).toBe("");
+  });
+
+  it("origenIds dice de qué evaluación sale cada copia, en el mismo orden", () => {
+    const plan = planAssessmentCopy(
+      [ev("B", 1), ev("A", 0), ev("Ya está", 2)],
+      [ev("Ya está", 0)]
+    );
+    expect(plan.aCopiar.map((a) => a.name)).toEqual(["A", "B"]);
+    expect(plan.origenIds).toEqual(["asm_0", "asm_1"]);
+  });
+});
+
+describe("0084 — tomar las evaluaciones modelo del curso", () => {
+  it("un modelo se lee como evaluación de origen, y la regla de duplicados es la misma", () => {
+    const origen = [
+      modeloComoEvaluacion({
+        id: "casm_1",
+        name: "Trabajo final",
+        position: 0,
+        required: true,
+        instructionsMd: "Consigna",
+        scale: "pass_fail",
+        minScore: null,
+        requiresApproval: false,
+        criteria: [],
+        textFields: [],
+      }),
+    ];
+    const plan = planAssessmentCopy(origen, [ev("TRABAJO  final", 0)]);
+    expect(plan.aCopiar).toEqual([]);
+    expect(plan.omitidas).toEqual(["Trabajo final"]);
   });
 });

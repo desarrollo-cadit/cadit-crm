@@ -105,6 +105,16 @@ describe("043 — toda ruta del alumno está clasificada", () => {
     expect(src).toContain("sinEnlacesSiVencio(vencida, buildClassRow(");
   });
 
+  /**
+   * 0084 — `entregas` es LOGRO (no vence), pero los ADJUNTOS de la consigna
+   * que viajan con ella son contenido: vencido el acceso, ni se consultan.
+   */
+  it("los adjuntos de la consigna que viajan en `entregas` se cortan al vencer", () => {
+    const src = leer("src/server/submissions.ts");
+    expect(src).toContain("estadosDeAcceso(organizationId, [inscripcion.id])");
+    expect(src).toMatch(/const adjuntos = vencida\s*\?\s*new Map/);
+  });
+
   it("el portal del profesor no lee el vencimiento (conserva sus cohortes)", () => {
     expect(leer("src/server/teacher-portal.ts")).not.toContain("access-expiry");
   });

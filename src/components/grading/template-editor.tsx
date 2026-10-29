@@ -5,7 +5,16 @@ import { Button } from "@/components/ui/button";
 import { CheckboxField } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import type { Criterion, Scale, Template, TextField } from "@/lib/grading-template";
+import {
+  ETIQUETA_DE_NIVEL,
+  NIVELES,
+  PORCENTAJE_DE_NIVEL,
+  type Criterion,
+  type Nivel,
+  type Scale,
+  type Template,
+  type TextField,
+} from "@/lib/grading-template";
 
 /**
  * 031 (T014, US1) — El editor de la plantilla de corrección. PRESENTACIONAL:
@@ -26,7 +35,10 @@ export function TemplateEditor({
   onCancel,
   saving,
   frozen = false,
+  saveLabel = "Guardar plantilla",
 }: {
+  /** 0084 — El editor de modelos del curso guarda la evaluación entera. */
+  saveLabel?: string;
   value: Template;
   onChange: (t: Template) => void;
   onSave: () => void;
@@ -58,6 +70,13 @@ export function TemplateEditor({
       ...value,
       criteria: value.criteria.map((c, j) => (j === i ? { ...c, ...patch } : c)),
     });
+  }
+
+  /** 0084 — La frase de un nivel en un criterio. Vacía se descarta al guardar. */
+  function setDescriptor(i: number, nivel: Nivel, texto: string) {
+    const c = value.criteria[i];
+    if (!c) return;
+    setCriterion(i, { levels: { ...c.levels, [nivel]: texto } });
   }
 
   function setField(i: number, patch: Partial<TextField>) {
@@ -120,9 +139,10 @@ export function TemplateEditor({
               Sin ejercicios, la nota se carga directa al corregir.
             </p>
           )}
-          <ul className="space-y-2">
+          <ul className="space-y-3">
             {value.criteria.map((c, i) => (
-              <li key={c.id || `nuevo-${i}`} className="flex flex-wrap items-center gap-2">
+              <li key={c.id || `nuevo-${i}`} className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Input
                   aria-label={`Nombre del ejercicio ${i + 1}`}
                   className="h-8 min-w-[12rem] flex-1"
@@ -153,6 +173,27 @@ export function TemplateEditor({
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 )}
+              </div>
+              {/*
+                0084 — La rúbrica: una frase por nivel (fijos, no se
+                configuran). Opcionales; el alumno las ve ANTES de entregar.
+              */}
+              <div className="grid gap-2 pl-0 sm:grid-cols-2 sm:pl-3">
+                {NIVELES.map((n) => (
+                  <label key={n} className="flex flex-col gap-0.5 text-[11px] text-muted-foreground">
+                    {ETIQUETA_DE_NIVEL[n]} · {PORCENTAJE_DE_NIVEL[n]} %
+                    <Input
+                      aria-label={`${ETIQUETA_DE_NIVEL[n]} — ${c.name || `Ejercicio ${i + 1}`}`}
+                      className="h-8 text-xs"
+                      placeholder="Qué se ve en este nivel (opcional)"
+                      maxLength={300}
+                      disabled={frozen}
+                      value={c.levels?.[n] ?? ""}
+                      onChange={(e) => setDescriptor(i, n, e.target.value.replace(/[\r\n]+/g, " "))}
+                    />
+                  </label>
+                ))}
+              </div>
               </li>
             ))}
           </ul>
@@ -234,14 +275,14 @@ export function TemplateEditor({
 
       {frozen && (
         <p className="text-xs text-warning">
-          Ya hay correcciones publicadas: la escala, la nota mínima y los puntajes
-          quedaron fijos. Los nombres se pueden corregir.
+          Ya hay correcciones publicadas: la escala, la nota mínima, los puntajes
+          y las frases de cada nivel quedaron fijos. Los nombres se pueden corregir.
         </p>
       )}
 
       <div className="flex gap-2">
         <Button size="sm" disabled={!sumaOk} loading={saving} onClick={onSave}>
-          {saving ? "Guardando…" : "Guardar plantilla"}
+          {saving ? "Guardando…" : saveLabel}
         </Button>
         <Button size="sm" variant="ghost" onClick={onCancel}>
           Cancelar

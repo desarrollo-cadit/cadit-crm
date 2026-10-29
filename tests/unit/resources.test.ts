@@ -56,6 +56,23 @@ describe("validateResource — un curso, una camada o una clase: uno solo", () =
     expect(r.code).toBe("invalid_container");
   });
 
+  /**
+   * 0084 — Los adjuntos de la consigna de una evaluación (del grupo o modelo
+   * del curso) son material con su propio contenedor: así no aparecen en el
+   * material del grupo ni del curso, y siguen siendo un solo lugar.
+   */
+  it("acepta adjuntos de una evaluación y de una evaluación modelo del curso", () => {
+    expect(validateResource({ ...base, assessmentId: "asm_1" }).ok).toBe(true);
+    expect(validateResource({ ...base, courseAssessmentTemplateId: "cat_1" }).ok).toBe(true);
+  });
+
+  it("un adjunto de evaluación no puede ser además material del grupo", () => {
+    const r = validateResource({ ...base, assessmentId: "asm_1", cohortId: "coh_1" });
+    expect(r.ok).toBe(false);
+    const r2 = validateResource({ ...base, assessmentId: "asm_1", courseAssessmentTemplateId: "cat_1" });
+    expect(r2.ok).toBe(false);
+  });
+
   it("rechaza curso Y camada", () => {
     const r = validateResource({ ...base, courseId: "crs_1", cohortId: "coh_1" });
     expect(r.ok).toBe(false);
