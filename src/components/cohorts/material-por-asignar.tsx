@@ -123,7 +123,7 @@ export function MaterialPorAsignar({
                     {clases.map((c) => (
                       <option key={c.id} value={c.id}>
                         Clase {c.number} · {dia(c.date)}
-                        {c.canceled ? " (cancelada)" : ""}
+                        {c.canceled ? " (suspendida)" : ""}
                       </option>
                     ))}
                   </Select>

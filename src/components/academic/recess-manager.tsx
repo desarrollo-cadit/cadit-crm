@@ -205,7 +205,7 @@ export function RecessManager({
             ))}
           </ul>
           <p className="mt-1 text-muted-foreground">
-            Revisalas en la pestaña Clases de cada grupo y cancelalas si corresponde.
+            Revisalas en la pestaña Clases de cada grupo y suspendelas si corresponde.
           </p>
         </div>
       ) : null}

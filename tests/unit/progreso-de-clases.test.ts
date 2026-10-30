@@ -38,7 +38,7 @@ describe("resumenDeCadena — lo que escucha un lector de pantalla", () => {
       states: ["asistio", "asistio", "falto", "justificada", "cancelada", "sin_registro"],
     });
     expect(resumen).toBe(
-      "De 6 clases: asististe a 2, faltaste a 1, 1 justificada, 1 cancelada, 1 sin registrar"
+      "De 6 clases: asististe a 2, faltaste a 1, 1 justificada, 1 suspendida, 1 sin registrar"
     );
   });
 

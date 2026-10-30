@@ -341,13 +341,13 @@ function Clases({
                   )}
                   {c.canceled && (
                     <p className="text-xs text-destructive">
-                      Cancelada{c.cancelReason && `: ${c.cancelReason}`}
+                      Suspendida{c.cancelReason && `: ${c.cancelReason}`}
                     </p>
                   )}
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   {c.projected && <Badge variant="secondary">proyectada</Badge>}
-                  {c.canceled && <Badge variant="destructive">cancelada</Badge>}
+                  {c.canceled && <Badge variant="destructive">suspendida</Badge>}
                 </div>
               </button>
 

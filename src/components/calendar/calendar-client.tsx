@@ -291,7 +291,7 @@ function TeacherLoadPanel({ classes }: { classes: CalendarClass[] }) {
               <th className="px-3 py-1.5 text-right font-medium">Horas</th>
               <th className="px-3 py-1.5 text-right font-medium">Reales</th>
               <th className="px-3 py-1.5 text-right font-medium">Proyectadas</th>
-              <th className="px-3 py-1.5 text-right font-medium">Canceladas</th>
+              <th className="px-3 py-1.5 text-right font-medium">Suspendidas</th>
               <th className="px-3 py-1.5 text-left font-medium">Avisos</th>
             </tr>
           </thead>

@@ -189,7 +189,7 @@ export function AssignDialog({
             {c.startsAt ? fecha.format(new Date(c.startsAt)) : `${c.date} (sin horario)`}
           </span>
           {c.roomName && <span className="text-xs text-muted-foreground">{c.roomName}</span>}
-          {c.canceled && <Badge variant="outline">Cancelada</Badge>}
+          {c.canceled && <Badge variant="outline">Suspendida</Badge>}
           {esLaActual && <Badge variant="success">Asignada acá</Badge>}
           {!esLaActual && ajena && (
             <Badge variant="warning">{c.current!.kind === "manual" ? "Tiene enlace manual" : "Tiene otra grabación"}</Badge>

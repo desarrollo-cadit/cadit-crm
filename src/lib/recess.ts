@@ -158,13 +158,13 @@ export function validarReprogramacion(
   if (!original.canceled) {
     return {
       code: "no_cancelada",
-      message: "Sólo se puede reprogramar una clase cancelada. Cancelala primero.",
+      message: "Sólo se puede reprogramar una clase suspendida. Suspendela primero.",
     };
   }
   if (original.yaReprogramada) {
     return {
       code: "ya_reprogramada",
-      message: "Esta clase ya fue reprogramada: si hay que moverla de nuevo, cancelá y reprogramá la clase nueva.",
+      message: "Esta clase ya fue reprogramada: si hay que moverla de nuevo, suspendé y reprogramá la clase nueva.",
     };
   }
   const receso = fechaEnReceso(nuevaFecha, recesos);

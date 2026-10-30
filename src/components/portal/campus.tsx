@@ -225,7 +225,7 @@ const FRASE_DE_ESTADO: Record<TramoEstado, (n: number) => string> = {
   asistio: (n) => `asististe a ${n}`,
   falto: (n) => `faltaste a ${n}`,
   justificada: (n) => `${n} ${n === 1 ? "justificada" : "justificadas"}`,
-  cancelada: (n) => `${n} ${n === 1 ? "cancelada" : "canceladas"}`,
+  cancelada: (n) => `${n} ${n === 1 ? "suspendida" : "suspendidas"}`,
   sin_registro: (n) => `${n} sin registrar`,
   futura: (n) => `${n} por dictar`,
 };
@@ -337,7 +337,7 @@ export function LeyendaDeProgreso({ estados }: { estados: readonly TramoEstado[]
     justificada: "Justificada",
     sin_registro: "Sin registro",
     futura: "Por dictar",
-    cancelada: "Cancelada",
+    cancelada: "Suspendida",
   };
   const presentes = (Object.keys(nombres) as TramoEstado[]).filter((e) => estados.includes(e));
   if (presentes.length < 2) return null;

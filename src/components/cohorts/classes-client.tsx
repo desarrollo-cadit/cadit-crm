@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { CalendarClock, CalendarDays, DoorOpen, Link2, Trash2, Video } from "lucide-react";
+import { Ban, CalendarClock, CalendarDays, DoorOpen, Link2, Trash2, Video } from "lucide-react";
 import { RecessManager } from "@/components/academic/recess-manager";
 import { MaterialPorAsignar } from "@/components/cohorts/material-por-asignar";
+import { ReprogramarClase, SuspenderClase } from "@/components/cohorts/suspender-clase";
 import { ResourcesPanel, useClassMaterial } from "@/components/academic/resources-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -112,15 +113,13 @@ export function ClassesClient({
    * montaba su panel y pedía lo suyo: 100 clases, 100 requests.
    */
   const material = useClassMaterial(cohortId);
-  /** 034 (FR-013/FR-014) — La reprogramación abierta: qué clase y el día/hora nuevos. */
-  const [reprogramando, setReprogramando] = useState<{
-    classId: string;
-    date: string;
-    startTime: string;
-    endTime: string;
-    /** El servidor avisó que cae en un receso: hace falta confirmar. */
-    receso: string | null;
-  } | null>(null);
+  /**
+   * 034 (FR-013/FR-014) / 2026-10-30 — La clase que se está suspendiendo, o
+   * la suspendida a la que se le crea la clase de reemplazo. Los dos diálogos
+   * viven en `suspender-clase.tsx`, compartidos con la pestaña Asistencia.
+   */
+  const [suspendiendo, setSuspendiendo] = useState<ClassRow | null>(null);
+  const [reprogramando, setReprogramando] = useState<ClassRow | null>(null);
   const [rangoDesde, setRangoDesde] = useState("");
   const [rangoHasta, setRangoHasta] = useState("");
   const [borrando, setBorrando] = useState(false);
@@ -272,7 +271,7 @@ export function ClassesClient({
 
   /**
    * 034 (FR-012) — Borrar UNA clase. Con asistencia o grabación el servidor
-   * no la borra y lo dice: la salida es cancelarla (pestaña Asistencia).
+   * no la borra y lo dice: la salida es suspenderla.
    */
   async function borrarClase(c: ClassRow) {
     if (!c.id) return;
@@ -310,39 +309,6 @@ export function ClassesClient({
     );
     setRangoDesde("");
     setRangoHasta("");
-    void refetch();
-  }
-
-  /**
-   * 034 (FR-013/FR-014) — Reprogramar una cancelada. Si el día nuevo cae en un
-   * receso, el servidor responde 409 `en_receso` y la fila pide confirmar
-   * explícitamente antes de volver a mandar.
-   */
-  async function reprogramar(confirmRecess: boolean) {
-    if (!reprogramando) return;
-    const res = await fetch(`/api/class-sessions/${reprogramando.classId}/reschedule`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        date: reprogramando.date,
-        startTime: reprogramando.startTime || null,
-        endTime: reprogramando.endTime || null,
-        confirmRecess,
-      }),
-    }).catch(() => null);
-    if (!res?.ok) {
-      const { code, message } = await leerError(res, "No se pudo reprogramar la clase");
-      if (code === "en_receso") {
-        setReprogramando({ ...reprogramando, receso: message });
-        return;
-      }
-      notify.error(message);
-      return;
-    }
-    notify.success("Clase reprogramada.", {
-      description: "La nueva clase queda vinculada a la cancelada.",
-    });
-    setReprogramando(null);
     void refetch();
   }
 
@@ -397,13 +363,13 @@ export function ClassesClient({
 
       {/* 013 (T014) — La proyección se distingue a simple vista, no en un
           tooltip: si no se nota, el equipo cree que son clases reales y se
-          pregunta por qué no puede cancelar ninguna. */}
+          pregunta por qué no puede suspender ninguna. */}
       {data.projected && (
         <div className="rounded-md border border-warning-border bg-warning-soft p-3 text-sm">
           <p className="font-medium">Estas clases son una proyección</p>
           <p className="mt-1 text-muted-foreground">
             Se dibujan a partir de los días de cursada declarados. Todavía no
-            existen como clases: no se pueden cancelar, no llevan enlace de
+            existen como clases: no se pueden suspender, no llevan enlace de
             reunión ni grabación, y no registran asistencia.
           </p>
           {data.cannotGenerateReason ? (
@@ -474,17 +440,17 @@ export function ClassesClient({
             {/* 034 (FR-013) — El vínculo de la reprogramación, en las dos clases. */}
             {c.rescheduledFrom ? (
               <Badge variant="secondary">
-                Reprogramación de la clase del {fecha(c.rescheduledFrom.date)}
+                Reemplazo de la clase del {fecha(c.rescheduledFrom.date)}
               </Badge>
             ) : null}
             {c.canceled && c.rescheduledTo ? (
-              <Badge variant="secondary">Reprogramada al {fecha(c.rescheduledTo.date)}</Badge>
+              <Badge variant="secondary">Reemplazada por la del {fecha(c.rescheduledTo.date)}</Badge>
             ) : null}
 
             {/* Cada fila ofrece lo que corresponde a SU momento (FR-005c). */}
             {c.canceled ? (
               <span className="text-muted-foreground">
-                <Badge variant="outline">Cancelada</Badge>
+                <Badge variant="outline">Suspendida</Badge>
                 {c.cancelReason && <span className="ml-2">{c.cancelReason}</span>}
               </span>
             ) : c.meetingUrl ? (
@@ -644,25 +610,25 @@ export function ClassesClient({
               </span>
             )}
 
-            {/* 034 (US3) — Reprogramar una cancelada, y borrar una clase. */}
+            {/*
+              2026-10-30 — Suspender ESTA clase (`asistencia.editar`, la misma
+              de la pestaña Asistencia). El diálogo ofrece, al terminar, crear
+              la clase de reemplazo.
+            */}
+            {canEditLinks && !c.projected && !c.canceled && c.id ? (
+              <Button size="sm" variant="ghost" onClick={() => setSuspendiendo(c)}>
+                <Ban className="h-4 w-4" aria-hidden />
+                Suspender
+              </Button>
+            ) : null}
+
+            {/* 034 (US3) — Crear la clase de reemplazo de una suspendida, y borrar una clase. */}
             {canEdit && !c.projected && c.id ? (
               <span className="flex items-center gap-1">
                 {c.canceled && !c.rescheduledTo ? (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() =>
-                      setReprogramando({
-                        classId: c.id!,
-                        date: "",
-                        startTime: c.startTime ?? "",
-                        endTime: c.endTime ?? "",
-                        receso: null,
-                      })
-                    }
-                  >
+                  <Button size="sm" variant="ghost" onClick={() => setReprogramando(c)}>
                     <CalendarClock className="h-4 w-4" aria-hidden />
-                    Reprogramar
+                    Crear clase de reemplazo
                   </Button>
                 ) : null}
                 <Button
@@ -673,56 +639,6 @@ export function ClassesClient({
                   onClick={() => void borrarClase(c)}
                 >
                   <Trash2 className="h-4 w-4" aria-hidden />
-                </Button>
-              </span>
-            ) : null}
-
-            {reprogramando?.classId === c.id ? (
-              <span className="order-last flex w-full flex-wrap items-end gap-2 rounded-md border bg-card p-3">
-                <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-                  Nuevo día
-                  <Input
-                    type="date"
-                    value={reprogramando.date}
-                    onChange={(e) =>
-                      setReprogramando({ ...reprogramando, date: e.target.value, receso: null })
-                    }
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-                  Desde
-                  <Input
-                    type="time"
-                    value={reprogramando.startTime}
-                    onChange={(e) => setReprogramando({ ...reprogramando, startTime: e.target.value })}
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-                  Hasta
-                  <Input
-                    type="time"
-                    value={reprogramando.endTime}
-                    onChange={(e) => setReprogramando({ ...reprogramando, endTime: e.target.value })}
-                  />
-                </label>
-                {reprogramando.receso ? (
-                  <>
-                    <span className="w-full text-xs text-warning">{reprogramando.receso}</span>
-                    <Button size="sm" onClick={() => void reprogramar(true)}>
-                      Confirmar igual
-                    </Button>
-                  </>
-                ) : (
-                  <Button
-                    size="sm"
-                    disabled={!reprogramando.date}
-                    onClick={() => void reprogramar(false)}
-                  >
-                    Reprogramar
-                  </Button>
-                )}
-                <Button size="sm" variant="ghost" onClick={() => setReprogramando(null)}>
-                  Cancelar
                 </Button>
               </span>
             ) : null}
@@ -764,6 +680,24 @@ export function ClassesClient({
       <p className="text-xs text-muted-foreground">
         Los horarios son de {data.timezone.replaceAll("_", " ")}.
       </p>
+
+      {suspendiendo?.id && (
+        <SuspenderClase
+          cohortId={cohortId}
+          clase={{ ...suspendiendo, id: suspendiendo.id }}
+          canReschedule={canEdit}
+          onClose={() => setSuspendiendo(null)}
+          onChanged={() => void refetch()}
+        />
+      )}
+      {reprogramando?.id && (
+        <ReprogramarClase
+          cohortId={cohortId}
+          clase={{ ...reprogramando, id: reprogramando.id }}
+          onClose={() => setReprogramando(null)}
+          onChanged={() => void refetch()}
+        />
+      )}
     </div>
   );
 }

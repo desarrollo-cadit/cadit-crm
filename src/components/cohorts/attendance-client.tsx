@@ -6,8 +6,8 @@ import { Button } from "@/components/ui/button";
 import { ItemDeMenu, MenuFlotante } from "@/components/ui/floating-menu";
 import { Modal } from "@/components/ui/modal";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
+import { SuspenderClase } from "@/components/cohorts/suspender-clase";
 import { ZoomAttendanceReview } from "@/components/cohorts/zoom-attendance-review";
 import { cn } from "@/lib/utils";
 import { notify } from "@/lib/notify";
@@ -83,7 +83,7 @@ function fechaCorta(s: Session) {
   return `${formatWeekday(s.date)} ${formatDate(s.date)}`;
 }
 
-/** Una clase se edita si ya se dio o es hoy; las futuras y canceladas no. */
+/** Una clase se edita si ya se dio o es hoy; las futuras y suspendidas no. */
 function editableLaClase(s: Session) {
   return s.estado === "dictada" || s.estado === "hoy";
 }
@@ -106,15 +106,20 @@ type Menu = DestinoDeMenu & { x: number; y: number };
  * El porcentaje lo calcula el servidor (`attendancePercentage`): solo cuentan
  * las clases YA DICTADAS. Las futuras se ven atenuadas y no se editan.
  *
- * 040 (DV-008) — `canEdit` = `asistencia.editar` (pasar lista, cancelar una
+ * 040 (DV-008) — `canEdit` = `asistencia.editar` (pasar lista, suspender una
  * clase, generar el cronograma). Sin ella (rol Ventas) la planilla se lee.
+ *
+ * 2026-10-30 — `canReschedule` = `academico.editar`: después de suspender,
+ * crear la clase de reemplazo en el mismo diálogo (`SuspenderClase`).
  */
 export function AttendanceClient({
   cohortId,
   canEdit = false,
+  canReschedule = false,
 }: {
   cohortId: string;
   canEdit?: boolean;
+  canReschedule?: boolean;
 }) {
   const [sheet, setSheet] = useState<Sheet | null>(null);
   const [loading, setLoading] = useState(true);
@@ -211,23 +216,6 @@ export function AttendanceClient({
         marked === 1 ? "1 alumno marcado como presente." : `${marked} alumnos marcados como presentes.`
       );
     }
-    void refetch();
-  }
-
-  async function cancelSession(s: Session, reason: string) {
-    setBusy(true);
-    const res = await fetch(`/api/class-sessions/${s.id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ cancelReason: reason }),
-    }).catch(() => null);
-    setBusy(false);
-    if (!res?.ok) {
-      notify.error(await readError(res, "No se pudo cancelar la clase"));
-      return;
-    }
-    setCancelar(null);
-    notify.success("Clase cancelada: ya no cuenta para la asistencia.");
     void refetch();
   }
 
@@ -401,7 +389,7 @@ export function AttendanceClient({
                         data-col={col}
                         aria-label={
                           s.estado === "cancelada"
-                            ? `${etiqueta} (clase cancelada)`
+                            ? `${etiqueta} (clase suspendida)`
                             : s.estado === "futura"
                               ? `${etiqueta} (clase futura)`
                               : etiqueta
@@ -552,11 +540,12 @@ export function AttendanceClient({
       )}
 
       {cancelar && (
-        <CancelarClase
-          s={cancelar}
-          busy={busy}
+        <SuspenderClase
+          cohortId={cohortId}
+          clase={cancelar}
+          canReschedule={canReschedule}
           onClose={() => setCancelar(null)}
-          onConfirm={(motivo) => void cancelSession(cancelar, motivo)}
+          onChanged={() => void refetch()}
         />
       )}
     </div>
@@ -574,7 +563,7 @@ function EncabezadoDeClase({
 }) {
   const estado =
     s.estado === "cancelada"
-      ? `Cancelada${s.cancelReason ? `: ${s.cancelReason}` : ""}`
+      ? `Suspendida${s.cancelReason ? `: ${s.cancelReason}` : ""}`
       : s.estado === "futura"
         ? "Todavía no se dio"
         : s.estado === "hoy"
@@ -623,7 +612,7 @@ function MenuDeColumna({
   const puede = admiteTodosPresentes(s.estado, sinMarcar);
   const motivo =
     s.estado === "cancelada"
-      ? "La clase está cancelada"
+      ? "La clase está suspendida"
       : s.estado === "futura"
         ? "La clase todavía no se dio"
         : "Todos tienen marca en esta clase";
@@ -631,7 +620,7 @@ function MenuDeColumna({
     <>
       <p className="px-2 py-1 text-[11px] text-muted-foreground">
         Clase {s.number} · {fechaCorta(s)}
-        {s.estado === "cancelada" && s.cancelReason ? ` · Cancelada: ${s.cancelReason}` : ""}
+        {s.estado === "cancelada" && s.cancelReason ? ` · Suspendida: ${s.cancelReason}` : ""}
       </p>
       <ItemDeMenu onSelect={onTodosPresentes} disabled={!puede} hint={puede ? undefined : motivo}>
         <Check className="h-3.5 w-3.5" aria-hidden />
@@ -640,7 +629,7 @@ function MenuDeColumna({
       {s.estado !== "cancelada" && (
         <ItemDeMenu onSelect={onCancelar}>
           <Ban className="h-3.5 w-3.5" aria-hidden />
-          Cancelar clase…
+          Suspender clase…
         </ItemDeMenu>
       )}
     </>
@@ -678,55 +667,6 @@ function ConfirmarTodosPresentes({
         </Button>
       </div>
     </div>
-  );
-}
-
-function CancelarClase({
-  s,
-  busy,
-  onClose,
-  onConfirm,
-}: {
-  s: Session;
-  busy: boolean;
-  onClose: () => void;
-  onConfirm: (motivo: string) => void;
-}) {
-  const [motivo, setMotivo] = useState("");
-  return (
-    <Modal onClose={onClose} busy={busy} dirty={motivo.trim().length > 0} labelledBy="cancelar-clase">
-      <form
-        className="space-y-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (motivo.trim()) onConfirm(motivo.trim());
-        }}
-      >
-        <h2 id="cancelar-clase" className="pr-6 text-base font-semibold">
-          Cancelar la clase del {fechaCorta(s)}
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          Una clase cancelada deja de contar para la asistencia de todos. La asistencia ya cargada se
-          conserva.
-        </p>
-        <Textarea
-          autoFocus
-          aria-label="Motivo de la cancelación"
-          placeholder="¿Por qué se cancela?"
-          value={motivo}
-          maxLength={500}
-          onChange={(e) => setMotivo(e.target.value)}
-        />
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={busy}>
-            Volver
-          </Button>
-          <Button type="submit" variant="destructive" size="sm" loading={busy} disabled={!motivo.trim()}>
-            Cancelar clase
-          </Button>
-        </div>
-      </form>
-    </Modal>
   );
 }
 
@@ -786,7 +726,7 @@ function Leyenda() {
       </p>
       <p>
         El porcentaje cuenta solo las clases ya dictadas en las que se tomó asistencia. Las
-        canceladas, las futuras, las dictadas sin lista y las anteriores a la inscripción de cada
+        suspendidas, las futuras, las dictadas sin lista y las anteriores a la inscripción de cada
         alumno (si no tiene marca) no cuentan. En una clase con lista, quien quedó sin marca cuenta
         como ausente.
       </p>

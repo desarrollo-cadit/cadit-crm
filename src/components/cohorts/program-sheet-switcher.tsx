@@ -35,6 +35,7 @@ export function ProgramSheetSwitcher({
   canIssueCertificates,
   canConfirmResults = false,
   canEditAttendance = false,
+  canEditAcademic = false,
 }: {
   cohortId: string;
   kind: "attendance" | "grading";
@@ -44,6 +45,8 @@ export function ProgramSheetSwitcher({
   canConfirmResults?: boolean;
   /** 040 (DV-008) — `asistencia.editar`: pasar lista en la planilla del módulo. */
   canEditAttendance?: boolean;
+  /** 2026-10-30 — `academico.editar`: crear la clase de reemplazo de una suspendida. */
+  canEditAcademic?: boolean;
 }) {
   const [data, setData] = useState<Programa | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -144,7 +147,12 @@ export function ProgramSheetSwitcher({
             </div>
           )
         ) : kind === "attendance" ? (
-          <AttendanceClient key={elegido} cohortId={elegido} canEdit={canEditAttendance} />
+          <AttendanceClient
+            key={elegido}
+            cohortId={elegido}
+            canEdit={canEditAttendance}
+            canReschedule={canEditAcademic}
+          />
         ) : (
           <GradingClient
             key={elegido}

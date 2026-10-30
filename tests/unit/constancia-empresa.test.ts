@@ -221,7 +221,7 @@ describe("armarConstancia — grupo finalizado", () => {
   it("encabezado de carta formal", () => {
     expect(c.lugarYFecha).toBe("Montevideo, 26 de octubre de 2026");
     expect(c.destinatario).toEqual(["Señores", "ANCAP", "Presente"]);
-    expect(c.asunto).toBe("Asunto: CAPACITACIÓN AP3D - NUBE DE PUNTOS");
+    expect(c.asunto).toBe("Asunto: CONSTANCIA AP3D - NUBE DE PUNTOS");
     expect(c.saludo).toBe("De nuestra mayor consideración,");
     expect(b.titulo).toBeNull();
   });
@@ -235,10 +235,8 @@ describe("armarConstancia — grupo finalizado", () => {
     expect(b.encabezadoLista).toBe("Participaron del mismo:");
   });
 
-  it("la línea del alumno separa asistencia y resultado, sin nota", () => {
-    expect(b.alumnos).toEqual([
-      "LEMAIRE GUIGOU, Andres Sebastian: participó de todas las clases a excepción del 29/10 y 03/11; asistió a 8 de 10 clases (80%). Resultado pendiente.",
-    ]);
+  it("cada persona va SOLO en la tabla (sin la lista en texto que repetía lo mismo)", () => {
+    expect(b).not.toHaveProperty("alumnos");
     expect(b.tabla).toEqual([
       { alumno: "LEMAIRE GUIGOU, Andres Sebastian", asistencia: "8/10", porcentaje: "80%", faltas: "2", resultado: "Resultado pendiente" },
     ]);
@@ -311,10 +309,7 @@ describe("armarConstancia — grupo en curso", () => {
   });
 
   it("todas y ninguna", () => {
-    expect(b.alumnos).toEqual([
-      "BUENO, B: participó de todas las clases; asistió a 6 de 6 clases (100%). En curso.",
-      "CERO, C: no participó de ninguna de las clases dictadas; asistió a 0 de 6 clases (0%). En curso.",
-    ]);
+    expect(b.tabla[0]).toEqual({ alumno: "BUENO, B", asistencia: "6/6", porcentaje: "100%", faltas: "0", resultado: "En curso" });
     expect(b.tabla[1]).toEqual({ alumno: "CERO, C", asistencia: "0/6", porcentaje: "0%", faltas: "6", resultado: "En curso" });
   });
 });
@@ -328,7 +323,7 @@ describe("armarConstancia — por comenzar y sin registro", () => {
     expect(b.parrafos[0]).toBe(
       "Le informamos que la capacitación de AP3D - Nube de Puntos comenzará el 27 de octubre de 2025, prevista en 10 clases."
     );
-    expect(b.alumnos[0]).toBe("LEMAIRE GUIGOU, Andres Sebastian.");
+    expect(b.tabla[0]).toMatchObject({ alumno: "LEMAIRE GUIGOU, Andres Sebastian", asistencia: "—" });
     expect(b.tabla[0]!.resultado).toBe("Por comenzar");
   });
 
@@ -342,8 +337,7 @@ describe("armarConstancia — por comenzar y sin registro", () => {
         grupos: [grupo({ clases: clases.map((x) => ({ ...x, tomada: false })), alumnos: [alumno(["B", "B"], {})] })],
       })
     );
-    expect(c.bloques[0]!.alumnos[0]).toBe("B, B: sin asistencia registrada. Sin datos.");
-    expect(c.bloques[0]!.tabla[0]).toMatchObject({ asistencia: "—", porcentaje: "—", faltas: "—" });
+    expect(c.bloques[0]!.tabla[0]).toMatchObject({ asistencia: "—", porcentaje: "—", faltas: "—", resultado: "Sin datos" });
   });
 });
 
@@ -366,7 +360,13 @@ describe("general vs. un grupo", () => {
 
   it("el nombre del grupo igual al del curso no se repite", () => {
     const c = armarConstancia(entrada({ grupos: [grupo({ grupo: "AP3D" })] }));
-    expect(c.asunto).toBe("Asunto: CAPACITACIÓN AP3D");
+    expect(c.asunto).toBe("Asunto: CONSTANCIA AP3D");
+  });
+
+  it("general con UN solo grupo: el curso va en el asunto y no se repite como título", () => {
+    const c = armarConstancia(entrada({ alcance: "general" }));
+    expect(c.asunto).toBe("Asunto: CONSTANCIA AP3D - NUBE DE PUNTOS");
+    expect(c.bloques[0]!.titulo).toBeNull();
   });
 
   it("alumnos ordenados por apellido", () => {
@@ -382,9 +382,10 @@ describe("sin una sola marca de la persona", () => {
     const nadie = alumno(["N", "Nadie"], {});
     const g = grupo({ alumnos: [nadie] });
     expect(asistenciaDeAlumno(g, nadie, FINAL)).toMatchObject({ cuentan: 0, pct: null, faltas: [] });
-    expect(armarConstancia(entrada({ grupos: [g] })).bloques[0]!.alumnos[0]).toBe(
-      "NADIE, N: sin asistencia registrada. Resultado pendiente."
-    );
+    expect(armarConstancia(entrada({ grupos: [g] })).bloques[0]!.tabla[0]).toMatchObject({
+      porcentaje: "—",
+      resultado: "Resultado pendiente",
+    });
     expect(avisosDeGrupo(g, FINAL).alumnosSinMarca).toEqual(["NADIE, N"]);
   });
 });
