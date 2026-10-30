@@ -1,14 +1,25 @@
 import { apiError, parseBody, requireCapability } from "@/lib/api";
 import { companyCreateSchema } from "@/lib/company";
-import { createCompany, listCompanies, serializeCompany } from "@/server/companies";
+import {
+  contarPersonasPorEmpresa,
+  createCompany,
+  listCompanies,
+  serializeCompany,
+} from "@/server/companies";
 
 export const dynamic = "force-dynamic";
 
 export const GET = requireCapability(
   "contactos.ver",
   async (session) => {
-  const rows = await listCompanies(session.organizationId);
-  return Response.json({ companies: rows.map(serializeCompany) });
+  const [rows, personas] = await Promise.all([
+    listCompanies(session.organizationId),
+    contarPersonasPorEmpresa(session.organizationId),
+  ]);
+  // 2026-10-30 — `peopleCount` se suma al DTO de siempre: un conteo, sin datos de nadie.
+  return Response.json({
+    companies: rows.map((c) => ({ ...serializeCompany(c), peopleCount: personas.get(c.id) ?? 0 })),
+  });
 });
 
 /**

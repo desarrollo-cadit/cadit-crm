@@ -951,6 +951,21 @@ export async function seccionGrabacionesZoomPeriodica({ api, ok }) {
 }
 
 /**
+ * 2026-10-30 — Cuenta y Aula son desplegables ("Aula: Todas ▾"), no `<select>`:
+ * se abre el que está dentro de `#id` y se elige la opción por su valor
+ * (`data-valor`, "" = todas) o por su texto exacto.
+ */
+async function elegirFiltro(pagina, id, { value, label }) {
+  const caja = pagina.locator(`#${id}`);
+  await caja.locator("button[aria-haspopup]").click();
+  const opcion =
+    value !== undefined
+      ? caja.locator(`[data-opcion]:has([data-valor="${value}"])`)
+      : caja.locator("[data-opcion]").filter({ has: pagina.getByText(label, { exact: true }) });
+  await opcion.first().click();
+}
+
+/**
  * `/grabaciones` en un navegador real: filtro por aula y fechas, "Copiar
  * enlace" (el portapapeles queda con el `playUrl`), "Ver" (pestaña nueva, el
  * CRM no intermedia) y capturas en tema claro y oscuro. "Ver" se comprueba
@@ -987,7 +1002,7 @@ async function pantalla({ ok, BASE, getCookie, nombreZ2, desde, hasta, R5, secre
       // Hasta que hidrata, el select existe pero no dispara la consulta: se reintenta.
       const filas = pagina.locator("tbody tr");
       for (let intento = 0; intento < 60; intento++) {
-        await pagina.locator("#rec-room").selectOption({ label: nombreZ2 });
+        await elegirFiltro(pagina, "rec-room", { label: nombreZ2 });
         await pagina.locator("#rec-from").fill(desde);
         await pagina.locator("#rec-to").fill(hasta);
         await pagina.waitForTimeout(800);
@@ -1052,12 +1067,12 @@ async function pantalla({ ok, BASE, getCookie, nombreZ2, desde, hasta, R5, secre
       }
       if (tema === "light") {
         // La fila ambigua se destaca y su panel ofrece A/2 y C/2 como sugeridas.
-        await pagina.locator("#rec-room").selectOption({ label: "Todas" });
+        await elegirFiltro(pagina, "rec-room", { value: "" });
         await pagina.locator("#rec-from").fill("");
         await pagina.locator("#rec-to").fill("");
         // Con la base del arnés acumulando corridas, R3 puede caer en otra
         // página: se acota a la cuenta de ESTA corrida.
-        await pagina.locator("#rec-connection").selectOption({ value: zc });
+        await elegirFiltro(pagina, "rec-connection", { value: zc });
         const filaR3 = pagina.locator(`tr[data-recording-id="${R3?.id}"]`);
         await filaR3.waitFor({ timeout: 30000 });
         ok("UI — la fila ambigua se marca como tal", (await filaR3.getAttribute("data-state")) === "ambigua");
@@ -1074,7 +1089,7 @@ async function pantalla({ ok, BASE, getCookie, nombreZ2, desde, hasta, R5, secre
       if (tema === "light") {
         // Celular: la página no se desplaza de costado; lo hace la tabla.
         await pagina.setViewportSize({ width: 390, height: 800 });
-        await pagina.locator("#rec-room").selectOption({ label: "Todas" });
+        await elegirFiltro(pagina, "rec-room", { value: "" });
         await pagina.locator("[data-recordings-table]").waitFor({ timeout: 30000 });
         await pagina.waitForTimeout(500);
         const anchos = await pagina.evaluate(() => {

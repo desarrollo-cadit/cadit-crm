@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Building2, Combine, Download, Pencil, Plus } from "lucide-react";
+import { Building2, ChevronDown, Combine, Download, Pencil, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -9,9 +9,23 @@ import { CompanyForm } from "@/components/companies/company-form";
 import { CompanyOfflineCourses } from "@/components/companies/company-offline-courses";
 import { MergeCompaniesDialog } from "@/components/companies/merge-companies-dialog";
 import { CompanyConstancia } from "@/components/companies/company-constancia";
+import {
+  Buscador,
+  Resaltado,
+  ResumenDeFiltros,
+  SinCoincidencias,
+  TarjetaDeFiltros,
+  type FiltroActivo,
+} from "@/components/listados/filtros";
+import { colorCategorico } from "@/lib/cohort-color";
 import { condicionDePago } from "@/lib/company";
+import { filtrarEmpresas, inicialesDeEmpresa } from "@/lib/company-filters";
 import { ETIQUETA_DE_RESULTADO, type ResultadoDeCursada } from "@/lib/resultado-de-cursada";
+import { cn } from "@/lib/utils";
 import type { CompanyDto } from "@/lib/types";
+
+/** 2026-10-30 — La fila del listado: el DTO de siempre más cuántas personas tiene. */
+type CompanyRow = CompanyDto & { peopleCount?: number };
 
 type ReportRow = {
   employeeName: string;
@@ -91,7 +105,8 @@ export function CompaniesClient({
   /** 045 — `academico.editar`: asignar, extender y quitar cursos offline de la empresa. */
   canEditAcademic: boolean;
 }) {
-  const [companies, setCompanies] = useState<CompanyDto[]>([]);
+  const [companies, setCompanies] = useState<CompanyRow[]>([]);
+  const [busqueda, setBusqueda] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [abierta, setAbierta] = useState<string | null>(null);
@@ -105,7 +120,7 @@ export function CompaniesClient({
   const refetch = useCallback(async () => {
     const res = await fetch("/api/companies").catch(() => null);
     if (res?.ok) {
-      const data = (await res.json()) as { companies: CompanyDto[] };
+      const data = (await res.json()) as { companies: CompanyRow[] };
       setCompanies(data.companies);
       setLoadError(false);
     } else {
@@ -142,12 +157,32 @@ export function CompaniesClient({
 
   if (loading) {
     return (
-      <div className="space-y-2 p-6">
-        <Skeleton className="h-12 w-full" />
-        <Skeleton className="h-12 w-full" />
+      <div className="space-y-4 p-6" aria-busy="true">
+        <Skeleton className="h-10 w-48" />
+        <Skeleton className="h-14 w-full" />
+        <div className="divide-y overflow-hidden rounded-lg border bg-card">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="flex items-center gap-3.5 px-4 py-[11px]">
+              <Skeleton className="h-[38px] w-[38px] rounded-[11px]" />
+              <div className="flex-1 space-y-1.5">
+                <Skeleton className="h-4 w-1/3" />
+                <Skeleton className="h-3 w-1/5" />
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
+
+  /**
+   * 2026-10-30 — Como Académico: buscador en una tarjeta, "Mostrando N de M"
+   * y filas en grilla. La regla de búsqueda es de `src/lib/company-filters.ts`.
+   */
+  const visibles = filtrarEmpresas(companies, busqueda);
+  const filtrosActivos: FiltroActivo[] = busqueda.trim()
+    ? [{ clave: "q", etiqueta: `“${busqueda.trim()}”`, quitar: () => setBusqueda("") }]
+    : [];
 
   return (
     <div className="space-y-4 p-6">
@@ -186,93 +221,186 @@ export function CompaniesClient({
         </p>
       )}
 
-      <ul className="divide-y rounded-md border">
-        {companies.map((c) => (
-          <li key={c.id}>
-            <div className="flex flex-wrap items-center gap-3 px-4 py-3">
-              <button
-                type="button"
-                className="min-w-0 flex-1 text-left text-sm font-medium hover:underline"
-                aria-expanded={abierta === c.id}
-                onClick={() => void abrir(c.id)}
-              >
-                {c.legalName}
-                {c.tradeName && (
-                  <span className="ml-2 font-normal text-muted-foreground">{c.tradeName}</span>
-                )}
-              </button>
-              {c.taxId && <span className="text-xs text-muted-foreground">RUT {c.taxId}</span>}
-              {canEdit && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setEditando(c.id);
-                    setAbierta(c.id);
-                  }}
-                >
-                  <Pencil className="h-4 w-4" /> Editar
-                </Button>
-              )}
-              {canMerge && companies.length > 1 && (
-                <Button variant="ghost" size="sm" onClick={() => setUnificando(c)}>
-                  <Combine className="h-4 w-4" aria-hidden /> Unificar con…
-                </Button>
-              )}
-              {/* El CSV es la misma ruta con `?format=csv`: misma información,
-                  distinto envase. */}
-              <a
-                href={`/api/companies/${c.id}/report?format=csv`}
-                className={buttonVariants({ variant: "outline", size: "sm" })}
-              >
-                <Download className="h-4 w-4" />
-                Exportar CSV
-              </a>
-            </div>
+      {!loadError && companies.length > 0 && (
+        <TarjetaDeFiltros
+          pie={
+            <ResumenDeFiltros
+              mostrando={visibles.length}
+              total={companies.length}
+              sustantivo={{ uno: "empresa", varios: "empresas" }}
+              activos={filtrosActivos}
+              onLimpiar={() => setBusqueda("")}
+            />
+          }
+        >
+          <Buscador
+            value={busqueda}
+            onChange={setBusqueda}
+            placeholder="Buscar empresa por razón social, nombre comercial o RUT…"
+          />
+        </TarjetaDeFiltros>
+      )}
 
-            {abierta === c.id && (
-              <div className="space-y-3 border-t bg-muted px-4 py-3">
-                {canEdit && editando === c.id ? (
-                  <CompanyForm company={c} onSaved={guardada} onCancel={() => setEditando(null)} />
-                ) : (
-                  <FichaDeFacturacion c={c} />
-                )}
-                {cargandoReporte ? (
-                  <Skeleton className="h-16 w-full" />
-                ) : rows.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    Esta empresa todavía no tiene empleados inscriptos.
-                  </p>
-                ) : (
-                  <ul className="space-y-2 text-sm">
-                    {rows.map((r, i) => (
-                      <li key={i} className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                        <span className="font-medium">{r.employeeName}</span>
-                        <span className="text-muted-foreground">{r.cohortName}</span>
-                        <span>
-                          {r.attendanceText === null
-                            ? "sin asistencia registrada"
-                            : `Asistió a ${r.attendanceText}`}
-                        </span>
-                        <Badge variant="outline">{ETIQUETA_DE_RESULTADO[r.approval]}</Badge>
-                        {r.certificateCode && (
-                          <Badge variant="secondary">
-                            Certificado {r.certificateCode}
-                          </Badge>
+      {companies.length > 0 && visibles.length === 0 && (
+        <SinCoincidencias
+          mensaje="Ninguna empresa coincide con la búsqueda."
+          onLimpiar={() => setBusqueda("")}
+        />
+      )}
+
+      {visibles.length > 0 && (
+        <ul className="divide-y overflow-hidden rounded-lg border bg-card">
+          {visibles.map((c) => {
+            const abiertaEsta = abierta === c.id;
+            const color = colorCategorico(c.id);
+            const condicion = condicionDePago(c.paymentTerms, c.paymentTermDays);
+            const personas = c.peopleCount;
+            return (
+              <li key={c.id}>
+                <div className="grid grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-x-3.5 px-4 py-[11px] transition-colors hover:bg-subtle md:grid-cols-[38px_minmax(0,2.2fr)_minmax(0,1.1fr)_minmax(0,0.8fr)_auto]">
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "grid h-[38px] w-[38px] shrink-0 place-items-center rounded-[11px] text-[13px] font-semibold tracking-wide",
+                      color.bg,
+                      color.text
+                    )}
+                  >
+                    {inicialesDeEmpresa(c)}
+                  </span>
+                  <button
+                    type="button"
+                    className="group min-w-0 text-left"
+                    aria-expanded={abiertaEsta}
+                    onClick={() => void abrir(c.id)}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <span className="truncate font-medium leading-snug group-hover:underline">
+                        <Resaltado texto={c.legalName} busqueda={busqueda} />
+                      </span>
+                      <ChevronDown
+                        aria-hidden
+                        className={cn(
+                          "h-3.5 w-3.5 shrink-0 text-text-4 transition-transform",
+                          abiertaEsta && "rotate-180"
                         )}
-                      </li>
-                    ))}
-                  </ul>
+                      />
+                    </span>
+                    {(c.tradeName || condicion) && (
+                      <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                        {c.tradeName && <Resaltado texto={c.tradeName} busqueda={busqueda} />}
+                        {c.tradeName && condicion && " · "}
+                        {condicion}
+                      </span>
+                    )}
+                    {c.taxId && (
+                      <span className="mt-0.5 block truncate text-xs text-muted-foreground md:hidden">
+                        RUT <Resaltado texto={c.taxId} busqueda={busqueda} />
+                      </span>
+                    )}
+                  </button>
+                  <div className="hidden min-w-0 truncate text-[13px] tabular-nums text-text-2 md:block">
+                    {c.taxId ? (
+                      <>
+                        RUT <Resaltado texto={c.taxId} busqueda={busqueda} />
+                      </>
+                    ) : (
+                      <span className="text-muted-foreground">Sin RUT</span>
+                    )}
+                  </div>
+                  <div className="hidden text-[13px] text-text-2 md:block">
+                    {personas === undefined ? null : personas === 0 ? (
+                      <span className="text-muted-foreground">Sin personas</span>
+                    ) : (
+                      `${personas} ${personas === 1 ? "persona" : "personas"}`
+                    )}
+                  </div>
+                  <div className="flex items-center justify-end gap-1">
+                    {canEdit && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        aria-label={`Editar ${c.legalName}`}
+                        title="Editar"
+                        onClick={() => {
+                          setEditando(c.id);
+                          setAbierta(c.id);
+                        }}
+                      >
+                        <Pencil className="h-3.5 w-3.5" strokeWidth={1.8} />
+                      </Button>
+                    )}
+                    {canMerge && companies.length > 1 && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        aria-label={`Unificar ${c.legalName} con…`}
+                        title="Unificar con…"
+                        onClick={() => setUnificando(c)}
+                      >
+                        <Combine className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
+                      </Button>
+                    )}
+                    {/* El CSV es la misma ruta con `?format=csv`: misma información,
+                        distinto envase. */}
+                    <a
+                      href={`/api/companies/${c.id}/report?format=csv`}
+                      aria-label={`Exportar CSV de ${c.legalName}`}
+                      title="Exportar CSV"
+                      className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-8 w-8")}
+                    >
+                      <Download className="h-3.5 w-3.5" strokeWidth={1.8} />
+                    </a>
+                  </div>
+                </div>
+    
+                {abiertaEsta && (
+                  <div className="space-y-3 border-t bg-subtle px-4 py-3">
+                    {canEdit && editando === c.id ? (
+                      <CompanyForm company={c} onSaved={guardada} onCancel={() => setEditando(null)} />
+                    ) : (
+                      <FichaDeFacturacion c={c} />
+                    )}
+                    {cargandoReporte ? (
+                      <Skeleton className="h-16 w-full" />
+                    ) : rows.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        Esta empresa todavía no tiene empleados inscriptos.
+                      </p>
+                    ) : (
+                      <ul className="space-y-2 text-sm">
+                        {rows.map((r, i) => (
+                          <li key={i} className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                            <span className="font-medium">{r.employeeName}</span>
+                            <span className="text-muted-foreground">{r.cohortName}</span>
+                            <span>
+                              {r.attendanceText === null
+                                ? "sin asistencia registrada"
+                                : `Asistió a ${r.attendanceText}`}
+                            </span>
+                            <Badge variant="outline">{ETIQUETA_DE_RESULTADO[r.approval]}</Badge>
+                            {r.certificateCode && (
+                              <Badge variant="secondary">
+                                Certificado {r.certificateCode}
+                              </Badge>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {/* 2026-10-29 — La constancia en PDF para mandarle a la empresa. */}
+                    <CompanyConstancia companyId={c.id} companyName={c.legalName} />
+                    {/* 045 — Cursos offline de su gente (acceso directo, 043). */}
+                    <CompanyOfflineCourses companyId={c.id} canEdit={canEditAcademic} />
+                  </div>
                 )}
-                {/* 2026-10-29 — La constancia en PDF para mandarle a la empresa. */}
-                <CompanyConstancia companyId={c.id} companyName={c.legalName} />
-                {/* 045 — Cursos offline de su gente (acceso directo, 043). */}
-                <CompanyOfflineCourses companyId={c.id} canEdit={canEditAcademic} />
-              </div>
-            )}
-          </li>
-        ))}
-      </ul>
+              </li>
+            );
+          })}
+        </ul>
+      )}
 
       {canMerge && unificando && (
         <MergeCompaniesDialog

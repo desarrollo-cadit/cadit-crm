@@ -271,7 +271,7 @@ export function Desplegable({
       {abierto && (
         <div
           className={cn(
-            "absolute top-[calc(100%+6px)] z-20 w-max min-w-[220px] max-w-[calc(100vw-32px)] rounded-md border bg-card p-1.5 shadow-pop",
+            "absolute top-[calc(100%+6px)] z-20 max-h-[min(60vh,420px)] w-max min-w-[220px] max-w-[calc(100vw-32px)] overflow-y-auto rounded-md border bg-card p-1.5 shadow-pop",
             alinear === "derecha" ? "right-0" : "left-0"
           )}
           onKeyDown={(e) => {
@@ -362,6 +362,52 @@ export function OpcionAccion({ onClick, children }: { onClick: () => void; child
         {children}
       </button>
     </>
+  );
+}
+
+/* ------------------------------------------------------------ Rango de fechas */
+
+/**
+ * 2026-10-30 — "Desde [fecha] hasta [fecha]" en una pastilla del alto de los
+ * desplegables, teñida cuando tiene alguna fecha. Los `id` son opcionales
+ * (Grabaciones los conserva para el E2E).
+ */
+export function RangoDeFechas({
+  etiqueta = "Desde",
+  desde,
+  hasta,
+  onDesde,
+  onHasta,
+  idDesde,
+  idHasta,
+}: {
+  etiqueta?: string;
+  desde: string;
+  hasta: string;
+  onDesde: (v: string) => void;
+  onHasta: (v: string) => void;
+  idDesde?: string;
+  idHasta?: string;
+}) {
+  const activo = Boolean(desde || hasta);
+  const campo =
+    "rounded-sm bg-transparent text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  return (
+    <div
+      className={cn(
+        "flex min-h-9 flex-wrap items-center gap-x-2 rounded-md border px-3 py-1 text-[13px]",
+        activo ? "border-brand-soft bg-brand-tint text-brand-text" : "bg-card text-text-2"
+      )}
+    >
+      <label className="flex items-center gap-2">
+        {etiqueta}
+        <input type="date" id={idDesde} value={desde} onChange={(e) => onDesde(e.target.value)} className={campo} />
+      </label>
+      <label className="flex items-center gap-2">
+        hasta
+        <input type="date" id={idHasta} value={hasta} onChange={(e) => onHasta(e.target.value)} className={campo} />
+      </label>
+    </div>
   );
 }
 

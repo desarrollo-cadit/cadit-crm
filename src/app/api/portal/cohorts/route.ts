@@ -11,8 +11,11 @@ export const dynamic = "force-dynamic";
  * más al DTO del staff, ese campo aparecería acá sin que nadie lo decida.
  */
 export const GET = requireTeacherPortal(async (ctx) => {
-  const cohorts = await listTeacherCohorts(ctx.organizationId, ctx.teacherId);
-  // La zona de la academia: la pantalla dice de qué zona es cada hora.
+  // La zona de la academia: la pantalla dice de qué zona es cada hora, y
+  // "Clase X de Y" cuenta como terminada la clase que terminó en ESA zona.
   const timezone = await teacherPortalTimezone(ctx.organizationId);
+  const cohorts = await listTeacherCohorts(ctx.organizationId, ctx.teacherId, {
+    conProgreso: { timeZone: timezone },
+  });
   return Response.json({ cohorts, timezone });
 });
