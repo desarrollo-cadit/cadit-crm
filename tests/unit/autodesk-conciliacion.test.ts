@@ -167,6 +167,23 @@ describe("Autodesk sí, campus no", () => {
     expect(caso(p, "ana@ejemplo.test")).toMatchObject({ sugerida: "sacar_en_autodesk", seguro: false });
   });
 
+  it("un interesado sin grupo no cuenta como curso en marcha (curso terminado + lead)", () => {
+    // Una inscripción sin grupo es un lead del pipeline, no un curso: su estado
+    // "sin_fechas" no puede hacerla candidata a recibir la licencia.
+    const p = plan({
+      autodesk: enAutodesk("ana@ejemplo.test"),
+      directorio,
+      titulares: [
+        inscripcion("c1", "e1", "finalizada"),
+        inscripcion("c1", "lead", "sin_fechas", [], { conGrupo: false, grupo: null }),
+      ],
+    });
+    const c = caso(p, "ana@ejemplo.test");
+    expect(c).toMatchObject({ sugerida: "sacar_en_autodesk", seguro: false });
+    expect(c.candidatas.map((k) => k.enrollmentId)).toEqual(["e1"]);
+    expect(accionesSeguras(p)).toEqual([]);
+  });
+
   it("no cursa nada: sugiere sacarla en Autodesk", () => {
     const p = plan({ autodesk: enAutodesk("ana@ejemplo.test"), directorio });
     const c = caso(p, "ana@ejemplo.test");
