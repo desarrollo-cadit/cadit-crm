@@ -120,11 +120,17 @@ export function TeamForm({
   }
 
   return (
-    <Modal onClose={onClose} dirty={dirty} busy={saving} labelledBy="team-form-title">
-      <h3 id="team-form-title" className="mb-4 font-semibold">
+    <Modal
+      onClose={onClose}
+      dirty={dirty}
+      busy={saving}
+      labelledBy="team-form-title"
+      className="flex max-h-[90vh] flex-col"
+    >
+      <h3 id="team-form-title" className="mb-4 shrink-0 font-semibold">
         {initial ? "Editar equipo de licencias" : "Nuevo equipo de licencias"}
       </h3>
-      <div className="space-y-3">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
         <div className="space-y-1.5">
           <Label htmlFor="team-name">Nombre</Label>
           <Input
@@ -175,7 +181,7 @@ export function TeamForm({
           )}
         </div>
       </div>
-      <div className="mt-4 flex items-center justify-between gap-2">
+      <div className="mt-4 flex shrink-0 items-center justify-between gap-2">
         <div>
           {initial && (
             <Button variant="ghost" disabled={saving} onClick={() => void archivar(!initial.archived)}>
