@@ -138,6 +138,8 @@ export type StudentGrading = {
      * alumno no lo ve y la verificación pública no lo valida.
      */
     suspended: boolean;
+    /** 2026-10-29 — el motivo de la suspensión es que el grupo NO EMITE certificado. */
+    noEmite: boolean;
     /** 2026-10-29 — su grupo terminó sin la asistencia completa: cuenta como anulado. */
     annulledIncompleteGroup: boolean;
   } | null;
@@ -1424,6 +1426,7 @@ export async function cohortGrading(
               revokeReason: cert.certificate.revokeReason,
               revokedByName: cert.revokedByName,
               historical: cert.certificate.historical,
+              noEmite: afirmados.get(e.id)?.noEmite ?? false,
               suspended: visibilidadSegun(cert.certificate.revokedAt, afirmados.get(e.id)) === "suspendido",
               annulledIncompleteGroup:
                 visibilidadSegun(cert.certificate.revokedAt, afirmados.get(e.id)) === "anulado_sin_asistencia",

@@ -1,5 +1,4 @@
 import { eq, inArray, isNull } from "drizzle-orm";
-import { exigirEvaluacionesDeGrupo } from "@/server/taller-config";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
@@ -145,7 +144,7 @@ export async function cierreDeCursada(
 
 export type ConfirmacionResult =
   | { ok: true; data: { confirmados: number; certificadosAnulados: number } }
-  | { ok: false; status: 404 | 409 | 422; code: string; message: string };
+  | { ok: false; status: 404 | 422; code: string; message: string };
 
 /**
  * Confirma (o corrige) el resultado final de alumnos de UN grupo.
@@ -173,9 +172,6 @@ export async function confirmarResultados(
 ): Promise<ConfirmacionResult> {
   const cierre = await cierreDeCursada(organizationId, cohortId, now);
   if (!cierre) return { ok: false, status: 404, code: "not_found", message: "Grupo no encontrado" };
-  // 2026-10-29 — Taller sin evaluaciones: no hay resultado que confirmar (409).
-  const sinEvaluaciones = await exigirEvaluacionesDeGrupo(organizationId, cohortId);
-  if (sinEvaluaciones) return sinEvaluaciones;
 
   const porId = new Map(cierre.alumnos.map((a) => [a.enrollmentId, a]));
   for (const e of entries) {

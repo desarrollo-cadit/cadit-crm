@@ -7,7 +7,6 @@ import type { Capability } from "@/lib/capabilities";
 import type { Currency } from "@/lib/db/schema";
 import { columnasDeClaseConLista, relojDeAsistencia } from "@/server/attendance";
 import { estadoDeAprobacionDeCursada } from "@/server/estado-de-cursada";
-import { grupoTieneEvaluaciones } from "@/lib/taller-config";
 import { visibilidadSegun, type EstadoAfirmado } from "@/lib/resultado-final";
 import {
   estadosAfirmados,
@@ -72,6 +71,7 @@ export type RecordCourse = {
     issuedAt: string;
     revokedAt: string | null;
     suspended: boolean;
+    noEmite: boolean;
     /** 2026-10-29 — su grupo terminó sin la asistencia completa: cuenta como anulado. */
     annulledIncompleteGroup: boolean;
   } | null;
@@ -127,6 +127,7 @@ export type RecordModule = {
     issuedAt: string;
     revokedAt: string | null;
     suspended: boolean;
+    noEmite: boolean;
     /** 2026-10-29 — su grupo terminó sin la asistencia completa: cuenta como anulado. */
     annulledIncompleteGroup: boolean;
   } | null;
@@ -416,11 +417,6 @@ export async function getStudentRecord(
         waiverAuthorName: waiverAuthor,
         cohortMinPct: cohort?.minAttendancePct ?? null,
         courseMinPct: course?.minAttendancePct ?? null,
-        tieneEvaluaciones: grupoTieneEvaluaciones({
-          courseKind: course?.kind,
-          registrationStatus: cohort?.registrationStatus,
-          hasAssessments: cohort?.hasAssessments,
-        }),
         resultadoConfirmado: confirmados.get(enrollment.id) ?? null,
         grupo: { startDate: cohort?.startDate ?? null, endDate: cohort?.endDate ?? null },
       },
@@ -462,6 +458,7 @@ export async function getStudentRecord(
             code: cert.code,
             issuedAt: cert.issuedAt.toISOString(),
             revokedAt: cert.revokedAt?.toISOString() ?? null,
+            noEmite: afirmados.get(enrollment.id)?.noEmite ?? false,
             suspended: visibilidadSegun(cert.revokedAt, afirmados.get(enrollment.id)) === "suspendido",
             // 2026-10-29 — grupo terminado sin asistencia completa: cuenta como anulado.
             annulledIncompleteGroup:

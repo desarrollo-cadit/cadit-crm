@@ -35,13 +35,13 @@ export type FalloDeGrupo = {
 
 type Fila = ConfigDeGrupo & { cohortId: string };
 
-const columnas = {
+const columnas = () => ({
   cohortId: schema.cohort.id,
   courseKind: schema.course.kind,
   registrationStatus: schema.cohort.registrationStatus,
   hasAssessments: schema.cohort.hasAssessments,
   issuesCertificate: schema.cohort.issuesCertificate,
-};
+});
 
 /** La configuración de un grupo, o `null` si no existe en la organización. */
 export async function configDeGrupo(
@@ -49,7 +49,7 @@ export async function configDeGrupo(
   cohortId: string
 ): Promise<Fila | null> {
   const rows = await getDb()
-    .select(columnas)
+    .select(columnas())
     .from(schema.cohort)
     .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
     .where(scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, cohortId)))
@@ -63,7 +63,7 @@ export async function configDeEvaluacion(
   assessmentId: string
 ): Promise<Fila | null> {
   const rows = await getDb()
-    .select(columnas)
+    .select(columnas())
     .from(schema.assessment)
     .innerJoin(schema.cohort, eq(schema.assessment.cohortId, schema.cohort.id))
     .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
@@ -84,7 +84,7 @@ export async function configDeInscripcion(
   enrollmentId: string
 ): Promise<Fila | null> {
   const rows = await getDb()
-    .select(columnas)
+    .select(columnas())
     .from(schema.enrollment)
     .innerJoin(schema.cohort, eq(schema.enrollment.cohortId, schema.cohort.id))
     .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))

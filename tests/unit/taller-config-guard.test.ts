@@ -16,8 +16,6 @@ const EVALUACIONES: Record<string, RegExp> = {
   "src/server/extension-requests.ts": /exigirEvaluacionesDeEvaluacion\(|grupoTieneEvaluacionesPorId\(/,
   "src/server/teacher-portal.ts": /grupoTieneEvaluacionesPorId\(/,
   "src/app/api/cohorts/[id]/extension-requests/route.ts": /exigirEvaluacionesDeGrupo\(/,
-  "src/server/final-results.ts": /exigirEvaluacionesDeGrupo\(/,
-  "src/app/api/cohorts/[id]/final-results/route.ts": /exigirEvaluacionesDeGrupo\(/,
 };
 
 describe("taller sin evaluaciones / sin certificado: validación en el backend", () => {
@@ -42,6 +40,25 @@ describe("taller sin evaluaciones / sin certificado: validación en el backend",
   it("la lectura de certificados suspendidos pasa por la visibilidad de resultado-final (noEmite)", () => {
     expect(leer("src/lib/resultado-final.ts")).toContain("afirmado?.noEmite");
     expect(leer("src/server/resultados-confirmados.ts")).toContain("noEmite: noEmite(id)");
+  });
+
+  it("el resultado final se confirma también sin evaluaciones (no hay bloqueo del grupo)", () => {
+    for (const f of [
+      "src/server/final-results.ts",
+      "src/app/api/cohorts/[id]/final-results/route.ts",
+      "src/server/resultados-confirmados.ts",
+    ]) {
+      expect(leer(f), f).not.toMatch(/exigirEvaluacionesDe|grupoTieneEvaluaciones/);
+    }
+    const tp = leer("src/server/teacher-portal.ts");
+    const desde = tp.indexOf("export async function teacherFinalResults");
+    expect(tp.slice(desde, desde + 1800)).not.toMatch(/grupoTieneEvaluacionesPorId/);
+  });
+
+  it("Tareas de Hoy genera 'resultados' para un taller cursable (solo Marketing queda afuera)", () => {
+    const src = leer("src/server/tareas-del-dia.ts");
+    const d = src.indexOf("async function gruposSinResultadoFinal");
+    expect(src.slice(d, d + 1500)).toContain("cursoNoEsTaller(");
   });
 
   it("la emisión masiva exige que el grupo emita", () => {

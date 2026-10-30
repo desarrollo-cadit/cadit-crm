@@ -1,5 +1,5 @@
 import { eq, inArray, or } from "drizzle-orm";
-import { grupoEmiteCertificado, grupoTieneEvaluaciones } from "@/lib/taller-config";
+import { grupoEmiteCertificado } from "@/lib/taller-config";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import type { ApprovalState } from "@/lib/approval";
@@ -166,16 +166,11 @@ export async function estadosAfirmados(
   };
 
   /**
-   * 2026-10-29 — Taller configurado SIN evaluaciones: no hay resultado que
-   * confirmar, así que para el certificado se lo da por cumplido (la
-   * asistencia completa sigue mandando vía `sinResultado`). Y "no emite"
-   * suspende lo emitido.
+   * 2026-10-29 — "No emite" (taller configurado) suspende lo emitido. Un grupo
+   * SIN evaluaciones NO es un caso aparte: igual que cualquier otro, el
+   * certificado depende del resultado CONFIRMADO por una persona.
    */
   const porId = new Map(filas.map((f) => [f.id, f]));
-  const sinEvals = (id: string) => {
-    const f = porId.get(id);
-    return f ? !grupoTieneEvaluaciones(f) : false;
-  };
   const noEmite = (id: string) => {
     const f = porId.get(id);
     return f ? !grupoEmiteCertificado(f) : false;
@@ -197,11 +192,7 @@ export async function estadosAfirmados(
     }
     const sinResultado = sinResultadoDe(id);
     salida.set(id, {
-      state: sinResultado
-        ? "pendiente"
-        : sinEvals(id)
-          ? "aprobado"
-          : estadoAfirmado(confirmados.get(id) ?? null).state,
+      state: sinResultado ? "pendiente" : estadoAfirmado(confirmados.get(id) ?? null).state,
       sinResultado,
       noEmite: noEmite(id),
     });

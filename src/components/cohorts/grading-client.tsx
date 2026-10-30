@@ -66,6 +66,7 @@ type Student = {
     revokedByName: string | null;
     /** 0086 — Emitido, pero sin resultado final confirmado como aprobado. */
     suspended?: boolean;
+    noEmite?: boolean;
     /** 2026-10-29 — su grupo terminó sin la asistencia completa: cuenta como anulado. */
     annulledIncompleteGroup?: boolean;
   } | null;
@@ -377,7 +378,7 @@ export function GradingClient({
   return (
     <div className="space-y-3 p-6">
       {/* 0086 — El resultado final de cada alumno: lo confirma una persona, nunca el cálculo. */}
-      {sheet.students.length > 0 && !sinEvaluaciones && (
+      {sheet.students.length > 0 && (
         <FinalResultsPanel
           endpoint={`/api/cohorts/${cohortId}/final-results`}
           canConfirm={canConfirmResults}
@@ -628,7 +629,9 @@ export function GradingClient({
                           </span>
                         ) : st.certificate.suspended ? (
                           <span className="text-warning" title={st.certificate.code}>
-                            suspendido · falta confirmar el resultado
+                            {st.certificate.noEmite
+                              ? "suspendido · el grupo no emite certificado"
+                              : "suspendido · falta confirmar el resultado"}
                           </span>
                         ) : (
                           <a

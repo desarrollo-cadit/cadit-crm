@@ -33,6 +33,7 @@ type RecordCourse = {
     issuedAt: string;
     revokedAt: string | null;
     suspended?: boolean;
+    noEmite?: boolean;
     /** 2026-10-29 — su grupo terminó sin la asistencia completa: cuenta como anulado. */
     annulledIncompleteGroup?: boolean;
   } | null;
@@ -212,7 +213,11 @@ export function StudentRecordClient({
                 <Badge variant="outline">Certificado anulado (grupo sin asistencia completa)</Badge>
               )}
               {c.certificate && !c.certificate.revokedAt && !c.certificate.annulledIncompleteGroup && c.certificate.suspended && (
-                <Badge variant="outline">Certificado suspendido · falta confirmar el resultado</Badge>
+                <Badge variant="outline">
+                  {c.certificate.noEmite
+                    ? "Certificado suspendido · el grupo no emite certificado"
+                    : "Certificado suspendido · falta confirmar el resultado"}
+                </Badge>
               )}
               {c.certificate &&
                 !c.certificate.revokedAt &&

@@ -24,7 +24,6 @@ import {
   type ResultadoDeCursada,
 } from "@/lib/resultado-de-cursada";
 import { csvField } from "@/server/enrollments";
-import { grupoTieneEvaluaciones } from "@/lib/taller-config";
 import { grupoCompleto, visibilidadSegun } from "@/lib/resultado-final";
 import { estadosAfirmados } from "@/server/resultados-confirmados";
 
@@ -85,8 +84,6 @@ export function filaDeReporte(input: {
   resultadoConfirmado: ResultadoConfirmado;
   certificateCode: string | null;
   reloj: RelojDeAsistencia;
-  /** 2026-10-29 — Taller sin evaluaciones: no hay resultado que informar. */
-  tieneEvaluaciones?: boolean;
 }): CompanyReportRow {
   const estado = input.cohort ? estadoDeGrupoAlCorte(input.cohort, input.reloj) : null;
   const asis = input.cohort
@@ -107,7 +104,6 @@ export function filaDeReporte(input: {
     approval: resultadoDeCursada({
       estadoDelGrupo: estado,
       resultadoConfirmado: input.resultadoConfirmado,
-      tieneEvaluaciones: input.tieneEvaluaciones,
       grupoCompleto: grupoCompleto(input.clases, input.reloj),
     }),
     certificateCode: input.certificateCode,
@@ -229,11 +225,6 @@ export async function companyReport(
       // 0086 — El resultado final CONFIRMADO por el profesor (decisión del dueño 2026-10-23).
       resultadoConfirmado: confirmadoDe(enrollment.id),
       // 0086 — Un certificado suspendido (sin resultado confirmado) no se informa.
-      tieneEvaluaciones: grupoTieneEvaluaciones({
-        courseKind: course?.kind,
-        registrationStatus: cohort?.registrationStatus,
-        hasAssessments: cohort?.hasAssessments,
-      }),
       certificateCode:
         certificados.find(
           (c) =>

@@ -233,11 +233,11 @@ export function PortalCohortClient({
             { key: "material", label: "Material" },
           ] as const
         )
-          // 2026-10-29 — Taller sin evaluaciones: ni Evaluaciones, Entregas ni Resultado final.
+          // 2026-10-29 — Taller sin evaluaciones: ni Evaluaciones ni Entregas (el Resultado final sigue).
           .filter(
             (t) =>
               datos.cohort.tieneEvaluaciones !== false ||
-              (t.key !== "evaluaciones" && t.key !== "entregas" && t.key !== "cierre")
+              (t.key !== "evaluaciones" && t.key !== "entregas")
           )
           .map((t) => (
           <button

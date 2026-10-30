@@ -6,6 +6,7 @@ import {
 } from "@/lib/taller-config";
 import { resultadoDeCursada } from "@/lib/resultado-de-cursada";
 import { historialesComerciales, type CursadaComercial } from "@/lib/recorrido-comercial";
+import { visibilidadSegun } from "@/lib/resultado-final";
 import { pestanasDelGrupo, pestanasPortalCursada, pestanasPortalGrupo } from "@/lib/pestanas";
 
 const taller = { courseKind: "taller", registrationStatus: null };
@@ -38,18 +39,26 @@ describe("configuración de un grupo de taller", () => {
     });
   });
 
-  it("sin evaluaciones el grupo terminado no es 'Resultado pendiente'", () => {
-    expect(
-      resultadoDeCursada({ estadoDelGrupo: "finalizada", resultadoConfirmado: null, tieneEvaluaciones: false, grupoCompleto: true })
-    ).toBe("sin_evaluacion");
-    expect(resultadoDeCursada({ estadoDelGrupo: "finalizada", resultadoConfirmado: null, grupoCompleto: true })).toBe("pendiente");
+  it("sin evaluaciones el resultado sigue siendo de una persona: sin confirmar es 'Resultado pendiente'", () => {
+    const base = { estadoDelGrupo: "finalizada" as const, grupoCompleto: true };
+    expect(resultadoDeCursada({ ...base, resultadoConfirmado: null })).toBe("pendiente");
+    expect(resultadoDeCursada({ ...base, resultadoConfirmado: "aprobado" })).toBe("aprobado");
+    expect(resultadoDeCursada({ ...base, resultadoConfirmado: "reprobado" })).toBe("reprobado");
+  });
+
+  it("el certificado de un grupo que no emite queda suspendido aunque el resultado esté confirmado aprobado", () => {
+    const ok = { state: "aprobado" as const, sinResultado: false };
+    expect(visibilidadSegun(null, ok)).toBe("valido");
+    expect(visibilidadSegun(null, { ...ok, noEmite: true })).toBe("suspendido");
+    expect(visibilidadSegun(null, { state: "pendiente", sinResultado: false })).toBe("suspendido");
+    expect(visibilidadSegun(new Date(), { ...ok, noEmite: true })).toBe("anulado");
   });
 
   it("las pestañas se ocultan", () => {
     const base = { esEspecializacion: false, verCursosOffline: false };
-    expect(pestanasDelGrupo({ ...base, tieneEvaluaciones: false, emiteCertificado: false })).not.toContain("evaluacion");
-    expect(pestanasDelGrupo({ ...base, tieneEvaluaciones: false, emiteCertificado: true })).toContain("evaluacion");
-    expect(pestanasPortalGrupo({ tieneEvaluaciones: false })).toEqual(["clases", "material"]);
+    // «Resultado final» (cierre) sigue en un grupo sin evaluaciones
+    expect(pestanasPortalGrupo({ tieneEvaluaciones: false })).toEqual(["clases", "cierre", "material"]);
+    expect(pestanasDelGrupo({ ...base, tieneEvaluaciones: false, emiteCertificado: false })).toContain("evaluacion");
     expect(pestanasPortalCursada({ tieneEvaluaciones: false })).not.toContain("evaluaciones");
   });
 });
@@ -73,10 +82,13 @@ describe("recorrido comercial: grupo sin evaluaciones", () => {
     aprobacion: "sin_datos",
     certificadoVigente: false,
   };
-  it("terminado sin evaluaciones no es 'cursó sin aprobar' ni 'aprobó'", () => {
-    const h = historialesComerciales([{ ...base, sinEvaluaciones: true }], NOW).get("c1") ?? [];
-    expect(h.map((x) => x.estado)).toEqual(["curso_historico"]);
-    const normal = historialesComerciales([base], NOW).get("c1") ?? [];
-    expect(normal.map((x) => x.estado)).toEqual(["curso_sin_aprobar"]);
+  it("taller cursable sin evaluaciones: sin confirmar no es 'aprobó'; confirmado sí / no", () => {
+    const sin = { ...base, edicionDeMarketing: false, courseKind: "taller" as const };
+    const est = (c: CursadaComercial) => (historialesComerciales([c], NOW).get("c1") ?? []).map((x) => x.estado);
+    expect(est({ ...sin, aprobacion: "pendiente" })).toEqual(["curso_sin_aprobar"]);
+    expect(est({ ...sin, aprobacion: "aprobado" })).toEqual(["aprobo"]);
+    expect(est({ ...sin, aprobacion: "reprobado" })).toEqual(["curso_sin_aprobar"]);
+    // una edición de Marketing sigue sin contar
+    expect(est({ ...sin, edicionDeMarketing: true, aprobacion: "aprobado" })).toEqual([]);
   });
 });

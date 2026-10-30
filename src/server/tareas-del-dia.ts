@@ -24,6 +24,7 @@ import {
   type TareaDeHoy,
 } from "@/lib/tareas-del-dia";
 import { organizationTimezone } from "@/server/finanzas-periodo";
+import { cursoNoEsTaller } from "@/server/workshop-scope";
 import { gruposSinResultado } from "@/server/resultados-confirmados";
 
 /**
@@ -431,7 +432,8 @@ async function gruposSinResultadoFinal(organizationId: string, now: Date) {
         e.organizationId,
         organizationId,
         isNull(fr.id),
-        ne(schema.course.kind, "taller"),
+        // Solo las ediciones de Marketing quedan afuera; un taller cursable confirma resultados.
+        cursoNoEsTaller(schema.course.kind, schema.cohort.registrationStatus),
         lte(schema.cohort.endDate, new Date(now.getTime() + DIA_MS)),
         sql`not exists (select 1 from ${e} as hija where hija.parent_enrollment_id = ${e.id} and hija.organization_id = ${organizationId})`
       )

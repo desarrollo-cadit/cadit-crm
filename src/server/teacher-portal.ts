@@ -714,8 +714,6 @@ export async function teacherFinalResults(
   now: Date = new Date()
 ): Promise<CierreDeCursadaDto | null> {
   if (!(await teacherReachesCohort(organizationId, teacherId, cohortId))) return null;
-  // 2026-10-29 — Taller sin evaluaciones: ausencia = 404.
-  if (!(await grupoTieneEvaluacionesPorId(organizationId, cohortId))) return null;
   const cierre = await cierreDeCursada(organizationId, cohortId, now);
   if (!cierre) return null;
   return {
@@ -737,15 +735,10 @@ export async function teacherConfirmFinalResults(
   entries: readonly ConfirmacionDeResultado[],
   now: Date = new Date()
 ): Promise<PortalResult<{ confirmados: number; certificadosAnulados: number }>> {
-  if (
-    !(await teacherReachesCohort(organizationId, teacherId, cohortId)) ||
-    !(await grupoTieneEvaluacionesPorId(organizationId, cohortId))
-  ) {
+  if (!(await teacherReachesCohort(organizationId, teacherId, cohortId))) {
     return { ok: false, status: 404, code: "not_found", message: "Grupo no encontrado" };
   }
-  const r = await confirmarResultados(organizationId, cohortId, entries, userId, now);
-  // Ya descartado arriba el 409 de "sin evaluaciones": en el portal la ausencia es 404.
-  return r.ok ? r : { ...r, status: r.status === 409 ? 404 : r.status };
+  return confirmarResultados(organizationId, cohortId, entries, userId, now);
 }
 
 export type TeacherContentDto = {

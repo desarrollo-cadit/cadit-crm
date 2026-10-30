@@ -1,5 +1,4 @@
 import { eq, inArray } from "drizzle-orm";
-import { grupoTieneEvaluaciones } from "@/lib/taller-config";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import type { CourseKind } from "@/lib/course-kind";
@@ -173,11 +172,6 @@ export function armarCursadasComerciales(p: PiezasDelRecorrido): CursadaComercia
         waiverAuthorName,
         cohortMinPct: cohort.minAttendancePct,
         courseMinPct: course.minAttendancePct,
-        tieneEvaluaciones: grupoTieneEvaluaciones({
-          courseKind: course.kind,
-          registrationStatus: cohort.registrationStatus,
-          hasAssessments: cohort.hasAssessments,
-        }),
         resultadoConfirmado: confirmado.get(enrollment.id) ?? null,
         grupo: { startDate: cohort.startDate, endDate: cohort.endDate },
       },
@@ -196,11 +190,8 @@ export function armarCursadasComerciales(p: PiezasDelRecorrido): CursadaComercia
       courseId: course.id,
       courseName: course.name,
       courseKind: course.kind,
-      sinEvaluaciones: !grupoTieneEvaluaciones({
-        courseKind: course.kind,
-        registrationStatus: cohort.registrationStatus,
-        hasAssessments: cohort.hasAssessments,
-      }),
+      // Marketing (con estado de inscripción) queda afuera; el taller cursable cuenta.
+      edicionDeMarketing: cohort.registrationStatus != null,
       categoryId: course.categoryId,
       cohortId: cohort.id,
       cohortName: cohort.name?.trim() || course.name,

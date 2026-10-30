@@ -31,12 +31,6 @@ export type InscripcionParaAprobar = {
   cohortMinPct: number | null;
   courseMinPct: number | null;
   /**
-   * 2026-10-29 — `false` = taller configurado SIN evaluaciones. Regla: no hay
-   * resultado que afirmar (ni aprobado ni reprobado ni pendiente): el estado
-   * es `sin_datos`; la asistencia se sigue informando. Omitido = sí.
-   */
-  tieneEvaluaciones?: boolean;
-  /**
    * 0086 — El resultado final CONFIRMADO (`enrollment_final_result`), o
    * `null`. Es lo único que esta función devuelve como hecho en `state`.
    */
@@ -139,19 +133,6 @@ export function estadoDeAprobacionDeCursada(
     piezas.clases.map((c) => ({ date: c.date, endTime: c.endTime, canceledAt: c.canceledAt, tomada: c.tomada })),
     piezas.reloj
   );
-  // 2026-10-29 — Taller sin evaluaciones: no hay resultado que afirmar (sin_datos).
-  if (inscripcion.tieneEvaluaciones === false) {
-    return {
-      attendancePct: pct,
-      minAttendancePct: minPct,
-      assessments: [],
-      dispensa,
-      state: "sin_datos",
-      reasons: ["Este grupo no tiene evaluaciones"],
-      sugerencia,
-      sinResultado,
-    };
-  }
   const { state, reasons } = afirmadoConSugerencia(inscripcion.resultadoConfirmado, sugerencia, sinResultado);
 
   return {

@@ -303,11 +303,7 @@ export function StudentCourseClient({
             {course.teacherName && ` · ${course.teacherName}`}
           </>
         }
-        acciones={
-          course.tieneEvaluaciones === false ? undefined : (
-            <ApprovalBadge value={course.approval} awaitingConfirmation={course.awaitingConfirmation} />
-          )
-        }
+        acciones={<ApprovalBadge value={course.approval} awaitingConfirmation={course.awaitingConfirmation} />}
       />
 
       <AvisoDeAcceso access={course.access} />

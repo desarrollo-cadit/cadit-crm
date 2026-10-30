@@ -60,13 +60,13 @@ export function pestanasDelGrupo(opts: {
   tieneEvaluaciones?: boolean;
   emiteCertificado?: boolean;
 }): PestanaDelGrupo[] {
-  const conEvaluacion = (opts.tieneEvaluaciones ?? true) || (opts.emiteCertificado ?? true);
+  // La pestaña existe siempre: sin evaluaciones es «Resultado final» y certificados.
   return [
     ...(opts.esEspecializacion ? (["recorrido"] as const) : []),
     "alumnos",
     "clases",
     "asistencia",
-    ...(conEvaluacion ? (["evaluacion"] as const) : []),
+    "evaluacion",
     "avisos",
     ...(opts.verCursosOffline ? (["cursos-offline"] as const) : []),
   ];
@@ -113,7 +113,8 @@ export const PESTANAS_PORTAL_GRUPO = ["clases", "evaluaciones", "entregas", "cie
 /** 2026-10-29 — Las pestañas del profesor de un grupo; sin evaluaciones no hay Evaluaciones, Entregas ni Cierre. */
 export function pestanasPortalGrupo(opts: { tieneEvaluaciones: boolean }): PestanaPortalGrupo[] {
   return PESTANAS_PORTAL_GRUPO.filter(
-    (p) => opts.tieneEvaluaciones || (p !== "evaluaciones" && p !== "entregas" && p !== "cierre")
+    // «Resultado final» (cierre) sigue: lo confirma una persona en todo grupo.
+    (p) => opts.tieneEvaluaciones || (p !== "evaluaciones" && p !== "entregas")
   );
 }
 export type PestanaPortalGrupo = (typeof PESTANAS_PORTAL_GRUPO)[number];

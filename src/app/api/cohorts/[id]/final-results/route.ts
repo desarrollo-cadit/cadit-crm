@@ -1,7 +1,6 @@
 import { apiError, parseBody, requireCapability } from "@/lib/api";
 import { confirmacionesDelCuerpo, confirmacionesSchema } from "@/lib/resultado-final";
 import { cierreDeCursada, confirmarResultados } from "@/server/final-results";
-import { exigirEvaluacionesDeGrupo } from "@/server/taller-config";
 
 export const dynamic = "force-dynamic";
 
@@ -17,9 +16,6 @@ export const GET = requireCapability("evaluacion.ver", async (session, _req: Req
   const { id } = await ctx.params;
   const data = await cierreDeCursada(session.organizationId, id);
   if (!data) return apiError(404, "not_found", "Grupo no encontrado");
-  // 2026-10-29 — Taller sin evaluaciones: no hay cierre (409).
-  const sinEvaluaciones = await exigirEvaluacionesDeGrupo(session.organizationId, id);
-  if (sinEvaluaciones) return apiError(sinEvaluaciones.status, sinEvaluaciones.code, sinEvaluaciones.message);
   return Response.json(data);
 });
 

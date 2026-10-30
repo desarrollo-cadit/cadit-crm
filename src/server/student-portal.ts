@@ -703,7 +703,7 @@ function buildCourse(
     course?.minAttendancePct ?? null
   );
 
-  // 2026-10-29 — Taller sin evaluaciones: sin lista y sin resultado (sin_datos).
+  // 2026-10-29 — Taller sin evaluaciones: sin lista de evaluaciones (el resultado final se confirma igual).
   const tieneEvaluaciones = grupoTieneEvaluaciones({
     courseKind: course?.kind,
     registrationStatus: cohort?.registrationStatus,
@@ -765,7 +765,8 @@ function buildCourse(
       reloj
     );
   const confirmado = sinResultado ? null : (data.confirmados.get(enrollment.id) ?? null);
-  const sinDatos = sinResultado || !tieneEvaluaciones || (confirmado === null && sugerido === "sin_datos");
+  // Sin evaluaciones el resultado igual lo confirma una persona: "pendiente", nunca "sin datos".
+  const sinDatos = sinResultado || (tieneEvaluaciones && confirmado === null && sugerido === "sin_datos");
   const { state, reasons } = estadoAfirmado(confirmado);
 
   const cert = data.certificados.find((c) => c.enrollmentId === enrollment.id);
@@ -810,14 +811,12 @@ function buildCourse(
     minAttendancePct,
     approval: sinDatos ? "sin_datos" : state,
     tieneEvaluaciones,
-    approvalReasons: !tieneEvaluaciones
-      ? []
-      : sinResultado
+    approvalReasons: sinResultado
       ? [RAZON_GRUPO_INCOMPLETO]
       : sinDatos
         ? ["Todavía no hay asistencia ni evaluaciones cargadas para este curso"]
         : reasons,
-    awaitingConfirmation: tieneEvaluaciones && confirmado === null && grupoTermino && !sinResultado,
+    awaitingConfirmation: confirmado === null && grupoTermino && !sinResultado,
     assessments,
     certificate: cert
       ? {

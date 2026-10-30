@@ -23,7 +23,6 @@ export type ResultadoDeCursada =
   | "aprobado"
   | "reprobado"
   | "pendiente"
-  | "sin_evaluacion"
   | "sin_datos";
 
 export function resultadoDeCursada(input: {
@@ -31,13 +30,6 @@ export function resultadoDeCursada(input: {
   estadoDelGrupo: EstadoDeGrupo | null;
   /** El resultado final confirmado por el profesor; `null` = sin confirmar. */
   resultadoConfirmado: ResultadoConfirmado;
-  /**
-   * 2026-10-29 — `false` = el grupo es un taller configurado SIN evaluaciones
-   * (`grupoTieneEvaluaciones`). Omitido = sí. Un grupo terminado sin
-   * confirmación no es "Resultado pendiente" (no hay nada que esperar): no
-   * tiene resultado que informar.
-   */
-  tieneEvaluaciones?: boolean;
   /**
    * 0086 (decisión del dueño 2026-10-29) — `grupoCompleto` de
    * `src/lib/resultado-final.ts`: toda clase dictada con la lista tomada. Un
@@ -51,7 +43,7 @@ export function resultadoDeCursada(input: {
   if (input.estadoDelGrupo === "en_curso") return "en_curso";
   if (!input.grupoCompleto) return "sin_datos";
   if (input.resultadoConfirmado) return input.resultadoConfirmado;
-  return input.tieneEvaluaciones === false ? "sin_evaluacion" : "pendiente";
+  return "pendiente";
 }
 
 export const ETIQUETA_DE_RESULTADO: Record<ResultadoDeCursada, string> = {
@@ -60,7 +52,6 @@ export const ETIQUETA_DE_RESULTADO: Record<ResultadoDeCursada, string> = {
   aprobado: "Aprobado",
   reprobado: "Reprobado",
   pendiente: "Resultado pendiente",
-  sin_evaluacion: "Sin evaluación",
   sin_datos: "Sin datos",
 };
 

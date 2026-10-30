@@ -144,7 +144,7 @@ export function CohortTabs({
         {pestanas
           .map((key) => ({
             key,
-            label: key === "evaluacion" && !tieneEvaluaciones ? "Certificados" : ETIQUETA[key],
+            label: key === "evaluacion" && !tieneEvaluaciones ? "Resultado final" : ETIQUETA[key],
           })).map((t) => (
           <button
             key={t.key}
