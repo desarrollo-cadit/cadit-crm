@@ -101,7 +101,7 @@ export function PortalHoursClient() {
       </ul>
 
       <p className="text-xs text-muted-foreground">
-        Solo se cuentan las clases que ya terminaron; las canceladas no se
+        Solo se cuentan las clases que ya terminaron; las suspendidas no se
         cuentan. El listado es informativo: si ves alguna diferencia,
         escribinos y lo revisamos.
       </p>

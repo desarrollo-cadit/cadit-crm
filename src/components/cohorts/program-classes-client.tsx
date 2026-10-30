@@ -205,7 +205,7 @@ export function ProgramClassesClient({
                     {c.startTime && c.endTime ? `${c.startTime}–${c.endTime}` : "sin horario"}
                   </span>
                   <span className="min-w-0 flex-1 truncate">{c.topic ?? ""}</span>
-                  {c.canceled ? <Badge variant="outline">Cancelada</Badge> : null}
+                  {c.canceled ? <Badge variant="outline">Suspendida</Badge> : null}
                   {!c.projected && c.id && material.porClase ? (
                     <span className="order-last w-full">
                       <ResourcesPanel

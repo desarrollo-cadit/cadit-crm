@@ -715,7 +715,7 @@ function ClasesTab({
       </ul>
       {canceladas > 0 && (
         <p className="text-xs text-text-3">
-          Las clases canceladas no cuentan para tu porcentaje de asistencia.
+          Las clases suspendidas no cuentan para tu porcentaje de asistencia.
         </p>
       )}
     </div>
@@ -748,7 +748,7 @@ function ClassRowItem({ row, academyZone }: { row: ClassRow; academyZone: string
         </span>
         <span className="block text-xs text-text-3">
           {row.canceled ? (
-            <>Clase cancelada{row.cancelReason && ` — ${row.cancelReason}`}</>
+            <>Clase suspendida{row.cancelReason && ` — ${row.cancelReason}`}</>
           ) : (
             <ClassTime
               startsAt={row.startsAt}

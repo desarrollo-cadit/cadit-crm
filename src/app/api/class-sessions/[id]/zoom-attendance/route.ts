@@ -44,7 +44,7 @@ export const POST = requireCapability("asistencia.editar", async (session, req: 
   const deps = attendanceFetchDeps();
   const clase = await deps.store.clase(orgId, id);
   if (!clase) return apiError(404, "not_found", "Clase no encontrada");
-  if (clase.canceled) return apiError(422, "clase_cancelada", "La clase está cancelada: no lleva asistencia.");
+  if (clase.canceled) return apiError(422, "clase_cancelada", "La clase está suspendida: no lleva asistencia.");
   if (clase.fetch?.reviewedAt) {
     return apiError(409, "ya_confirmada", "La sugerencia de Zoom de esta clase ya se confirmó.");
   }

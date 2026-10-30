@@ -605,7 +605,7 @@ export function ProgramClient({
               </p>
             ) : m.clases.canceladas > 0 ? (
               <p className="mt-2 text-xs text-muted-foreground">
-                {m.clases.canceladas} cancelada{m.clases.canceladas === 1 ? "" : "s"}
+                {m.clases.canceladas} suspendida{m.clases.canceladas === 1 ? "" : "s"}
               </p>
             ) : null}
           </article>

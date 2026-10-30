@@ -1,4 +1,6 @@
 import { eq, max } from "drizzle-orm";
+import { diaCalendario, diaComoFecha } from "@/lib/access-expiry";
+import { planDeReemplazo, type OpcionDeEntrega } from "@/lib/clase-de-reemplazo";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
@@ -15,7 +17,7 @@ import { borrarClasesSinHistoria, leerRecesos, type BorradoDeClasesDto } from "@
 
 export type ClassChangeResult<T> =
   | { ok: true; data: T }
-  | { ok: false; status: 404 | 409 | 422; code: string; message: string; receso?: string };
+  | { ok: false; status: 403 | 404 | 409 | 422; code: string; message: string; receso?: string };
 
 /**
  * FR-012 — Borrar UNA clase. Con asistencia o grabación no se borra: se
@@ -39,7 +41,7 @@ export async function borrarClase(
       ok: false,
       status: 409,
       code: "clase_con_historia",
-      message: `${conservada.detalle} No se puede borrar sin perder esa historia: cancelala en su lugar.`,
+      message: `${conservada.detalle} No se puede borrar sin perder esa historia: suspendela en su lugar.`,
     };
   }
   return { ok: true, data: resultado };
@@ -74,6 +76,23 @@ export type ReprogramacionInput = {
   endTime: string | null;
   /** FR-014 — confirmación explícita de dar clase en un día de receso. */
   confirmRecess: boolean;
+  /** 2026-10-30 — Vio el aviso de que la clase queda después del fin del grupo. */
+  confirmEndExtension: boolean;
+  /** 2026-10-30 — Qué hacer con la entrega final si el fin se mueve. */
+  deliveryOption: OpcionDeEntrega | null;
+  /**
+   * `academico.editar`: mover el fin y la entrega final es editar el grupo.
+   * Hoy la ruta ya la exige; se pasa igual para que la regla no dependa de eso.
+   */
+  puedeMoverFechas: boolean;
+};
+
+export type ReprogramacionDto = {
+  id: string;
+  date: string;
+  /** El fin y la entrega final nuevos del grupo, si cambiaron ("YYYY-MM-DD"). */
+  endDate: string | null;
+  deliveryDeadline: string | null;
 };
 
 /**
@@ -86,6 +105,11 @@ export type ReprogramacionInput = {
  * instante real lo sigue componiendo sólo `classInstant()` a partir de día +
  * hora + zona. Sin horario propio, hereda el de la clase cancelada.
  *
+ * 2026-10-30 — En pantalla la cancelada se llama SUSPENDIDA y la nueva es su
+ * "clase de reemplazo". Si cae después del fin del grupo, el fin (y, según
+ * `deliveryOption`, la entrega final) se mueven acá mismo, en la misma
+ * transacción: la regla es `planDeReemplazo` (src/lib/clase-de-reemplazo.ts).
+ *
  * La numeración: va al final del cronograma (máximo + 1). El número ordena y
  * es único por cohorte; reescribir los de las clases siguientes movería la
  * "clase 7" de todo el mundo por un cambio de fecha.
@@ -94,7 +118,7 @@ export async function reprogramarClase(
   organizationId: string,
   classSessionId: string,
   input: ReprogramacionInput
-): Promise<ClassChangeResult<{ id: string; date: string }>> {
+): Promise<ClassChangeResult<ReprogramacionDto>> {
   const db = getDb();
   const [original] = await db
     .select()
@@ -148,6 +172,29 @@ export async function reprogramarClase(
     };
   }
 
+  /*
+    2026-10-30 — Una clase de reemplazo después del fin del grupo lo extiende.
+    Las fechas se leen de la base: el fin que diga el cliente no se usa.
+  */
+  const [grupo] = await db
+    .select({ endDate: schema.cohort.endDate, deliveryDeadline: schema.cohort.deliveryDeadline })
+    .from(schema.cohort)
+    .where(
+      scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, original.cohortId))
+    )
+    .limit(1);
+  const plan = planDeReemplazo({
+    endDate: grupo?.endDate ? diaCalendario(grupo.endDate) : null,
+    deliveryDeadline: grupo?.deliveryDeadline ? diaCalendario(grupo.deliveryDeadline) : null,
+    reemplazo: input.date,
+    confirmaExtension: input.confirmEndExtension,
+    puedeMoverFechas: input.puedeMoverFechas,
+    opcion: input.deliveryOption,
+  });
+  if (!plan.ok) {
+    return { ok: false, status: plan.status, code: plan.code, message: plan.message };
+  }
+
   const [ultimo] = await db
     .select({ n: max(schema.classSession.number) })
     .from(schema.classSession)
@@ -178,5 +225,34 @@ export async function reprogramarClase(
     rescheduledFromId: original.id,
   });
 
-  return { ok: true, data: { id, date: nuevaFecha.toISOString() } };
+  /*
+    Misma transacción que la clase: si el grupo no se actualiza, se LANZA para
+    que se revierta todo (devolver un error dejaría la clase creada).
+  */
+  if (plan.endDate) {
+    const actualizado = await db
+      .update(schema.cohort)
+      .set({
+        endDate: diaComoFecha(plan.endDate),
+        ...(plan.deliveryDeadline ? { deliveryDeadline: diaComoFecha(plan.deliveryDeadline) } : {}),
+        updatedAt: new Date(),
+      })
+      .where(
+        scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, original.cohortId))
+      )
+      .returning({ id: schema.cohort.id });
+    if (actualizado.length !== 1) {
+      throw new Error("No se pudo extender el fin del grupo de la clase de reemplazo");
+    }
+  }
+
+  return {
+    ok: true,
+    data: {
+      id,
+      date: nuevaFecha.toISOString(),
+      endDate: plan.endDate,
+      deliveryDeadline: plan.deliveryDeadline,
+    },
+  };
 }

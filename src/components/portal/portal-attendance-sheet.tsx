@@ -135,7 +135,7 @@ export function PortalAttendanceSheet({
 
       <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
         {sheet.classSession.canceled
-          ? "Esta clase está cancelada: no cuenta para la asistencia."
+          ? "Esta clase está suspendida: no cuenta para la asistencia."
           : "La asistencia la registra la coordinación. Acá podés consultarla; si ves algún error, avisale a la coordinación."}
       </p>
 

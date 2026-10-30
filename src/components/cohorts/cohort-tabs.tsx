@@ -198,6 +198,7 @@ export function CohortTabs({
             canIssueCertificates={canIssueCertificates}
             canConfirmResults={canConfirmResults}
             canEditAttendance={canEditAttendance}
+            canEditAcademic={canEditAcademic}
           />
         ) : tab === "clases" ? (
           <ClassesClient
@@ -206,7 +207,11 @@ export function CohortTabs({
             canEditLinks={canEditAttendance}
           />
         ) : tab === "asistencia" ? (
-          <AttendanceClient cohortId={cohortId} canEdit={canEditAttendance} />
+          <AttendanceClient
+            cohortId={cohortId}
+            canEdit={canEditAttendance}
+            canReschedule={canEditAcademic}
+          />
         ) : tab === "cursos-offline" ? (
           <CohortOfflineCoursesClient cohortId={cohortId} canEdit={canEditAcademic} />
         ) : tab === "evaluacion" ? (
