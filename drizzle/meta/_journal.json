@@ -617,6 +617,13 @@
       "when": 1793320000000,
       "tag": "0087_talleres_config",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1793330000000,
+      "tag": "0088_material_de_clase_de_origen",
+      "breakpoints": true
     }
   ]
 }

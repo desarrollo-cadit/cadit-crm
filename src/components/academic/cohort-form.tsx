@@ -15,6 +15,15 @@ import { Modal, useDirty } from "@/components/ui/modal";
 import { MoneyInput } from "@/components/ui/money-input";
 import type { CronogramaAutomatico } from "@/lib/cronograma-automatico";
 import { COURSE_KIND_LABEL, MODULE_NAME_MAX, cursosParaSelector } from "@/lib/course-kind";
+import { esDiaValido } from "@/lib/access-expiry";
+import {
+  fechasSugeridas,
+  modulosSugeridos,
+  nombreSugerido,
+  type FechasDeModulo,
+  type VistaPreviaDelClonDto,
+} from "@/lib/clonar-grupo";
+import { CohortBasePicker } from "@/components/academic/cohort-base-picker";
 
 /** 023 — Lo mínimo del aula para poder elegirla: nombre e id. */
 type RoomOption = { id: string; name: string };
@@ -196,6 +205,144 @@ export function CohortForm({
    */
   const esEspecializacion = !esModulo && tipo === "especializacion";
   const [newTeacherName, setNewTeacherName] = useState("");
+  /** 007 — La moneda del costo. Solo viaja al basarse en otro grupo (se copia la suya). */
+  const [currency, setCurrency] = useState<CohortDto["currency"]>(initial?.currency ?? "UYU");
+
+  /**
+   * "Basar en un grupo existente" — solo en el alta de un grupo (no al editar
+   * ni al agregar un módulo). Elegirlo precarga el formulario; todo sigue
+   * editable. Al guardar, el servidor copia además material, evaluaciones y
+   * módulos (`crearGrupoBasadoEn`).
+   */
+  const puedeBasarse = !initial && !moduloDe && (cohorts?.length ?? 0) > 0;
+  const [base, setBase] = useState<CohortDto | null>(null);
+  const [vistaBase, setVistaBase] = useState<VistaPreviaDelClonDto | null>(null);
+  const [cargandoBase, setCargandoBase] = useState(false);
+  const [errorBase, setErrorBase] = useState<string | null>(null);
+  const [modulosBase, setModulosBase] = useState<FechasDeModulo[]>([]);
+  const [modulosTocados, setModulosTocados] = useState<Set<string>>(new Set());
+  /** Lo que la persona escribió a mano no se vuelve a sugerir al cambiar el inicio. */
+  const [tocados, setTocados] = useState({ name: false, end: false, deadline: false });
+
+  function sugerirFechas(
+    origen: CohortDto,
+    vista: VistaPreviaDelClonDto | null,
+    inicio: string,
+    yaTocados: typeof tocados,
+    modulosYaTocados: Set<string>
+  ) {
+    if (!esDiaValido(inicio)) return;
+    const sugeridas = fechasSugeridas(
+      {
+        startDate: origen.startDate.slice(0, 10),
+        endDate: origen.endDate ? origen.endDate.slice(0, 10) : null,
+        deliveryDeadline: origen.deliveryDeadline ? origen.deliveryDeadline.slice(0, 10) : null,
+      },
+      inicio
+    );
+    if (!yaTocados.name) setName(nombreSugerido(origen.name ?? origen.courseName, inicio));
+    if (!yaTocados.end) setEndDate(sugeridas.endDate ?? "");
+    if (!yaTocados.deadline) setDeliveryDeadline(sugeridas.deliveryDeadline ?? "");
+    if (vista) {
+      const nuevos = modulosSugeridos(vista.source.startDate, vista.modules, inicio);
+      setModulosBase((prev) =>
+        nuevos.map((n) => {
+          const actual = prev.find((x) => x.sourceCohortId === n.sourceCohortId);
+          return actual && modulosYaTocados.has(n.sourceCohortId) ? actual : n;
+        })
+      );
+    }
+  }
+
+  function elegirBase(c: CohortDto) {
+    setBase(c);
+    setVistaBase(null);
+    setErrorBase(null);
+    setModulosBase([]);
+    setModulosTocados(new Set());
+    const limpios = { name: false, end: false, deadline: false };
+    setTocados(limpios);
+    // La configuración del grupo, editable. Ni el enlace de la reunión ni el
+    // grupo de WhatsApp: son de la edición vieja.
+    setTipo(c.isSpecialization ? "especializacion" : "comun");
+    if (c.courseKind === "modulo") setIncluirModulos(true);
+    setCourseId(c.courseId);
+    setName(c.name ?? "");
+    setTeacherId(c.teacher?.id ?? "");
+    setCost(c.cost);
+    setCurrency(c.currency);
+    setFrequency(c.frequency ?? "");
+    setStartTime(c.startTime ?? "");
+    setEndTime(c.endTime ?? "");
+    setDaysOfWeek(c.daysOfWeek ? c.daysOfWeek.split(",").map(Number) : []);
+    setClassroom(c.classroom ?? "");
+    // Un aula dada de baja no está en la lista: el grupo nuevo queda sin aula.
+    setVirtualRoomId(
+      c.virtualRoomId && rooms.some((r) => r.id === c.virtualRoomId) ? c.virtualRoomId : ""
+    );
+    setCapacity(c.capacity?.toString() ?? "");
+    setMinAttendancePct(c.minAttendancePct?.toString() ?? "");
+    setSoftwareIds(c.software.map((sw) => sw.id));
+    setMeetingUrl("");
+    setWhatsappGroupLink("");
+    sugerirFechas(c, null, startDate, limpios, new Set());
+
+    setCargandoBase(true);
+    void fetch(`/api/cohorts/${c.id}/clone-preview`)
+      .then(async (res) => {
+        const body = (await res.json().catch(() => null)) as
+          | (VistaPreviaDelClonDto & { error?: { message?: string } })
+          | null;
+        if (!res.ok || !body) {
+          setErrorBase(body?.error?.message ?? "No se pudo revisar qué se copia de ese grupo.");
+          return;
+        }
+        setVistaBase(body);
+        sugerirFechas(c, body, startDate, limpios, new Set());
+      })
+      .catch(() => setErrorBase("No se pudo revisar qué se copia de ese grupo."))
+      .finally(() => setCargandoBase(false));
+  }
+
+  /** Quitar la base vuelve al formulario vacío de siempre. */
+  function quitarBase() {
+    setBase(null);
+    setVistaBase(null);
+    setErrorBase(null);
+    setModulosBase([]);
+    setModulosTocados(new Set());
+    setTocados({ name: false, end: false, deadline: false });
+    setTipo("comun");
+    setCourseId(cursosOfrecidos[0]?.id ?? "");
+    setName("");
+    setStartDate("");
+    setEndDate("");
+    setDeliveryDeadline("");
+    setTeacherId("");
+    setCost(null);
+    setCurrency("UYU");
+    setFrequency("");
+    setStartTime("");
+    setEndTime("");
+    setDaysOfWeek([]);
+    setClassroom("");
+    setVirtualRoomId("");
+    setMeetingUrl("");
+    setCapacity("");
+    setMinAttendancePct("");
+    setWhatsappGroupLink("");
+    setSoftwareIds([]);
+  }
+
+  function cambiarModuloBase(id: string, campo: "startDate" | "endDate", valor: string) {
+    setModulosTocados((prev) => new Set(prev).add(id));
+    setModulosBase((prev) =>
+      prev.map((m) =>
+        m.sourceCohortId === id ? { ...m, [campo]: campo === "endDate" ? valor || null : valor } : m
+      )
+    );
+  }
+
   const [saving, setSaving] = useState(false);
   /** Validación del formulario (inline, junto al botón). Los fallos del servidor van en toast. */
   const [error, setError] = useState<string | null>(null);
@@ -207,7 +354,7 @@ export function CohortForm({
     origenDelModulo, nombreDelModulo, incluirModulos, courseId, name, startDate,
     endDate, deliveryDeadline, hasAssessments, issuesCertificate, teacherId, cost, frequency, startTime, endTime, daysOfWeek,
     classroom, virtualRoomId, meetingUrl, capacity, minAttendancePct,
-    whatsappGroupLink, softwareIds, tipo, newTeacherName,
+    whatsappGroupLink, softwareIds, tipo, newTeacherName, base, modulosBase,
   });
   // Con las advertencias a la vista el grupo ya quedó guardado.
   const dirty = changed && !warnings;
@@ -270,6 +417,23 @@ export function CohortForm({
       setError("Falta elegir el curso y la fecha de inicio.");
       return;
     }
+    if (base && !vistaBase) {
+      setError(errorBase ?? "Todavía se está revisando el grupo base. Probá de nuevo en un momento.");
+      return;
+    }
+    if (base && vistaBase && vistaBase.modules.length > 0) {
+      if (
+        modulosBase.length !== vistaBase.modules.length ||
+        modulosBase.some((m) => !esDiaValido(m.startDate))
+      ) {
+        setError("Falta la fecha de inicio de algún módulo.");
+        return;
+      }
+      if (modulosBase.some((m) => m.endDate && m.endDate < m.startDate)) {
+        setError("En un módulo, la fecha de fin es anterior al inicio.");
+        return;
+      }
+    }
     // 0083 — La misma regla que el servidor (que igual responde 422).
     if (
       !esEspecializacion &&
@@ -331,6 +495,22 @@ export function CohortForm({
       capacity: capacity.trim() ? Number(capacity) : null,
       whatsappGroupLink: whatsappGroupLink.trim() || null,
       minAttendancePct: minAttendancePct.trim() ? Number(minAttendancePct) : null,
+      // "Basar en un grupo existente": la moneda del costo copiado y lo que el
+      // servidor copia además (material, evaluaciones, módulos con sus fechas).
+      ...(base
+        ? {
+            currency,
+            cloneFrom: {
+              cohortId: base.id,
+              modules: modulosBase.map((m) => ({
+                sourceCohortId: m.sourceCohortId,
+                name: m.name,
+                startDate: m.startDate,
+                endDate: m.endDate || null,
+              })),
+            },
+          }
+        : {}),
     };
     const res = await fetch(
       initial ? `/api/cohorts/${initial.id}` : "/api/cohorts",
@@ -355,8 +535,11 @@ export function CohortForm({
       autoEnrolled?: number;
       /** 2026-10-27 — Completar un grupo confirmado genera su cronograma solo. */
       schedule?: CronogramaAutomatico | null;
+      /** Basar en un grupo: lo que quedó distinto del original (plazos vacíos, etc.). */
+      cloneWarnings?: string[];
     } | null;
     const messages = [
+      ...(body?.cloneWarnings ?? []),
       // Inline y no en toast: al cerrar, la página se recarga y el toast se perdería.
       ...(body?.schedule?.estado === "generado" ? [body.schedule.mensaje] : []),
       ...(body?.schedule?.estado === "faltan_datos"
@@ -403,6 +586,20 @@ export function CohortForm({
         </h3>
 
         <div className="space-y-3">
+          {puedeBasarse && cohorts ? (
+            <CohortBasePicker
+              cohorts={cohorts}
+              base={base}
+              vista={vistaBase}
+              cargando={cargandoBase}
+              error={errorBase}
+              modulos={modulosBase}
+              inicioElegido={esDiaValido(startDate)}
+              onElegir={elegirBase}
+              onQuitar={quitarBase}
+              onCambiarModulo={cambiarModuloBase}
+            />
+          ) : null}
           {/*
             028 (seguimiento) — La primera decisión, y arriba de todo: qué ES
             esta cohorte. Un módulo no la ofrece: dice de quién es.
@@ -554,7 +751,10 @@ export function CohortForm({
                   id="cohort-name"
                   placeholder="Revit Arquitectura 4 — dejalo vacío para usar el nombre del curso"
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    setTocados((t) => ({ ...t, name: true }));
+                  }}
                 />
               </div>
             </>
@@ -567,7 +767,10 @@ export function CohortForm({
                 id="cohort-start"
                 type="date"
                 value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
+                onChange={(e) => {
+                  setStartDate(e.target.value);
+                  if (base) sugerirFechas(base, vistaBase, e.target.value, tocados, modulosTocados);
+                }}
               />
             </div>
             <div className="space-y-1.5">
@@ -576,7 +779,10 @@ export function CohortForm({
                 id="cohort-end"
                 type="date"
                 value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
+                onChange={(e) => {
+                  setEndDate(e.target.value);
+                  setTocados((t) => ({ ...t, end: true }));
+                }}
               />
             </div>
           </div>
@@ -589,7 +795,10 @@ export function CohortForm({
                 type="date"
                 value={deliveryDeadline}
                 min={endDate || undefined}
-                onChange={(e) => setDeliveryDeadline(e.target.value)}
+                onChange={(e) => {
+                  setDeliveryDeadline(e.target.value);
+                  setTocados((t) => ({ ...t, deadline: true }));
+                }}
               />
               <p className="text-xs text-muted-foreground">
                 Opcional. Posterior a la fecha de fin. Las evaluaciones sin

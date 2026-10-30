@@ -674,7 +674,16 @@ export type CopyAssessmentsDto = {
 export async function copyAssessments(
   organizationId: string,
   desdeCohorteId: string,
-  haciaCohorteId: string
+  haciaCohorteId: string,
+  opciones: {
+    /**
+     * "Clonar grupo" — El plazo de cada copia, por id de la evaluación de
+     * ORIGEN (instante ISO). Copiar de otro grupo no lo pasa: ahí el plazo
+     * no viaja. Al clonar, las fechas se corren con `planDeFechasDeGrupo`
+     * (`src/lib/clonar-grupo.ts`) y llegan acá ya decididas.
+     */
+    plazos?: ReadonlyMap<string, string | null>;
+  } = {}
 ): Promise<GradingResult<CopyAssessmentsDto>> {
   if (desdeCohorteId === haciaCohorteId) {
     return {
@@ -720,7 +729,7 @@ export async function copyAssessments(
   ]);
 
   const plan = planAssessmentCopy(origen, destino);
-  await insertarCopias(organizationId, haciaCohorteId, plan, "assessment");
+  await insertarCopias(organizationId, haciaCohorteId, plan, "assessment", opciones.plazos);
 
   return {
     ok: true,
@@ -733,6 +742,15 @@ export async function copyAssessments(
   };
 }
 
+/** El plazo de una copia: solo si quien copia lo decidió (clonar grupo). */
+function plazoDeCopia(
+  plazos: ReadonlyMap<string, string | null> | undefined,
+  origenId: string | undefined
+): Date | null {
+  const iso = plazos && origenId ? plazos.get(origenId) : null;
+  return iso ? new Date(iso) : null;
+}
+
 /**
  * Inserta lo que decidió el plan y copia los adjuntos de la consigna de cada
  * origen (0084): filas NUEVAS de `resource`, la copia no comparte nada.
@@ -741,10 +759,11 @@ async function insertarCopias(
   organizationId: string,
   cohortId: string,
   plan: CopyPlan,
-  origen: "assessment" | "courseAssessmentTemplate"
+  origen: "assessment" | "courseAssessmentTemplate",
+  plazos?: ReadonlyMap<string, string | null>
 ): Promise<void> {
   if (plan.aCopiar.length === 0) return;
-  const filas = plan.aCopiar.map((a) => ({
+  const filas = plan.aCopiar.map((a, i) => ({
     id: newId("assessment"),
     organizationId,
     cohortId,
@@ -757,6 +776,7 @@ async function insertarCopias(
     requiresApproval: a.requiresApproval,
     criteria: a.criteria,
     textFields: a.textFields,
+    dueAt: plazoDeCopia(plazos, plan.origenIds[i]),
   }));
   await getDb().insert(schema.assessment).values(filas);
   await copiarAdjuntos(
