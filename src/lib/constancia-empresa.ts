@@ -114,12 +114,16 @@ export type FilaDeTabla = {
 
 export type BloqueDeConstancia = {
   cohortId: string;
-  /** Solo en la constancia general (un bloque por grupo). */
+  /**
+   * Solo con VARIOS grupos (constancia general). Con uno solo, el curso ya va
+   * en el asunto (2026-10-30).
+   */
   titulo: string | null;
   estado: EstadoDeGrupo;
   parrafos: string[];
+  /** La frase que presenta la tabla ("Participaron del mismo:"). */
   encabezadoLista: string;
-  alumnos: string[];
+  /** Cada persona va SOLO acá: la lista en texto repetía lo mismo (2026-10-30). */
   tabla: FilaDeTabla[];
 };
 
@@ -388,7 +392,7 @@ function ordenarAlumnos<T extends { firstName: string; lastName: string | null }
  * La carta
  * ============================================================ */
 
-function bloque(g: GrupoDeConstancia, e: EntradaDeConstancia): BloqueDeConstancia {
+function bloque(g: GrupoDeConstancia, e: EntradaDeConstancia, conTitulo: boolean): BloqueDeConstancia {
   const reloj = e.reloj;
   const estado = estadoDeGrupoAlCorte(g, reloj);
   const titulo = tituloDeGrupo(g);
@@ -445,7 +449,6 @@ function bloque(g: GrupoDeConstancia, e: EntradaDeConstancia): BloqueDeConstanci
     encabezadoLista = "Se encuentran inscriptos:";
   }
 
-  const alumnos: string[] = [];
   const tabla: FilaDeTabla[] = [];
   for (const a of ordenarAlumnos(g.alumnos)) {
     const nombre = nombreDeAlumno(a);
@@ -459,23 +462,6 @@ function bloque(g: GrupoDeConstancia, e: EntradaDeConstancia): BloqueDeConstanci
       ];
     const asis = asistenciaDeAlumno(g, a, reloj);
     const texto = textoDeAsistencia(asis, false);
-
-    if (estado === "planificada") {
-      alumnos.push(`${nombre}.`);
-    } else if (!texto) {
-      alumnos.push(`${nombre}: sin asistencia registrada. ${resultado}.`);
-    } else {
-      const frase =
-        asis.faltas.length === 0
-          ? "participó de todas las clases"
-          : asis.faltas.length === asis.cuentan
-            ? "no participó de ninguna de las clases dictadas"
-            : `participó de todas las clases a excepción del ${unirConY(
-                asis.faltas.map((f) => `${fechaCorta(f.fecha)}${f.justificada ? " (justificada)" : ""}`)
-              )}`;
-      alumnos.push(`${nombre}: ${frase}; asistió a ${texto}. ${resultado}.`);
-    }
-
     const conDatos = estado !== "planificada" && texto !== null;
     tabla.push({
       alumno: nombre,
@@ -488,28 +474,27 @@ function bloque(g: GrupoDeConstancia, e: EntradaDeConstancia): BloqueDeConstanci
 
   return {
     cohortId: g.cohortId,
-    titulo: e.alcance === "general" ? titulo : null,
+    titulo: conTitulo ? titulo : null,
     estado,
     parrafos,
     encabezadoLista,
-    alumnos,
     tabla,
   };
 }
 
 export function armarConstancia(e: EntradaDeConstancia): Constancia {
   const grupos = [...e.grupos].sort((a, b) => a.startDate.getTime() - b.startDate.getTime());
-  const unico = e.alcance === "grupo" && grupos.length === 1 ? grupos[0] : undefined;
+  const unico = grupos.length === 1 ? grupos[0] : undefined;
   return {
     academia: e.academia,
     empresa: e.empresa,
     lugarYFecha: `${e.ciudad}, ${fechaLarga(diaIso(e.emitidaEl))}`,
     destinatario: ["Señores", e.empresa, "Presente"],
     asunto: unico
-      ? `Asunto: CAPACITACIÓN ${tituloDeGrupo(unico).toLocaleUpperCase("es")}`
+      ? `Asunto: CONSTANCIA ${tituloDeGrupo(unico).toLocaleUpperCase("es")}`
       : "Asunto: CONSTANCIA DE CAPACITACIONES",
     saludo: "De nuestra mayor consideración,",
-    bloques: grupos.map((g) => bloque(g, e)),
+    bloques: grupos.map((g) => bloque(g, e, !unico)),
     cierre: [
       "A su solicitud y a los efectos de presentar ante ustedes, se expide esta constancia.",
       "Sin otro particular y quedando a las órdenes, los saluda muy atentamente.",

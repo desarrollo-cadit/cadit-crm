@@ -9,13 +9,15 @@ import type { BloqueDeConstancia, Constancia, FilaDeTabla } from "@/lib/constanc
  *
  * Solo DIBUJA lo que armó `constancia-empresa.ts`. Usa las mismas fuentes que
  * el certificado (Poppins, `assets/certificados/fonts`, que el `Dockerfile` ya
- * copia) y el navy de la marca. Membrete con el nombre de la academia (no hay
- * logo en imagen en el repo), pie configurable repetido en cada página y
- * numeración. Las listas largas pasan de página; la tabla repite su
- * encabezado. Los colores van escritos porque es papel, no pantalla.
+ * copia) y el navy de la marca. Membrete con el logo de CadIT
+ * (`assets/certificados/logo-cadit.png`, recortado de `public/logo-cadit.png`;
+ * 2026-10-30), pie configurable repetido en cada página y numeración. Cada
+ * persona va SOLO en la tabla, que pasa de página repitiendo su encabezado. Los colores van escritos porque es papel, no pantalla.
  */
 
 const DIR = path.join(process.cwd(), "assets", "certificados", "fonts", "poppins");
+const LOGO = path.join(process.cwd(), "assets", "certificados", "logo-cadit.png");
+const ALTO_LOGO = 40;
 
 const A4 = { w: 595.28, h: 841.89 };
 const MARGEN = 56;
@@ -115,22 +117,6 @@ function parrafo(
   });
 }
 
-/** Un ítem numerado con sangría francesa: el número afuera, el texto alineado. */
-function item(l: Lienzo, numero: number, t: string) {
-  const etiqueta = `${numero}.`;
-  const sangria = 20;
-  const alto = TAM * INTERLINEA;
-  const lineas = partir(t, l.normal, TAM, ANCHO - sangria);
-  espacio(l, alto * Math.min(lineas.length, 2));
-  lineas.forEach((linea, i) => {
-    espacio(l, alto);
-    l.y -= TAM;
-    if (i === 0) l.page.drawText(etiqueta, { x: MARGEN, y: l.y, size: TAM, font: l.normal, color: TINTA });
-    l.page.drawText(linea, { x: MARGEN + sangria, y: l.y, size: TAM, font: l.normal, color: TINTA });
-    l.y -= alto - TAM;
-  });
-}
-
 const COLUMNAS: { clave: keyof FilaDeTabla; titulo: string; ancho: number; derecha?: boolean }[] = [
   { clave: "alumno", titulo: "Alumno", ancho: 0.42 },
   { clave: "asistencia", titulo: "Asistencia", ancho: 0.14, derecha: true },
@@ -195,9 +181,7 @@ function bloque(l: Lienzo, b: BloqueDeConstancia) {
   }
   l.y -= 2;
   parrafo(l, b.encabezadoLista);
-  l.y -= 2;
-  b.alumnos.forEach((a, i) => item(l, i + 1, a));
-  l.y -= 10;
+  l.y -= 8;
   tabla(l, b.tabla);
   l.y -= 14;
 }
@@ -233,17 +217,18 @@ export async function renderConstanciaPdf(c: Constancia): Promise<Uint8Array> {
 
   /* -- Membrete ---------------------------------------------- */
   const yArriba = l.y;
-  const academia = dibujable(c.academia, negrita);
-  l.page.drawText(academia, { x: MARGEN, y: yArriba - 18, size: 18, font: negrita, color: MARCA });
+  const logo = await doc.embedPng(new Uint8Array(await readFile(LOGO)));
+  const { width: anchoLogo } = logo.scaleToFit(ANCHO, ALTO_LOGO);
+  l.page.drawImage(logo, { x: MARGEN, y: yArriba - ALTO_LOGO, width: anchoLogo, height: ALTO_LOGO });
   const fecha = dibujable(c.lugarYFecha, normal);
   l.page.drawText(fecha, {
     x: A4.w - MARGEN - normal.widthOfTextAtSize(fecha, TAM),
-    y: yArriba - 16,
+    y: yArriba - ALTO_LOGO + 4,
     size: TAM,
     font: normal,
     color: TINTA,
   });
-  l.y = yArriba - 28;
+  l.y = yArriba - ALTO_LOGO - 10;
   l.page.drawLine({
     start: { x: MARGEN, y: l.y },
     end: { x: MARGEN + ANCHO, y: l.y },
