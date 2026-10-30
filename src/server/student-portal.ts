@@ -516,7 +516,8 @@ export async function studentOverview(
     evaluaciones,
     resultados,
     ...(await resultadoYCertificadosVisibles(organizationId, enrollmentIds, certificados)),
-    licencias,
+    // 0088 — Solo las de inscripciones (la de un profesor no pasa por acá).
+    licencias: licencias.flatMap((l) => (l.enrollmentId ? [{ ...l, enrollmentId: l.enrollmentId }] : [])),
     accesos,
     prorrogas: await prorrogasDeInscripciones(organizationId, enrollmentIds, enrollments),
     timezone: clock.timezone,
@@ -1320,7 +1321,8 @@ export async function studentCourseDetail(
     evaluaciones,
     resultados,
     ...(await resultadoYCertificadosVisibles(organizationId, enrollmentIds, certificados)),
-    licencias,
+    // 0088 — Solo las de inscripciones (la de un profesor no pasa por acá).
+    licencias: licencias.flatMap((l) => (l.enrollmentId ? [{ ...l, enrollmentId: l.enrollmentId }] : [])),
     accesos,
     prorrogas: await prorrogasDeInscripciones(organizationId, enrollmentIds, recorrido),
     timezone: clock.timezone,

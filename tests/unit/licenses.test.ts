@@ -3,8 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 /**
  * 005 (T032, US4, FR-002/FR-003/FR-004): el pool de licencias se descuenta
  * al asignar y se libera al liberar/dar de baja; asignar con
- * `available === 0` rechaza (409 no_stock); bajar `totalLicenses` por
- * debajo de lo asignado rechaza.
+ * `available === 0` rechaza (409 no_stock). 0087: el cupo es de cada EQUIPO
+ * de licencias y el equipo se elige al asignar.
  */
 
 const inserts: { table: unknown; values: unknown }[] = [];
@@ -109,7 +109,7 @@ describe("availableLicenses (T028, DV-004)", () => {
   it("total - assignedCount", async () => {
     const { availableLicenses } = await import("@/server/licenses");
     selectQueue.push(
-      [{ name: "Revit", totalLicenses: 5 }],
+      [{ name: "Revit", total: 5 }],
       [ocupada("sw_1"), ocupada("sw_1"), ocupada("sw_1")]
     );
     const availability = await availableLicenses("org_1", "sw_1");
@@ -118,6 +118,7 @@ describe("availableLicenses (T028, DV-004)", () => {
       softwareName: "Revit",
       total: 5,
       assignedCount: 3,
+      externos: 0,
       available: 2,
     });
   });
@@ -135,16 +136,17 @@ describe("assignLicense (T028, FR-003)", () => {
     const { assignLicense } = await import("@/server/licenses");
     selectQueue.push(
       [{ id: "enr_1" }], // enrollment existe
-      [{ name: "Revit", totalLicenses: 2 }], // software
+      [{ id: "team_uy", name: "Uruguay ATC", archivedAt: null }], // equipo (0087)
+      [{ name: "Revit", total: 2 }], // software
       [ocupada("sw_1"), ocupada("sw_1")], // 2 ocupadas === total → available 0
       [] // sin license previa
     );
-    const result = await assignLicense("org_1", "enr_1", "sw_1");
+    const result = await assignLicense("org_1", "enr_1", "sw_1", "team_uy");
     expect(result).toEqual({
       ok: false,
       status: 409,
       code: "no_stock",
-      message: "No hay licencias disponibles de Revit",
+      message: "No hay licencias disponibles de Revit en Uruguay ATC",
     });
     expect(updates).toHaveLength(0);
     expect(inserts).toHaveLength(0);
@@ -154,11 +156,12 @@ describe("assignLicense (T028, FR-003)", () => {
     const { assignLicense } = await import("@/server/licenses");
     selectQueue.push(
       [{ id: "enr_1" }],
-      [{ name: "Revit", totalLicenses: 5 }],
+      [{ id: "team_uy", name: "Uruguay ATC", archivedAt: null }], // equipo (0087)
+      [{ name: "Revit", total: 5 }],
       [ocupada("sw_1")], // 1 ocupada → available = 4
       [] // sin license previa
     );
-    const result = await assignLicense("org_1", "enr_1", "sw_1");
+    const result = await assignLicense("org_1", "enr_1", "sw_1", "team_uy");
     expect(result.ok).toBe(true);
     expect(inserts).toHaveLength(1);
     const values = inserts[0]!.values as { assigned: boolean; softwareId: string };
@@ -169,7 +172,7 @@ describe("assignLicense (T028, FR-003)", () => {
   it("inscripción inexistente → 404", async () => {
     const { assignLicense } = await import("@/server/licenses");
     selectQueue.push([]); // enrollment no encontrado
-    const result = await assignLicense("org_1", "enr_x", "sw_1");
+    const result = await assignLicense("org_1", "enr_x", "sw_1", "team_uy");
     expect(result).toEqual({
       ok: false,
       status: 404,
@@ -182,11 +185,12 @@ describe("assignLicense (T028, FR-003)", () => {
     const { assignLicense } = await import("@/server/licenses");
     selectQueue.push(
       [{ id: "enr_1" }],
-      [{ name: "Revit", totalLicenses: 5 }],
+      [{ id: "team_uy", name: "Uruguay ATC", archivedAt: null }], // equipo (0087)
+      [{ name: "Revit", total: 5 }],
       [{ n: 5 }], // available = 0, pero ya está asignada a este enrollment
-      [{ id: "lic_1", enrollmentId: "enr_1", softwareId: "sw_1", assigned: true, assignedAt: new Date() }]
+      [{ id: "lic_1", enrollmentId: "enr_1", softwareId: "sw_1", teamId: "team_uy", assigned: true, assignedAt: new Date() }]
     );
-    const result = await assignLicense("org_1", "enr_1", "sw_1");
+    const result = await assignLicense("org_1", "enr_1", "sw_1", "team_uy");
     expect(result.ok).toBe(true);
     expect(updates).toHaveLength(0);
     expect(inserts).toHaveLength(0);
@@ -202,7 +206,7 @@ describe("assignLicense con licencia propia", () => {
   it("la inscripción con la marca → 422 licencia_propia, sin tocar nada", async () => {
     const { assignLicense } = await import("@/server/licenses");
     selectQueue.push([{ id: "enr_1", parentEnrollmentId: null, hadOwnLicense: true }]);
-    const result = await assignLicense("org_1", "enr_1", "sw_1");
+    const result = await assignLicense("org_1", "enr_1", "sw_1", "team_uy");
     expect(result).toMatchObject({ ok: false, status: 422, code: "licencia_propia" });
     expect(inserts).toHaveLength(0);
     expect(updates).toHaveLength(0);
@@ -215,7 +219,7 @@ describe("assignLicense con licencia propia", () => {
       [{ id: "enr_hija", parentEnrollmentId: "enr_madre", hadOwnLicense: false }],
       [{ hadOwnLicense: true }]
     );
-    const result = await assignLicense("org_1", "enr_hija", "sw_1");
+    const result = await assignLicense("org_1", "enr_hija", "sw_1", "team_uy");
     expect(result).toMatchObject({ ok: false, status: 422, code: "licencia_propia" });
     expect(inserts).toHaveLength(0);
   });
@@ -226,11 +230,12 @@ describe("034 (FR-020) — varias licencias por inscripción", () => {
     const { assignLicense } = await import("@/server/licenses");
     selectQueue.push(
       [{ id: "enr_1", parentEnrollmentId: null }],
-      [{ name: "Navisworks", totalLicenses: 5 }],
+      [{ id: "team_uy", name: "Uruguay ATC", archivedAt: null }], // equipo (0087)
+      [{ name: "Navisworks", total: 5 }],
       [], // nada ocupado de Navisworks
       [] // no hay fila de ESTE programa (la de Revit no se mira)
     );
-    const result = await assignLicense("org_1", "enr_1", "sw_navis");
+    const result = await assignLicense("org_1", "enr_1", "sw_navis", "team_uy");
     expect(result.ok).toBe(true);
     expect(updates).toHaveLength(0);
     expect(inserts).toHaveLength(1);
@@ -241,11 +246,12 @@ describe("034 (FR-020) — varias licencias por inscripción", () => {
     const { assignLicense } = await import("@/server/licenses");
     selectQueue.push(
       [{ id: "enr_1", parentEnrollmentId: null }],
-      [{ name: "Revit", totalLicenses: 5 }],
+      [{ id: "team_uy", name: "Uruguay ATC", archivedAt: null }], // equipo (0087)
+      [{ name: "Revit", total: 5 }],
       [],
       [{ id: "lic_1", enrollmentId: "enr_1", softwareId: "sw_1", assigned: false, assignedAt: null }]
     );
-    const result = await assignLicense("org_1", "enr_1", "sw_1");
+    const result = await assignLicense("org_1", "enr_1", "sw_1", "team_uy");
     expect(result.ok).toBe(true);
     expect(inserts).toHaveLength(0);
     expect(updates).toHaveLength(1);
@@ -257,7 +263,8 @@ describe("034 (FR-020) — varias licencias por inscripción", () => {
     selectQueue.push(
       [{ id: "enr_hija", parentEnrollmentId: "enr_madre" }],
       [{ hadOwnLicense: false }], // 2026-10-23 — la madre no trajo la suya
-      [{ name: "Revit", totalLicenses: 5 }],
+      [{ id: "team_uy", name: "Uruguay ATC", archivedAt: null }], // equipo (0087)
+      [{ name: "Revit", total: 5 }],
       [],
       [],
       [
@@ -265,7 +272,7 @@ describe("034 (FR-020) — varias licencias por inscripción", () => {
         { enrollmentId: "enr_hija", softwareId: "sw_1", softwareName: "Revit" },
       ]
     );
-    const result = await assignLicense("org_1", "enr_hija", "sw_1");
+    const result = await assignLicense("org_1", "enr_hija", "sw_1", "team_uy");
     expect(result.ok && result.warnings).toEqual(["Revit"]);
   });
 });
@@ -281,7 +288,7 @@ describe("035 — lo del grupo no se toca por alumno", () => {
       [{ id: "enr_1", parentEnrollmentId: null, cohortId: "coh_1" }],
       [{ cohortId: "coh_1", softwareId: "sw_1", name: "Revit", expiresAt: null }]
     );
-    const result = await assignLicense("org_1", "enr_1", "sw_1");
+    const result = await assignLicense("org_1", "enr_1", "sw_1", "team_uy");
     expect(result).toEqual({
       ok: false,
       status: 409,
@@ -298,11 +305,12 @@ describe("035 — lo del grupo no se toca por alumno", () => {
     selectQueue.push(
       [{ id: "enr_1", parentEnrollmentId: null, cohortId: "coh_1" }],
       [{ cohortId: "coh_1", softwareId: "sw_revit", name: "Revit", expiresAt: null }],
-      [{ name: "Navisworks", totalLicenses: 5 }],
+      [{ id: "team_uy", name: "Uruguay ATC", archivedAt: null }], // equipo (0087)
+      [{ name: "Navisworks", total: 5 }],
       [],
       []
     );
-    const result = await assignLicense("org_1", "enr_1", "sw_navis");
+    const result = await assignLicense("org_1", "enr_1", "sw_navis", "team_uy");
     expect(result.ok).toBe(true);
     expect((inserts[0]!.values as { source: string }).source).toBe("individual");
   });
@@ -412,36 +420,23 @@ describe("licenciaOcupada — fechas desconocidas no liberan (2026-10-05)", () =
 
   it("el inventario del home aplica la misma regla", async () => {
     selectQueue.push(
-      [{ id: "sw_1", name: "Revit", totalLicenses: 3 }],
+      [{ id: "sw_1", name: "Revit", total: 3 }],
       [{ softwareId: "sw_1", assigned: true, expiresAt: null, startDate: null, endDate: null }]
     );
     const { listLicenseInventory } = await import("@/server/licenses");
     expect(await listLicenseInventory("org_1")).toEqual([
-      { softwareId: "sw_1", softwareName: "Revit", total: 3, assignedCount: 1, available: 2 },
+      { softwareId: "sw_1", softwareName: "Revit", total: 3, assignedCount: 1, externos: 0, available: 2 },
     ]);
   });
 });
 
-describe("updateSoftware (T031, FR-004)", () => {
-  it("rechaza bajar totalLicenses por debajo de las asignadas", async () => {
+describe("updateSoftware (0087)", () => {
+  it("edita el nombre; el cupo ya no es del programa sino de cada equipo", async () => {
     const { updateSoftware } = await import("@/server/software");
-    selectQueue.push([ocupada("sw_1"), ocupada("sw_1"), ocupada("sw_1"), ocupada("sw_1"), ocupada("sw_1")]); // 5 ocupadas
-    const result = await updateSoftware("org_1", "sw_1", { totalLicenses: 3 });
-    expect(result).toEqual({
-      ok: false,
-      status: 422,
-      code: "invalid_body",
-      message: "No se puede bajar de 5 licencias: ya hay 5 asignadas",
-    });
-    expect(updates).toHaveLength(0);
-  });
-
-  it("permite editar totalLicenses cuando el nuevo total no baja de lo asignado", async () => {
-    const { updateSoftware } = await import("@/server/software");
-    selectQueue.push([ocupada("sw_1"), ocupada("sw_1"), ocupada("sw_1"), ocupada("sw_1"), ocupada("sw_1")]); // 5 ocupadas
-    const result = await updateSoftware("org_1", "sw_1", { totalLicenses: 5 });
+    const result = await updateSoftware("org_1", "sw_1", { name: "Revit 2027" });
     expect(result.ok).toBe(true);
     expect(updates).toHaveLength(1);
+    expect(updates[0]!.set).not.toHaveProperty("totalLicenses");
   });
 });
 
@@ -454,8 +449,8 @@ describe("listLicenseInventory (iteración 2)", () => {
   it("cruza total por software con asignadas agrupadas por softwareId", async () => {
     selectQueue.push(
       [
-        { id: "sw_1", name: "Revit", totalLicenses: 5 },
-        { id: "sw_2", name: "Civil3D", totalLicenses: 2 },
+        { id: "sw_1", name: "Revit", total: 5 },
+        { id: "sw_2", name: "Civil3D", total: 2 },
       ],
       [ocupada("sw_1"), ocupada("sw_1"), ocupada("sw_1")]
     );
@@ -463,8 +458,8 @@ describe("listLicenseInventory (iteración 2)", () => {
     const inventory = await listLicenseInventory("org_1");
 
     expect(inventory).toEqual([
-      { softwareId: "sw_1", softwareName: "Revit", total: 5, assignedCount: 3, available: 2 },
-      { softwareId: "sw_2", softwareName: "Civil3D", total: 2, assignedCount: 0, available: 2 },
+      { softwareId: "sw_1", softwareName: "Revit", total: 5, assignedCount: 3, externos: 0, available: 2 },
+      { softwareId: "sw_2", softwareName: "Civil3D", total: 2, assignedCount: 0, externos: 0, available: 2 },
     ]);
   });
 
@@ -473,5 +468,115 @@ describe("listLicenseInventory (iteración 2)", () => {
     const { listLicenseInventory } = await import("@/server/licenses");
     const inventory = await listLicenseInventory("org_1");
     expect(inventory).toEqual([]);
+  });
+});
+
+/**
+ * 0087 — Licencias por EQUIPO (Uruguay ATC, Paraguay ATC…): cada licencia
+ * descuenta del cupo del equipo elegido al asignarla.
+ */
+describe("0087 — stock por equipo", () => {
+  it("availableLicenses con teamId usa el cupo de ESE equipo y sus ocupadas", async () => {
+    const { availableLicenses } = await import("@/server/licenses");
+    // Uruguay tiene 50 y 3 ocupadas: 47 libres, sin importar lo que tenga Paraguay.
+    selectQueue.push(
+      [{ name: "Revit", total: 50 }],
+      [ocupada("sw_1"), ocupada("sw_1"), ocupada("sw_1")]
+    );
+    expect(await availableLicenses("org_1", "sw_1", "team_uy")).toEqual({
+      softwareId: "sw_1",
+      softwareName: "Revit",
+      total: 50,
+      assignedCount: 3,
+      externos: 0,
+      available: 47,
+    });
+  });
+
+  it("Uruguay lleno NO bloquea a Paraguay: cada equipo se mide con su propio cupo", async () => {
+    const { assignLicense } = await import("@/server/licenses");
+    // Uruguay: cupo 2, 2 ocupadas → 409.
+    selectQueue.push(
+      [{ id: "enr_1" }],
+      [{ id: "team_uy", name: "Uruguay ATC", archivedAt: null }],
+      [{ name: "Revit", total: 2 }],
+      [ocupada("sw_1"), ocupada("sw_1")],
+      []
+    );
+    const lleno = await assignLicense("org_1", "enr_1", "sw_1", "team_uy");
+    expect(lleno).toMatchObject({ ok: false, status: 409, code: "no_stock" });
+    expect(!lleno.ok && lleno.message).toContain("Uruguay ATC");
+
+    // Paraguay: cupo 60, 0 ocupadas → asigna, y la fila queda atada a Paraguay.
+    selectQueue.push(
+      [{ id: "enr_1" }],
+      [{ id: "team_py", name: "Paraguay ATC", archivedAt: null }],
+      [{ name: "Revit", total: 60 }],
+      [],
+      []
+    );
+    const libre = await assignLicense("org_1", "enr_1", "sw_1", "team_py");
+    expect(libre.ok).toBe(true);
+    expect((inserts[0]!.values as { teamId: string }).teamId).toBe("team_py");
+  });
+
+  it("un equipo inexistente (o de otra organización) → 422 sin tocar el stock", async () => {
+    const { assignLicense } = await import("@/server/licenses");
+    selectQueue.push([{ id: "enr_1" }], []); // la inscripción existe, el equipo no
+    const result = await assignLicense("org_1", "enr_1", "sw_1", "team_ajeno");
+    expect(result).toEqual({
+      ok: false,
+      status: 422,
+      code: "invalid_body",
+      message: "Equipo de licencias inexistente",
+    });
+    expect(inserts).toHaveLength(0);
+    expect(updates).toHaveLength(0);
+  });
+
+  it("un equipo archivado no se ofrece: 422", async () => {
+    const { assignLicense } = await import("@/server/licenses");
+    selectQueue.push(
+      [{ id: "enr_1" }],
+      [{ id: "team_viejo", name: "Viejo", archivedAt: new Date() }]
+    );
+    const result = await assignLicense("org_1", "enr_1", "sw_1", "team_viejo");
+    expect(result).toMatchObject({ ok: false, status: 422, code: "invalid_body" });
+    expect(inserts).toHaveLength(0);
+  });
+
+  it("el mismo programa ya asignado desde OTRO equipo no es idempotente: pasa a este y pide stock acá", async () => {
+    const { assignLicense } = await import("@/server/licenses");
+    selectQueue.push(
+      [{ id: "enr_1" }],
+      [{ id: "team_py", name: "Paraguay ATC", archivedAt: null }],
+      [{ name: "Revit", total: 1 }],
+      [], // Paraguay sin ocupadas
+      [
+        {
+          id: "lic_1",
+          enrollmentId: "enr_1",
+          softwareId: "sw_1",
+          teamId: "team_uy",
+          assigned: true,
+          assignedAt: new Date(),
+        },
+      ]
+    );
+    const result = await assignLicense("org_1", "enr_1", "sw_1", "team_py");
+    expect(result.ok).toBe(true);
+    expect(inserts).toHaveLength(0);
+    expect((updates[0]!.set as { teamId: string }).teamId).toBe("team_py");
+  });
+
+  it("el inventario del inicio suma los equipos activos", async () => {
+    selectQueue.push(
+      [{ id: "sw_1", name: "Revit", total: 110 }], // 50 Uruguay + 60 Paraguay
+      [ocupada("sw_1"), ocupada("sw_1")]
+    );
+    const { listLicenseInventory } = await import("@/server/licenses");
+    expect(await listLicenseInventory("org_1")).toEqual([
+      { softwareId: "sw_1", softwareName: "Revit", total: 110, assignedCount: 2, externos: 0, available: 108 },
+    ]);
   });
 });

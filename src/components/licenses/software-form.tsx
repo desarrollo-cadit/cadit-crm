@@ -12,8 +12,10 @@ import { Modal, useDirty } from "@/components/ui/modal";
  * 005 iteración 2 — alta/edición del catálogo de software. Desde 2026-10-16
  * (pedido del dueño) vive en /licencias, junto al stock y a quién tiene cada
  * programa; antes era la pestaña "Software" de /academico. `initial` presente = edición
- * (PATCH `/api/software/:id`, que ya valida no bajar de lo asignado);
- * ausente = alta (POST `/api/software`).
+ * (PATCH `/api/software/:id`); ausente = alta (POST `/api/software`).
+ *
+ * 0087 — Acá ya no se carga el total: el cupo es de cada equipo de licencias
+ * y se edita en «Editar equipo» (`TeamForm`).
  *
  * Iteración 5 (feedback en vivo: "adjuntar foto de los productos de
  * licencia... así es más fácil distinguir") — la foto se sube aparte
@@ -30,12 +32,9 @@ export function SoftwareForm({
   onSaved: () => void;
 }) {
   const [name, setName] = useState(initial?.name ?? "");
-  const [totalLicenses, setTotalLicenses] = useState(
-    initial?.totalLicenses?.toString() ?? "0"
-  );
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
-  const dirty = useDirty({ name, totalLicenses, photoFile });
+  const dirty = useDirty({ name, photoFile });
 
   async function uploadPhoto(id: string) {
     if (!photoFile) return;
@@ -50,10 +49,7 @@ export function SoftwareForm({
     const res = await fetch(initial ? `/api/software/${initial.id}` : "/api/software", {
       method: initial ? "PATCH" : "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        name: name.trim(),
-        totalLicenses: totalLicenses.trim() ? Number(totalLicenses) : 0,
-      }),
+      body: JSON.stringify({ name: name.trim() }),
     }).catch(() => null);
     if (!res?.ok) {
       setSaving(false);
@@ -79,16 +75,6 @@ export function SoftwareForm({
           <div className="space-y-1.5">
             <Label htmlFor="software-name">Nombre</Label>
             <Input id="software-name" value={name} onChange={(e) => setName(e.target.value)} />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="software-total">Total de licencias</Label>
-            <Input
-              id="software-total"
-              type="number"
-              min={0}
-              value={totalLicenses}
-              onChange={(e) => setTotalLicenses(e.target.value)}
-            />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="software-photo">Foto (opcional)</Label>

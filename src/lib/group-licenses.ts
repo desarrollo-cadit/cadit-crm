@@ -1,4 +1,5 @@
 import type { LicenseSource } from "./license-source";
+import { claveDeStock } from "./license-team";
 
 /**
  * 035 (US1/US2, FR-001..FR-010) — Licencias para todo el grupo de una cohorte.
@@ -11,12 +12,19 @@ import type { LicenseSource } from "./license-source";
  * asiento de software por inscripción, que descuenta del stock— con
  * `source = 'grupo'`. Así el inventario, el portal y el roster la ven sin
  * saber nada del grupo.
+ *
+ * 0087 — El stock es por EQUIPO: las licencias del grupo salen del equipo que
+ * se eligió al asignar el programa al grupo (`cohort_group_software.team_id`).
+ * Una licencia que ocupa un asiento de OTRO equipo no cuenta como «ya está»:
+ * pasa al equipo del grupo y pide stock ahí.
  */
 
 /** Una fila de `license` de UNA inscripción, con la ocupación ya derivada. */
 export type LicenciaExistente = {
   id: string;
   softwareId: string;
+  /** De qué equipo sale su asiento. */
+  teamId: string;
   assigned: boolean;
   source: LicenseSource;
   /** `licenciaOcupada()` de hoy: asignada, sin vencer y de un curso no terminado. */
@@ -26,9 +34,12 @@ export type LicenciaExistente = {
 export type PlanAlGrupo =
   | {
       ok: true;
-      /** FR-010 — Filas que ya ocupan: pasan a ser del grupo sin descontar otra vez. */
+      /** FR-010 — Filas que ya ocupan EN ESE EQUIPO: pasan a ser del grupo sin descontar otra vez. */
       convertir: string[];
-      /** Filas liberadas (o vencidas) del mismo programa: se reactivan, descuentan. */
+      /**
+       * Filas liberadas (o vencidas) del mismo programa, o que ocupan un
+       * asiento de otro equipo: se reactivan en el equipo del grupo, descuentan.
+       */
       reactivar: string[];
       /** Inscripciones sin fila de este programa: se inserta una, descuenta. */
       insertar: string[];
@@ -50,7 +61,10 @@ export type PlanAlGrupo =
  */
 export function planAsignarAlGrupo(input: {
   softwareId: string;
+  /** El equipo del que salen las licencias del grupo. */
+  teamId: string;
   miembros: readonly { enrollmentId: string; licencias: readonly LicenciaExistente[] }[];
+  /** Libres de ESE equipo en este programa. */
   disponibles: number;
   descuentaStock: boolean;
 }): PlanAlGrupo {
@@ -60,7 +74,7 @@ export function planAsignarAlGrupo(input: {
   for (const m of input.miembros) {
     const fila = m.licencias.find((l) => l.softwareId === input.softwareId);
     if (!fila) insertar.push(m.enrollmentId);
-    else if (fila.assigned && fila.ocupa) convertir.push(fila.id);
+    else if (fila.assigned && fila.ocupa && fila.teamId === input.teamId) convertir.push(fila.id);
     else reactivar.push(fila.id);
   }
   const necesarias = input.descuentaStock ? reactivar.length + insertar.length : 0;
@@ -119,8 +133,9 @@ export type PlanDeSincronizacion = {
  * lugar.
  */
 export function planSincronizarInscripcion(input: {
-  grupo: readonly { softwareId: string; descuentaStock: boolean }[];
+  grupo: readonly { softwareId: string; teamId: string; descuentaStock: boolean }[];
   licencias: readonly LicenciaExistente[];
+  /** Libres por `claveDeStock(equipo, programa)`. */
   disponibles: ReadonlyMap<string, number>;
 }): PlanDeSincronizacion {
   const delGrupo = new Set(input.grupo.map((g) => g.softwareId));
@@ -136,17 +151,20 @@ export function planSincronizarInscripcion(input: {
   const libres = new Map(input.disponibles);
   for (const g of input.grupo) {
     const fila = input.licencias.find((l) => l.softwareId === g.softwareId);
-    if (fila?.assigned && fila.ocupa) {
+    // Ya ocupa un asiento del equipo del grupo: no descuenta otra vez. Si ocupa
+    // uno de OTRO equipo, pasa al del grupo y pide stock ahí (más abajo).
+    if (fila?.assigned && fila.ocupa && fila.teamId === g.teamId) {
       if (fila.source === "individual") plan.convertir.push({ id: fila.id, softwareId: g.softwareId });
       continue;
     }
     if (g.descuentaStock) {
-      const quedan = libres.get(g.softwareId) ?? 0;
+      const clave = claveDeStock(g.teamId, g.softwareId);
+      const quedan = libres.get(clave) ?? 0;
       if (quedan <= 0) {
         plan.sinStock.push(g.softwareId);
         continue;
       }
-      libres.set(g.softwareId, quedan - 1);
+      libres.set(clave, quedan - 1);
     }
     if (fila) plan.reactivar.push({ id: fila.id, softwareId: g.softwareId });
     else plan.insertar.push(g.softwareId);

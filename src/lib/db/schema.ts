@@ -322,7 +322,11 @@ export const teacher = pgTable(
 
 /**
  * 005 — Catálogo de software con licencias limitadas (Revit, Civil3D...).
- * Disponibles = total_licenses - count(license asignadas de este software).
+ *
+ * 0087 — El cupo ya NO es de acá sino de cada equipo de licencias
+ * (`license_team_seat`): disponibles = cupo del equipo − licencias ocupadas de
+ * ese equipo. `total_licenses` queda como columna heredada (la migración la
+ * copió al equipo «Sin asignar») y nada la lee ni la escribe más.
  */
 export const software = pgTable(
   "software",
@@ -332,6 +336,7 @@ export const software = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
+    /** @deprecated 0087 — el cupo vive en `license_team_seat`. */
     totalLicenses: integer("total_licenses").notNull().default(0),
     /** 005 iteración 5 — foto opcional del producto, mismo patrón que teacher. */
     photoMimeType: text("photo_mime_type"),
@@ -1157,6 +1162,58 @@ export const workshopRegistration = pgTable(
 );
 
 /**
+ * 0087 — Equipo de licencias: un equipo de Autodesk (Uruguay ATC, Paraguay
+ * ATC…) con SU cupo por programa. El stock ya no es uno solo por programa: la
+ * licencia que se asigna descuenta del equipo que se eligió al asignarla.
+ *
+ * `autodesk_alias` es el nombre del equipo tal como figura en Autodesk
+ * (`team_alias` del Excel de usuarios), para reconocerlo al conciliar.
+ * Archivar lo saca de los selectores sin tocar las licencias que ya tiene.
+ */
+export const licenseTeam = pgTable(
+  "license_team",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    autodeskAlias: text("autodesk_alias"),
+    archivedAt: timestamp("archived_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("license_team_org_name_uq").on(t.organizationId, t.name),
+    index("license_team_org_idx").on(t.organizationId),
+  ]
+);
+
+/** 0087 — Cuántas licencias de un programa tiene un equipo (el cupo). */
+export const licenseTeamSeat = pgTable(
+  "license_team_seat",
+  {
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    teamId: text("team_id")
+      .notNull()
+      .references(() => licenseTeam.id, { onDelete: "cascade" }),
+    softwareId: text("software_id")
+      .notNull()
+      .references(() => software.id, { onDelete: "cascade" }),
+    total: integer("total").notNull().default(0),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.teamId, t.softwareId] }),
+    index("license_team_seat_org_idx").on(t.organizationId),
+    index("license_team_seat_software_idx").on(t.softwareId),
+    check("license_team_seat_total_valido", sql`${t.total} >= 0`),
+  ]
+);
+
+/**
  * 004 — Licencia de software asociada a una inscripción.
  *
  * 034 (FR-020) — Hasta 033 era 0 o 1 por inscripción (`enrollment_id`
@@ -1172,13 +1229,25 @@ export const license = pgTable(
     organizationId: text("organization_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    enrollmentId: text("enrollment_id")
-      .notNull()
-      .references(() => enrollment.id, { onDelete: "cascade" }),
+    /** Quien la tiene: una inscripción O un profesor (`license_un_titular`). */
+    enrollmentId: text("enrollment_id").references(() => enrollment.id, { onDelete: "cascade" }),
+    /**
+     * 0088 — La licencia de un PROFESOR (no tiene inscripción ni cohorte).
+     * Ocupa un asiento de su equipo hasta que alguien la libera o vence.
+     */
+    teacherId: text("teacher_id").references(() => teacher.id, { onDelete: "cascade" }),
     /** 005 (DV-004) — de qué software del catálogo es esta licencia. */
     softwareId: text("software_id")
       .notNull()
       .references(() => software.id, { onDelete: "restrict" }),
+    /**
+     * 0087 — De qué equipo de licencias sale este asiento. Cada licencia
+     * descuenta del cupo de SU equipo; las anteriores a la 0087 quedaron en el
+     * equipo «Sin asignar» que creó la migración.
+     */
+    teamId: text("team_id")
+      .notNull()
+      .references(() => licenseTeam.id, { onDelete: "restrict" }),
     assigned: boolean("assigned").notNull().default(false),
     assignedAt: timestamp("assigned_at"),
     expiresAt: timestamp("expires_at"),
@@ -1193,9 +1262,15 @@ export const license = pgTable(
   (t) => [
     index("license_org_idx").on(t.organizationId),
     index("license_software_idx").on(t.softwareId),
+    index("license_team_idx").on(t.teamId),
     // 034 (FR-020) — Una por programa y por inscripción: asignar dos veces el
     // mismo programa a la misma inscripción no tiene sentido (escenario 3).
     uniqueIndex("license_enrollment_software_uq").on(t.enrollmentId, t.softwareId),
+    // 0088 — Lo mismo por profesor. Los NULL no chocan entre sí: cada índice
+    // solo ve a su propio titular.
+    uniqueIndex("license_teacher_software_uq").on(t.teacherId, t.softwareId),
+    index("license_teacher_idx").on(t.teacherId),
+    check("license_un_titular", sql`num_nonnulls(${t.enrollmentId}, ${t.teacherId}) = 1`),
     check("license_source_valido", sql`${t.source} in ('grupo', 'individual')`),
   ]
 );
@@ -1217,6 +1292,10 @@ export const license = pgTable(
  *
  * `expires_at` (opcional) es el vencimiento de TODAS las licencias del
  * grupo: se define al asignar y vale para todos.
+ *
+ * 0087 — `team_id` es el equipo de licencias del que salen las del grupo,
+ * elegido UNA vez al asignar el programa al grupo. Las altas posteriores, los
+ * módulos automáticos y «Mudar» lo reusan: no se vuelve a preguntar.
  */
 export const cohortGroupSoftware = pgTable(
   "cohort_group_software",
@@ -1231,6 +1310,9 @@ export const cohortGroupSoftware = pgTable(
     softwareId: text("software_id")
       .notNull()
       .references(() => software.id, { onDelete: "restrict" }),
+    teamId: text("team_id")
+      .notNull()
+      .references(() => licenseTeam.id, { onDelete: "restrict" }),
     expiresAt: timestamp("expires_at"),
     createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -1238,6 +1320,199 @@ export const cohortGroupSoftware = pgTable(
   (t) => [
     uniqueIndex("cohort_group_software_cohort_software_uq").on(t.cohortId, t.softwareId),
     index("cohort_group_software_org_idx").on(t.organizationId),
+  ]
+);
+
+/**
+ * 0089 — Importaciones de usuarios de Autodesk, POR EQUIPO.
+ *
+ * Una importación es una FOTO de lo que decía manage.autodesk.com un día: se
+ * guarda (las últimas 6 por equipo) para conciliarla contra el campus y para
+ * que los asientos que Autodesk tiene y el campus no cuenta resten del
+ * disponible. Una fila por (correo, programa): los sub-productos de una oferta
+ * ya vienen agrupados, y las ofertas sin programa en el campus no se guardan.
+ * Sin datos de más: nombre, correo, `autodesk_id`, rol y estado de la cuenta.
+ */
+export const licenseImportBatch = pgTable(
+  "license_import_batch",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    teamId: text("team_id")
+      .notNull()
+      .references(() => licenseTeam.id, { onDelete: "cascade" }),
+    fileName: text("file_name").notNull(),
+    uploadedBy: text("uploaded_by").references(() => user.id, { onDelete: "set null" }),
+    uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
+    /** Personas del archivo (con o sin licencia). */
+    people: integer("people").notNull().default(0),
+    peopleWithoutLicense: integer("people_without_license").notNull().default(0),
+    /** Licencias guardadas (correo, programa). */
+    licenses: integer("licenses").notNull().default(0),
+    /** Licencias de ofertas que el campus no gestiona (no se guardan). */
+    ignored: integer("ignored").notNull().default(0),
+  },
+  (t) => [
+    index("license_import_batch_org_idx").on(t.organizationId),
+    index("license_import_batch_team_idx").on(t.teamId, t.uploadedAt),
+  ]
+);
+
+export const licenseImportRow = pgTable(
+  "license_import_row",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    batchId: text("batch_id")
+      .notNull()
+      .references(() => licenseImportBatch.id, { onDelete: "cascade" }),
+    /** Del lote, repetido para filtrar sin unir. */
+    teamId: text("team_id")
+      .notNull()
+      .references(() => licenseTeam.id, { onDelete: "cascade" }),
+    softwareId: text("software_id")
+      .notNull()
+      .references(() => software.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    firstName: text("first_name").notNull().default(""),
+    lastName: text("last_name").notNull().default(""),
+    autodeskId: text("autodesk_id").notNull().default(""),
+    offeringName: text("offering_name").notNull(),
+    role: text("role").notNull().default(""),
+    accountStatus: text("account_status").notNull().default(""),
+  },
+  (t) => [
+    uniqueIndex("license_import_row_batch_email_software_uq").on(t.batchId, t.email, t.softwareId),
+    index("license_import_row_org_idx").on(t.organizationId),
+    index("license_import_row_team_software_idx").on(t.teamId, t.softwareId),
+  ]
+);
+
+/**
+ * 0089 — Qué programa del campus es cada oferta de Autodesk («Revit», «AutoCAD
+ * - including specialized toolsets»). Se elige UNA vez y se recuerda.
+ * `software_id` NULL = «el campus no gestiona esta oferta»: se ignora al importar.
+ */
+export const licenseOfferingMap = pgTable(
+  "license_offering_map",
+  {
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** La oferta sin tildes, en minúsculas y con espacios plegados. */
+    offeringKey: text("offering_key").notNull(),
+    offeringName: text("offering_name").notNull(),
+    softwareId: text("software_id").references(() => software.id, { onDelete: "cascade" }),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.organizationId, t.offeringKey] })]
+);
+
+/**
+ * 0089 — «Este correo de Autodesk es esta persona» (alumno o profesor), cuando
+ * el correo no coincide con ninguno que el campus conozca. Se recuerda para no
+ * volver a preguntarlo en la próxima importación.
+ */
+export const licenseEmailAlias = pgTable(
+  "license_email_alias",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    contactId: text("contact_id").references(() => contact.id, { onDelete: "cascade" }),
+    teacherId: text("teacher_id").references(() => teacher.id, { onDelete: "cascade" }),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("license_email_alias_org_email_uq").on(t.organizationId, t.email),
+    check("license_email_alias_una_persona", sql`num_nonnulls(${t.contactId}, ${t.teacherId}) = 1`),
+  ]
+);
+
+/**
+ * 0089 — Una decisión sobre un caso de la conciliación («mantener a propósito»,
+ * «omitir»). El caso no vuelve a aparecer como pendiente MIENTRAS su `fingerprint`
+ * no cambie: si el estado cambia (otra inscripción, otro curso), se vuelve a mirar.
+ * `subject` es `e:<correo>` o `p:<persona>`.
+ */
+export const licenseCaseResolution = pgTable(
+  "license_case_resolution",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    teamId: text("team_id")
+      .notNull()
+      .references(() => licenseTeam.id, { onDelete: "cascade" }),
+    softwareId: text("software_id")
+      .notNull()
+      .references(() => software.id, { onDelete: "cascade" }),
+    subject: text("subject").notNull(),
+    decision: text("decision", { enum: ["mantener", "omitir"] }).notNull(),
+    note: text("note"),
+    fingerprint: text("fingerprint").notNull(),
+    resolvedBy: text("resolved_by").references(() => user.id, { onDelete: "set null" }),
+    resolvedAt: timestamp("resolved_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("license_case_resolution_case_uq").on(t.teamId, t.softwareId, t.subject),
+    index("license_case_resolution_org_idx").on(t.organizationId),
+    check("license_case_resolution_decision_valida", sql`${t.decision} in ('mantener', 'omitir')`),
+  ]
+);
+
+/**
+ * 0089 — Algo que hay que hacer en manage.autodesk.com: asignarle o sacarle una
+ * licencia a alguien. Se CIERRA SOLA con la próxima importación del equipo en la
+ * que el archivo ya muestra la tarea hecha. A lo sumo una abierta por
+ * (equipo, programa, tipo, persona).
+ */
+export const licenseAutodeskTask = pgTable(
+  "license_autodesk_task",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    teamId: text("team_id")
+      .notNull()
+      .references(() => licenseTeam.id, { onDelete: "cascade" }),
+    softwareId: text("software_id")
+      .notNull()
+      .references(() => software.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: ["asignar_en_autodesk", "sacar_en_autodesk"] }).notNull(),
+    status: text("status", { enum: ["abierta", "cerrada"] })
+      .notNull()
+      .default("abierta"),
+    /** `e:<correo>` o `p:<persona>`: a quién se refiere. */
+    subject: text("subject").notNull(),
+    email: text("email"),
+    contactId: text("contact_id").references(() => contact.id, { onDelete: "set null" }),
+    teacherId: text("teacher_id").references(() => teacher.id, { onDelete: "set null" }),
+    personName: text("person_name"),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    closedAt: timestamp("closed_at"),
+    closedByBatchId: text("closed_by_batch_id").references(() => licenseImportBatch.id, {
+      onDelete: "set null",
+    }),
+  },
+  (t) => [
+    index("license_autodesk_task_org_idx").on(t.organizationId),
+    index("license_autodesk_task_team_idx").on(t.teamId, t.status),
+    uniqueIndex("license_autodesk_task_abierta_uq")
+      .on(t.teamId, t.softwareId, t.kind, t.subject)
+      .where(sql`${t.status} = 'abierta'`),
+    check("license_autodesk_task_kind_valido", sql`${t.kind} in ('asignar_en_autodesk', 'sacar_en_autodesk')`),
+    check("license_autodesk_task_status_valido", sql`${t.status} in ('abierta', 'cerrada')`),
   ]
 );
 

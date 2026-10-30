@@ -610,6 +610,27 @@
       "when": 1793310000000,
       "tag": "0086_resultado_final",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1793363509087,
+      "tag": "0087_licencias_por_equipo",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1793371800651,
+      "tag": "0088_licencias_de_profesores",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1793374800091,
+      "tag": "0089_licencias_conciliacion",
+      "breakpoints": true
     }
   ]
 }

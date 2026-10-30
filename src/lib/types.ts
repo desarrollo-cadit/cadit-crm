@@ -144,11 +144,10 @@ export type TeacherDto = {
   hasPhoto: boolean;
 };
 
-/** 005 (DV-004) — catálogo básico de software (sin lógica de disponibilidad, US4). */
+/** 005 (DV-004) — catálogo básico de software. 0087: el cupo es por equipo, no del programa. */
 export type SoftwareDto = {
   id: string;
   name: string;
-  totalLicenses: number;
   /** 005 iteración 5 — true si tiene foto en `/api/software/:id/photo`. */
   hasPhoto: boolean;
 };

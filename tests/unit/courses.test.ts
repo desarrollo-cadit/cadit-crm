@@ -39,6 +39,8 @@ vi.mock("@/lib/db", () => ({
       fn({ execute: async () => [] }),
   }),
   getDb: () => ({
+    // 0089 — `availableLicenses` mira los asientos ajenos con SQL directo.
+    execute: async () => [],
     select: () => thenableChain(selectQueue.shift() ?? []),
     insert: (table: unknown) => ({
       values: (values: unknown) => {
@@ -487,7 +489,7 @@ describe("courses: createCourse / createCohort (004)", () => {
     pushCourseExists();
     pushSoftwareExists("sw_1");
     selectQueue.push(
-      [{ name: "Revit", totalLicenses: 5 }], // availableLicenses: software
+      [{ name: "Revit", total: 5 }], // availableLicenses: software
       /*
         023 — El conteo de ocupadas dejó de ser un : ahora se traen las
         licencias con su cohorte y la ocupación se deriva. Estas cinco son de

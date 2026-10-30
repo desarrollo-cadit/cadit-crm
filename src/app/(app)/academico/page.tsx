@@ -24,6 +24,7 @@ export default async function AcademicoPage({
     <AcademicClient
       canEdit={caps.includes("academico.editar")}
       canManageAccess={caps.includes("accesos.gestionar")}
+      canManageLicenses={caps.includes("licencias.gestionar")}
       initialTab={leerPestana(tab, PESTANAS_ACADEMICO, "cursos", ALIAS_ACADEMICO)}
     />
   );

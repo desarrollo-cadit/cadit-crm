@@ -13,7 +13,13 @@ import {
   planSincronizarInscripcion,
   type LicenciaExistente,
 } from "@/lib/group-licenses";
-import { availableLicenses, bloquearStock, softwareDelGrupo } from "@/server/licenses";
+import { claveDeStock, MENSAJE_EQUIPO_ARCHIVADO, MENSAJE_EQUIPO_INEXISTENTE } from "@/lib/license-team";
+import {
+  availableLicenses,
+  bloquearStock,
+  buscarEquipo,
+  softwareDelGrupo,
+} from "@/server/licenses";
 
 /**
  * 035 (US1, FR-001..FR-007) — Licencias para todo el grupo de una cohorte:
@@ -36,6 +42,9 @@ import { availableLicenses, bloquearStock, softwareDelGrupo } from "@/server/lic
 export type GroupLicenseDto = {
   softwareId: string;
   name: string;
+  /** 0087 — El equipo de licencias del que salen las del grupo. */
+  teamId: string;
+  teamName: string;
   expiresAt: string | null;
   /** Miembros activos del grupo CON la licencia asignada. */
   asignadas: number;
@@ -153,6 +162,7 @@ async function licenciasDe(
       id: schema.license.id,
       enrollmentId: schema.license.enrollmentId,
       softwareId: schema.license.softwareId,
+      teamId: schema.license.teamId,
       assigned: schema.license.assigned,
       source: schema.license.source,
       expiresAt: schema.license.expiresAt,
@@ -171,10 +181,13 @@ async function licenciasDe(
       )
     );
   const ahora = new Date();
-  return rows.map((r) => ({
+  // 0088 — El join con la inscripción deja afuera las licencias de profesores
+  // (las del grupo solo conocen inscripciones); el flatMap lo dice al tipo.
+  return rows.flatMap((r) => (r.enrollmentId ? [{ ...r, enrollmentId: r.enrollmentId }] : [])).map((r) => ({
     id: r.id,
     enrollmentId: r.enrollmentId,
     softwareId: r.softwareId,
+    teamId: r.teamId,
     assigned: r.assigned,
     source: r.source,
     ocupa: licenciaOcupada(
@@ -215,6 +228,8 @@ export async function listarProgramasDelGrupo(
     return {
       softwareId: g.softwareId,
       name: g.name,
+      teamId: g.teamId,
+      teamName: g.teamName,
       expiresAt: g.expiresAt?.toISOString() ?? null,
       asignadas,
       faltan: miembros.length - asignadas,
@@ -239,11 +254,17 @@ export type GroupLicenseResult<T> =
  * FR-001/FR-002/FR-010 — Asigna `softwareId` a todo el grupo: una licencia
  * por miembro activo, todo o nada. Las individuales que ya ocupan pasan a ser
  * del grupo sin descontar otra vez.
+ *
+ * 0087 — `teamId` es el equipo del que salen TODAS las del grupo: se elige una
+ * vez acá, queda en `cohort_group_software.team_id` y lo reusan las altas
+ * posteriores, los módulos automáticos y «Mudar». Una individual que ocupaba
+ * un asiento de otro equipo pasa a este y pide stock acá.
  */
 export async function asignarAlGrupo(
   organizationId: string,
   cohortId: string,
   softwareId: string,
+  teamId: string,
   expiresAt: Date | null,
   userId: string
 ): Promise<GroupLicenseResult<{ asignadas: number; convertidas: number }>> {
@@ -252,9 +273,19 @@ export async function asignarAlGrupo(
   if (!cohorte) {
     return { ok: false, status: 404, code: "not_found", message: "Grupo no encontrado" };
   }
-  // En fila con cualquier otra asignación del mismo programa, ANTES de leer el
-  // stock y de mirar si ya está: dos clics seguidos no asignan dos veces.
-  await bloquearStock(organizationId, [softwareId]);
+  const equipo = await buscarEquipo(organizationId, teamId);
+  if (!equipo || equipo.archived) {
+    return {
+      ok: false,
+      status: 422,
+      code: "invalid_body",
+      message: equipo ? MENSAJE_EQUIPO_ARCHIVADO : MENSAJE_EQUIPO_INEXISTENTE,
+    };
+  }
+  // En fila con cualquier otra asignación del mismo programa en ese equipo,
+  // ANTES de leer el stock y de mirar si ya está: dos clics seguidos no
+  // asignan dos veces.
+  await bloquearStock(organizationId, [{ teamId, softwareId }]);
   const yaEsta = await softwareDelGrupo(organizationId, [cohortId]);
   if (yaEsta.some((g) => g.softwareId === softwareId)) {
     return {
@@ -265,7 +296,7 @@ export async function asignarAlGrupo(
     };
   }
 
-  const disponibilidad = await availableLicenses(organizationId, softwareId);
+  const disponibilidad = await availableLicenses(organizationId, softwareId, teamId);
   if (!disponibilidad) {
     return { ok: false, status: 422, code: "invalid_body", message: "Software inexistente" };
   }
@@ -274,6 +305,7 @@ export async function asignarAlGrupo(
   const licencias = await licenciasDe(db, organizationId, miembros, softwareId);
   const plan = planAsignarAlGrupo({
     softwareId,
+    teamId,
     miembros: miembros.map((enrollmentId) => ({
       enrollmentId,
       licencias: licencias.filter((l) => l.enrollmentId === enrollmentId),
@@ -286,7 +318,7 @@ export async function asignarAlGrupo(
       ok: false,
       status: 409,
       code: "no_stock",
-      message: mensajeFaltanLicencias(disponibilidad.softwareName, plan),
+      message: mensajeFaltanLicencias(`${disponibilidad.softwareName} (${equipo.name})`, plan),
     };
   }
 
@@ -297,6 +329,7 @@ export async function asignarAlGrupo(
     organizationId,
     cohortId,
     softwareId,
+    teamId,
     expiresAt,
     createdBy: userId,
   });
@@ -313,7 +346,7 @@ export async function asignarAlGrupo(
   if (plan.reactivar.length > 0) {
     await db
       .update(schema.license)
-      .set({ assigned: true, assignedAt: ahora, source: "grupo", expiresAt })
+      .set({ assigned: true, assignedAt: ahora, source: "grupo", expiresAt, teamId })
       .where(
         scoped(schema.license.organizationId, organizationId, inArray(schema.license.id, plan.reactivar))
       );
@@ -325,6 +358,7 @@ export async function asignarAlGrupo(
         organizationId,
         enrollmentId,
         softwareId,
+        teamId,
         assigned: true,
         assignedAt: ahora,
         expiresAt,
@@ -470,11 +504,20 @@ export async function sincronizarLicenciasDelGrupo(
     return { sinStock: [] };
   }
 
-  const programas = [...new Set(grupos.map((g) => g.softwareId))];
-  await bloquearStock(organizationId, programas);
+  // 0087 — El stock es del equipo de cada programa del grupo: dos cohortes
+  // pueden usar el mismo programa desde equipos distintos.
+  const stocks = [
+    ...new Map(
+      grupos.map((g) => [claveDeStock(g.teamId, g.softwareId), { teamId: g.teamId, softwareId: g.softwareId }])
+    ).values(),
+  ];
+  await bloquearStock(organizationId, stocks);
   const libres = new Map<string, number>();
-  for (const id of programas) {
-    libres.set(id, (await availableLicenses(organizationId, id))?.available ?? 0);
+  for (const s of stocks) {
+    libres.set(
+      claveDeStock(s.teamId, s.softwareId),
+      (await availableLicenses(organizationId, s.softwareId, s.teamId))?.available ?? 0
+    );
   }
 
   const sinStock: { enrollmentId: string; softwareId: string }[] = [];
@@ -484,9 +527,11 @@ export async function sincronizarLicenciasDelGrupo(
     const fechas = { startDate: i.startDate, endDate: i.endDate };
     const grupo = suyo.map((g) => ({
       softwareId: g.softwareId,
+      teamId: g.teamId,
       descuentaStock: descuentaStock(fechas, g.expiresAt),
       expiresAt: g.expiresAt,
     }));
+    const equipoDe = (softwareId: string) => grupo.find((g) => g.softwareId === softwareId)?.teamId;
     const plan = planSincronizarInscripcion({
       grupo,
       licencias: licencias.filter((l) => l.enrollmentId === i.id),
@@ -511,7 +556,13 @@ export async function sincronizarLicenciasDelGrupo(
     for (const r of plan.reactivar) {
       await db
         .update(schema.license)
-        .set({ assigned: true, assignedAt: ahora, source: "grupo", expiresAt: vence(r.softwareId) })
+        .set({
+          assigned: true,
+          assignedAt: ahora,
+          source: "grupo",
+          expiresAt: vence(r.softwareId),
+          teamId: equipoDe(r.softwareId),
+        })
         .where(scoped(schema.license.organizationId, organizationId, eq(schema.license.id, r.id)));
     }
     if (plan.insertar.length > 0) {
@@ -521,6 +572,7 @@ export async function sincronizarLicenciasDelGrupo(
           organizationId,
           enrollmentId: i.id,
           softwareId,
+          teamId: equipoDe(softwareId)!,
           assigned: true,
           assignedAt: ahora,
           expiresAt: vence(softwareId),
@@ -534,7 +586,10 @@ export async function sincronizarLicenciasDelGrupo(
         g.descuentaStock &&
         (plan.insertar.includes(g.softwareId) ||
           plan.reactivar.some((r) => r.softwareId === g.softwareId));
-      if (tomo) libres.set(g.softwareId, (libres.get(g.softwareId) ?? 0) - 1);
+      if (tomo) {
+        const clave = claveDeStock(g.teamId, g.softwareId);
+        libres.set(clave, (libres.get(clave) ?? 0) - 1);
+      }
     }
     for (const softwareId of plan.sinStock) sinStock.push({ enrollmentId: i.id, softwareId });
   }

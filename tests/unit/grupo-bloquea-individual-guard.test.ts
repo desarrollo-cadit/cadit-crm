@@ -58,8 +58,13 @@ describe("licencias (FR-008)", () => {
     expect(ruta.match(/apiError\(result\.status/g)?.length).toBe(2);
   });
 
-  it("nadie más escribe `license`: sólo licenses.ts y group-licenses.ts", () => {
-    const permitidos = new Set(["src/server/licenses.ts", "src/server/group-licenses.ts"]);
+  it("nadie más escribe `license`: sólo licenses.ts, group-licenses.ts y license-teams.ts", () => {
+    // 0087/0088 — license-teams.ts sólo MUEVE licencias de equipo (con el candado de stock de los dos).
+    const permitidos = new Set([
+      "src/server/licenses.ts",
+      "src/server/group-licenses.ts",
+      "src/server/license-teams.ts",
+    ]);
     const escriben = SRC.filter((f) =>
       /\.(insert|update|delete)\(schema\.license\)/.test(readFileSync(f, "utf8"))
     ).map(rel);

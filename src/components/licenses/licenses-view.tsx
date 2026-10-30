@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, KeyRound, Pencil, Plus } from "lucide-react";
+import { AlertTriangle, ArrowRightLeft, KeyRound, Pencil, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,8 +17,22 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ConfirmSendDialog } from "@/components/cohorts/confirm-send-dialog";
+import {
+  MoverLicenciaDialog,
+  MoverProgramaDialog,
+  type DestinoDeEquipo,
+} from "@/components/licenses/move-dialogs";
+import { ConciliacionTab } from "@/components/licenses/conciliacion-tab";
 import { SoftwareForm } from "@/components/licenses/software-form";
-import { filtrarFilas, type EstadoDeLicencia, type FilaDeLicenciaVista } from "@/lib/license-view";
+import { usePestanaEnUrl } from "@/components/use-pestana-en-url";
+import type { PestanaLicencias } from "@/lib/pestanas";
+import { TeamForm, type EquipoEditable } from "@/components/licenses/team-form";
+import {
+  filtrarFilas,
+  type EstadoDeLicencia,
+  type FilaDeLicenciaVista,
+  type TitularDeLicencia,
+} from "@/lib/license-view";
 import type { LicenseSource } from "@/lib/license-source";
 import type { VistaDeLicenciasDto } from "@/server/license-view";
 import type { SoftwareDto } from "@/lib/types";
@@ -70,19 +84,47 @@ const vence = (iso: string | null) => {
  * 2026-10-26 — Desasignar es `canManage` (`licencias.gestionar`, la de
  * `DELETE /api/enrollments/[id]/license`): asignar y quitar licencias es de
  * soporte. Sin ella, la fila se ve sin botón.
+ *
+ * 0087 — El stock es POR EQUIPO (Uruguay ATC, Paraguay ATC…), tal como se ve
+ * en Autodesk: arriba, cada equipo con el cupo, lo ocupado y lo libre de cada
+ * programa; el total del programa es la suma de los equipos. Crear equipos y
+ * cargar su cupo es `canEdit` (`academico.editar`). La lista de quién tiene
+ * cada licencia se filtra por equipo y dice de cuál sale cada una.
+ *
+ * 0088 — Un programa se puede MOVER de equipo con su cupo y sus licencias
+ * (`canEdit`), y una licencia suelta cambiar de equipo (`canManage`). Los
+ * profesores también tienen licencia: la lista se filtra por Alumnos /
+ * Profesores y la fila de un profesor lleva a su pestaña de Académico.
+ *
+ * 0089 — La pestaña «Conciliación» compara cada equipo con el Excel de usuarios
+ * de Autodesk (`?tab=conciliacion`). Lo que Autodesk tiene ocupado y el campus
+ * no cuenta ya resta de lo libre de cada equipo.
  */
 export function LicensesView({
   canEdit,
   canManage,
+  initialTab = "programas",
 }: {
   canEdit: boolean;
   canManage: boolean;
+  initialTab?: PestanaLicencias;
 }) {
+  const [tab, setTab] = usePestanaEnUrl<PestanaLicencias>(initialTab);
   const [data, setData] = useState<VistaDeLicenciasDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [elegido, setElegido] = useState<string | null>(null);
   const [cohorte, setCohorte] = useState("");
   const [origen, setOrigen] = useState<"" | LicenseSource>("");
+  const [equipoFiltro, setEquipoFiltro] = useState("");
+  const [titularFiltro, setTitularFiltro] = useState<"" | TitularDeLicencia>("");
+  const [moverPrograma, setMoverPrograma] = useState<{
+    softwareId: string;
+    teamId: string;
+  } | null>(null);
+  const [moverLicencia, setMoverLicencia] = useState<FilaDeLicenciaVista | null>(null);
+  const [teamForm, setTeamForm] = useState<{ mode: "create" } | { mode: "edit"; team: EquipoEditable } | null>(
+    null
+  );
   const [q, setQ] = useState("");
   const [desasignar, setDesasignar] = useState<FilaDeLicenciaVista | null>(null);
   const [busy, setBusy] = useState(false);
@@ -111,8 +153,17 @@ export function LicensesView({
 
   const programa = data?.programas.find((p) => p.softwareId === elegido) ?? data?.programas[0] ?? null;
   const filas = useMemo(
-    () => (programa ? filtrarFilas(programa.filas, { cohortId: cohorte, source: origen || null, q }) : []),
-    [programa, cohorte, origen, q]
+    () =>
+      programa
+        ? filtrarFilas(programa.filas, {
+            cohortId: cohorte,
+            source: origen || null,
+            teamId: equipoFiltro,
+            titular: titularFiltro || null,
+            q,
+          })
+        : [],
+    [programa, cohorte, origen, equipoFiltro, titularFiltro, q]
   );
   const faltantes = useMemo(
     () =>
@@ -124,13 +175,35 @@ export function LicensesView({
         : [],
     [programa, cohorte, origen, q]
   );
+  const nombreDeEquipo = (id: string) => data?.equipos.find((e) => e.id === id)?.name ?? "—";
+
+  /** Los equipos activos distintos de `excluirId`, con el cupo y lo libre de este programa. */
+  const destinosDe = (softwareId: string, excluirId: string): DestinoDeEquipo[] => {
+    const p = data?.programas.find((x) => x.softwareId === softwareId);
+    return (data?.equipos ?? [])
+      .filter((e) => !e.archived && e.id !== excluirId)
+      .map((e) => {
+        const c = p?.porEquipo.find((x) => x.teamId === e.id);
+        return { id: e.id, name: e.name, total: c?.total ?? 0, libres: c?.libres ?? 0 };
+      });
+  };
+
+  /** El cupo de cada programa en un equipo, para el formulario de cupos. */
+  const cuposDe = (teamId: string | null) =>
+    (data?.programas ?? []).map((p) => {
+      const c = teamId ? p.porEquipo.find((x) => x.teamId === teamId) : null;
+      return { softwareId: p.softwareId, name: p.name, total: c?.total ?? 0, ocupadas: c?.asignadas ?? 0 };
+    });
 
   async function confirmarDesasignar(f: FilaDeLicenciaVista) {
     setBusy(true);
-    const res = await fetch(
-      `/api/enrollments/${f.enrollmentId}/license?softwareId=${encodeURIComponent(f.softwareId)}`,
-      { method: "DELETE" }
-    ).catch(() => null);
+    // 0088 — La licencia de un profesor se libera por su propia ruta.
+    const base = f.teacherId
+      ? `/api/teachers/${f.teacherId}/license`
+      : `/api/enrollments/${f.enrollmentId}/license`;
+    const res = await fetch(`${base}?softwareId=${encodeURIComponent(f.softwareId)}`, {
+      method: "DELETE",
+    }).catch(() => null);
     setBusy(false);
     setDesasignar(null);
     if (!res?.ok) {
@@ -152,12 +225,46 @@ export function LicensesView({
           </p>
         </div>
         {canEdit && data && data.programas.length > 0 && (
-          <Button size="sm" onClick={() => setForm({ mode: "create" })}>
-            <Plus className="h-4 w-4" aria-hidden /> Nuevo programa
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => setTeamForm({ mode: "create" })}>
+              <Plus className="h-4 w-4" aria-hidden /> Nuevo equipo
+            </Button>
+            <Button size="sm" onClick={() => setForm({ mode: "create" })}>
+              <Plus className="h-4 w-4" aria-hidden /> Nuevo programa
+            </Button>
+          </div>
         )}
       </header>
 
+      <div className="border-b px-4 py-2.5 sm:px-6">
+        <div className="inline-flex gap-1 rounded-lg bg-secondary p-1" role="group" aria-label="Secciones de licencias">
+          {(
+            [
+              { key: "programas", label: "Programas" },
+              { key: "conciliacion", label: "Conciliación con Autodesk" },
+            ] as const
+          ).map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              aria-pressed={tab === t.key}
+              className={cn(
+                "rounded-md px-3.5 py-1.5 text-xs font-medium transition-colors",
+                tab === t.key ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+              )}
+              onClick={() => setTab(t.key)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {tab === "conciliacion" ? (
+        <div className="flex-1 overflow-y-auto p-6">
+          <ConciliacionTab canManage={canManage} />
+        </div>
+      ) : (
       <div className="flex-1 space-y-4 overflow-y-auto p-6">
         {error && (
           <p role="alert" className="text-sm text-danger">
@@ -195,6 +302,120 @@ export function LicensesView({
           </div>
         ) : (
           <>
+            <section className="space-y-3" aria-label="Equipos de licencias">
+              {data.equipos.length === 0 ? (
+                <div
+                  role="status"
+                  className="rounded-lg border border-dashed bg-card p-4 text-sm text-muted-foreground"
+                >
+                  <p className="font-medium text-foreground">Todavía no hay equipos de licencias</p>
+                  <p className="mt-1">
+                    Un equipo es el que figura en Autodesk (por ejemplo Uruguay ATC o Paraguay ATC),
+                    con su propio cupo de cada programa. Sin equipos no se pueden asignar licencias.
+                  </p>
+                  {canEdit && (
+                    <Button size="sm" className="mt-3" onClick={() => setTeamForm({ mode: "create" })}>
+                      <Plus className="h-4 w-4" aria-hidden /> Nuevo equipo
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {data.equipos.map((e) => {
+                    const cupos = data.programas.flatMap((p) => {
+                      const c = p.porEquipo.find((x) => x.teamId === e.id);
+                      return c ? [{ programa: p.name, softwareId: p.softwareId, ...c }] : [];
+                    });
+                    return (
+                      <div
+                        key={e.id}
+                        className={cn("rounded-lg border bg-card", e.archived && "opacity-70")}
+                      >
+                        <div className="flex items-center gap-2 border-b px-3 py-2">
+                          <h2 className="font-semibold">{e.name}</h2>
+                          {e.autodeskAlias && (
+                            <span className="text-xs text-muted-foreground">en Autodesk: {e.autodeskAlias}</span>
+                          )}
+                          {e.archived && <Badge variant="secondary">Archivado</Badge>}
+                          {e.importadoEn && (
+                            <span className="text-xs text-muted-foreground">
+                              Autodesk al {new Date(e.importadoEn).toLocaleDateString("es-UY", DIA_CORTO)}
+                            </span>
+                          )}
+                          {canEdit && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="ml-auto h-7"
+                              aria-label={`Editar el equipo ${e.name}`}
+                              onClick={() => setTeamForm({ mode: "edit", team: e })}
+                            >
+                              <Pencil className="h-3.5 w-3.5" aria-hidden /> Editar
+                            </Button>
+                          )}
+                        </div>
+                        {cupos.length === 0 ? (
+                          <p className="px-3 py-3 text-xs text-muted-foreground">
+                            Sin cupo cargado.
+                            {canEdit ? " Usá «Editar» para definir cuántas licencias tiene de cada programa." : ""}
+                          </p>
+                        ) : (
+                          <Table>
+                            <TableHeader className="bg-subtle">
+                              <TableRow>
+                                <TableHead>Programa</TableHead>
+                                <TableHead className="text-right">Cupo</TableHead>
+                                <TableHead className="text-right">Ocupadas</TableHead>
+                                <TableHead className="text-right">Libres</TableHead>
+                                {canEdit && <TableHead />}
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {cupos.map((c) => (
+                                <TableRow key={c.softwareId}>
+                                  <TableCell className="font-medium">{c.programa}</TableCell>
+                                  <TableCell className="text-right tabular-nums">{c.total}</TableCell>
+                                  <TableCell className="text-right tabular-nums">
+                                    {c.asignadas}
+                                    {c.externos > 0 && (
+                                      <span
+                                        className="ml-1 text-xs text-muted-foreground"
+                                        title="Asientos que Autodesk tiene ocupados y el campus no cuenta (última importación)"
+                                      >
+                                        +{c.externos} en Autodesk
+                                      </span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell
+                                    className={cn("text-right tabular-nums", c.libres <= 0 && "text-warning")}
+                                  >
+                                    {c.libres}
+                                  </TableCell>
+                                  {canEdit && (
+                                    <TableCell className="text-right">
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7"
+                                        aria-label={`Mover ${c.programa} de ${e.name} a otro equipo`}
+                                        onClick={() => setMoverPrograma({ softwareId: c.softwareId, teamId: e.id })}
+                                      >
+                                        <ArrowRightLeft className="h-3.5 w-3.5" aria-hidden /> Mover
+                                      </Button>
+                                    </TableCell>
+                                  )}
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
             <div className="rounded-lg border">
               <Table>
                 <TableHeader className="bg-subtle">
@@ -264,7 +485,6 @@ export function LicensesView({
                                 software: {
                                   id: p.softwareId,
                                   name: p.name,
-                                  totalLicenses: p.total,
                                   hasPhoto: p.hasPhoto,
                                 },
                               })
@@ -299,6 +519,29 @@ export function LicensesView({
                   </Select>
                   <Select
                     className="h-8 w-auto text-xs"
+                    aria-label="Filtrar por equipo"
+                    value={equipoFiltro}
+                    onChange={(ev) => setEquipoFiltro(ev.target.value)}
+                  >
+                    <option value="">Todos los equipos</option>
+                    {data.equipos.map((e) => (
+                      <option key={e.id} value={e.id}>
+                        {e.name}
+                      </option>
+                    ))}
+                  </Select>
+                  <Select
+                    className="h-8 w-auto text-xs"
+                    aria-label="Filtrar por alumnos o profesores"
+                    value={titularFiltro}
+                    onChange={(ev) => setTitularFiltro(ev.target.value as "" | TitularDeLicencia)}
+                  >
+                    <option value="">Alumnos y profesores</option>
+                    <option value="alumno">Alumnos</option>
+                    <option value="profesor">Profesores</option>
+                  </Select>
+                  <Select
+                    className="h-8 w-auto text-xs"
                     aria-label="Filtrar por origen"
                     value={origen}
                     onChange={(ev) => setOrigen(ev.target.value as "" | LicenseSource)}
@@ -310,8 +553,8 @@ export function LicensesView({
                   <Input
                     className="h-8 w-48 text-xs"
                     type="search"
-                    placeholder="Buscar alumno…"
-                    aria-label="Buscar alumno"
+                    placeholder="Buscar alumno o profesor…"
+                    aria-label="Buscar alumno o profesor"
                     value={q}
                     onChange={(ev) => setQ(ev.target.value)}
                   />
@@ -340,8 +583,9 @@ export function LicensesView({
                       ))}
                     </ul>
                     <p className="mt-1.5 text-muted-foreground">
-                      Reciben la licencia cuando haya stock: liberá alguna o subí el total con
-                      «Editar» en este programa, y volvé a asignar el programa desde el grupo.
+                      Reciben la licencia cuando haya stock: liberá alguna o subí el cupo del
+                      equipo con «Editar» en el equipo del grupo, y volvé a asignar el programa
+                      desde el grupo.
                     </p>
                   </div>
                 )}
@@ -357,8 +601,9 @@ export function LicensesView({
                     <Table>
                       <TableHeader className="bg-subtle">
                         <TableRow>
-                          <TableHead>Alumno</TableHead>
+                          <TableHead>Alumno o profesor</TableHead>
                           <TableHead>Grupo</TableHead>
+                          <TableHead>Equipo</TableHead>
                           <TableHead>Origen</TableHead>
                           <TableHead>Asignada</TableHead>
                           <TableHead>Vence</TableHead>
@@ -370,12 +615,25 @@ export function LicensesView({
                         {filas.map((f) => (
                           <TableRow key={f.licenseId}>
                             <TableCell className="font-medium">
-                              <Link
-                                href={`/contacts/${f.contactId}/legajo`}
-                                className="underline decoration-dotted underline-offset-2 hover:decoration-solid"
-                              >
-                                {f.contactName}
-                              </Link>
+                              {f.titular === "profesor" ? (
+                                <>
+                                  {/* Un profesor no tiene legajo: lleva a su pestaña de Académico. */}
+                                  <Link
+                                    href="/academico?tab=profesores"
+                                    className="underline decoration-dotted underline-offset-2 hover:decoration-solid"
+                                  >
+                                    {f.contactName}
+                                  </Link>{" "}
+                                  <Badge variant="outline">Profesor</Badge>
+                                </>
+                              ) : (
+                                <Link
+                                  href={`/contacts/${f.contactId}/legajo`}
+                                  className="underline decoration-dotted underline-offset-2 hover:decoration-solid"
+                                >
+                                  {f.contactName}
+                                </Link>
+                              )}
                               {/* 2026-10-21 — Solo viaja con contactos.ver. */}
                               {f.licenseEmail && (
                                 <div className="mt-0.5 font-normal">
@@ -392,6 +650,7 @@ export function LicensesView({
                                 <span className="text-muted-foreground">sin grupo</span>
                               )}
                             </TableCell>
+                            <TableCell className="text-xs">{nombreDeEquipo(f.teamId)}</TableCell>
                             <TableCell className="text-xs">{ORIGEN[f.source]}</TableCell>
                             <TableCell className="text-xs tabular-nums">{fecha(f.assignedAt)}</TableCell>
                             <TableCell className="text-xs tabular-nums">{vence(f.expiresAt)}</TableCell>
@@ -412,14 +671,25 @@ export function LicensesView({
                                   <span className="text-muted-foreground">Se quita desde el grupo</span>
                                 )
                               ) : canManage ? (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-7"
-                                  onClick={() => setDesasignar(f)}
-                                >
-                                  Desasignar
-                                </Button>
+                                <div className="flex justify-end gap-1.5">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7"
+                                    aria-label={`Cambiar de equipo la licencia de ${f.contactName}`}
+                                    onClick={() => setMoverLicencia(f)}
+                                  >
+                                    <ArrowRightLeft className="h-3.5 w-3.5" aria-hidden /> Equipo
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7"
+                                    onClick={() => setDesasignar(f)}
+                                  >
+                                    Desasignar
+                                  </Button>
+                                </div>
                               ) : null}
                             </TableCell>
                           </TableRow>
@@ -433,6 +703,7 @@ export function LicensesView({
           </>
         )}
       </div>
+      )}
 
       {form && (
         <SoftwareForm
@@ -441,6 +712,58 @@ export function LicensesView({
           onSaved={() => {
             setForm(null);
             setFotoVersion((v) => v + 1);
+            void refetch();
+          }}
+        />
+      )}
+
+      {teamForm && (
+        <TeamForm
+          initial={teamForm.mode === "edit" ? teamForm.team : null}
+          cupos={cuposDe(teamForm.mode === "edit" ? teamForm.team.id : null)}
+          onClose={() => setTeamForm(null)}
+          onSaved={() => {
+            setTeamForm(null);
+            void refetch();
+          }}
+        />
+      )}
+
+      {moverPrograma &&
+        (() => {
+          const p = data?.programas.find((x) => x.softwareId === moverPrograma.softwareId);
+          const origenEquipo = data?.equipos.find((e) => e.id === moverPrograma.teamId);
+          const cupo = p?.porEquipo.find((x) => x.teamId === moverPrograma.teamId);
+          if (!p || !origenEquipo) return null;
+          return (
+            <MoverProgramaDialog
+              programa={{ softwareId: p.softwareId, name: p.name }}
+              origen={{
+                id: origenEquipo.id,
+                name: origenEquipo.name,
+                total: cupo?.total ?? 0,
+                asignadas: cupo?.asignadas ?? 0,
+              }}
+              destinos={destinosDe(p.softwareId, origenEquipo.id)}
+              onClose={() => setMoverPrograma(null)}
+              onMoved={() => {
+                setMoverPrograma(null);
+                void refetch();
+              }}
+            />
+          );
+        })()}
+
+      {moverLicencia && (
+        <MoverLicenciaDialog
+          licenseId={moverLicencia.licenseId}
+          titular={moverLicencia.contactName}
+          programa={programa?.name ?? "El programa"}
+          equipoActual={nombreDeEquipo(moverLicencia.teamId)}
+          destinos={destinosDe(moverLicencia.softwareId, moverLicencia.teamId)}
+          onClose={() => setMoverLicencia(null)}
+          onMoved={() => {
+            setMoverLicencia(null);
             void refetch();
           }}
         />

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   armarVistaDeLicencias,
   estadoDeLicencia,
+  estadoDeLicenciaDeProfesor,
   faltantesDelGrupo,
   filtrarFilas,
   type FilaDeLicenciaVista,
@@ -21,7 +22,10 @@ const DESPUES = new Date("2027-06-30T00:00:00.000Z");
 const fila = (over: Partial<FilaDeLicenciaVista>): FilaDeLicenciaVista => ({
   licenseId: "lic_1",
   enrollmentId: "enr_1",
+  teacherId: null,
+  titular: "alumno",
   softwareId: "sw_revit",
+  teamId: "team_uy",
   contactId: "ct_1",
   contactName: "Ana Pérez",
   cohortId: "coh_1",
@@ -119,6 +123,51 @@ describe("armarVistaDeLicencias (FR-013)", () => {
   });
 });
 
+describe("0087 — la vista por equipo", () => {
+  it("cada programa lleva su cupo, asignadas y libres POR EQUIPO", () => {
+    const [p] = armarVistaDeLicencias(
+      [{ id: "sw_revit", name: "Revit", total: 110 }],
+      [
+        fila({ licenseId: "a", teamId: "team_uy" }),
+        fila({ licenseId: "b", teamId: "team_uy" }),
+        fila({ licenseId: "c", teamId: "team_py" }),
+        // Una vencida del equipo de Uruguay no ocupa.
+        fila({ licenseId: "d", teamId: "team_uy", estado: "vencida" }),
+      ],
+      [],
+      [
+        { teamId: "team_uy", softwareId: "sw_revit", total: 50 },
+        { teamId: "team_py", softwareId: "sw_revit", total: 60 },
+      ]
+    );
+    expect(p!.porEquipo).toEqual([
+      { teamId: "team_uy", total: 50, asignadas: 2, externos: 0, libres: 48 },
+      { teamId: "team_py", total: 60, asignadas: 1, externos: 0, libres: 59 },
+    ]);
+    // El total del programa sigue siendo la suma de los equipos.
+    expect([p!.total, p!.asignadas, p!.libres]).toEqual([110, 3, 107]);
+  });
+
+  it("el cupo de otro programa no se cuela en este", () => {
+    const [p] = armarVistaDeLicencias(
+      [{ id: "sw_revit", name: "Revit", total: 5 }],
+      [],
+      [],
+      [{ teamId: "team_uy", softwareId: "sw_navis", total: 9 }]
+    );
+    expect(p!.porEquipo).toEqual([]);
+  });
+
+  it("filtrarFilas por equipo", () => {
+    const filas = [
+      fila({ licenseId: "a", teamId: "team_uy" }),
+      fila({ licenseId: "b", teamId: "team_py" }),
+    ];
+    expect(filtrarFilas(filas, { teamId: "team_py" }).map((f) => f.licenseId)).toEqual(["b"]);
+    expect(filtrarFilas(filas, {})).toHaveLength(2);
+  });
+});
+
 describe("faltantesDelGrupo (FR-004/FR-016)", () => {
   it("miembro de un grupo con el programa y sin licencia asignada = faltante", () => {
     const out = faltantesDelGrupo(
@@ -174,5 +223,55 @@ describe("filtrarFilas (FR-014)", () => {
 
   it("los filtros se combinan", () => {
     expect(filtrarFilas(filas, { source: "individual", q: "ana" })).toEqual([]);
+  });
+});
+
+describe("licencias de profesores (0088)", () => {
+  const profesor = fila({
+    licenseId: "prof_1",
+    enrollmentId: null,
+    teacherId: "tch_1",
+    titular: "profesor",
+    contactId: null,
+    contactName: "Marcos Díaz",
+    cohortId: null,
+    cohortName: null,
+  });
+
+  it("un profesor no tiene cohorte: en uso mientras no venza, nunca \"curso terminado\"", () => {
+    expect(estadoDeLicenciaDeProfesor({ expiresAt: null }, HOY)).toBe("en_uso");
+    expect(estadoDeLicenciaDeProfesor({ expiresAt: DESPUES }, HOY)).toBe("en_uso");
+    expect(estadoDeLicenciaDeProfesor({ expiresAt: ANTES }, HOY)).toBe("vencida");
+  });
+
+  it("cuenta en el cupo de su equipo junto a los alumnos", () => {
+    const [p] = armarVistaDeLicencias(
+      [{ id: "sw_revit", name: "Revit", total: 3 }],
+      [fila({ licenseId: "a" }), profesor],
+      [],
+      [{ teamId: "team_uy", softwareId: "sw_revit", total: 3 }]
+    );
+    expect(p).toMatchObject({ asignadas: 2, externos: 0, libres: 1 });
+    expect(p!.porEquipo[0]).toMatchObject({ asignadas: 2, externos: 0, libres: 1 });
+  });
+
+  it("filtra por Alumnos / Profesores", () => {
+    const filas = [fila({ licenseId: "a" }), profesor];
+    expect(filtrarFilas(filas, { titular: "profesor" }).map((f) => f.licenseId)).toEqual(["prof_1"]);
+    expect(filtrarFilas(filas, { titular: "alumno" }).map((f) => f.licenseId)).toEqual(["a"]);
+    expect(filtrarFilas(filas, { titular: null })).toHaveLength(2);
+  });
+
+  it("la búsqueda encuentra al profesor por su nombre", () => {
+    expect(filtrarFilas([profesor], { q: "diaz" })).toHaveLength(1);
+  });
+
+  it("el profesor no figura como faltante del grupo (no tiene inscripción)", () => {
+    const out = faltantesDelGrupo(
+      [{ cohortId: "coh_1", softwareId: "sw_revit" }],
+      [{ enrollmentId: "enr_1", cohortId: "coh_1", contactId: "ct_1", contactName: "Ana", cohortName: "C1" }],
+      [profesor]
+    );
+    expect(out).toHaveLength(1);
   });
 });

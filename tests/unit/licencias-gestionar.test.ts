@@ -86,7 +86,8 @@ describe("licencias.gestionar — la pantalla", () => {
     expect(page).toMatch(/canEdit=\{caps\.includes\("academico\.editar"\)\}/);
     expect(page).toMatch(/canManage=\{caps\.includes\("licencias\.gestionar"\)\}/);
     const vista = leer("src/components/licenses/licenses-view.tsx");
-    expect(vista).toMatch(/\) : canManage \? \(\s*<Button[\s\S]*?Desasignar/);
+    // 0088 — Junto a Desasignar hay un «Equipo» (cambiar de equipo): los dos son de canManage.
+    expect(vista).toMatch(/\) : canManage \? \(\s*<div[^>]*>\s*<Button[\s\S]*?Desasignar/);
   });
 
   it("/settings/roles la muestra (rótulo y grupo Académico)", () => {

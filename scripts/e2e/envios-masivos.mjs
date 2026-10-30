@@ -92,10 +92,13 @@ export async function seccionEnviosMasivos({ api, ok, BASE }) {
       body: JSON.stringify({ name: `Masivo lic ${sello}`, totalLicenses: 5 }),
     })
   ).json?.software?.id;
+  // 0087 — El cupo es de un equipo de licencias: el alta con `totalLicenses`
+  // lo deja en el equipo por defecto, y cada asignación nombra el equipo.
+  const equipoId = (await api("/api/license-teams")).json?.teams?.[0]?.id;
   for (const enr of [enrA, enrB, enrC]) {
     const r = await api(`/api/enrollments/${enr}/license`, {
       method: "PUT",
-      body: JSON.stringify({ softwareId: swMasivo }),
+      body: JSON.stringify({ softwareId: swMasivo, teamId: equipoId }),
     });
     ok("setup: licencia asignada", r.res.status === 200, `${r.res.status} ${JSON.stringify(r.json)}`);
   }
@@ -338,7 +341,7 @@ export async function seccionEnviosMasivos({ api, ok, BASE }) {
   const asignar = (enrollmentId, softwareId) =>
     api(`/api/enrollments/${enrollmentId}/license`, {
       method: "PUT",
-      body: JSON.stringify({ softwareId }),
+      body: JSON.stringify({ softwareId, teamId: equipoId }),
     });
   const asignadaUno = await asignar(uno.hijas[modRevit], swRevit);
   ok("asignar Revit en el módulo de Uno responde 200", asignadaUno.res.ok, `${asignadaUno.res.status}`);

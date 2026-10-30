@@ -123,6 +123,14 @@ const prefixes = {
   assessmentNotice: "asn",
   /** 0086 — el resultado final de una cursada, confirmado por una persona. */
   enrollmentFinalResult: "efr",
+  /** 0087 — equipo de licencias (un equipo de Autodesk con su propio cupo). */
+  licenseTeam: "ltm",
+  /** 0089 — importaciones de usuarios de Autodesk, alias de correo, decisiones y tareas pendientes en Autodesk. */
+  licenseImportBatch: "lib",
+  licenseImportRow: "lir",
+  licenseEmailAlias: "lea",
+  licenseCaseResolution: "lcr",
+  licenseAutodeskTask: "lat",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

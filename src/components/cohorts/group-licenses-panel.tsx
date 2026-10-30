@@ -7,6 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { ConfirmSendDialog } from "@/components/cohorts/confirm-send-dialog";
+import {
+  equipoInicial,
+  TeamSelect,
+  useEquiposDeLicencias,
+} from "@/components/licenses/team-select";
 import { notify } from "@/lib/notify";
 import { ACADEMY_TIME_ZONE, ultimoDiaDelPlazo } from "@/lib/schedule-time";
 import { formatCalendarDay } from "@/lib/utils";
@@ -37,6 +42,10 @@ function diaDeVencimiento(iso: string): string {
  *
  * El faltante (alguien que se inscribió sin stock) se ve acá, en la fila de
  * cada alumno y en la vista de Licencias (FR-004/FR-016).
+ *
+ * 0087 — Al asignar un programa al grupo se elige UNA vez el equipo de
+ * licencias del que salen todas; queda guardado con el programa y las altas
+ * posteriores lo reusan.
  */
 export function GroupLicensesPanel({
   cohortId,
@@ -54,6 +63,8 @@ export function GroupLicensesPanel({
   const [catalogo, setCatalogo] = useState<Programa[]>([]);
   const [elegido, setElegido] = useState("");
   const [vence, setVence] = useState("");
+  const [teamId, setTeamId] = useState("");
+  const { equipos, recargar: recargarEquipos } = useEquiposDeLicencias(canEdit);
   const [confirmar, setConfirmar] = useState<
     { kind: "asignar"; programa: Programa } | { kind: "quitar"; programa: GroupLicenseDto } | null
   >(null);
@@ -80,6 +91,12 @@ export function GroupLicensesPanel({
     })();
   }, [canEdit]);
 
+  // El equipo arranca en el último que usó esta persona con cupo del programa
+  // elegido; si ese programa cambia, vuelve a proponerse.
+  useEffect(() => {
+    if (equipos && elegido) setTeamId(equipoInicial(equipos, elegido));
+  }, [equipos, elegido]);
+
   async function leerError(res: Response | null, porDefecto: string) {
     const body = (await res?.json().catch(() => null)) as { error?: { message?: string } } | null;
     return body?.error?.message ?? porDefecto;
@@ -90,10 +107,11 @@ export function GroupLicensesPanel({
     const res = await fetch(`/api/cohorts/${cohortId}/group-licenses`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ softwareId: programa.id, expiresAt: vence || null }),
+      body: JSON.stringify({ softwareId: programa.id, teamId, expiresAt: vence || null }),
     }).catch(() => null);
     setBusy(false);
     setConfirmar(null);
+    void recargarEquipos();
     if (!res?.ok) {
       notify.error(await leerError(res, "No se pudo asignar al grupo"));
     } else {
@@ -119,6 +137,7 @@ export function GroupLicensesPanel({
     ).catch(() => null);
     setBusy(false);
     setConfirmar(null);
+    void recargarEquipos();
     if (!res?.ok) notify.error(await leerError(res, "No se pudo quitar del grupo"));
     else {
       const data = (await res.json()) as { liberadas: number };
@@ -146,6 +165,7 @@ export function GroupLicensesPanel({
             className="flex items-center gap-1 rounded-full border bg-subtle px-2 py-0.5 text-foreground"
           >
             {p.name}
+            <span className="text-muted-foreground">· {p.teamName}</span>
             {p.expiresAt && (
               <span className="text-muted-foreground">
                 · vence {diaDeVencimiento(p.expiresAt)}
@@ -184,8 +204,20 @@ export function GroupLicensesPanel({
                 </option>
               ))}
             </Select>
-            {elegido && (
+            {elegido && equipos && equipos.length === 0 && (
+              <span className="text-muted-foreground">
+                Creá un equipo de licencias en Licencias para poder asignar.
+              </span>
+            )}
+            {elegido && equipos && equipos.length > 0 && (
               <>
+                <TeamSelect
+                  equipos={equipos}
+                  softwareId={elegido}
+                  value={teamId}
+                  onChange={setTeamId}
+                  label="Equipo de licencias para todo el grupo"
+                />
                 <label className="flex items-center gap-1 text-muted-foreground">
                   vence (opcional)
                   <Input
@@ -198,6 +230,7 @@ export function GroupLicensesPanel({
                 <Button
                   size="sm"
                   className="h-7"
+                  disabled={!teamId}
                   onClick={() => {
                     const programa = libres.find((s) => s.id === elegido);
                     if (programa) setConfirmar({ kind: "asignar", programa });
@@ -227,7 +260,8 @@ export function GroupLicensesPanel({
           onConfirm={() => void asignar(confirmar.programa)}
         >
           <p className="text-foreground">
-            Cada alumno activo del grupo recibe una licencia y el stock baja en esa cantidad. Si
+            Cada alumno activo del grupo recibe una licencia y el stock de{" "}
+            {equipos?.find((e) => e.id === teamId)?.name ?? "ese equipo"} baja en esa cantidad. Si
             no alcanza para todos, no se asigna ninguna.
           </p>
           <p>

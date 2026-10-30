@@ -47,7 +47,7 @@ export function ConfirmSendDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="w-full max-w-md rounded-lg border bg-card p-5 shadow-xl"
+        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg border bg-card p-5 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <h3 id={titleId} className="mb-2 font-semibold">

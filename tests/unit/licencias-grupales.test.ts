@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { claveDeStock } from "@/lib/license-team";
 import {
   cuentaParaLicenciasDelGrupo,
   licenciaDelGrupoBloquea,
@@ -15,9 +16,18 @@ import {
  * Sin base: el server les da filas y escribe lo que deciden.
  */
 
-const individual = (id: string, softwareId: string, ocupa = true): LicenciaExistente => ({
+const EQUIPO = "team_uy";
+const OTRO_EQUIPO = "team_py";
+
+const individual = (
+  id: string,
+  softwareId: string,
+  ocupa = true,
+  teamId = EQUIPO
+): LicenciaExistente => ({
   id,
   softwareId,
+  teamId,
   assigned: true,
   source: "individual",
   ocupa,
@@ -25,6 +35,7 @@ const individual = (id: string, softwareId: string, ocupa = true): LicenciaExist
 const delGrupo = (id: string, softwareId: string): LicenciaExistente => ({
   id,
   softwareId,
+  teamId: EQUIPO,
   assigned: true,
   source: "grupo",
   ocupa: true,
@@ -32,6 +43,7 @@ const delGrupo = (id: string, softwareId: string): LicenciaExistente => ({
 const liberada = (id: string, softwareId: string): LicenciaExistente => ({
   id,
   softwareId,
+  teamId: EQUIPO,
   assigned: false,
   source: "individual",
   ocupa: false,
@@ -44,6 +56,7 @@ describe("planAsignarAlGrupo (FR-002, todo o nada)", () => {
   it("16 alumnos y 20 libres: inserta las 16 y descuenta 16", () => {
     const plan = planAsignarAlGrupo({
       softwareId: "sw_revit",
+      teamId: EQUIPO,
       miembros: miembros(16),
       disponibles: 20,
       descuentaStock: true,
@@ -59,6 +72,7 @@ describe("planAsignarAlGrupo (FR-002, todo o nada)", () => {
   it("16 alumnos y 10 libres: no asigna ninguna y dice cuántas faltan", () => {
     const plan = planAsignarAlGrupo({
       softwareId: "sw_revit",
+      teamId: EQUIPO,
       miembros: miembros(16),
       disponibles: 10,
       descuentaStock: true,
@@ -69,6 +83,7 @@ describe("planAsignarAlGrupo (FR-002, todo o nada)", () => {
   it("stock negativo (se bajó el total) cuenta como cero libres", () => {
     const plan = planAsignarAlGrupo({
       softwareId: "sw_revit",
+      teamId: EQUIPO,
       miembros: miembros(2),
       disponibles: -3,
       descuentaStock: true,
@@ -79,6 +94,7 @@ describe("planAsignarAlGrupo (FR-002, todo o nada)", () => {
   it("FR-010 — la individual que ya ocupa se CONVIERTE: no se duplica ni descuenta otra vez", () => {
     const plan = planAsignarAlGrupo({
       softwareId: "sw_revit",
+      teamId: EQUIPO,
       miembros: [
         { enrollmentId: "enr_a", licencias: [individual("lic_a", "sw_revit")] },
         { enrollmentId: "enr_b", licencias: [individual("lic_b", "sw_navis")] },
@@ -98,6 +114,7 @@ describe("planAsignarAlGrupo (FR-002, todo o nada)", () => {
   it("una fila liberada del mismo programa se reactiva y sí descuenta", () => {
     const plan = planAsignarAlGrupo({
       softwareId: "sw_revit",
+      teamId: EQUIPO,
       miembros: [{ enrollmentId: "enr_a", licencias: [liberada("lic_a", "sw_revit")] }],
       disponibles: 0,
       descuentaStock: true,
@@ -108,6 +125,7 @@ describe("planAsignarAlGrupo (FR-002, todo o nada)", () => {
   it("una individual asignada pero VENCIDA no ocupa: se reactiva y descuenta", () => {
     const plan = planAsignarAlGrupo({
       softwareId: "sw_revit",
+      teamId: EQUIPO,
       miembros: [{ enrollmentId: "enr_a", licencias: [individual("lic_a", "sw_revit", false)] }],
       disponibles: 1,
       descuentaStock: true,
@@ -119,6 +137,7 @@ describe("planAsignarAlGrupo (FR-002, todo o nada)", () => {
   it("en una cohorte terminada nada descuenta: no hace falta stock", () => {
     const plan = planAsignarAlGrupo({
       softwareId: "sw_revit",
+      teamId: EQUIPO,
       miembros: miembros(3),
       disponibles: 0,
       descuentaStock: false,
@@ -130,6 +149,7 @@ describe("planAsignarAlGrupo (FR-002, todo o nada)", () => {
   it("un grupo vacío se puede asignar sin stock", () => {
     const plan = planAsignarAlGrupo({
       softwareId: "sw_revit",
+      teamId: EQUIPO,
       miembros: [],
       disponibles: 0,
       descuentaStock: true,
@@ -177,9 +197,9 @@ describe("planSincronizarInscripcion (FR-004/FR-006)", () => {
 
   it("inscripción nueva en una cohorte con Revit del grupo: lo recibe", () => {
     const plan = planSincronizarInscripcion({
-      grupo: [{ softwareId: "sw_revit", descuentaStock: true }],
+      grupo: [{ softwareId: "sw_revit", teamId: EQUIPO, descuentaStock: true }],
       licencias: [],
-      disponibles: new Map([["sw_revit", 3]]),
+      disponibles: new Map([[claveDeStock(EQUIPO, "sw_revit"), 3]]),
     });
     expect(plan).toEqual({
       liberar: [],
@@ -192,7 +212,7 @@ describe("planSincronizarInscripcion (FR-004/FR-006)", () => {
 
   it("sin stock la inscripción no se bloquea: queda el faltante", () => {
     const plan = planSincronizarInscripcion({
-      grupo: [{ softwareId: "sw_revit", descuentaStock: true }],
+      grupo: [{ softwareId: "sw_revit", teamId: EQUIPO, descuentaStock: true }],
       licencias: [],
       disponibles: sinStock,
     });
@@ -213,11 +233,11 @@ describe("planSincronizarInscripcion (FR-004/FR-006)", () => {
   it("mudar: pierde las del grupo viejo y recibe las del nuevo; lo compartido se queda", () => {
     const plan = planSincronizarInscripcion({
       grupo: [
-        { softwareId: "sw_revit", descuentaStock: true },
-        { softwareId: "sw_civil", descuentaStock: true },
+        { softwareId: "sw_revit", teamId: EQUIPO, descuentaStock: true },
+        { softwareId: "sw_civil", teamId: EQUIPO, descuentaStock: true },
       ],
       licencias: [delGrupo("lic_revit", "sw_revit"), delGrupo("lic_navis", "sw_navis")],
-      disponibles: new Map([["sw_civil", 1]]),
+      disponibles: new Map([[claveDeStock(EQUIPO, "sw_civil"), 1]]),
     });
     expect(plan.liberar).toEqual(["lic_navis"]);
     expect(plan.insertar).toEqual(["sw_civil"]);
@@ -226,7 +246,7 @@ describe("planSincronizarInscripcion (FR-004/FR-006)", () => {
 
   it("una individual del mismo programa que el grupo nuevo se convierte (SC-002)", () => {
     const plan = planSincronizarInscripcion({
-      grupo: [{ softwareId: "sw_revit", descuentaStock: true }],
+      grupo: [{ softwareId: "sw_revit", teamId: EQUIPO, descuentaStock: true }],
       licencias: [individual("lic_1", "sw_revit")],
       disponibles: sinStock,
     });
@@ -236,9 +256,9 @@ describe("planSincronizarInscripcion (FR-004/FR-006)", () => {
 
   it("una fila liberada se reactiva en vez de duplicarse", () => {
     const plan = planSincronizarInscripcion({
-      grupo: [{ softwareId: "sw_revit", descuentaStock: true }],
+      grupo: [{ softwareId: "sw_revit", teamId: EQUIPO, descuentaStock: true }],
       licencias: [liberada("lic_1", "sw_revit")],
-      disponibles: new Map([["sw_revit", 1]]),
+      disponibles: new Map([[claveDeStock(EQUIPO, "sw_revit"), 1]]),
     });
     expect(plan.reactivar).toEqual([{ id: "lic_1", softwareId: "sw_revit" }]);
     expect(plan.insertar).toEqual([]);
@@ -247,11 +267,11 @@ describe("planSincronizarInscripcion (FR-004/FR-006)", () => {
   it("dos programas compiten por el stock que queda, de a uno", () => {
     const plan = planSincronizarInscripcion({
       grupo: [
-        { softwareId: "sw_revit", descuentaStock: true },
-        { softwareId: "sw_navis", descuentaStock: false },
+        { softwareId: "sw_revit", teamId: EQUIPO, descuentaStock: true },
+        { softwareId: "sw_navis", teamId: EQUIPO, descuentaStock: false },
       ],
       licencias: [],
-      disponibles: new Map([["sw_revit", 0]]),
+      disponibles: new Map([[claveDeStock(EQUIPO, "sw_revit"), 0]]),
     });
     // Navisworks no descuenta (vencimiento pasado o curso terminado): entra igual.
     expect(plan.insertar).toEqual(["sw_navis"]);
@@ -287,5 +307,85 @@ describe("cuentaParaLicenciasDelGrupo", () => {
     expect(cuentaParaLicenciasDelGrupo({ ...base, archived: true })).toBe(false);
     expect(cuentaParaLicenciasDelGrupo({ ...base, hadOwnLicense: true })).toBe(false);
     expect(cuentaParaLicenciasDelGrupo({ ...base, parentHadOwnLicense: true })).toBe(false);
+  });
+});
+
+/**
+ * 0087 — El stock es de cada EQUIPO de licencias: las del grupo salen del
+ * equipo elegido al asignar el programa al grupo, y una licencia que ocupa un
+ * asiento de OTRO equipo no cuenta como «ya está».
+ */
+describe("0087 — licencias del grupo por equipo", () => {
+  it("planAsignarAlGrupo: la individual que ocupa OTRO equipo no se convierte: pasa a este y pide stock", () => {
+    const plan = planAsignarAlGrupo({
+      softwareId: "sw_revit",
+      teamId: EQUIPO,
+      miembros: [
+        { enrollmentId: "enr_a", licencias: [individual("lic_a", "sw_revit", true, OTRO_EQUIPO)] },
+        { enrollmentId: "enr_b", licencias: [individual("lic_b", "sw_revit", true, EQUIPO)] },
+      ],
+      disponibles: 1,
+      descuentaStock: true,
+    });
+    expect(plan).toEqual({
+      ok: true,
+      convertir: ["lic_b"],
+      reactivar: ["lic_a"],
+      insertar: [],
+      necesarias: 1,
+    });
+  });
+
+  it("planAsignarAlGrupo: sin libres en el equipo del grupo no asigna, aunque otro equipo tenga", () => {
+    // Uruguay tiene 0 libres; lo que sobre en Paraguay no entra en la cuenta.
+    const plan = planAsignarAlGrupo({
+      softwareId: "sw_revit",
+      teamId: EQUIPO,
+      miembros: miembros(2),
+      disponibles: 0,
+      descuentaStock: true,
+    });
+    expect(plan).toEqual({ ok: false, faltan: 2, necesarias: 2, disponibles: 0 });
+  });
+
+  it("planSincronizarInscripcion: el stock se mira en el equipo del grupo, no en otro", () => {
+    const plan = planSincronizarInscripcion({
+      grupo: [{ softwareId: "sw_revit", teamId: EQUIPO, descuentaStock: true }],
+      licencias: [],
+      // Paraguay tiene 5, Uruguay (el equipo del grupo) ninguna.
+      disponibles: new Map([[claveDeStock(OTRO_EQUIPO, "sw_revit"), 5]]),
+    });
+    expect(plan.insertar).toEqual([]);
+    expect(plan.sinStock).toEqual(["sw_revit"]);
+  });
+
+  it("planSincronizarInscripcion: una individual de OTRO equipo se reactiva en el del grupo y descuenta ahí", () => {
+    const plan = planSincronizarInscripcion({
+      grupo: [{ softwareId: "sw_revit", teamId: EQUIPO, descuentaStock: true }],
+      licencias: [individual("lic_1", "sw_revit", true, OTRO_EQUIPO)],
+      disponibles: new Map([[claveDeStock(EQUIPO, "sw_revit"), 1]]),
+    });
+    expect(plan.convertir).toEqual([]);
+    expect(plan.reactivar).toEqual([{ id: "lic_1", softwareId: "sw_revit" }]);
+    expect(plan.sinStock).toEqual([]);
+  });
+
+  it("planSincronizarInscripcion: dos grupos del mismo programa en equipos distintos no se pisan el stock", () => {
+    const libres = new Map([
+      [claveDeStock(EQUIPO, "sw_revit"), 1],
+      [claveDeStock(OTRO_EQUIPO, "sw_revit"), 0],
+    ]);
+    const uruguay = planSincronizarInscripcion({
+      grupo: [{ softwareId: "sw_revit", teamId: EQUIPO, descuentaStock: true }],
+      licencias: [],
+      disponibles: libres,
+    });
+    const paraguay = planSincronizarInscripcion({
+      grupo: [{ softwareId: "sw_revit", teamId: OTRO_EQUIPO, descuentaStock: true }],
+      licencias: [],
+      disponibles: libres,
+    });
+    expect(uruguay.insertar).toEqual(["sw_revit"]);
+    expect(paraguay.sinStock).toEqual(["sw_revit"]);
   });
 });

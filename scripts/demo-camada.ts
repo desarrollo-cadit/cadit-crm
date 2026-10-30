@@ -37,6 +37,7 @@ import { generateSchedule, markAttendance } from "@/server/attendance";
 import { createAssessment, recordResults } from "@/server/grading";
 import { generateInstallmentPlan, recordPayment } from "@/server/billing";
 import { assignLicense } from "@/server/licenses";
+import { equipoPorDefecto } from "@/server/license-teams";
 import { createAnnouncement, createResource } from "@/server/resources";
 import { grantPortalAccess, grantTeacherPortalAccess } from "@/server/access";
 import { createVirtualRoom } from "@/server/virtual-rooms";
@@ -332,9 +333,16 @@ async function crear() {
     id: softwareId,
     organizationId: org!.id,
     name: `${MARCA} AutoCAD demo`,
-    totalLicenses: 5,
   });
-  const lic = await assignLicense(org!.id, enrollmentId, softwareId);
+  // 0087 — El cupo es de un equipo de licencias.
+  const equipoId = await equipoPorDefecto(org!.id);
+  await db.insert(schema.licenseTeamSeat).values({
+    organizationId: org!.id,
+    teamId: equipoId,
+    softwareId,
+    total: 5,
+  });
+  const lic = await assignLicense(org!.id, enrollmentId, softwareId, equipoId);
   paso("licencia", lic.ok);
 
   /* -- Material y aviso ------------------------------------ */

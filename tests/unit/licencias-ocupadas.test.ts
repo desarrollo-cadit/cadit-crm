@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { licenciaOcupada } from "@/server/licenses";
+import { licenciaDeProfesorOcupada } from "@/lib/license-rules";
 
 /**
  * 023 — Una licencia ocupada se DERIVA, no se marca.
@@ -133,5 +134,27 @@ describe("fechas desconocidas no liberan la licencia", () => {
 
   it("pero si está vencida, no ocupa", () => {
     expect(licenciaOcupada({ assigned: true, expiresAt: ANTES }, null, HOY)).toBe(false);
+  });
+});
+
+/**
+ * 0088 — La licencia de un PROFESOR no tiene cohorte: nada la "termina". Ocupa
+ * hasta que alguien la libera (`assigned = false`) o vence (`expiresAt`).
+ */
+describe("la licencia de un profesor", () => {
+  it("ocupa mientras esté asignada, sin importar fechas de ningún curso", () => {
+    expect(licenciaDeProfesorOcupada({ assigned: true, expiresAt: null }, HOY)).toBe(true);
+    expect(licenciaDeProfesorOcupada({ assigned: true, expiresAt: DESPUES }, HOY)).toBe(true);
+  });
+
+  it("deja de ocupar al liberarla o al vencer", () => {
+    expect(licenciaDeProfesorOcupada({ assigned: false, expiresAt: null }, HOY)).toBe(false);
+    expect(licenciaDeProfesorOcupada({ assigned: true, expiresAt: ANTES }, HOY)).toBe(false);
+  });
+
+  it("la regla de los alumnos no cambió: un curso terminado sigue liberando", () => {
+    expect(
+      licenciaOcupada({ assigned: true, expiresAt: null }, { startDate: ANTES, endDate: ANTES }, HOY)
+    ).toBe(false);
   });
 });

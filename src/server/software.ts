@@ -2,13 +2,16 @@ import { asc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
-import { countAssignedLicenses } from "@/server/licenses";
+import { equipoPorDefecto } from "@/server/license-teams";
 import { MEDIA_LIMITS, readMediaFile, saveMediaFile } from "@/server/whatsapp/media";
 
 /**
  * 005 (DV-004, FR-001) — Alta de un software del catálogo (Revit, Civil3D...).
- * Solo el catálogo básico en esta fase; la lógica de disponibilidad/stock
- * (PATCH de totalLicenses con validación) es US4, fuera de este alcance.
+ *
+ * 0087 — El cupo ya no es del programa sino de cada equipo de licencias
+ * (`license_team_seat`, `/api/license-teams`). `totalLicenses` sigue aceptado
+ * por compatibilidad (scripts y la demo lo mandan): si viene, es el cupo del
+ * programa en el equipo por defecto.
  */
 export async function createSoftware(
   organizationId: string,
@@ -20,8 +23,15 @@ export async function createSoftware(
     id,
     organizationId,
     name: input.name,
-    totalLicenses: input.totalLicenses ?? 0,
   });
+  if (input.totalLicenses && input.totalLicenses > 0) {
+    await db.insert(schema.licenseTeamSeat).values({
+      organizationId,
+      teamId: await equipoPorDefecto(organizationId),
+      softwareId: id,
+      total: input.totalLicenses,
+    });
+  }
   return id;
 }
 
@@ -39,7 +49,6 @@ export function serializeSoftware(s: typeof schema.software.$inferSelect) {
   return {
     id: s.id,
     name: s.name,
-    totalLicenses: s.totalLicenses,
     hasPhoto: s.photoMimeType !== null,
   };
 }
@@ -104,33 +113,22 @@ export type UpdateSoftwareResult =
   | { ok: false; status: 422; code: "invalid_body"; message: string };
 
 /**
- * 005 (T031, FR-004) — edita el catálogo de software; rechaza bajar
- * `totalLicenses` por debajo de las licencias `assigned` actuales.
+ * 005 (T031, FR-004) — edita el catálogo de software.
+ *
+ * 0087 — El cupo se edita por equipo (`PUT /api/license-teams/[id]/seats`),
+ * que rechaza bajarlo por debajo de lo que ese equipo ya ocupa.
  */
 export async function updateSoftware(
   organizationId: string,
   softwareId: string,
-  input: { name?: string; totalLicenses?: number }
+  input: { name?: string }
 ): Promise<UpdateSoftwareResult> {
   const db = getDb();
-
-  if (input.totalLicenses !== undefined) {
-    const assignedCount = await countAssignedLicenses(organizationId, softwareId);
-    if (input.totalLicenses < assignedCount) {
-      return {
-        ok: false,
-        status: 422,
-        code: "invalid_body",
-        message: `No se puede bajar de ${assignedCount} licencias: ya hay ${assignedCount} asignadas`,
-      };
-    }
-  }
 
   const updated = await db
     .update(schema.software)
     .set({
       ...(input.name !== undefined ? { name: input.name } : {}),
-      ...(input.totalLicenses !== undefined ? { totalLicenses: input.totalLicenses } : {}),
       updatedAt: new Date(),
     })
     .where(

@@ -8,16 +8,16 @@ type Params = { params: Promise<{ id: string }> };
 
 const patchSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
-  totalLicenses: z.number().int().min(0).optional(),
 });
 
 /**
- * 005 (T031, US4, FR-004) — editar `totalLicenses`; rechaza si el nuevo
- * total es menor a las licencias `assigned` actuales. Deliberadamente en
- * `/api/software/[id]` (no en la ruta de colección `/api/software`) para
+ * 005 (T031, US4, FR-004) — editar el programa del catálogo. Deliberadamente
+ * en `/api/software/[id]` (no en la ruta de colección `/api/software`) para
  * seguir el mismo patrón REST que el resto de las rutas de edición del
- * repo (`/api/cohorts/[id]`, `/api/enrollments/[id]/checklist`) — ver
- * reporte final de la fase para el detalle de esta decisión.
+ * repo (`/api/cohorts/[id]`, `/api/enrollments/[id]/checklist`).
+ *
+ * 0087 — El cupo ya no se edita acá: es por equipo
+ * (`PUT /api/license-teams/[id]/seats`).
  */
 export const PATCH = requireCapability(
   "academico.editar",

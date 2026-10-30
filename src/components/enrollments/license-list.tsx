@@ -1,7 +1,14 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { Select } from "@/components/ui/select";
+import {
+  equipoInicial,
+  libresDe,
+  TeamSelect,
+  useEquiposDeLicencias,
+} from "@/components/licenses/team-select";
 import { notify } from "@/lib/notify";
 
 type Programa = { id: string; name: string };
@@ -25,6 +32,10 @@ type Programa = { id: string; name: string };
  * al grupo", sin control: no se libera por alumno ni se ofrece para agregar
  * (el servidor lo rechazaría con 409). Si la persona es del grupo y no tiene
  * la licencia —se inscribió sin stock—, se ve el faltante (FR-004).
+ *
+ * 0087 — Cada licencia sale del cupo de un EQUIPO (Uruguay ATC, Paraguay
+ * ATC…): antes de «agregar…» se elige el equipo, que arranca en el último que
+ * usó esta persona y muestra cuántas libres tiene de cada programa.
  */
 export function LicenseList({
   enrollmentId,
@@ -60,6 +71,13 @@ export function LicenseList({
   const individuales = assignedIds.filter((id) => !delGrupo.has(id));
   const libres = options.filter((o) => !assignedIds.includes(o.id) && !delGrupo.has(o.id));
 
+  const { equipos, recargar } = useEquiposDeLicencias(canEdit);
+  const [teamId, setTeamId] = useState("");
+  useEffect(() => {
+    if (equipos && !teamId) setTeamId(equipoInicial(equipos, null));
+  }, [equipos, teamId]);
+  const equipo = equipos?.find((e) => e.id === teamId) ?? null;
+
   async function leerError(res: Response | null, porDefecto: string) {
     const body = (await res?.json().catch(() => null)) as
       | { error?: { message?: string } }
@@ -68,11 +86,16 @@ export function LicenseList({
   }
 
   async function agregar(softwareId: string) {
+    if (!teamId) {
+      notify.error("Elegí el equipo de licencias del que sale.");
+      return;
+    }
     const res = await fetch(`/api/enrollments/${enrollmentId}/license`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ softwareId }),
+      body: JSON.stringify({ softwareId, teamId }),
     }).catch(() => null);
+    void recargar();
     if (!res?.ok) {
       notify.error(await leerError(res, "No se pudo asignar la licencia"));
       onChanged();
@@ -98,6 +121,7 @@ export function LicenseList({
     ).catch(() => null);
     if (!res?.ok) notify.error(await leerError(res, "No se pudo liberar la licencia"));
     else notify.success("Licencia liberada.");
+    void recargar();
     onChanged();
   }
 
@@ -162,24 +186,41 @@ export function LicenseList({
       {canEdit && libres.length > 0 && bloqueo ? (
         <span className="text-muted-foreground">{bloqueo}</span>
       ) : null}
-      {canEdit && libres.length > 0 && !bloqueo ? (
-        <Select
-          className="h-7 w-auto px-1.5 py-0.5 text-xs"
-          value=""
-          aria-label={`Agregar licencia (${label})`}
-          onChange={(ev) => {
-            if (ev.target.value) void agregar(ev.target.value);
-          }}
-        >
-          <option value="" disabled>
-            agregar…
-          </option>
-          {libres.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
+      {canEdit && libres.length > 0 && !bloqueo && equipos && equipos.length === 0 ? (
+        <span className="text-muted-foreground">
+          Creá un equipo de licencias en Licencias para poder asignar.
+        </span>
+      ) : null}
+      {canEdit && libres.length > 0 && !bloqueo && equipos && equipos.length > 0 ? (
+        <>
+          <TeamSelect
+            equipos={equipos}
+            softwareId={null}
+            value={teamId}
+            onChange={setTeamId}
+            label={`Equipo de licencias (${label})`}
+          />
+          <Select
+            className="h-7 w-auto px-1.5 py-0.5 text-xs"
+            value=""
+            aria-label={`Agregar licencia (${label})`}
+            onChange={(ev) => {
+              if (ev.target.value) void agregar(ev.target.value);
+            }}
+          >
+            <option value="" disabled>
+              agregar…
             </option>
-          ))}
-        </Select>
+            {libres.map((s) => {
+              const quedan = equipo ? libresDe(equipo, s.id) : 0;
+              return (
+                <option key={s.id} value={s.id} disabled={quedan <= 0}>
+                  {s.name} · {quedan > 0 ? `${quedan} libres` : "sin cupo"}
+                </option>
+              );
+            })}
+          </Select>
+        </>
       ) : null}
     </span>
   );

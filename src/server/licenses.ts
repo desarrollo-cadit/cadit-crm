@@ -1,59 +1,158 @@
-import { asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
-import { licenciaOcupada, licenciasRepetidasEnRecorrido } from "@/lib/license-rules";
+import {
+  licenciaDeProfesorOcupada,
+  licenciaOcupada,
+  licenciasRepetidasEnRecorrido,
+} from "@/lib/license-rules";
 import { licenciaDelGrupoBloquea, MENSAJE_LICENCIA_DEL_GRUPO } from "@/lib/group-licenses";
 import { normalizarCorreo } from "@/lib/contact-identity";
 import { correoDeLicencia } from "@/lib/license-email";
 import { MENSAJE_LICENCIA_PROPIA_ASIGNAR } from "@/lib/terminos-licencia";
+import {
+  claveDeStock,
+  MENSAJE_EQUIPO_ARCHIVADO,
+  MENSAJE_EQUIPO_INEXISTENTE,
+} from "@/lib/license-team";
+import { asientosAjenos } from "@/server/license-ajenos";
 
 /**
- * 005 (T028, DV-004, US4) — pool de licencias por software: disponibles =
- * `software.total_licenses - count(license WHERE software_id = X AND
- * assigned = true)`.
+ * 005 (T028, DV-004, US4) — pool de licencias por software.
+ *
+ * 0087 — El cupo es de cada EQUIPO (`license_team_seat`): con `teamId`,
+ * disponibles = cupo de ese equipo − sus licencias ocupadas; sin él, la suma
+ * de los cupos de los equipos activos − todas las ocupadas (lo que miran las
+ * advertencias de cupo de una cohorte y el widget del inicio).
+ *
+ * 0089 — `externos`: los asientos que Autodesk tiene ocupados y el campus no
+ * cuenta (la última importación del equipo). Restan del disponible: no se
+ * promete una licencia que Autodesk ya dio. Sin importaciones es 0.
  */
 export type LicenseAvailability = {
   softwareId: string;
   softwareName: string;
   total: number;
   assignedCount: number;
+  /** 0089 — Ocupados en Autodesk sin titular en el campus. */
+  externos: number;
   available: number;
 };
 
-/** null si el software no existe (o no pertenece a la organización). */
+/**
+ * 0087 — El cupo total de un programa: el del equipo si `soloEquipo`, o la suma
+ * de los equipos NO archivados. Un archivado no tiene licencias ocupadas (no se
+ * puede archivar con ellas), así que su cupo no infla el disponible. Se usa
+ * sobre `software ⟕ license_team_seat ⟕ license_team`, agrupado por software.
+ */
+export function cupoTotalSql(soloEquipo: boolean) {
+  return soloEquipo
+    ? sql<number>`coalesce(sum(${schema.licenseTeamSeat.total}), 0)::int`
+    : sql<number>`coalesce(sum(${schema.licenseTeamSeat.total}) filter (where ${schema.licenseTeam.archivedAt} is null), 0)::int`;
+}
+
+/**
+ * null si el software no existe (o no pertenece a la organización). Con
+ * `teamId`, el stock de ESE equipo (0 si el equipo no tiene cupo de este
+ * programa); quien lo llama valida que el equipo sea de la organización.
+ */
 export async function availableLicenses(
   organizationId: string,
-  softwareId: string
+  softwareId: string,
+  teamId?: string
 ): Promise<LicenseAvailability | null> {
   const db = getDb();
   const softwareRows = await db
-    .select({ name: schema.software.name, totalLicenses: schema.software.totalLicenses })
+    .select({ name: schema.software.name, total: cupoTotalSql(Boolean(teamId)) })
     .from(schema.software)
+    .leftJoin(
+      schema.licenseTeamSeat,
+      and(
+        eq(schema.licenseTeamSeat.softwareId, schema.software.id),
+        teamId ? eq(schema.licenseTeamSeat.teamId, teamId) : undefined
+      )
+    )
+    .leftJoin(schema.licenseTeam, eq(schema.licenseTeam.id, schema.licenseTeamSeat.teamId))
     .where(
       scoped(schema.software.organizationId, organizationId, eq(schema.software.id, softwareId))
     )
+    .groupBy(schema.software.id, schema.software.name)
     .limit(1);
   const sw = softwareRows[0];
   if (!sw) return null;
 
   // 023 — Misma regla que el inventario: una licencia de un curso terminado
   // ya no bloquea la asignación de una nueva.
-  const assignedCount = (await contarOcupadas(organizationId, softwareId)).get(softwareId) ?? 0;
+  const assignedCount =
+    (await contarOcupadas(organizationId, softwareId, teamId)).get(softwareId) ?? 0;
+  // 0089 — Lo que Autodesk tiene ocupado y el campus no cuenta.
+  const ajenos = await asientosAjenos(organizationId, { teamId, softwareId });
+  const externos = [...ajenos].reduce(
+    (suma, [clave, n]) => (clave.endsWith(`|${softwareId}`) ? suma + n : suma),
+    0
+  );
   return {
     softwareId,
     softwareName: sw.name,
-    total: sw.totalLicenses,
+    total: sw.total,
     assignedCount,
-    available: sw.totalLicenses - assignedCount,
+    externos,
+    available: sw.total - assignedCount - externos,
   };
+}
+
+/**
+ * 0089 — Opciones de una asignación que viene de la CONCILIACIÓN con Autodesk.
+ * `yaOcupaEnAutodesk`: ese asiento ya está ocupado en Autodesk y por eso ya resta
+ * del disponible como asiento ajeno; al marcarlo en el campus pasa a ser del
+ * campus y el neto no cambia. Sin esto, un equipo lleno rechazaría (409) marcar
+ * a quien Autodesk ya tiene, justo lo que la conciliación quiere corregir.
+ */
+export type OpcionesDeAsignacion = { yaOcupaEnAutodesk?: boolean };
+
+const disponiblesPara = (a: LicenseAvailability, opts?: OpcionesDeAsignacion) =>
+  a.available + (opts?.yaOcupaEnAutodesk && a.externos > 0 ? 1 : 0);
+
+/**
+ * 0087 — El equipo, si es de la organización: `null` si no existe. Quien asigna
+ * (individual o por grupo) lo valida ANTES de tocar el stock.
+ */
+export async function buscarEquipo(
+  organizationId: string,
+  teamId: string
+): Promise<{ id: string; name: string; archived: boolean } | null> {
+  const [fila] = await getDb()
+    .select({
+      id: schema.licenseTeam.id,
+      name: schema.licenseTeam.name,
+      archivedAt: schema.licenseTeam.archivedAt,
+    })
+    .from(schema.licenseTeam)
+    .where(scoped(schema.licenseTeam.organizationId, organizationId, eq(schema.licenseTeam.id, teamId)))
+    .limit(1);
+  return fila ? { id: fila.id, name: fila.name, archived: fila.archivedAt !== null } : null;
+}
+
+/** El motivo por el que NO se puede asignar de este equipo, o `null` si se puede. */
+export async function motivoDeEquipoNoAsignable(
+  organizationId: string,
+  teamId: string
+): Promise<string | null> {
+  const equipo = await buscarEquipo(organizationId, teamId);
+  if (!equipo) return MENSAJE_EQUIPO_INEXISTENTE;
+  return equipo.archived ? MENSAJE_EQUIPO_ARCHIVADO : null;
 }
 
 export type LicenseDto = {
   id: string;
-  enrollmentId: string;
+  /** Una inscripción O un profesor (0088): exactamente uno de los dos. */
+  enrollmentId: string | null;
+  teacherId: string | null;
   softwareId: string;
+  /** 0087 — El equipo del que sale su asiento. */
+  teamId: string;
   assigned: boolean;
   assignedAt: string | null;
   /** 035 (FR-003) — `grupo` o `individual`. */
@@ -62,42 +161,56 @@ export type LicenseDto = {
 
 /**
  * 035 — Dos asignaciones simultáneas del mismo programa leían el mismo
- * "quedan 1" y entraban las dos. Un advisory lock de TRANSACCIÓN por
- * (organización, programa) las pone en fila: la segunda lee el stock después
- * de que la primera escribió. Se suelta solo al terminar la transacción del
- * pedido (`withAuth`). Los ids se ordenan para que dos pedidos que toman
- * varios programas no se esperen en cruz.
+ * "quedan 1" y entraban las dos. Un advisory lock de TRANSACCIÓN las pone en
+ * fila: la segunda lee el stock después de que la primera escribió. Se suelta
+ * solo al terminar la transacción del pedido (`withAuth`). Las llaves se
+ * ordenan para que dos pedidos que toman varios stocks no se esperen en cruz.
+ *
+ * 0087 — El stock es de un EQUIPO y un programa: Uruguay lleno no hace esperar
+ * a quien asigna del equipo de Paraguay.
  */
 export async function bloquearStock(
   organizationId: string,
-  softwareIds: readonly string[]
+  stocks: readonly { teamId: string; softwareId: string }[]
 ): Promise<void> {
   const db = getDb();
-  for (const id of [...new Set(softwareIds)].sort()) {
-    await db.execute(sql`select pg_advisory_xact_lock(hashtext(${"lic:" + organizationId + ":" + id}))`);
+  for (const clave of [...new Set(stocks.map((s) => claveDeStock(s.teamId, s.softwareId)))].sort()) {
+    await db.execute(sql`select pg_advisory_xact_lock(hashtext(${"lic:" + organizationId + ":" + clave}))`);
   }
 }
 
 /**
  * 035 (FR-008) — Los programas asignados al grupo de una cohorte, con su
- * nombre y vencimiento. Vive acá (y no en `group-licenses.ts`) porque la
- * asignación individual lo consulta para bloquearse, y `group-licenses.ts`
- * ya importa este módulo.
+ * nombre, vencimiento y (0087) el equipo del que salen. Vive acá (y no en
+ * `group-licenses.ts`) porque la asignación individual lo consulta para
+ * bloquearse, y `group-licenses.ts` ya importa este módulo.
  */
 export async function softwareDelGrupo(
   organizationId: string,
   cohortIds: readonly string[]
-): Promise<{ cohortId: string; softwareId: string; name: string; expiresAt: Date | null }[]> {
+): Promise<
+  {
+    cohortId: string;
+    softwareId: string;
+    name: string;
+    teamId: string;
+    teamName: string;
+    expiresAt: Date | null;
+  }[]
+> {
   if (cohortIds.length === 0) return [];
   return getDb()
     .select({
       cohortId: schema.cohortGroupSoftware.cohortId,
       softwareId: schema.cohortGroupSoftware.softwareId,
       name: schema.software.name,
+      teamId: schema.cohortGroupSoftware.teamId,
+      teamName: schema.licenseTeam.name,
       expiresAt: schema.cohortGroupSoftware.expiresAt,
     })
     .from(schema.cohortGroupSoftware)
     .innerJoin(schema.software, eq(schema.software.id, schema.cohortGroupSoftware.softwareId))
+    .innerJoin(schema.licenseTeam, eq(schema.licenseTeam.id, schema.cohortGroupSoftware.teamId))
     .where(
       scoped(
         schema.cohortGroupSoftware.organizationId,
@@ -124,7 +237,9 @@ function serializeLicense(l: typeof schema.license.$inferSelect): LicenseDto {
   return {
     id: l.id,
     enrollmentId: l.enrollmentId,
+    teacherId: l.teacherId,
     softwareId: l.softwareId,
+    teamId: l.teamId,
     assigned: l.assigned,
     assignedAt: l.assignedAt?.toISOString() ?? null,
     source: l.source ?? "individual",
@@ -182,11 +297,17 @@ export async function tieneLicenciaPropia(
  * agrega una licencia en vez de mover la que había, que era la regla de 005.
  * Una licencia liberada (`assigned = false`) del mismo programa se reactiva:
  * no se duplica la fila.
+ *
+ * 0087 — `teamId` es OBLIGATORIO: la licencia sale del cupo de ese equipo y de
+ * ningún otro (Uruguay lleno no impide asignar del equipo de Paraguay). Si el
+ * programa ya estaba asignado desde otro equipo, pasa a este y pide stock acá.
  */
 export async function assignLicense(
   organizationId: string,
   enrollmentId: string,
-  softwareId: string
+  softwareId: string,
+  teamId: string,
+  opts?: OpcionesDeAsignacion
 ): Promise<AssignLicenseResult> {
   const db = getDb();
 
@@ -232,9 +353,20 @@ export async function assignLicense(
     return { ok: false, status: 409, code: "asignado_al_grupo", message: bloqueo };
   }
 
-  // 035 — En fila con cualquier otra asignación del mismo programa.
-  await bloquearStock(organizationId, [softwareId]);
-  const availability = await availableLicenses(organizationId, softwareId);
+  // 0087 — El equipo tiene que ser de la organización y estar activo.
+  const equipo = await buscarEquipo(organizationId, teamId);
+  if (!equipo || equipo.archived) {
+    return {
+      ok: false,
+      status: 422,
+      code: "invalid_body",
+      message: equipo ? MENSAJE_EQUIPO_ARCHIVADO : MENSAJE_EQUIPO_INEXISTENTE,
+    };
+  }
+
+  // 035 — En fila con cualquier otra asignación del mismo programa en ese equipo.
+  await bloquearStock(organizationId, [{ teamId, softwareId }]);
+  const availability = await availableLicenses(organizationId, softwareId, teamId);
   if (!availability) {
     return { ok: false, status: 422, code: "invalid_body", message: "Software inexistente" };
   }
@@ -253,16 +385,17 @@ export async function assignLicense(
     .limit(1);
   const existing = existingRows[0] ?? null;
 
-  // Idempotente: el mismo programa ya asignado no descuenta otra vez (escenario 3).
-  if (existing?.assigned) {
+  // Idempotente: el mismo programa ya asignado, desde ESTE equipo, no descuenta
+  // otra vez (escenario 3).
+  if (existing?.assigned && existing.teamId === teamId) {
     return { ok: true, license: serializeLicense(existing), warnings: [] };
   }
-  if (availability.available <= 0) {
+  if (disponiblesPara(availability, opts) <= 0) {
     return {
       ok: false,
       status: 409,
       code: "no_stock",
-      message: `No hay licencias disponibles de ${availability.softwareName}`,
+      message: `No hay licencias disponibles de ${availability.softwareName} en ${equipo.name}`,
     };
   }
 
@@ -271,7 +404,7 @@ export async function assignLicense(
     ? (
         await db
           .update(schema.license)
-          .set({ assigned: true, assignedAt: now, source: "individual" })
+          .set({ assigned: true, assignedAt: now, source: "individual", teamId })
           .where(
             scoped(schema.license.organizationId, organizationId, eq(schema.license.id, existing.id))
           )
@@ -285,6 +418,7 @@ export async function assignLicense(
             organizationId,
             enrollmentId,
             softwareId,
+            teamId,
             assigned: true,
             assignedAt: now,
             source: "individual",
@@ -402,17 +536,25 @@ export async function unassignLicense(
   return { ok: true, license: row ? serializeLicense(row) : null };
 }
 
-export type EnrollmentLicenseDto = LicenseDto & { softwareName: string };
+export type EnrollmentLicenseDto = LicenseDto & { softwareName: string; teamName: string };
 
-/** 034 (FR-020) — Las licencias ASIGNADAS de una inscripción, con el nombre del programa. */
+/**
+ * 034 (FR-020) — Las licencias ASIGNADAS de una inscripción, con el nombre del
+ * programa y (0087) el del equipo del que salen.
+ */
 export async function listEnrollmentLicenses(
   organizationId: string,
   enrollmentId: string
 ): Promise<EnrollmentLicenseDto[]> {
   const filas = await getDb()
-    .select({ license: schema.license, softwareName: schema.software.name })
+    .select({
+      license: schema.license,
+      softwareName: schema.software.name,
+      teamName: schema.licenseTeam.name,
+    })
     .from(schema.license)
     .innerJoin(schema.software, eq(schema.license.softwareId, schema.software.id))
+    .innerJoin(schema.licenseTeam, eq(schema.license.teamId, schema.licenseTeam.id))
     .where(
       scoped(
         schema.license.organizationId,
@@ -422,9 +564,263 @@ export async function listEnrollmentLicenses(
       )
     )
     .orderBy(asc(schema.software.name));
-  return filas.map((f) => ({ ...serializeLicense(f.license), softwareName: f.softwareName }));
+  return filas.map((f) => ({
+    ...serializeLicense(f.license),
+    softwareName: f.softwareName,
+    teamName: f.teamName,
+  }));
 }
 
+/* ============================================================
+ * 0088 — Licencias de PROFESORES
+ * ============================================================ */
+
+export type AssignTeacherLicenseResult =
+  | { ok: true; license: LicenseDto }
+  | { ok: false; status: 404; code: "not_found"; message: string }
+  | { ok: false; status: 422; code: "invalid_body"; message: string }
+  | { ok: false; status: 409; code: "no_stock"; message: string };
+
+/**
+ * Asigna una licencia de `softwareId` a un PROFESOR, del cupo de `teamId`. Misma
+ * mecánica que `assignLicense` (idempotente, una por programa, 409 `no_stock`,
+ * en fila con las demás asignaciones de ese equipo y programa), sin nada de
+ * inscripción: ni "licencia propia", ni programas del grupo, ni cohorte. Un
+ * profesor sin correo cargado la puede tener igual; solo no se lo reconocerá
+ * al conciliar con Autodesk hasta que se cargue.
+ */
+export async function assignTeacherLicense(
+  organizationId: string,
+  teacherId: string,
+  softwareId: string,
+  teamId: string,
+  opts?: OpcionesDeAsignacion
+): Promise<AssignTeacherLicenseResult> {
+  const db = getDb();
+
+  const [profesor] = await db
+    .select({ id: schema.teacher.id })
+    .from(schema.teacher)
+    .where(scoped(schema.teacher.organizationId, organizationId, eq(schema.teacher.id, teacherId)))
+    .limit(1);
+  if (!profesor) {
+    return { ok: false, status: 404, code: "not_found", message: "Profesor no encontrado" };
+  }
+
+  const equipo = await buscarEquipo(organizationId, teamId);
+  if (!equipo || equipo.archived) {
+    return {
+      ok: false,
+      status: 422,
+      code: "invalid_body",
+      message: equipo ? MENSAJE_EQUIPO_ARCHIVADO : MENSAJE_EQUIPO_INEXISTENTE,
+    };
+  }
+
+  await bloquearStock(organizationId, [{ teamId, softwareId }]);
+  const availability = await availableLicenses(organizationId, softwareId, teamId);
+  if (!availability) {
+    return { ok: false, status: 422, code: "invalid_body", message: "Software inexistente" };
+  }
+
+  const [existing] = await db
+    .select()
+    .from(schema.license)
+    .where(
+      scoped(
+        schema.license.organizationId,
+        organizationId,
+        eq(schema.license.teacherId, teacherId),
+        eq(schema.license.softwareId, softwareId)
+      )
+    )
+    .limit(1);
+
+  if (existing?.assigned && existing.teamId === teamId) {
+    return { ok: true, license: serializeLicense(existing) };
+  }
+  if (disponiblesPara(availability, opts) <= 0) {
+    return {
+      ok: false,
+      status: 409,
+      code: "no_stock",
+      message: `No hay licencias disponibles de ${availability.softwareName} en ${equipo.name}`,
+    };
+  }
+
+  const now = new Date();
+  const row = existing
+    ? (
+        await db
+          .update(schema.license)
+          .set({ assigned: true, assignedAt: now, source: "individual", teamId })
+          .where(
+            scoped(schema.license.organizationId, organizationId, eq(schema.license.id, existing.id))
+          )
+          .returning()
+      )[0]!
+    : (
+        await db
+          .insert(schema.license)
+          .values({
+            id: newId("license"),
+            organizationId,
+            teacherId,
+            softwareId,
+            teamId,
+            assigned: true,
+            assignedAt: now,
+            source: "individual",
+          })
+          .returning()
+      )[0]!;
+  return { ok: true, license: serializeLicense(row) };
+}
+
+/**
+ * Libera la licencia de un profesor (vuelve al stock de su equipo). Con
+ * `softwareId`, solo la de ese programa; sin él, todas. Idempotente.
+ */
+export async function unassignTeacherLicense(
+  organizationId: string,
+  teacherId: string,
+  softwareId?: string
+): Promise<{ ok: true; license: LicenseDto | null }> {
+  const updated = await getDb()
+    .update(schema.license)
+    .set({ assigned: false, assignedAt: null })
+    .where(
+      scoped(
+        schema.license.organizationId,
+        organizationId,
+        eq(schema.license.teacherId, teacherId),
+        eq(schema.license.assigned, true),
+        softwareId ? eq(schema.license.softwareId, softwareId) : undefined
+      )
+    )
+    .returning();
+  const row = updated[0];
+  return { ok: true, license: row ? serializeLicense(row) : null };
+}
+
+export type TeacherLicenseDto = LicenseDto & { softwareName: string; teamName: string };
+
+/** Las licencias ASIGNADAS de un profesor, con el nombre del programa y del equipo. */
+export async function listTeacherLicenses(
+  organizationId: string,
+  teacherId: string
+): Promise<TeacherLicenseDto[]> {
+  const filas = await getDb()
+    .select({
+      license: schema.license,
+      softwareName: schema.software.name,
+      teamName: schema.licenseTeam.name,
+    })
+    .from(schema.license)
+    .innerJoin(schema.software, eq(schema.license.softwareId, schema.software.id))
+    .innerJoin(schema.licenseTeam, eq(schema.license.teamId, schema.licenseTeam.id))
+    .where(
+      scoped(
+        schema.license.organizationId,
+        organizationId,
+        eq(schema.license.teacherId, teacherId),
+        eq(schema.license.assigned, true)
+      )
+    )
+    .orderBy(asc(schema.software.name));
+  return filas.map((f) => ({
+    ...serializeLicense(f.license),
+    softwareName: f.softwareName,
+    teamName: f.teamName,
+  }));
+}
+
+/* ============================================================
+ * 0088 — Cambiar UNA licencia de equipo
+ * ============================================================ */
+
+export type MoveLicenseResult =
+  | { ok: true; license: LicenseDto }
+  | { ok: false; status: 404; code: "not_found"; message: string }
+  | { ok: false; status: 422; code: "invalid_body"; message: string }
+  | { ok: false; status: 409; code: "no_stock" | "asignado_al_grupo"; message: string };
+
+/**
+ * Pasa UNA licencia al cupo de otro equipo (la persona la tiene en el equipo
+ * equivocado). Si hoy ocupa un asiento, el destino tiene que tener uno libre.
+ * Las del grupo no: su equipo es el del programa del grupo, y se mueven con el
+ * programa (`moverProgramaDeEquipo`) para que la sincronización del grupo no
+ * las vea en otro equipo.
+ */
+export async function moverLicenciaDeEquipo(
+  organizationId: string,
+  licenseId: string,
+  teamId: string,
+  opts?: OpcionesDeAsignacion
+): Promise<MoveLicenseResult> {
+  const db = getDb();
+  const [fila] = await db
+    .select({
+      license: schema.license,
+      startDate: schema.cohort.startDate,
+      endDate: schema.cohort.endDate,
+    })
+    .from(schema.license)
+    .leftJoin(schema.enrollment, eq(schema.license.enrollmentId, schema.enrollment.id))
+    .leftJoin(schema.cohort, eq(schema.enrollment.cohortId, schema.cohort.id))
+    .where(scoped(schema.license.organizationId, organizationId, eq(schema.license.id, licenseId)))
+    .limit(1);
+  if (!fila) return { ok: false, status: 404, code: "not_found", message: "Licencia no encontrada" };
+  const actual = fila.license;
+
+  if (actual.source === "grupo") {
+    return {
+      ok: false,
+      status: 409,
+      code: "asignado_al_grupo",
+      message:
+        "Es una licencia del grupo: se mueve con el programa, desde el equipo del grupo (Mover a otro equipo)",
+    };
+  }
+  if (actual.teamId === teamId) return { ok: true, license: serializeLicense(actual) };
+
+  const destino = await buscarEquipo(organizationId, teamId);
+  if (!destino || destino.archived) {
+    return {
+      ok: false,
+      status: 422,
+      code: "invalid_body",
+      message: destino ? MENSAJE_EQUIPO_ARCHIVADO : MENSAJE_EQUIPO_INEXISTENTE,
+    };
+  }
+
+  await bloquearStock(organizationId, [
+    { teamId: actual.teamId, softwareId: actual.softwareId },
+    { teamId, softwareId: actual.softwareId },
+  ]);
+  const ahora = new Date();
+  const ocupa = actual.teacherId
+    ? licenciaDeProfesorOcupada(actual, ahora)
+    : licenciaOcupada(actual, { startDate: fila.startDate, endDate: fila.endDate }, ahora);
+  if (ocupa) {
+    const disponibles = await availableLicenses(organizationId, actual.softwareId, teamId);
+    if (!disponibles || disponiblesPara(disponibles, opts) <= 0) {
+      return {
+        ok: false,
+        status: 409,
+        code: "no_stock",
+        message: `No hay licencias disponibles de ${disponibles?.softwareName ?? "ese programa"} en ${destino.name}`,
+      };
+    }
+  }
+
+  const [movida] = await db
+    .update(schema.license)
+    .set({ teamId })
+    .where(scoped(schema.license.organizationId, organizationId, eq(schema.license.id, licenseId)))
+    .returning();
+  return { ok: true, license: serializeLicense(movida!) };
+}
 
 /**
  * 023 — `licenciaOcupada` vive en `@/lib/license-rules` desde la 035: la
@@ -444,41 +840,74 @@ export { licenciaOcupada };
  */
 export async function contarOcupadas(
   organizationId: string,
+  softwareId?: string,
+  teamId?: string
+): Promise<Map<string, number>> {
+  const salida = new Map<string, number>();
+  for (const l of await licenciasOcupadas(organizationId, { softwareId, teamId })) {
+    salida.set(l.softwareId, (salida.get(l.softwareId) ?? 0) + 1);
+  }
+  return salida;
+}
+
+/**
+ * 0087 — Lo mismo por EQUIPO y programa, con la llave de `claveDeStock`: es la
+ * cuenta del stock real (cada equipo tiene el suyo).
+ */
+export async function contarOcupadasPorEquipo(
+  organizationId: string,
   softwareId?: string
 ): Promise<Map<string, number>> {
+  const salida = new Map<string, number>();
+  for (const l of await licenciasOcupadas(organizationId, { softwareId })) {
+    const clave = claveDeStock(l.teamId, l.softwareId);
+    salida.set(clave, (salida.get(clave) ?? 0) + 1);
+  }
+  return salida;
+}
+
+/** Las licencias que OCUPAN hoy (`licenciaOcupada`): la única lectura del stock. */
+async function licenciasOcupadas(
+  organizationId: string,
+  filtro: { softwareId?: string; teamId?: string }
+): Promise<{ softwareId: string; teamId: string }[]> {
   const db = getDb();
   const licencias = await db
     .select({
       softwareId: schema.license.softwareId,
+      teamId: schema.license.teamId,
+      teacherId: schema.license.teacherId,
       assigned: schema.license.assigned,
       expiresAt: schema.license.expiresAt,
       startDate: schema.cohort.startDate,
       endDate: schema.cohort.endDate,
     })
     .from(schema.license)
-    .innerJoin(schema.enrollment, eq(schema.license.enrollmentId, schema.enrollment.id))
+    // 0088 — leftJoin: la licencia de un profesor no tiene inscripción.
+    .leftJoin(schema.enrollment, eq(schema.license.enrollmentId, schema.enrollment.id))
     .leftJoin(schema.cohort, eq(schema.enrollment.cohortId, schema.cohort.id))
     .where(
       scoped(
         schema.license.organizationId,
         organizationId,
-        softwareId ? eq(schema.license.softwareId, softwareId) : undefined
+        filtro.softwareId ? eq(schema.license.softwareId, filtro.softwareId) : undefined,
+        filtro.teamId ? eq(schema.license.teamId, filtro.teamId) : undefined
       )
     );
 
   const ahora = new Date();
-  const salida = new Map<string, number>();
-  for (const l of licencias) {
-    const ocupada = licenciaOcupada(
-      { assigned: l.assigned, expiresAt: l.expiresAt },
-      // El leftJoin trae fechas nulas cuando la inscripción no tiene cohorte:
-      // eso es "fechas desconocidas", no "terminó".
-      { startDate: l.startDate, endDate: l.endDate },
-      ahora
-    );
-    if (ocupada) salida.set(l.softwareId, (salida.get(l.softwareId) ?? 0) + 1);
-  }
-  return salida;
+  return licencias.filter((l) =>
+    l.teacherId
+      ? // 0088 — Un profesor no tiene cohorte: nada la libera salvo desasignarla o vencer.
+        licenciaDeProfesorOcupada({ assigned: l.assigned, expiresAt: l.expiresAt }, ahora)
+      : licenciaOcupada(
+          { assigned: l.assigned, expiresAt: l.expiresAt },
+          // El leftJoin trae fechas nulas cuando la inscripción no tiene cohorte:
+          // eso es "fechas desconocidas", no "terminó".
+          { startDate: l.startDate, endDate: l.endDate },
+          ahora
+        )
+  );
 }
 
 /**
@@ -486,6 +915,9 @@ export async function contarOcupadas(
  * total vs. disponibles por cada software de la organización. Consulta
  * propia (no reusa `listSoftware` de `@/server/software`, que a su vez
  * importa `countAssignedLicenses` de este módulo — evita el ciclo).
+ *
+ * 0087 — Suma de los equipos activos: el detalle por equipo está en
+ * `/api/licenses` y `/api/license-teams`.
  */
 export async function listLicenseInventory(
   organizationId: string
@@ -495,23 +927,35 @@ export async function listLicenseInventory(
     .select({
       id: schema.software.id,
       name: schema.software.name,
-      totalLicenses: schema.software.totalLicenses,
+      total: cupoTotalSql(false),
     })
     .from(schema.software)
+    .leftJoin(schema.licenseTeamSeat, eq(schema.licenseTeamSeat.softwareId, schema.software.id))
+    .leftJoin(schema.licenseTeam, eq(schema.licenseTeam.id, schema.licenseTeamSeat.teamId))
     .where(scoped(schema.software.organizationId, organizationId))
+    .groupBy(schema.software.id, schema.software.name)
     .orderBy(asc(schema.software.name));
   if (softwareRows.length === 0) return [];
 
   const assignedMap = await contarOcupadas(organizationId);
+  // 0089 — Los asientos de Autodesk que el campus no cuenta, por programa.
+  const ajenos = await asientosAjenos(organizationId);
+  const externosDe = (softwareId: string) =>
+    [...ajenos].reduce(
+      (suma, [clave, n]) => (clave.endsWith(`|${softwareId}`) ? suma + n : suma),
+      0
+    );
 
   return softwareRows.map((s) => {
     const assignedCount = assignedMap.get(s.id) ?? 0;
+    const externos = externosDe(s.id);
     return {
       softwareId: s.id,
       softwareName: s.name,
-      total: s.totalLicenses,
+      total: s.total,
       assignedCount,
-      available: s.totalLicenses - assignedCount,
+      externos,
+      available: s.total - assignedCount - externos,
     };
   });
 }

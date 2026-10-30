@@ -47,6 +47,7 @@ import { CourseForm } from "@/components/academic/course-form";
 import { NextCoursesDialog } from "@/components/academic/next-courses-dialog";
 import { AssessmentModelsDialog } from "@/components/academic/assessment-models-dialog";
 import { TeacherForm } from "@/components/academic/teacher-form";
+import { TeacherLicensesDialog } from "@/components/academic/teacher-licenses-dialog";
 import { RoomsPanel } from "@/components/academic/rooms-panel";
 import {
   AvatarDeCurso,
@@ -225,12 +226,15 @@ function Cupos({ inscriptos, cupo }: { inscriptos: number; cupo: number | null }
 export function AcademicClient({
   canEdit = false,
   canManageAccess = false,
+  canManageLicenses = false,
   initialTab = "cursos",
 }: {
   /** `academico.editar`: cursos, cohortes, profesores y aulas. */
   canEdit?: boolean;
   /** `accesos.gestionar`: el acceso al portal de un profesor. */
   canManageAccess?: boolean;
+  /** `licencias.gestionar`: asignar y quitar las licencias de un profesor (0088). */
+  canManageLicenses?: boolean;
   /** Pestaña inicial, de `?tab=` (la valida el servidor con `leerPestana`). */
   initialTab?: PestanaAcademico;
 }) {
@@ -411,6 +415,8 @@ export function AcademicClient({
   const [teacherForm, setTeacherForm] = useState<
     { mode: "create" } | { mode: "edit"; teacher: TeacherDto } | null
   >(null);
+  /** 0088 — El profesor cuyas licencias se están viendo. */
+  const [teacherLicenses, setTeacherLicenses] = useState<TeacherDto | null>(null);
 
   /**
    * 028 (seguimiento) — Lo que queda después del filtro, con cada módulo
@@ -1211,6 +1217,16 @@ export function AcademicClient({
                         Cargá su correo para poder invitarlo
                       </span>
                     )}
+                    {/* 0088 — Todos los que ven Académico las miran; asignar es de
+                        quien tiene `licencias.gestionar`. */}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label={`Licencias de ${t.name}`}
+                      onClick={() => setTeacherLicenses(t)}
+                    >
+                      Licencias
+                    </Button>
                     {canEdit && (
                       <>
                         <Button
@@ -1302,6 +1318,14 @@ export function AcademicClient({
             void refetch();
           }}
           onTeacherCreated={(t) => setTeachers((prev) => [...prev, t])}
+        />
+      )}
+
+      {teacherLicenses && (
+        <TeacherLicensesDialog
+          teacher={{ id: teacherLicenses.id, name: teacherLicenses.name, email: teacherLicenses.email }}
+          canManage={canManageLicenses}
+          onClose={() => setTeacherLicenses(null)}
         />
       )}
 

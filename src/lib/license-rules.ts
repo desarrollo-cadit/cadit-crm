@@ -74,6 +74,24 @@ export function licenciaOcupada(
   return !cohorteTerminada(cohorte, now);
 }
 
+/**
+ * 0088 — La licencia de un PROFESOR: no tiene inscripción ni cohorte, así que
+ * no hay un curso que "termine" y la libere. Ocupa su asiento mientras esté
+ * asignada y no haya vencido; la libera alguien (`unassign`) o `expiresAt`.
+ *
+ * Es distinta de `licenciaOcupada(l, null)` a propósito: esa lee "sin cohorte"
+ * como "fechas desconocidas, no terminó" por una razón de la inscripción; acá
+ * es la regla, no un dato que falta, y tiene que seguir valiendo si mañana
+ * alguien cambia el trato de las fechas desconocidas de los alumnos.
+ */
+export function licenciaDeProfesorOcupada(
+  licencia: { assigned: boolean; expiresAt: Date | null },
+  now: Date = new Date()
+): boolean {
+  if (!licencia.assigned) return false;
+  return !(licencia.expiresAt && licencia.expiresAt <= now);
+}
+
 function cohorteTerminada(
   cohorte: { startDate: Date | null; endDate: Date | null } | null,
   now: Date

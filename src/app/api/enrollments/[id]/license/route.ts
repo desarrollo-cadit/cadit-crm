@@ -22,6 +22,8 @@ export const GET = requireCapability(
 
 const putSchema = z.object({
   softwareId: z.string().min(1),
+  /** 0087 — El equipo de licencias del que sale el asiento. Obligatorio (422 sin él). */
+  teamId: z.string().min(1),
 });
 
 /**
@@ -37,6 +39,8 @@ const putSchema = z.object({
  *
  * 2026-10-26 — `licencias.gestionar` (soporte y dirección), ya no
  * `academico.editar`: asignar licencias es tarea de soporte.
+ *
+ * 0087 — Pide `teamId`: la licencia descuenta del cupo de ESE equipo.
  */
 export const PUT = requireCapability(
   "licencias.gestionar",
@@ -45,7 +49,12 @@ export const PUT = requireCapability(
   const body = await parseBody(req, putSchema);
   if (!body.ok) return body.response;
 
-  const result = await assignLicense(session.organizationId, id, body.data.softwareId);
+  const result = await assignLicense(
+    session.organizationId,
+    id,
+    body.data.softwareId,
+    body.data.teamId
+  );
   if (!result.ok) return apiError(result.status, result.code, result.message);
 
   return Response.json({ license: result.license, warnings: result.warnings });

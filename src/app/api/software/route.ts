@@ -13,11 +13,12 @@ export const GET = requireCapability(
 
 const createSchema = z.object({
   name: z.string().trim().min(1).max(120),
+  /** 0087 — Compatibilidad: el cupo en el equipo por defecto. El cupo real es por equipo. */
   totalLicenses: z.number().int().min(0).optional(),
 });
 
-// 005 — catálogo básico (nombre, total de licencias). El PATCH que valida
-// stock asignado (FR-004) es T031 (US4), fuera de este alcance.
+// 005 — catálogo básico (nombre). 0087: el cupo se carga por equipo en
+// `/api/license-teams/[id]/seats`.
 export const POST = requireCapability(
   "academico.editar",
   async (session, req: Request) => {
@@ -33,7 +34,6 @@ export const POST = requireCapability(
       software: {
         id,
         name: body.data.name,
-        totalLicenses: body.data.totalLicenses ?? 0,
       },
     },
     { status: 201 }

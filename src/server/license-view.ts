@@ -4,9 +4,11 @@ import { scoped } from "@/lib/db/tenant";
 import { alias } from "drizzle-orm/pg-core";
 import { fullName } from "@/lib/utils";
 import { correoDeLicencia } from "@/lib/license-email";
+import { asientosAjenos, fotosDeLosEquipos } from "@/server/license-ajenos";
 import {
   armarVistaDeLicencias,
   estadoDeLicencia,
+  estadoDeLicenciaDeProfesor,
   faltantesDelGrupo,
   type FilaDeLicenciaVista,
   type ProgramaDeLaVista,
@@ -26,6 +28,15 @@ export type VistaDeLicenciasDto = {
   programas: ProgramaDeLaVista[];
   /** Las cohortes que aparecen en la lista, para el filtro. */
   cohortes: { id: string; name: string }[];
+  /** 0087 — Los equipos de licencias (los archivados al final). */
+  equipos: {
+    id: string;
+    name: string;
+    autodeskAlias: string | null;
+    archived: boolean;
+    /** 0089 — De cuándo es la última importación de Autodesk de este equipo. */
+    importadoEn: string | null;
+  }[];
 };
 
 const nombreDeCohorte = (c: { cohortName: string | null; courseName: string | null }) =>
@@ -44,26 +55,66 @@ export async function vistaDeLicencias(
     .select({
       id: schema.software.id,
       name: schema.software.name,
-      total: schema.software.totalLicenses,
       photoMimeType: schema.software.photoMimeType,
     })
     .from(schema.software)
     .where(scoped(schema.software.organizationId, organizationId))
     .orderBy(asc(schema.software.name));
-  if (software.length === 0) return { programas: [], cohortes: [] };
+  if (software.length === 0) return { programas: [], cohortes: [], equipos: [] };
+
+  // 0087 — El cupo es de cada equipo; el total de un programa es la suma de
+  // los equipos ACTIVOS (un archivado no tiene licencias ocupadas).
+  const [equiposRows, cupos] = await Promise.all([
+    db
+      .select({
+        id: schema.licenseTeam.id,
+        name: schema.licenseTeam.name,
+        autodeskAlias: schema.licenseTeam.autodeskAlias,
+        archivedAt: schema.licenseTeam.archivedAt,
+      })
+      .from(schema.licenseTeam)
+      .where(scoped(schema.licenseTeam.organizationId, organizationId)),
+    db
+      .select({
+        teamId: schema.licenseTeamSeat.teamId,
+        softwareId: schema.licenseTeamSeat.softwareId,
+        total: schema.licenseTeamSeat.total,
+      })
+      .from(schema.licenseTeamSeat)
+      .where(scoped(schema.licenseTeamSeat.organizationId, organizationId)),
+  ]);
+  // 0089 — Lo que Autodesk tiene ocupado y el campus no cuenta, y de cuándo es esa foto.
+  const [ajenos, fotos] = await Promise.all([
+    asientosAjenos(organizationId),
+    fotosDeLosEquipos(organizationId),
+  ]);
+  const equipos = equiposRows
+    .map((e) => ({
+      id: e.id,
+      name: e.name,
+      autodeskAlias: e.autodeskAlias,
+      archived: e.archivedAt !== null,
+      importadoEn: fotos.get(e.id)?.toISOString() ?? null,
+    }))
+    .sort((a, b) => Number(a.archived) - Number(b.archived) || a.name.localeCompare(b.name, "es"));
+  const activos = new Set(equipos.filter((e) => !e.archived).map((e) => e.id));
 
   const [licencias, grupos] = await Promise.all([
     db
       .select({
         licenseId: schema.license.id,
         enrollmentId: schema.license.enrollmentId,
+        teacherId: schema.license.teacherId,
         softwareId: schema.license.softwareId,
+        teamId: schema.license.teamId,
         source: schema.license.source,
         assignedAt: schema.license.assignedAt,
         expiresAt: schema.license.expiresAt,
         contactId: schema.contact.id,
         firstName: schema.contact.firstName,
         lastName: schema.contact.lastName,
+        teacherName: schema.teacher.name,
+        teacherEmail: schema.teacher.email,
         cohortId: schema.cohort.id,
         cohortName: schema.cohort.name,
         courseName: schema.course.name,
@@ -71,14 +122,16 @@ export async function vistaDeLicencias(
         endDate: schema.cohort.endDate,
       })
       .from(schema.license)
-      .innerJoin(schema.enrollment, eq(schema.license.enrollmentId, schema.enrollment.id))
-      .innerJoin(schema.contact, eq(schema.enrollment.contactId, schema.contact.id))
+      // 0088 — leftJoin: la licencia de un profesor no tiene inscripción ni contacto.
+      .leftJoin(schema.enrollment, eq(schema.license.enrollmentId, schema.enrollment.id))
+      .leftJoin(schema.contact, eq(schema.enrollment.contactId, schema.contact.id))
+      .leftJoin(schema.teacher, eq(schema.license.teacherId, schema.teacher.id))
       .leftJoin(schema.cohort, eq(schema.enrollment.cohortId, schema.cohort.id))
       .leftJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
       .where(
         scoped(schema.license.organizationId, organizationId, eq(schema.license.assigned, true))
       )
-      .orderBy(asc(schema.contact.firstName)),
+      .orderBy(asc(schema.contact.firstName), asc(schema.teacher.name)),
     db
       .select({
         cohortId: schema.cohortGroupSoftware.cohortId,
@@ -93,27 +146,42 @@ export async function vistaDeLicencias(
     : null;
 
   const ahora = new Date();
-  const filas: FilaDeLicenciaVista[] = licencias.map((l) => ({
-    ...(correos
-      ? { licenseEmail: correos.get(l.licenseId) ?? { email: null, distinto: false } }
-      : {}),
-    licenseId: l.licenseId,
-    enrollmentId: l.enrollmentId,
-    softwareId: l.softwareId,
-    contactId: l.contactId,
-    contactName: fullName(l),
-    cohortId: l.cohortId,
-    cohortName: l.cohortId ? nombreDeCohorte(l) : null,
-    source: l.source,
-    assignedAt: l.assignedAt?.toISOString() ?? null,
-    expiresAt: l.expiresAt?.toISOString() ?? null,
-    // La misma regla que `contarOcupadas` (el stock): fechas nulas = no terminó.
-    estado: estadoDeLicencia(
-      { expiresAt: l.expiresAt },
-      { startDate: l.startDate, endDate: l.endDate },
-      ahora
-    ),
-  }));
+  const filas: FilaDeLicenciaVista[] = licencias.map((l) => {
+    const esProfesor = l.teacherId !== null;
+    return {
+      ...(correos
+        ? {
+            licenseEmail: esProfesor
+              ? { email: l.teacherEmail, distinto: false }
+              : (correos.get(l.licenseId) ?? { email: null, distinto: false }),
+          }
+        : {}),
+      licenseId: l.licenseId,
+      enrollmentId: l.enrollmentId,
+      teacherId: l.teacherId,
+      titular: esProfesor ? ("profesor" as const) : ("alumno" as const),
+      softwareId: l.softwareId,
+      teamId: l.teamId,
+      contactId: esProfesor ? null : l.contactId,
+      contactName: esProfesor
+        ? (l.teacherName ?? "Profesor")
+        : fullName({ firstName: l.firstName ?? "", lastName: l.lastName ?? "" }),
+      cohortId: l.cohortId,
+      cohortName: l.cohortId ? nombreDeCohorte(l) : null,
+      source: l.source,
+      assignedAt: l.assignedAt?.toISOString() ?? null,
+      expiresAt: l.expiresAt?.toISOString() ?? null,
+      // La misma regla que `contarOcupadas` (el stock): fechas nulas = no terminó;
+      // y un profesor, sin cohorte, solo deja de ocupar si la licencia vence.
+      estado: esProfesor
+        ? estadoDeLicenciaDeProfesor({ expiresAt: l.expiresAt }, ahora)
+        : estadoDeLicencia(
+            { expiresAt: l.expiresAt },
+            { startDate: l.startDate, endDate: l.endDate },
+            ahora
+          ),
+    };
+  });
 
   // FR-016 — Los miembros ACTIVOS de los grupos con programas asignados.
   const cohortesDeGrupo = [...new Set(grupos.map((g) => g.cohortId))];
@@ -163,15 +231,20 @@ export async function vistaDeLicencias(
       software.map((s) => ({
         id: s.id,
         name: s.name,
-        total: s.total,
+        total: cupos
+          .filter((c) => c.softwareId === s.id && activos.has(c.teamId))
+          .reduce((suma, c) => suma + c.total, 0),
         hasPhoto: s.photoMimeType !== null,
       })),
       filas,
-      faltantes
+      faltantes,
+      cupos,
+      ajenos
     ),
     cohortes: [...cohortes]
       .map(([id, name]) => ({ id, name }))
       .sort((a, b) => a.name.localeCompare(b.name, "es")),
+    equipos,
   };
 }
 

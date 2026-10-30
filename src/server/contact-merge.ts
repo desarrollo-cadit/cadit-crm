@@ -123,6 +123,8 @@ const TABLA: Record<
   | typeof schema.areaHandoff
   | typeof schema.staffNotice
   | typeof schema.zoomParticipantAlias
+  | typeof schema.licenseEmailAlias
+  | typeof schema.licenseAutodeskTask
 > = {
   activity_log: schema.activityLog,
   contact_activity: schema.contactActivity,
@@ -132,6 +134,8 @@ const TABLA: Record<
   area_handoff: schema.areaHandoff,
   staff_notice: schema.staffNotice,
   zoom_participant_alias: schema.zoomParticipantAlias,
+  license_email_alias: schema.licenseEmailAlias,
+  license_autodesk_task: schema.licenseAutodeskTask,
 };
 
 export type Preparacion = {

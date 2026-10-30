@@ -23,6 +23,12 @@ export const ALIAS_ACADEMICO: Readonly<Record<string, PestanaAcademico>> = {
   rooms: "aulas",
 };
 
+/* ------------------------------------------------------------ /licencias */
+
+/** 0089 — «Conciliación» es el reporte contra el Excel de usuarios de Autodesk. */
+export const PESTANAS_LICENCIAS = ["programas", "conciliacion"] as const;
+export type PestanaLicencias = (typeof PESTANAS_LICENCIAS)[number];
+
 /* ------------------------------------------------------- /cohorts/[id] */
 
 export type PestanaDelGrupo =
