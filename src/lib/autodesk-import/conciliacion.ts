@@ -2,7 +2,7 @@ import { computeCohortStatus } from "@/lib/cohort-status";
 import { claveDeStock } from "@/lib/license-team";
 
 /**
- * 0089 — Conciliar lo que dice Autodesk con lo que dice el campus.
+ * 0091 — Conciliar lo que dice Autodesk con lo que dice el campus.
  *
  * Reglas PURAS. El mismo `planDeConciliacion` arma la vista previa de un
  * archivo (con sus filas en memoria) y el reporte de trabajo (con las filas de

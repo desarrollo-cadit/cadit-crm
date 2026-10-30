@@ -3,7 +3,7 @@ import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * 0088 — Licencias de PROFESORES. `license` cuelga de una inscripción O de un
+ * 0090 — Licencias de PROFESORES. `license` cuelga de una inscripción O de un
  * profesor; la de un profesor descuenta del cupo de su equipo, no la libera
  * ninguna fecha de curso, y los flujos del grupo (que solo conocen
  * inscripciones) ni la ven. El portal del profesor no la muestra.
@@ -209,8 +209,8 @@ function archivos(dir: string): string[] {
   });
 }
 
-describe("migración 0088 y esquema", () => {
-  const sql = leer("drizzle", "0088_licencias_de_profesores.sql");
+describe("migración 0090 y esquema", () => {
+  const sql = leer("drizzle", "0090_licencias_de_profesores.sql");
 
   it("la licencia cuelga de una inscripción O de un profesor, exactamente uno", () => {
     expect(sql).toContain('alter column "enrollment_id" drop not null');

@@ -1,6 +1,6 @@
 {
-  "id": "e477f50d-c3e7-4baa-996f-3e1037f80b2e",
-  "prevId": "5989180c-9e9c-48b6-9ea0-1f286bb0302a",
+  "id": "d0373081-abc2-466e-83b8-d6a2dd689263",
+  "prevId": "fae0b87e-657a-400b-a7c1-17c7437b8155",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3649,6 +3649,20 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "has_assessments": {
+          "name": "has_assessments",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "issues_certificate": {
+          "name": "issues_certificate",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
         }
       },
       "indexes": {
@@ -3835,12 +3849,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "team_id": {
-          "name": "team_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
         "expires_at": {
           "name": "expires_at",
           "type": "timestamp",
@@ -3932,19 +3940,6 @@
           "tableTo": "software",
           "columnsFrom": [
             "software_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "cohort_group_software_team_id_license_team_id_fk": {
-          "name": "cohort_group_software_team_id_license_team_id_fk",
-          "tableFrom": "cohort_group_software",
-          "tableTo": "license_team",
-          "columnsFrom": [
-            "team_id"
           ],
           "columnsTo": [
             "id"
@@ -7786,22 +7781,10 @@
           "name": "enrollment_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
-        },
-        "teacher_id": {
-          "name": "teacher_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "software_id": {
           "name": "software_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "team_id": {
-          "name": "team_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
@@ -7864,21 +7847,6 @@
           "method": "btree",
           "with": {}
         },
-        "license_team_idx": {
-          "name": "license_team_idx",
-          "columns": [
-            {
-              "expression": "team_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "license_enrollment_software_uq": {
           "name": "license_enrollment_software_uq",
           "columns": [
@@ -7896,42 +7864,6 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "license_teacher_software_uq": {
-          "name": "license_teacher_software_uq",
-          "columns": [
-            {
-              "expression": "teacher_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "software_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "license_teacher_idx": {
-          "name": "license_teacher_idx",
-          "columns": [
-            {
-              "expression": "teacher_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -7964,19 +7896,6 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "license_teacher_id_teacher_id_fk": {
-          "name": "license_teacher_id_teacher_id_fk",
-          "tableFrom": "license",
-          "tableTo": "teacher",
-          "columnsFrom": [
-            "teacher_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
         "license_software_id_software_id_fk": {
           "name": "license_software_id_software_id_fk",
           "tableFrom": "license",
@@ -7989,269 +7908,15 @@
           ],
           "onDelete": "restrict",
           "onUpdate": "no action"
-        },
-        "license_team_id_license_team_id_fk": {
-          "name": "license_team_id_license_team_id_fk",
-          "tableFrom": "license",
-          "tableTo": "license_team",
-          "columnsFrom": [
-            "team_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "license_un_titular": {
-          "name": "license_un_titular",
-          "value": "num_nonnulls(\"license\".\"enrollment_id\", \"license\".\"teacher_id\") = 1"
-        },
         "license_source_valido": {
           "name": "license_source_valido",
           "value": "\"license\".\"source\" in ('grupo', 'individual')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.license_team": {
-      "name": "license_team",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "organization_id": {
-          "name": "organization_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "autodesk_alias": {
-          "name": "autodesk_alias",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "archived_at": {
-          "name": "archived_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "license_team_org_name_uq": {
-          "name": "license_team_org_name_uq",
-          "columns": [
-            {
-              "expression": "organization_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "license_team_org_idx": {
-          "name": "license_team_org_idx",
-          "columns": [
-            {
-              "expression": "organization_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "license_team_organization_id_organization_id_fk": {
-          "name": "license_team_organization_id_organization_id_fk",
-          "tableFrom": "license_team",
-          "tableTo": "organization",
-          "columnsFrom": [
-            "organization_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.license_team_seat": {
-      "name": "license_team_seat",
-      "schema": "",
-      "columns": {
-        "organization_id": {
-          "name": "organization_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "team_id": {
-          "name": "team_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "software_id": {
-          "name": "software_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "total": {
-          "name": "total",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "license_team_seat_org_idx": {
-          "name": "license_team_seat_org_idx",
-          "columns": [
-            {
-              "expression": "organization_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "license_team_seat_software_idx": {
-          "name": "license_team_seat_software_idx",
-          "columns": [
-            {
-              "expression": "software_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "license_team_seat_organization_id_organization_id_fk": {
-          "name": "license_team_seat_organization_id_organization_id_fk",
-          "tableFrom": "license_team_seat",
-          "tableTo": "organization",
-          "columnsFrom": [
-            "organization_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "license_team_seat_team_id_license_team_id_fk": {
-          "name": "license_team_seat_team_id_license_team_id_fk",
-          "tableFrom": "license_team_seat",
-          "tableTo": "license_team",
-          "columnsFrom": [
-            "team_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "license_team_seat_software_id_software_id_fk": {
-          "name": "license_team_seat_software_id_software_id_fk",
-          "tableFrom": "license_team_seat",
-          "tableTo": "software",
-          "columnsFrom": [
-            "software_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "license_team_seat_team_id_software_id_pk": {
-          "name": "license_team_seat_team_id_software_id_pk",
-          "columns": [
-            "team_id",
-            "software_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "license_team_seat_total_valido": {
-          "name": "license_team_seat_total_valido",
-          "value": "\"license_team_seat\".\"total\" >= 0"
         }
       },
       "isRLSEnabled": false
@@ -13081,6 +12746,18 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "origin_class_number": {
+          "name": "origin_class_number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "origin_class_label": {
+          "name": "origin_class_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {

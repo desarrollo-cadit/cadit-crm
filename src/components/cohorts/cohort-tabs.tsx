@@ -45,8 +45,17 @@ export function CohortTabs({
   canManageLicenses = false,
   esEspecializacion,
   esModulo = false,
+  tieneEvaluaciones = true,
+  emiteCertificado = true,
   initialTab,
 }: {
+  /**
+   * 2026-10-29 — Configuración de un taller (`src/lib/taller-config.ts`). Sin
+   * evaluaciones la pestaña pasa a ser la lista de certificados; sin
+   * certificado no hay botones de emisión. El servidor lo valida igual.
+   */
+  tieneEvaluaciones?: boolean;
+  emiteCertificado?: boolean;
   /**
    * 2026-10-26 — Pestaña inicial, de `?tab=`. El servidor la valida contra
    * `pestanasDelGrupo`: una pestaña que este grupo o esta persona no tiene
@@ -125,12 +134,18 @@ export function CohortTabs({
   const pestanas = pestanasDelGrupo({
     esEspecializacion,
     verCursosOffline: canViewAcademic && !esModulo,
+    tieneEvaluaciones,
+    emiteCertificado,
   });
 
   return (
     <div className="flex h-full flex-col">
       <div className="flex gap-2 border-b px-6 pt-4">
-        {pestanas.map((key) => ({ key, label: ETIQUETA[key] })).map((t) => (
+        {pestanas
+          .map((key) => ({
+            key,
+            label: key === "evaluacion" && !tieneEvaluaciones ? "Resultado final" : ETIQUETA[key],
+          })).map((t) => (
           <button
             key={t.key}
             type="button"
@@ -198,8 +213,9 @@ export function CohortTabs({
           <GradingClient
             cohortId={cohortId}
             canEdit={canEditGrading}
-            canIssueCertificates={canIssueCertificates}
+            canIssueCertificates={canIssueCertificates && emiteCertificado}
             canConfirmResults={canConfirmResults}
+            sinEvaluaciones={!tieneEvaluaciones}
           />
         ) : (
           <AnnouncementsClient cohortId={cohortId} canPublish={canEditAcademic} />

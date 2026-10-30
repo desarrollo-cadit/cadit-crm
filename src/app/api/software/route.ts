@@ -13,11 +13,11 @@ export const GET = requireCapability(
 
 const createSchema = z.object({
   name: z.string().trim().min(1).max(120),
-  /** 0087 — Compatibilidad: el cupo en el equipo por defecto. El cupo real es por equipo. */
+  /** 0089 — Compatibilidad: el cupo en el equipo por defecto. El cupo real es por equipo. */
   totalLicenses: z.number().int().min(0).optional(),
 });
 
-// 005 — catálogo básico (nombre). 0087: el cupo se carga por equipo en
+// 005 — catálogo básico (nombre). 0089: el cupo se carga por equipo en
 // `/api/license-teams/[id]/seats`.
 export const POST = requireCapability(
   "academico.editar",

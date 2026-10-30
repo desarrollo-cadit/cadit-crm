@@ -1,4 +1,5 @@
 import { eq, inArray, or } from "drizzle-orm";
+import { grupoEmiteCertificado } from "@/lib/taller-config";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import type { ApprovalState } from "@/lib/approval";
@@ -135,8 +136,14 @@ export async function estadosAfirmados(
       id: schema.enrollment.id,
       cohortId: schema.enrollment.cohortId,
       parentEnrollmentId: schema.enrollment.parentEnrollmentId,
+      courseKind: schema.course.kind,
+      registrationStatus: schema.cohort.registrationStatus,
+      hasAssessments: schema.cohort.hasAssessments,
+      issuesCertificate: schema.cohort.issuesCertificate,
     })
     .from(schema.enrollment)
+    .leftJoin(schema.cohort, eq(schema.enrollment.cohortId, schema.cohort.id))
+    .leftJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
     .where(
       scoped(
         schema.enrollment.organizationId,
@@ -158,6 +165,17 @@ export async function estadosAfirmados(
     return c ? incompletos.has(c) : false;
   };
 
+  /**
+   * 2026-10-29 — "No emite" (taller configurado) suspende lo emitido. Un grupo
+   * SIN evaluaciones NO es un caso aparte: igual que cualquier otro, el
+   * certificado depende del resultado CONFIRMADO por una persona.
+   */
+  const porId = new Map(filas.map((f) => [f.id, f]));
+  const noEmite = (id: string) => {
+    const f = porId.get(id);
+    return f ? !grupoEmiteCertificado(f) : false;
+  };
+
   const salida = new Map<string, EstadoAfirmado>();
   for (const id of ids) {
     const hijas = filas.filter((f) => f.parentEnrollmentId === id);
@@ -168,6 +186,7 @@ export async function estadosAfirmados(
           hijas.map((h) => (sinResultadoDe(h.id) ? null : (confirmados.get(h.id) ?? null)))
         ).state,
         sinResultado: alguna,
+        noEmite: noEmite(id),
       });
       continue;
     }
@@ -175,6 +194,7 @@ export async function estadosAfirmados(
     salida.set(id, {
       state: sinResultado ? "pendiente" : estadoAfirmado(confirmados.get(id) ?? null).state,
       sinResultado,
+      noEmite: noEmite(id),
     });
   }
   return salida;

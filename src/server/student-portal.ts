@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, gte, inArray, isNotNull } from "drizzle-orm";
+import { grupoTieneEvaluaciones } from "@/lib/taller-config";
 import { inscripcionesNoDictadas } from "@/server/cursadas-no-dictadas";
 import { cursoNoEsTaller } from "@/server/workshop-scope";
 import { getDb, schema } from "@/lib/db";
@@ -270,6 +271,8 @@ export type StudentCourseDto = {
    */
   awaitingConfirmation: boolean;
   assessments: StudentAssessmentDto[];
+  /** 2026-10-29 — `false` = taller sin evaluaciones: no hay pestaña ni resultado. */
+  tieneEvaluaciones: boolean;
   certificate: {
     code: string;
     issuedAt: string;
@@ -516,7 +519,7 @@ export async function studentOverview(
     evaluaciones,
     resultados,
     ...(await resultadoYCertificadosVisibles(organizationId, enrollmentIds, certificados)),
-    // 0088 — Solo las de inscripciones (la de un profesor no pasa por acá).
+    // 0090 — Solo las de inscripciones (la de un profesor no pasa por acá).
     licencias: licencias.flatMap((l) => (l.enrollmentId ? [{ ...l, enrollmentId: l.enrollmentId }] : [])),
     accesos,
     prorrogas: await prorrogasDeInscripciones(organizationId, enrollmentIds, enrollments),
@@ -701,7 +704,15 @@ function buildCourse(
     course?.minAttendancePct ?? null
   );
 
-  const evalsDeLaCohorte = data.evaluaciones.filter((a) => a.cohortId === cohort?.id);
+  // 2026-10-29 — Taller sin evaluaciones: sin lista de evaluaciones (el resultado final se confirma igual).
+  const tieneEvaluaciones = grupoTieneEvaluaciones({
+    courseKind: course?.kind,
+    registrationStatus: cohort?.registrationStatus,
+    hasAssessments: cohort?.hasAssessments,
+  });
+  const evalsDeLaCohorte = tieneEvaluaciones
+    ? data.evaluaciones.filter((a) => a.cohortId === cohort?.id)
+    : [];
   const assessments: StudentAssessmentDto[] = evalsDeLaCohorte.map((a) => {
     const mio = data.resultados.find(
       (r) => r.assessmentId === a.id && r.enrollmentId === enrollment.id
@@ -755,7 +766,8 @@ function buildCourse(
       reloj
     );
   const confirmado = sinResultado ? null : (data.confirmados.get(enrollment.id) ?? null);
-  const sinDatos = sinResultado || (confirmado === null && sugerido === "sin_datos");
+  // Sin evaluaciones el resultado igual lo confirma una persona: "pendiente", nunca "sin datos".
+  const sinDatos = sinResultado || (tieneEvaluaciones && confirmado === null && sugerido === "sin_datos");
   const { state, reasons } = estadoAfirmado(confirmado);
 
   const cert = data.certificados.find((c) => c.enrollmentId === enrollment.id);
@@ -799,6 +811,7 @@ function buildCourse(
     ).length,
     minAttendancePct,
     approval: sinDatos ? "sin_datos" : state,
+    tieneEvaluaciones,
     approvalReasons: sinResultado
       ? [RAZON_GRUPO_INCOMPLETO]
       : sinDatos
@@ -1321,7 +1334,7 @@ export async function studentCourseDetail(
     evaluaciones,
     resultados,
     ...(await resultadoYCertificadosVisibles(organizationId, enrollmentIds, certificados)),
-    // 0088 — Solo las de inscripciones (la de un profesor no pasa por acá).
+    // 0090 — Solo las de inscripciones (la de un profesor no pasa por acá).
     licencias: licencias.flatMap((l) => (l.enrollmentId ? [{ ...l, enrollmentId: l.enrollmentId }] : [])),
     accesos,
     prorrogas: await prorrogasDeInscripciones(organizationId, enrollmentIds, recorrido),
@@ -1403,9 +1416,7 @@ export async function studentCourseDetail(
             : Promise.resolve([]),
       ]);
 
-  const certificadoPropio = certificados.find(
-    (c) => c.enrollmentId === mia.enrollment.id
-  );
+  const certificadoPropio = certificados.find((c) => c.enrollmentId === mia.enrollment.id);
 
   /**
    * 024 — El recorrido. Se arma acá, en el servidor, y no en la pantalla: es

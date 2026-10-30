@@ -24,7 +24,7 @@ export const GET = requireCapability(
 
 const postSchema = z.object({
   softwareId: z.string().min(1).max(64),
-  /** 0087 — El equipo de licencias del que salen las del grupo. Obligatorio. */
+  /** 0089 — El equipo de licencias del que salen las del grupo. Obligatorio. */
   teamId: z.string().min(1).max(64),
   /** "2027-03-31" — vence al final de ese día en la academia. Opcional. */
   expiresAt: z

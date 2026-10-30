@@ -13,7 +13,7 @@ import { claveDeStock } from "./license-team";
  * `source = 'grupo'`. Así el inventario, el portal y el roster la ven sin
  * saber nada del grupo.
  *
- * 0087 — El stock es por EQUIPO: las licencias del grupo salen del equipo que
+ * 0089 — El stock es por EQUIPO: las licencias del grupo salen del equipo que
  * se eligió al asignar el programa al grupo (`cohort_group_software.team_id`).
  * Una licencia que ocupa un asiento de OTRO equipo no cuenta como «ya está»:
  * pasa al equipo del grupo y pide stock ahí.

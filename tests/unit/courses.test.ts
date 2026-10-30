@@ -39,7 +39,7 @@ vi.mock("@/lib/db", () => ({
       fn({ execute: async () => [] }),
   }),
   getDb: () => ({
-    // 0089 — `availableLicenses` mira los asientos ajenos con SQL directo.
+    // 0091 — `availableLicenses` mira los asientos ajenos con SQL directo.
     execute: async () => [],
     select: () => thenableChain(selectQueue.shift() ?? []),
     insert: (table: unknown) => ({

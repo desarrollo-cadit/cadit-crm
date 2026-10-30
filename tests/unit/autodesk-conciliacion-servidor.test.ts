@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { claveDeStock } from "@/lib/license-team";
 
 /**
- * 0089 — El lado servidor de la conciliación con Autodesk, con la base
+ * 0091 — El lado servidor de la conciliación con Autodesk, con la base
  * reemplazada por un doble: los asientos ajenos restan del disponible, marcar a
  * quien Autodesk ya tiene es neto cero, y importar valida, recuerda y cierra
  * tareas. Archivos y personas SINTÉTICOS.
@@ -770,8 +770,8 @@ describe("aplicarLoSeguro", () => {
 
 const leer = (...p: string[]) => readFileSync(path.join(process.cwd(), ...p), "utf8");
 
-describe("migración 0089", () => {
-  const sql = leer("drizzle", "0089_licencias_conciliacion.sql");
+describe("migración 0091", () => {
+  const sql = leer("drizzle", "0091_licencias_conciliacion.sql");
   const TABLAS = [
     "license_import_batch",
     "license_import_row",

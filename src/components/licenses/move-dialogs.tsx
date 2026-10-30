@@ -7,7 +7,7 @@ import { Select } from "@/components/ui/select";
 import { notify } from "@/lib/notify";
 
 /**
- * 0088 — Pasar un programa (o UNA licencia) de un equipo de licencias a otro.
+ * 0090 — Pasar un programa (o UNA licencia) de un equipo de licencias a otro.
  * El equipo equivocado es lo más común al principio: «AutoCAD figura en el
  * equipo 1 y es del 2». El servidor decide todo (cupo, stock, grupos); acá se
  * elige el destino y se cuenta qué va a pasar.

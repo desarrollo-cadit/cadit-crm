@@ -144,7 +144,7 @@ export type TeacherDto = {
   hasPhoto: boolean;
 };
 
-/** 005 (DV-004) — catálogo básico de software. 0087: el cupo es por equipo, no del programa. */
+/** 005 (DV-004) — catálogo básico de software. 0089: el cupo es por equipo, no del programa. */
 export type SoftwareDto = {
   id: string;
   name: string;
@@ -171,6 +171,9 @@ export type CohortDto = {
   endDate: string | null;
   /** 0083 — La entrega final del grupo (día). `null` = sin entrega final. */
   deliveryDeadline?: string | null;
+  /** 0087 — Valores efectivos (solo un taller cursable puede ser `false`). */
+  hasAssessments?: boolean;
+  issuesCertificate?: boolean;
   /** 005 iteración 2 — horario "HH:MM" para el calendario; frequency queda como texto libre. */
   startTime: string | null;
   endTime: string | null;

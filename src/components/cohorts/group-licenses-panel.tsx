@@ -43,7 +43,7 @@ function diaDeVencimiento(iso: string): string {
  * El faltante (alguien que se inscribió sin stock) se ve acá, en la fila de
  * cada alumno y en la vista de Licencias (FR-004/FR-016).
  *
- * 0087 — Al asignar un programa al grupo se elige UNA vez el equipo de
+ * 0089 — Al asignar un programa al grupo se elige UNA vez el equipo de
  * licencias del que salen todas; queda guardado con el programa y las altas
  * posteriores lo reusan.
  */

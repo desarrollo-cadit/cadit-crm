@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, count, eq, isNotNull, isNull } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
@@ -26,6 +26,31 @@ export async function listCompanies(organizationId: string) {
     .from(schema.company)
     .where(scoped(schema.company.organizationId, organizationId))
     .orderBy(asc(schema.company.legalName));
+}
+
+/**
+ * 2026-10-30 — Cuántas personas (contactos sin archivar) tiene cada empresa,
+ * para la columna del listado. Es un conteo: ningún dato de la persona viaja,
+ * y la ruta sigue pidiendo `contactos.ver`.
+ */
+export async function contarPersonasPorEmpresa(
+  organizationId: string
+): Promise<Map<string, number>> {
+  const db = getDb();
+  const filas = await db
+    .select({ companyId: schema.contact.companyId, cantidad: count() })
+    .from(schema.contact)
+    .where(
+      and(
+        scoped(schema.contact.organizationId, organizationId),
+        isNotNull(schema.contact.companyId),
+        isNull(schema.contact.archivedAt)
+      )
+    )
+    .groupBy(schema.contact.companyId);
+  const porEmpresa = new Map<string, number>();
+  for (const f of filas) if (f.companyId) porEmpresa.set(f.companyId, Number(f.cantidad));
+  return porEmpresa;
 }
 
 /**

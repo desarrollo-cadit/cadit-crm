@@ -71,6 +71,7 @@ export type RecordCourse = {
     issuedAt: string;
     revokedAt: string | null;
     suspended: boolean;
+    noEmite: boolean;
     /** 2026-10-29 — su grupo terminó sin la asistencia completa: cuenta como anulado. */
     annulledIncompleteGroup: boolean;
   } | null;
@@ -126,6 +127,7 @@ export type RecordModule = {
     issuedAt: string;
     revokedAt: string | null;
     suspended: boolean;
+    noEmite: boolean;
     /** 2026-10-29 — su grupo terminó sin la asistencia completa: cuenta como anulado. */
     annulledIncompleteGroup: boolean;
   } | null;
@@ -456,6 +458,7 @@ export async function getStudentRecord(
             code: cert.code,
             issuedAt: cert.issuedAt.toISOString(),
             revokedAt: cert.revokedAt?.toISOString() ?? null,
+            noEmite: afirmados.get(enrollment.id)?.noEmite ?? false,
             suspended: visibilidadSegun(cert.revokedAt, afirmados.get(enrollment.id)) === "suspendido",
             // 2026-10-29 — grupo terminado sin asistencia completa: cuenta como anulado.
             annulledIncompleteGroup:

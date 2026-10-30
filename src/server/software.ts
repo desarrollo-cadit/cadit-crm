@@ -8,7 +8,7 @@ import { MEDIA_LIMITS, readMediaFile, saveMediaFile } from "@/server/whatsapp/me
 /**
  * 005 (DV-004, FR-001) — Alta de un software del catálogo (Revit, Civil3D...).
  *
- * 0087 — El cupo ya no es del programa sino de cada equipo de licencias
+ * 0089 — El cupo ya no es del programa sino de cada equipo de licencias
  * (`license_team_seat`, `/api/license-teams`). `totalLicenses` sigue aceptado
  * por compatibilidad (scripts y la demo lo mandan): si viene, es el cupo del
  * programa en el equipo por defecto.
@@ -115,7 +115,7 @@ export type UpdateSoftwareResult =
 /**
  * 005 (T031, FR-004) — edita el catálogo de software.
  *
- * 0087 — El cupo se edita por equipo (`PUT /api/license-teams/[id]/seats`),
+ * 0089 — El cupo se edita por equipo (`PUT /api/license-teams/[id]/seats`),
  * que rechaza bajarlo por debajo de lo que ese equipo ya ocupa.
  */
 export async function updateSoftware(

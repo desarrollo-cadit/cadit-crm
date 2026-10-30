@@ -4,6 +4,7 @@ import { getEnv } from "@/lib/env";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { fechaDeBorrado } from "@/lib/recording-purge";
+import { contarPorEstado, type ConteoPorEstado } from "@/lib/recording-filters";
 import { classInstant } from "@/lib/schedule-time";
 import { organizationTimezone } from "@/server/finanzas-periodo";
 import { openPasscode, type SealedPasscode } from "./connections";
@@ -231,6 +232,8 @@ export type RecordingsPage = {
   pageSize: number;
   totalPages: number;
   configured: boolean;
+  /** 2026-10-30 — Cuántas hay por estado con los demás filtros (no viene en la fila suelta). */
+  stateCounts?: ConteoPorEstado;
 };
 
 export async function listRecordings(
@@ -252,11 +255,15 @@ export async function listRecordings(
   const tz = await organizationTimezone(orgId);
   const rango = dayRange(q.from, q.to, tz);
 
-  const condiciones: (SQL | undefined)[] = [
+  /** Todos los filtros salvo el estado (los conteos por estado parten de acá). */
+  const otrosFiltros: (SQL | undefined)[] = [
     q.connectionId ? eq(t.zoomConnectionId, q.connectionId) : undefined,
     q.roomId ? eq(t.virtualRoomId, q.roomId) : undefined,
     rango.gte ? gte(t.startTime, rango.gte) : undefined,
     rango.lt ? lt(t.startTime, rango.lt) : undefined,
+  ];
+  const condiciones: (SQL | undefined)[] = [
+    ...otrosFiltros,
     q.state === "faltante"
       ? isNotNull(t.missingInZoomAt)
       : q.state
@@ -268,6 +275,28 @@ export async function listRecordings(
 
   // Los filtros son todos de `zoom_recording`: el total se cuenta sin joins.
   const [{ total } = { total: 0 }] = await db.select({ total: count() }).from(t).where(donde);
+
+  /**
+   * 2026-10-30 — Cuántas hay en cada estado con los OTROS filtros puestos
+   * (el control de estado los muestra). Un `group by` sobre la misma tabla,
+   * sin joins; no se calcula para la fila suelta de asignar/desasignar.
+   */
+  let stateCounts: ConteoPorEstado | undefined;
+  if (!opts.ids) {
+    const sinEstado = scoped(t.organizationId, orgId, ...otrosFiltros);
+    const grupos = await db
+      .select({
+        state: t.assignmentState,
+        cantidad: count(),
+        faltantes: sql<number>`count(*) filter (where ${t.missingInZoomAt} is not null)`,
+      })
+      .from(t)
+      .where(sinEstado)
+      .groupBy(t.assignmentState);
+    stateCounts = contarPorEstado(
+      grupos.map((g) => ({ state: g.state, cantidad: Number(g.cantidad), faltantes: Number(g.faltantes) }))
+    );
+  }
   const ventana = pageWindow(total, q.page, q.pageSize);
   const orden = q.sort === "asc" ? [asc(t.startTime), asc(t.id)] : [desc(t.startTime), desc(t.id)];
 
@@ -363,6 +392,7 @@ export async function listRecordings(
     pageSize: q.pageSize,
     totalPages: ventana.totalPages,
     configured,
+    ...(stateCounts ? { stateCounts } : {}),
   };
 }
 

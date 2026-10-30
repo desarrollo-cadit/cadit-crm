@@ -66,6 +66,7 @@ type Student = {
     revokedByName: string | null;
     /** 0086 — Emitido, pero sin resultado final confirmado como aprobado. */
     suspended?: boolean;
+    noEmite?: boolean;
     /** 2026-10-29 — su grupo terminó sin la asistencia completa: cuenta como anulado. */
     annulledIncompleteGroup?: boolean;
   } | null;
@@ -106,9 +107,16 @@ export function GradingClient({
   cohortId,
   canEdit,
   canIssueCertificates,
+  sinEvaluaciones = false,
   canConfirmResults = false,
 }: {
   cohortId: string;
+  /**
+   * 2026-10-29 — Taller configurado SIN evaluaciones pero que emite
+   * certificado: la pestaña queda como lista de certificados (asistencia y
+   * emisión), sin nada para crear, copiar ni corregir.
+   */
+  sinEvaluaciones?: boolean;
   /** 014 — `evaluacion.editar`. Sin esto la planilla se ve, no se toca. */
   canEdit: boolean;
   /**
@@ -384,12 +392,12 @@ export function GradingClient({
       )}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <p className="text-xs text-muted-foreground">
-          {sheet.assessments.length} evaluaciones ·{" "}
+          {sinEvaluaciones ? "" : `${sheet.assessments.length} evaluaciones · `}
           {sheet.minAttendancePct === null
             ? "sin mínimo de asistencia"
             : `mínimo de asistencia ${sheet.minAttendancePct}%`}
         </p>
-        {canEdit && (
+        {canEdit && !sinEvaluaciones && (
           <div className="flex flex-wrap items-end gap-2">
             {/* 014 (T016) — Copiar el esquema de otra cohorte. Va al lado de
                 "Agregar" porque son la misma decisión: de dónde salen las
@@ -487,7 +495,7 @@ export function GradingClient({
         <PedidosDeProrroga cohortId={cohortId} timezone={sheet.timezone} />
       )}
 
-      {sheet.assessments.length === 0 ? (
+      {sheet.assessments.length === 0 && !sinEvaluaciones ? (
         <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
           {canEdit ? (
             <>
@@ -621,7 +629,9 @@ export function GradingClient({
                           </span>
                         ) : st.certificate.suspended ? (
                           <span className="text-warning" title={st.certificate.code}>
-                            suspendido · falta confirmar el resultado
+                            {st.certificate.noEmite
+                              ? "suspendido · el grupo no emite certificado"
+                              : "suspendido · falta confirmar el resultado"}
                           </span>
                         ) : (
                           <a

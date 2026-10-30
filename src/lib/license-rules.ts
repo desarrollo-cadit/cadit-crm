@@ -75,7 +75,7 @@ export function licenciaOcupada(
 }
 
 /**
- * 0088 — La licencia de un PROFESOR: no tiene inscripción ni cohorte, así que
+ * 0090 — La licencia de un PROFESOR: no tiene inscripción ni cohorte, así que
  * no hay un curso que "termine" y la libere. Ocupa su asiento mientras esté
  * asignada y no haya vencido; la libera alguien (`unassign`) o `expiresAt`.
  *

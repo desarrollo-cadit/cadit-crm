@@ -33,7 +33,7 @@ type Programa = { id: string; name: string };
  * (el servidor lo rechazaría con 409). Si la persona es del grupo y no tiene
  * la licencia —se inscribió sin stock—, se ve el faltante (FR-004).
  *
- * 0087 — Cada licencia sale del cupo de un EQUIPO (Uruguay ATC, Paraguay
+ * 0089 — Cada licencia sale del cupo de un EQUIPO (Uruguay ATC, Paraguay
  * ATC…): antes de «agregar…» se elige el equipo, que arranca en el último que
  * usó esta persona y muestra cuántas libres tiene de cada programa.
  */

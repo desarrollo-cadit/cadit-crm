@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 /**
  * 005 (T032, US4, FR-002/FR-003/FR-004): el pool de licencias se descuenta
  * al asignar y se libera al liberar/dar de baja; asignar con
- * `available === 0` rechaza (409 no_stock). 0087: el cupo es de cada EQUIPO
+ * `available === 0` rechaza (409 no_stock). 0089: el cupo es de cada EQUIPO
  * de licencias y el equipo se elige al asignar.
  */
 
@@ -136,7 +136,7 @@ describe("assignLicense (T028, FR-003)", () => {
     const { assignLicense } = await import("@/server/licenses");
     selectQueue.push(
       [{ id: "enr_1" }], // enrollment existe
-      [{ id: "team_uy", name: "Uruguay ATC", archivedAt: null }], // equipo (0087)
+      [{ id: "team_uy", name: "Uruguay ATC", archivedAt: null }], // equipo (0089)
       [{ name: "Revit", total: 2 }], // software
       [ocupada("sw_1"), ocupada("sw_1")], // 2 ocupadas === total → available 0
       [] // sin license previa
@@ -156,7 +156,7 @@ describe("assignLicense (T028, FR-003)", () => {
     const { assignLicense } = await import("@/server/licenses");
     selectQueue.push(
       [{ id: "enr_1" }],
-      [{ id: "team_uy", name: "Uruguay ATC", archivedAt: null }], // equipo (0087)
+      [{ id: "team_uy", name: "Uruguay ATC", archivedAt: null }], // equipo (0089)
       [{ name: "Revit", total: 5 }],
       [ocupada("sw_1")], // 1 ocupada → available = 4
       [] // sin license previa
@@ -185,7 +185,7 @@ describe("assignLicense (T028, FR-003)", () => {
     const { assignLicense } = await import("@/server/licenses");
     selectQueue.push(
       [{ id: "enr_1" }],
-      [{ id: "team_uy", name: "Uruguay ATC", archivedAt: null }], // equipo (0087)
+      [{ id: "team_uy", name: "Uruguay ATC", archivedAt: null }], // equipo (0089)
       [{ name: "Revit", total: 5 }],
       [{ n: 5 }], // available = 0, pero ya está asignada a este enrollment
       [{ id: "lic_1", enrollmentId: "enr_1", softwareId: "sw_1", teamId: "team_uy", assigned: true, assignedAt: new Date() }]
@@ -230,7 +230,7 @@ describe("034 (FR-020) — varias licencias por inscripción", () => {
     const { assignLicense } = await import("@/server/licenses");
     selectQueue.push(
       [{ id: "enr_1", parentEnrollmentId: null }],
-      [{ id: "team_uy", name: "Uruguay ATC", archivedAt: null }], // equipo (0087)
+      [{ id: "team_uy", name: "Uruguay ATC", archivedAt: null }], // equipo (0089)
       [{ name: "Navisworks", total: 5 }],
       [], // nada ocupado de Navisworks
       [] // no hay fila de ESTE programa (la de Revit no se mira)
@@ -246,7 +246,7 @@ describe("034 (FR-020) — varias licencias por inscripción", () => {
     const { assignLicense } = await import("@/server/licenses");
     selectQueue.push(
       [{ id: "enr_1", parentEnrollmentId: null }],
-      [{ id: "team_uy", name: "Uruguay ATC", archivedAt: null }], // equipo (0087)
+      [{ id: "team_uy", name: "Uruguay ATC", archivedAt: null }], // equipo (0089)
       [{ name: "Revit", total: 5 }],
       [],
       [{ id: "lic_1", enrollmentId: "enr_1", softwareId: "sw_1", assigned: false, assignedAt: null }]
@@ -263,7 +263,7 @@ describe("034 (FR-020) — varias licencias por inscripción", () => {
     selectQueue.push(
       [{ id: "enr_hija", parentEnrollmentId: "enr_madre" }],
       [{ hadOwnLicense: false }], // 2026-10-23 — la madre no trajo la suya
-      [{ id: "team_uy", name: "Uruguay ATC", archivedAt: null }], // equipo (0087)
+      [{ id: "team_uy", name: "Uruguay ATC", archivedAt: null }], // equipo (0089)
       [{ name: "Revit", total: 5 }],
       [],
       [],
@@ -305,7 +305,7 @@ describe("035 — lo del grupo no se toca por alumno", () => {
     selectQueue.push(
       [{ id: "enr_1", parentEnrollmentId: null, cohortId: "coh_1" }],
       [{ cohortId: "coh_1", softwareId: "sw_revit", name: "Revit", expiresAt: null }],
-      [{ id: "team_uy", name: "Uruguay ATC", archivedAt: null }], // equipo (0087)
+      [{ id: "team_uy", name: "Uruguay ATC", archivedAt: null }], // equipo (0089)
       [{ name: "Navisworks", total: 5 }],
       [],
       []
@@ -430,7 +430,7 @@ describe("licenciaOcupada — fechas desconocidas no liberan (2026-10-05)", () =
   });
 });
 
-describe("updateSoftware (0087)", () => {
+describe("updateSoftware (0089)", () => {
   it("edita el nombre; el cupo ya no es del programa sino de cada equipo", async () => {
     const { updateSoftware } = await import("@/server/software");
     const result = await updateSoftware("org_1", "sw_1", { name: "Revit 2027" });
@@ -472,10 +472,10 @@ describe("listLicenseInventory (iteración 2)", () => {
 });
 
 /**
- * 0087 — Licencias por EQUIPO (Uruguay ATC, Paraguay ATC…): cada licencia
+ * 0089 — Licencias por EQUIPO (Uruguay ATC, Paraguay ATC…): cada licencia
  * descuenta del cupo del equipo elegido al asignarla.
  */
-describe("0087 — stock por equipo", () => {
+describe("0089 — stock por equipo", () => {
   it("availableLicenses con teamId usa el cupo de ESE equipo y sus ocupadas", async () => {
     const { availableLicenses } = await import("@/server/licenses");
     // Uruguay tiene 50 y 3 ocupadas: 47 libres, sin importar lo que tenga Paraguay.

@@ -16,6 +16,7 @@ import {
 } from "@/lib/entrega-final";
 import { guardarCorreccion } from "@/server/corrections";
 import { teacherCohortDetail } from "@/server/teacher-portal";
+import { exigirEvaluacionesDeGrupo, grupoTieneEvaluacionesPorId } from "@/server/taller-config";
 
 /**
  * 016 — Entregas y corrección: entrega → corrección → resultado.
@@ -401,6 +402,8 @@ export async function entregasDeCursada(
 
   const inscripcion = inscripciones[0];
   if (!inscripcion?.cohortId) return null;
+  // 2026-10-29 — Taller sin evaluaciones: ausencia = 404 (jamás 403).
+  if (!(await grupoTieneEvaluacionesPorId(organizationId, inscripcion.cohortId))) return null;
 
   const evaluaciones = conPlazoEfectivo(
     await db
@@ -555,6 +558,8 @@ export async function entregasDeCohorte(
   // El alcance y si sigue abierta, en una sola pregunta (como `alcanceParaEditar`).
   const detalle = await teacherCohortDetail(organizationId, teacherId, cohortId);
   if (!detalle) return null;
+  // Taller sin evaluaciones: ausencia = 404 (jamás 403).
+  if (!(await grupoTieneEvaluacionesPorId(organizationId, cohortId))) return null;
   const editable = detalle.editable;
 
   const timezone = await zonaDeLaOrganizacion(organizationId);
@@ -742,6 +747,10 @@ export async function estudianteEntregar(
   // Ausencia = "no la encontré". Una evaluación de otra cohorte sale igual que
   // una inventada: distinguirlas confirmaría que existe (FR-009).
   if (!evaluacion) {
+    return { ok: false, status: 404, code: "not_found", message: "Evaluación no encontrada" };
+  }
+  // Taller sin evaluaciones: ausencia = 404.
+  if (!(await grupoTieneEvaluacionesPorId(organizationId, evaluacion.cohortId))) {
     return { ok: false, status: 404, code: "not_found", message: "Evaluación no encontrada" };
   }
 
@@ -988,6 +997,7 @@ export async function corregirEntrega(
 ): Promise<EntregaResult<{ submissionId: string }>> {
   const entrega = await entregaConCohorte(organizationId, submissionId);
   if (!entrega) return NO_ENCONTRADA;
+  if (!(await grupoTieneEvaluacionesPorId(organizationId, entrega.cohortId))) return NO_ENCONTRADA;
   // Misma respuesta que si no existiera: no se confirma que exista.
   const alcance = await alcanceParaEditar(
     organizationId,
@@ -1053,6 +1063,7 @@ export async function reabrirEntrega(
 ): Promise<EntregaResult<{ submissionId: string }>> {
   const entrega = await entregaConCohorte(organizationId, submissionId);
   if (!entrega) return NO_ENCONTRADA;
+  if (!(await grupoTieneEvaluacionesPorId(organizationId, entrega.cohortId))) return NO_ENCONTRADA;
   const alcance = await alcanceParaEditar(
     organizationId,
     teacherId,
@@ -1120,6 +1131,7 @@ export async function plazoEditablePorProfesor(
 ): Promise<EntregaResult<{ cohortId: string }>> {
   const cohortId = await cohorteDeEvaluacion(organizationId, assessmentId);
   if (!cohortId) return EVALUACION_NO_ENCONTRADA;
+  if (!(await grupoTieneEvaluacionesPorId(organizationId, cohortId))) return EVALUACION_NO_ENCONTRADA;
 
   const alcance = await alcanceParaEditar(
     organizationId,
@@ -1150,6 +1162,8 @@ export async function fijarPlazoDeGrupo(
   if (!cohortId) {
     return { ok: false, status: 404, code: "not_found", message: "Evaluación no encontrada" };
   }
+  const sinEvaluaciones = await exigirEvaluacionesDeGrupo(organizationId, cohortId);
+  if (sinEvaluaciones) return sinEvaluaciones;
 
   let dueAt: Date | null = null;
   if (plazo) {
@@ -1216,6 +1230,8 @@ export async function otorgarProrroga(
   if (!cohortId) {
     return { ok: false, status: 404, code: "not_found", message: "Evaluación no encontrada" };
   }
+  const sinEvaluaciones = await exigirEvaluacionesDeGrupo(organizationId, cohortId);
+  if (sinEvaluaciones) return sinEvaluaciones;
 
   /**
    * La inscripción tiene que ser de la MISMA cohorte que la evaluación. Sin

@@ -22,12 +22,12 @@ import { asientosAjenos } from "@/server/license-ajenos";
 /**
  * 005 (T028, DV-004, US4) — pool de licencias por software.
  *
- * 0087 — El cupo es de cada EQUIPO (`license_team_seat`): con `teamId`,
+ * 0089 — El cupo es de cada EQUIPO (`license_team_seat`): con `teamId`,
  * disponibles = cupo de ese equipo − sus licencias ocupadas; sin él, la suma
  * de los cupos de los equipos activos − todas las ocupadas (lo que miran las
  * advertencias de cupo de una cohorte y el widget del inicio).
  *
- * 0089 — `externos`: los asientos que Autodesk tiene ocupados y el campus no
+ * 0091 — `externos`: los asientos que Autodesk tiene ocupados y el campus no
  * cuenta (la última importación del equipo). Restan del disponible: no se
  * promete una licencia que Autodesk ya dio. Sin importaciones es 0.
  */
@@ -36,13 +36,13 @@ export type LicenseAvailability = {
   softwareName: string;
   total: number;
   assignedCount: number;
-  /** 0089 — Ocupados en Autodesk sin titular en el campus. */
+  /** 0091 — Ocupados en Autodesk sin titular en el campus. */
   externos: number;
   available: number;
 };
 
 /**
- * 0087 — El cupo total de un programa: el del equipo si `soloEquipo`, o la suma
+ * 0089 — El cupo total de un programa: el del equipo si `soloEquipo`, o la suma
  * de los equipos NO archivados. Un archivado no tiene licencias ocupadas (no se
  * puede archivar con ellas), así que su cupo no infla el disponible. Se usa
  * sobre `software ⟕ license_team_seat ⟕ license_team`, agrupado por software.
@@ -87,7 +87,7 @@ export async function availableLicenses(
   // ya no bloquea la asignación de una nueva.
   const assignedCount =
     (await contarOcupadas(organizationId, softwareId, teamId)).get(softwareId) ?? 0;
-  // 0089 — Lo que Autodesk tiene ocupado y el campus no cuenta.
+  // 0091 — Lo que Autodesk tiene ocupado y el campus no cuenta.
   const ajenos = await asientosAjenos(organizationId, { teamId, softwareId });
   const externos = [...ajenos].reduce(
     (suma, [clave, n]) => (clave.endsWith(`|${softwareId}`) ? suma + n : suma),
@@ -104,7 +104,7 @@ export async function availableLicenses(
 }
 
 /**
- * 0089 — Opciones de una asignación que viene de la CONCILIACIÓN con Autodesk.
+ * 0091 — Opciones de una asignación que viene de la CONCILIACIÓN con Autodesk.
  * `yaOcupaEnAutodesk`: ese asiento ya está ocupado en Autodesk y por eso ya resta
  * del disponible como asiento ajeno; al marcarlo en el campus pasa a ser del
  * campus y el neto no cambia. Sin esto, un equipo lleno rechazaría (409) marcar
@@ -116,7 +116,7 @@ const disponiblesPara = (a: LicenseAvailability, opts?: OpcionesDeAsignacion) =>
   a.available + (opts?.yaOcupaEnAutodesk && a.externos > 0 ? 1 : 0);
 
 /**
- * 0087 — El equipo, si es de la organización: `null` si no existe. Quien asigna
+ * 0089 — El equipo, si es de la organización: `null` si no existe. Quien asigna
  * (individual o por grupo) lo valida ANTES de tocar el stock.
  */
 export async function buscarEquipo(
@@ -147,11 +147,11 @@ export async function motivoDeEquipoNoAsignable(
 
 export type LicenseDto = {
   id: string;
-  /** Una inscripción O un profesor (0088): exactamente uno de los dos. */
+  /** Una inscripción O un profesor (0090): exactamente uno de los dos. */
   enrollmentId: string | null;
   teacherId: string | null;
   softwareId: string;
-  /** 0087 — El equipo del que sale su asiento. */
+  /** 0089 — El equipo del que sale su asiento. */
   teamId: string;
   assigned: boolean;
   assignedAt: string | null;
@@ -166,7 +166,7 @@ export type LicenseDto = {
  * solo al terminar la transacción del pedido (`withAuth`). Las llaves se
  * ordenan para que dos pedidos que toman varios stocks no se esperen en cruz.
  *
- * 0087 — El stock es de un EQUIPO y un programa: Uruguay lleno no hace esperar
+ * 0089 — El stock es de un EQUIPO y un programa: Uruguay lleno no hace esperar
  * a quien asigna del equipo de Paraguay.
  */
 export async function bloquearStock(
@@ -181,7 +181,7 @@ export async function bloquearStock(
 
 /**
  * 035 (FR-008) — Los programas asignados al grupo de una cohorte, con su
- * nombre, vencimiento y (0087) el equipo del que salen. Vive acá (y no en
+ * nombre, vencimiento y (0089) el equipo del que salen. Vive acá (y no en
  * `group-licenses.ts`) porque la asignación individual lo consulta para
  * bloquearse, y `group-licenses.ts` ya importa este módulo.
  */
@@ -298,7 +298,7 @@ export async function tieneLicenciaPropia(
  * Una licencia liberada (`assigned = false`) del mismo programa se reactiva:
  * no se duplica la fila.
  *
- * 0087 — `teamId` es OBLIGATORIO: la licencia sale del cupo de ese equipo y de
+ * 0089 — `teamId` es OBLIGATORIO: la licencia sale del cupo de ese equipo y de
  * ningún otro (Uruguay lleno no impide asignar del equipo de Paraguay). Si el
  * programa ya estaba asignado desde otro equipo, pasa a este y pide stock acá.
  */
@@ -353,7 +353,7 @@ export async function assignLicense(
     return { ok: false, status: 409, code: "asignado_al_grupo", message: bloqueo };
   }
 
-  // 0087 — El equipo tiene que ser de la organización y estar activo.
+  // 0089 — El equipo tiene que ser de la organización y estar activo.
   const equipo = await buscarEquipo(organizationId, teamId);
   if (!equipo || equipo.archived) {
     return {
@@ -540,7 +540,7 @@ export type EnrollmentLicenseDto = LicenseDto & { softwareName: string; teamName
 
 /**
  * 034 (FR-020) — Las licencias ASIGNADAS de una inscripción, con el nombre del
- * programa y (0087) el del equipo del que salen.
+ * programa y (0089) el del equipo del que salen.
  */
 export async function listEnrollmentLicenses(
   organizationId: string,
@@ -572,7 +572,7 @@ export async function listEnrollmentLicenses(
 }
 
 /* ============================================================
- * 0088 — Licencias de PROFESORES
+ * 0090 — Licencias de PROFESORES
  * ============================================================ */
 
 export type AssignTeacherLicenseResult =
@@ -736,7 +736,7 @@ export async function listTeacherLicenses(
 }
 
 /* ============================================================
- * 0088 — Cambiar UNA licencia de equipo
+ * 0090 — Cambiar UNA licencia de equipo
  * ============================================================ */
 
 export type MoveLicenseResult =
@@ -851,7 +851,7 @@ export async function contarOcupadas(
 }
 
 /**
- * 0087 — Lo mismo por EQUIPO y programa, con la llave de `claveDeStock`: es la
+ * 0089 — Lo mismo por EQUIPO y programa, con la llave de `claveDeStock`: es la
  * cuenta del stock real (cada equipo tiene el suyo).
  */
 export async function contarOcupadasPorEquipo(
@@ -883,7 +883,7 @@ async function licenciasOcupadas(
       endDate: schema.cohort.endDate,
     })
     .from(schema.license)
-    // 0088 — leftJoin: la licencia de un profesor no tiene inscripción.
+    // 0090 — leftJoin: la licencia de un profesor no tiene inscripción.
     .leftJoin(schema.enrollment, eq(schema.license.enrollmentId, schema.enrollment.id))
     .leftJoin(schema.cohort, eq(schema.enrollment.cohortId, schema.cohort.id))
     .where(
@@ -898,7 +898,7 @@ async function licenciasOcupadas(
   const ahora = new Date();
   return licencias.filter((l) =>
     l.teacherId
-      ? // 0088 — Un profesor no tiene cohorte: nada la libera salvo desasignarla o vencer.
+      ? // 0090 — Un profesor no tiene cohorte: nada la libera salvo desasignarla o vencer.
         licenciaDeProfesorOcupada({ assigned: l.assigned, expiresAt: l.expiresAt }, ahora)
       : licenciaOcupada(
           { assigned: l.assigned, expiresAt: l.expiresAt },
@@ -916,7 +916,7 @@ async function licenciasOcupadas(
  * propia (no reusa `listSoftware` de `@/server/software`, que a su vez
  * importa `countAssignedLicenses` de este módulo — evita el ciclo).
  *
- * 0087 — Suma de los equipos activos: el detalle por equipo está en
+ * 0089 — Suma de los equipos activos: el detalle por equipo está en
  * `/api/licenses` y `/api/license-teams`.
  */
 export async function listLicenseInventory(
@@ -938,7 +938,7 @@ export async function listLicenseInventory(
   if (softwareRows.length === 0) return [];
 
   const assignedMap = await contarOcupadas(organizationId);
-  // 0089 — Los asientos de Autodesk que el campus no cuenta, por programa.
+  // 0091 — Los asientos de Autodesk que el campus no cuenta, por programa.
   const ajenos = await asientosAjenos(organizationId);
   const externosDe = (softwareId: string) =>
     [...ajenos].reduce(

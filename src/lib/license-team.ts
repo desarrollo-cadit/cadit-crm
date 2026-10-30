@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * 0087 — Licencias por equipo (Uruguay ATC, Paraguay ATC…).
+ * 0089 — Licencias por equipo (Uruguay ATC, Paraguay ATC…).
  *
  * Reglas PURAS. El stock ya no es uno por programa: cada equipo de Autodesk
  * tiene su propio cupo por programa (`license_team_seat`) y cada licencia
@@ -9,7 +9,7 @@ import { z } from "zod";
  * `src/server/license-teams.ts` y `src/server/licenses.ts`.
  */
 
-/** El equipo que la migración 0087 creó para lo que ya existía. */
+/** El equipo que la migración 0089 creó para lo que ya existía. */
 export const EQUIPO_POR_DEFECTO = "Sin asignar";
 
 /**
@@ -29,7 +29,7 @@ export type CupoDeEquipo = {
   /** Las que OCUPAN hoy (`licenciaOcupada`), no las asignadas alguna vez. */
   ocupadas: number;
   /**
-   * 0089 — Asientos que Autodesk tiene ocupados y el campus no cuenta (la última
+   * 0091 — Asientos que Autodesk tiene ocupados y el campus no cuenta (la última
    * importación del equipo). Restan de lo libre.
    */
   externos: number;
@@ -104,7 +104,7 @@ export function aliasNormalizado(alias: string | null | undefined): string | nul
 }
 
 /**
- * 0088 — Mover un programa de un equipo a otro (el cupo y TODAS sus licencias
+ * 0090 — Mover un programa de un equipo a otro (el cupo y TODAS sus licencias
  * juntos): «AutoCAD figura en el equipo 1 y es del 2».
  *
  * Si el destino ya tiene ese programa NO se suma en silencio: el cupo de la

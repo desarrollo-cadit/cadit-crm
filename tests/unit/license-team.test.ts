@@ -9,7 +9,7 @@ import {
 } from "@/lib/license-team";
 
 /**
- * 0087 — Las reglas puras de los equipos de licencias (Uruguay ATC, Paraguay
+ * 0089 — Las reglas puras de los equipos de licencias (Uruguay ATC, Paraguay
  * ATC…): el cupo es de cada equipo y se mide con lo que ESE equipo ocupa.
  */
 
@@ -113,7 +113,7 @@ describe("esquemas", () => {
   });
 });
 
-describe("planDeMovimientoDePrograma (0088)", () => {
+describe("planDeMovimientoDePrograma (0090)", () => {
   const base = {
     programa: "AutoCAD",
     destino: "Paraguay ATC",

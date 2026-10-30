@@ -45,6 +45,13 @@ export type CursadaComercial = {
   endDate: Date | null;
   stageKind: "open" | "won" | "lost";
   nuncaDictada: boolean;
+  /**
+   * 2026-10-29 — Edición de taller de Marketing (con estado de inscripción):
+   * no es una cursada. Omitido, rige la regla de siempre (todo taller afuera).
+   * Un taller cursable (incluso sin evaluaciones) cuenta como cualquier curso:
+   * sin resultado confirmado no es "aprobó".
+   */
+  edicionDeMarketing?: boolean;
   aprobacion: ModuleState;
   certificadoVigente: boolean;
   /** 046 US8 — el vendedor y la empresa de la inscripción (de la madre, en un módulo). */
@@ -191,7 +198,10 @@ type Decision = { estado: EstadoComercial; sinResultado: boolean } | null;
  * El estado de UNA cursada (research R1). `null` = no cuenta.
  */
 function estadoDeCursada(
-  c: Pick<CursadaComercial, "startDate" | "endDate" | "stageKind" | "certificadoVigente">,
+  c: Pick<
+    CursadaComercial,
+    "startDate" | "endDate" | "stageKind" | "certificadoVigente"
+  >,
   aprobacion: ModuleState,
   now: Date
 ): Decision {
@@ -242,7 +252,7 @@ export function historialesComerciales(
   for (const c of cursadas) {
     // Los módulos de una especialización viven dentro de su madre.
     if (c.parentEnrollmentId) continue;
-    if (c.courseKind === "taller" || c.nuncaDictada) continue;
+    if ((c.edicionDeMarketing ?? c.courseKind === "taller") || c.nuncaDictada) continue;
 
     const hijas = (hijasDe.get(c.enrollmentId) ?? []).filter((h) => !h.nuncaDictada);
     const aprobacion: ModuleState =

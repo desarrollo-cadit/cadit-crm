@@ -17,7 +17,7 @@ import { bloquearStock, contarOcupadas, contarOcupadasPorEquipo } from "@/server
 import { asientosAjenos } from "@/server/license-ajenos";
 
 /**
- * 0087 — Equipos de licencias (Uruguay ATC, Paraguay ATC…) y su cupo por
+ * 0089 — Equipos de licencias (Uruguay ATC, Paraguay ATC…) y su cupo por
  * programa. El stock de cada licencia sale del equipo que se eligió al
  * asignarla; acá se administran los equipos y sus cupos. Las cuentas son
  * puras (`src/lib/license-team.ts`).
@@ -272,7 +272,7 @@ export type MoverProgramaResult =
     };
 
 /**
- * 0088 — Mueve un PROGRAMA de un equipo a otro: su cupo y TODAS sus licencias
+ * 0090 — Mueve un PROGRAMA de un equipo a otro: su cupo y TODAS sus licencias
  * (asignadas o no) y, si el programa es de un grupo, el equipo de ese grupo.
  * Todo en la transacción del pedido, y en fila con las asignaciones de los dos
  * stocks. El origen termina sin cupo de ese programa; el destino, con el

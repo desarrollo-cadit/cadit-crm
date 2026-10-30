@@ -23,7 +23,7 @@ async function leerError(res: Response | null, porDefecto: string) {
 }
 
 /**
- * 0087 — Alta y edición de un equipo de licencias (Uruguay ATC, Paraguay
+ * 0089 — Alta y edición de un equipo de licencias (Uruguay ATC, Paraguay
  * ATC…) y de su cupo en cada programa. El nombre es el que usa la academia; el
  * alias, el que figura en Autodesk (para reconocerlo al conciliar). Sólo con
  * `academico.editar`: las rutas `/api/license-teams*` lo exigen.

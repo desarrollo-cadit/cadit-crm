@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 type Params = { params: Promise<{ id: string }> };
 
 /**
- * 0087 — Fija el cupo del equipo en varios programas, todo o nada. Bajar un
+ * 0089 — Fija el cupo del equipo en varios programas, todo o nada. Bajar un
  * cupo por debajo de lo que el equipo ya ocupa responde 422 y no escribe
  * ninguno. `academico.editar`: el cupo es parte del catálogo de licencias.
  */

@@ -5,7 +5,7 @@ import { crearEquipo, listarEquipos } from "@/server/license-teams";
 export const dynamic = "force-dynamic";
 
 /**
- * 0087 — Los equipos de licencias (Uruguay ATC, Paraguay ATC…) con su cupo por
+ * 0089 — Los equipos de licencias (Uruguay ATC, Paraguay ATC…) con su cupo por
  * programa, lo ocupado y lo libre. `academico.ver`: es lo mismo que ya muestra
  * `/api/licenses`, y los selectores de «Equipo» de cada asignación lo leen.
  */

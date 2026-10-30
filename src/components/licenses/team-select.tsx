@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Select } from "@/components/ui/select";
 
 /**
- * 0087 — El selector de «Equipo» que acompaña a toda asignación de licencia
+ * 0089 — El selector de «Equipo» que acompaña a toda asignación de licencia
  * (individual, de un grupo). Cada licencia descuenta del cupo del equipo que se
  * elige acá, así que el selector muestra cuántas quedan en cada uno para el
  * programa elegido y no ofrece los que no tienen.

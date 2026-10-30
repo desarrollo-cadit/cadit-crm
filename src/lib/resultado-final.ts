@@ -316,6 +316,11 @@ export type EstadoAfirmado = {
   state: ApprovalState;
   /** Su grupo (o, en la madre, algún módulo) terminó sin la asistencia completa. */
   sinResultado: boolean;
+  /**
+   * 2026-10-29 — Su grupo es un taller configurado como "no emite
+   * certificado" (`grupoEmiteCertificado`): lo emitido queda suspendido.
+   */
+  noEmite?: boolean;
 };
 
 /** `visibilidadDeCertificado` a partir del estado afirmado (sin estado: pendiente). */
@@ -323,9 +328,12 @@ export function visibilidadSegun(
   revokedAt: Date | string | null,
   afirmado: EstadoAfirmado | undefined
 ): VisibilidadDeCertificado {
-  return visibilidadDeCertificado({
+  const v = visibilidadDeCertificado({
     revokedAt,
     resultado: afirmado?.state ?? "pendiente",
     grupoSinResultado: afirmado?.sinResultado ?? false,
   });
+  // Un grupo que no emite suspende lo emitido (salvo anulado a mano): misma vía
+  // que "sin resultado confirmado", sin tocar la fila.
+  return afirmado?.noEmite && v !== "anulado" ? "suspendido" : v;
 }

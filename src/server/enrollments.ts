@@ -951,7 +951,7 @@ async function moduleLicensesFor(
   // 034 (FR-020) — varias licencias por hija: se agrupan, no se pisan.
   const licenseByEnrollment = new Map<string, { assigned: boolean; softwareId: string }[]>();
   for (const l of licencias) {
-    // 0088 — La licencia de un profesor no cuelga de una inscripción.
+    // 0090 — La licencia de un profesor no cuelga de una inscripción.
     if (!l.enrollmentId) continue;
     licenseByEnrollment.set(l.enrollmentId, [
       ...(licenseByEnrollment.get(l.enrollmentId) ?? []),

@@ -311,11 +311,11 @@ describe("cuentaParaLicenciasDelGrupo", () => {
 });
 
 /**
- * 0087 — El stock es de cada EQUIPO de licencias: las del grupo salen del
+ * 0089 — El stock es de cada EQUIPO de licencias: las del grupo salen del
  * equipo elegido al asignar el programa al grupo, y una licencia que ocupa un
  * asiento de OTRO equipo no cuenta como «ya está».
  */
-describe("0087 — licencias del grupo por equipo", () => {
+describe("0089 — licencias del grupo por equipo", () => {
   it("planAsignarAlGrupo: la individual que ocupa OTRO equipo no se convierte: pasa a este y pide stock", () => {
     const plan = planAsignarAlGrupo({
       softwareId: "sw_revit",

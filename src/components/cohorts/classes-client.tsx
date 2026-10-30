@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { CalendarClock, CalendarDays, DoorOpen, Link2, Trash2, Video } from "lucide-react";
 import { RecessManager } from "@/components/academic/recess-manager";
+import { MaterialPorAsignar } from "@/components/cohorts/material-por-asignar";
 import { ResourcesPanel, useClassMaterial } from "@/components/academic/resources-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -423,6 +424,18 @@ export function ClassesClient({
           ) : null}
         </div>
       )}
+
+      {/* 0087 — Material de las clases del grupo en que se basó el alta, para asignar a mano. */}
+      <MaterialPorAsignar
+        cohortId={cohortId}
+        canEdit={canEdit}
+        clases={data.classes.flatMap((c) =>
+          !c.projected && c.id
+            ? [{ id: c.id, number: c.number, date: c.date, canceled: c.canceled }]
+            : []
+        )}
+        onAsignado={() => void material.reintentar()}
+      />
 
       {data.classes.length === 0 && (
         <p className="text-sm text-muted-foreground">

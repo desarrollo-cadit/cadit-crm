@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 type Params = { params: Promise<{ id: string }> };
 
 /**
- * 0088 — Las licencias asignadas a un profesor. `academico.ver`, como la
+ * 0090 — Las licencias asignadas a un profesor. `academico.ver`, como la
  * vista de Licencias. Es de STAFF: el portal del profesor no tiene ninguna
  * ruta de licencias (`tests/unit/licencias-de-profesores.test.ts`).
  */

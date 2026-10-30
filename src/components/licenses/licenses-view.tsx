@@ -5,8 +5,6 @@ import Link from "next/link";
 import { AlertTriangle, ArrowRightLeft, KeyRound, Pencil, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -28,11 +26,22 @@ import { usePestanaEnUrl } from "@/components/use-pestana-en-url";
 import type { PestanaLicencias } from "@/lib/pestanas";
 import { TeamForm, type EquipoEditable } from "@/components/licenses/team-form";
 import {
+  contadoresDeLicencias,
   filtrarFilas,
   type EstadoDeLicencia,
   type FilaDeLicenciaVista,
   type TitularDeLicencia,
 } from "@/lib/license-view";
+import {
+  Buscador,
+  Desplegable,
+  OpcionUnica,
+  Resaltado,
+  ResumenDeFiltros,
+  SinCoincidencias,
+  TarjetaDeFiltros,
+  type FiltroActivo,
+} from "@/components/listados/filtros";
 import type { LicenseSource } from "@/lib/license-source";
 import type { VistaDeLicenciasDto } from "@/server/license-view";
 import type { SoftwareDto } from "@/lib/types";
@@ -42,6 +51,20 @@ import { notify } from "@/lib/notify";
 import { LicenseEmailText } from "@/components/enrollments/license-email";
 
 const ORIGEN: Record<LicenseSource, string> = { grupo: "Del grupo", individual: "Individual" };
+
+/** 2026-10-30 — El valor del desplegable "Origen" y su opción. */
+const ORIGEN_FILTRO: Record<"" | LicenseSource, { valor: string; opcion: string }> = {
+  "": { valor: "Todos", opcion: "Grupo e individuales" },
+  grupo: { valor: "Del grupo", opcion: "Del grupo" },
+  individual: { valor: "Individuales", opcion: "Individuales" },
+};
+
+/** 0090 — El valor del desplegable "Titular" y su opción. */
+const TITULAR_FILTRO: Record<"" | TitularDeLicencia, { valor: string; opcion: string }> = {
+  "": { valor: "Todos", opcion: "Alumnos y profesores" },
+  alumno: { valor: "Alumnos", opcion: "Alumnos" },
+  profesor: { valor: "Profesores", opcion: "Profesores" },
+};
 
 const ESTADO: Record<EstadoDeLicencia, { label: string; variant: "success" | "secondary" | "warning" }> = {
   en_uso: { label: "En uso", variant: "success" },
@@ -85,18 +108,18 @@ const vence = (iso: string | null) => {
  * `DELETE /api/enrollments/[id]/license`): asignar y quitar licencias es de
  * soporte. Sin ella, la fila se ve sin botón.
  *
- * 0087 — El stock es POR EQUIPO (Uruguay ATC, Paraguay ATC…), tal como se ve
+ * 0089 — El stock es POR EQUIPO (Uruguay ATC, Paraguay ATC…), tal como se ve
  * en Autodesk: arriba, cada equipo con el cupo, lo ocupado y lo libre de cada
  * programa; el total del programa es la suma de los equipos. Crear equipos y
  * cargar su cupo es `canEdit` (`academico.editar`). La lista de quién tiene
  * cada licencia se filtra por equipo y dice de cuál sale cada una.
  *
- * 0088 — Un programa se puede MOVER de equipo con su cupo y sus licencias
+ * 0090 — Un programa se puede MOVER de equipo con su cupo y sus licencias
  * (`canEdit`), y una licencia suelta cambiar de equipo (`canManage`). Los
  * profesores también tienen licencia: la lista se filtra por Alumnos /
  * Profesores y la fila de un profesor lleva a su pestaña de Académico.
  *
- * 0089 — La pestaña «Conciliación» compara cada equipo con el Excel de usuarios
+ * 0091 — La pestaña «Conciliación» compara cada equipo con el Excel de usuarios
  * de Autodesk (`?tab=conciliacion`). Lo que Autodesk tiene ocupado y el campus
  * no cuenta ya resta de lo libre de cada equipo.
  */
@@ -195,9 +218,70 @@ export function LicensesView({
       return { softwareId: p.softwareId, name: p.name, total: c?.total ?? 0, ocupadas: c?.asignadas ?? 0 };
     });
 
+  /**
+   * 2026-10-30 — Como Académico: buscador y filtros en una tarjeta, con las
+   * cantidades de `contadoresDeLicencias` (puro, con tests) y el resumen.
+   */
+  const contadores = useMemo(
+    () =>
+      programa
+        ? contadoresDeLicencias(programa.filas, {
+            cohortId: cohorte,
+            source: origen || null,
+            teamId: equipoFiltro,
+            titular: titularFiltro || null,
+            q,
+          })
+        : null,
+    [programa, cohorte, origen, equipoFiltro, titularFiltro, q]
+  );
+  const gruposDelPrograma = useMemo(() => {
+    if (!data || !programa) return [];
+    const presentes = new Set<string>([
+      ...programa.filas.flatMap((f) => (f.cohortId ? [f.cohortId] : [])),
+      ...programa.faltantes.map((f) => f.cohortId),
+      ...(cohorte ? [cohorte] : []),
+    ]);
+    return data.cohortes.filter((c) => presentes.has(c.id));
+  }, [data, programa, cohorte]);
+  const nombreDeGrupo = cohorte
+    ? (data?.cohortes.find((c) => c.id === cohorte)?.name ?? "Otro grupo")
+    : null;
+  const nombreDeEquipoFiltrado = equipoFiltro
+    ? (data?.equipos.find((e) => e.id === equipoFiltro)?.name ?? "Otro equipo")
+    : null;
+  const filtrosActivos: FiltroActivo[] = [
+    ...(q.trim() ? [{ clave: "q", etiqueta: `“${q.trim()}”`, quitar: () => setQ("") }] : []),
+    ...(nombreDeGrupo
+      ? [{ clave: "grupo", etiqueta: `Grupo: ${nombreDeGrupo}`, quitar: () => setCohorte("") }]
+      : []),
+    ...(nombreDeEquipoFiltrado
+      ? [{ clave: "equipo", etiqueta: `Equipo: ${nombreDeEquipoFiltrado}`, quitar: () => setEquipoFiltro("") }]
+      : []),
+    ...(titularFiltro
+      ? [
+          {
+            clave: "titular",
+            etiqueta: `Titular: ${TITULAR_FILTRO[titularFiltro].valor}`,
+            quitar: () => setTitularFiltro(""),
+          },
+        ]
+      : []),
+    ...(origen
+      ? [{ clave: "origen", etiqueta: `Origen: ${ORIGEN_FILTRO[origen].valor}`, quitar: () => setOrigen("") }]
+      : []),
+  ];
+  function limpiarFiltros() {
+    setQ("");
+    setCohorte("");
+    setOrigen("");
+    setEquipoFiltro("");
+    setTitularFiltro("");
+  }
+
   async function confirmarDesasignar(f: FilaDeLicenciaVista) {
     setBusy(true);
-    // 0088 — La licencia de un profesor se libera por su propia ruta.
+    // 0090 — La licencia de un profesor se libera por su propia ruta.
     const base = f.teacherId
       ? `/api/teachers/${f.teacherId}/license`
       : `/api/enrollments/${f.enrollmentId}/license`;
@@ -416,7 +500,7 @@ export function LicensesView({
               )}
             </section>
 
-            <div className="rounded-lg border">
+            <div className="overflow-hidden rounded-lg border bg-card">
               <Table>
                 <TableHeader className="bg-subtle">
                   <TableRow>
@@ -502,63 +586,118 @@ export function LicensesView({
 
             {programa && (
               <section className="space-y-3" aria-label={`Licencias de ${programa.name}`}>
-                <div className="flex flex-wrap items-end gap-2">
-                  <h2 className="mr-auto font-semibold">{programa.name}</h2>
-                  <Select
-                    className="h-8 w-auto text-xs"
-                    aria-label="Filtrar por grupo"
-                    value={cohorte}
-                    onChange={(ev) => setCohorte(ev.target.value)}
+                <h2 className="font-semibold">{programa.name}</h2>
+                {(programa.filas.length > 0 || programa.faltantes.length > 0) && (
+                  <TarjetaDeFiltros
+                    pie={
+                      <ResumenDeFiltros
+                        mostrando={filas.length}
+                        total={programa.filas.length}
+                        sustantivo={{ uno: "licencia", varios: "licencias" }}
+                        activos={filtrosActivos}
+                        onLimpiar={limpiarFiltros}
+                      />
+                    }
                   >
-                    <option value="">Todos los grupos</option>
-                    {data.cohortes.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </Select>
-                  <Select
-                    className="h-8 w-auto text-xs"
-                    aria-label="Filtrar por equipo"
-                    value={equipoFiltro}
-                    onChange={(ev) => setEquipoFiltro(ev.target.value)}
-                  >
-                    <option value="">Todos los equipos</option>
-                    {data.equipos.map((e) => (
-                      <option key={e.id} value={e.id}>
-                        {e.name}
-                      </option>
-                    ))}
-                  </Select>
-                  <Select
-                    className="h-8 w-auto text-xs"
-                    aria-label="Filtrar por alumnos o profesores"
-                    value={titularFiltro}
-                    onChange={(ev) => setTitularFiltro(ev.target.value as "" | TitularDeLicencia)}
-                  >
-                    <option value="">Alumnos y profesores</option>
-                    <option value="alumno">Alumnos</option>
-                    <option value="profesor">Profesores</option>
-                  </Select>
-                  <Select
-                    className="h-8 w-auto text-xs"
-                    aria-label="Filtrar por origen"
-                    value={origen}
-                    onChange={(ev) => setOrigen(ev.target.value as "" | LicenseSource)}
-                  >
-                    <option value="">Grupo e individuales</option>
-                    <option value="grupo">Del grupo</option>
-                    <option value="individual">Individuales</option>
-                  </Select>
-                  <Input
-                    className="h-8 w-48 text-xs"
-                    type="search"
-                    placeholder="Buscar alumno o profesor…"
-                    aria-label="Buscar alumno o profesor"
-                    value={q}
-                    onChange={(ev) => setQ(ev.target.value)}
-                  />
-                </div>
+                    <Buscador value={q} onChange={setQ} placeholder="Buscar alumno o profesor…" />
+                    <Desplegable etiqueta="Grupo" valor={nombreDeGrupo ?? "Todos"} activo={Boolean(cohorte)}>
+                      {(cerrar) => (
+                        <>
+                          <OpcionUnica
+                            elegida={!cohorte}
+                            cantidad={contadores?.todosLosGrupos}
+                            onElegir={() => {
+                              setCohorte("");
+                              cerrar();
+                            }}
+                          >
+                            Todos los grupos
+                          </OpcionUnica>
+                          {gruposDelPrograma.map((c) => (
+                            <OpcionUnica
+                              key={c.id}
+                              elegida={cohorte === c.id}
+                              cantidad={contadores?.grupos.get(c.id) ?? 0}
+                              onElegir={() => {
+                                setCohorte(c.id);
+                                cerrar();
+                              }}
+                            >
+                              {c.name}
+                            </OpcionUnica>
+                          ))}
+                        </>
+                      )}
+                    </Desplegable>
+                    <Desplegable etiqueta="Equipo" valor={nombreDeEquipoFiltrado ?? "Todos"} activo={Boolean(equipoFiltro)}>
+                      {(cerrar) => (
+                        <>
+                          <OpcionUnica
+                            elegida={!equipoFiltro}
+                            cantidad={contadores?.todosLosEquipos}
+                            onElegir={() => {
+                              setEquipoFiltro("");
+                              cerrar();
+                            }}
+                          >
+                            Todos los equipos
+                          </OpcionUnica>
+                          {data.equipos.map((e) => (
+                            <OpcionUnica
+                              key={e.id}
+                              elegida={equipoFiltro === e.id}
+                              cantidad={contadores?.equipos.get(e.id) ?? 0}
+                              onElegir={() => {
+                                setEquipoFiltro(e.id);
+                                cerrar();
+                              }}
+                            >
+                              {e.name}
+                            </OpcionUnica>
+                          ))}
+                        </>
+                      )}
+                    </Desplegable>
+                    <Desplegable etiqueta="Titular" valor={TITULAR_FILTRO[titularFiltro].valor} activo={Boolean(titularFiltro)}>
+                      {(cerrar) => (
+                        <>
+                          {(["", "alumno", "profesor"] as const).map((k) => (
+                            <OpcionUnica
+                              key={k || "todos"}
+                              elegida={titularFiltro === k}
+                              cantidad={contadores ? contadores.titular[k || "todos"] : null}
+                              onElegir={() => {
+                                setTitularFiltro(k);
+                                cerrar();
+                              }}
+                            >
+                              {TITULAR_FILTRO[k].opcion}
+                            </OpcionUnica>
+                          ))}
+                        </>
+                      )}
+                    </Desplegable>
+                    <Desplegable etiqueta="Origen" valor={ORIGEN_FILTRO[origen].valor} activo={Boolean(origen)}>
+                      {(cerrar) => (
+                        <>
+                          {(["", "grupo", "individual"] as const).map((k) => (
+                            <OpcionUnica
+                              key={k || "todos"}
+                              elegida={origen === k}
+                              cantidad={contadores ? contadores.origen[k || "todos"] : null}
+                              onElegir={() => {
+                                setOrigen(k);
+                                cerrar();
+                              }}
+                            >
+                              {ORIGEN_FILTRO[k].opcion}
+                            </OpcionUnica>
+                          ))}
+                        </>
+                      )}
+                    </Desplegable>
+                  </TarjetaDeFiltros>
+                )}
 
                 {faltantes.length > 0 && (
                   <div
@@ -572,7 +711,7 @@ export function LicensesView({
                     <ul className="space-y-0.5">
                       {faltantes.map((f) => (
                         <li key={f.enrollmentId}>
-                          {f.contactName} —{" "}
+                          <Resaltado texto={f.contactName} busqueda={q} /> —{" "}
                           <Link
                             href={`/cohorts/${f.cohortId}`}
                             className="underline underline-offset-2"
@@ -590,14 +729,17 @@ export function LicensesView({
                   </div>
                 )}
 
-                {filas.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    {programa.filas.length === 0
-                      ? "Nadie tiene este programa asignado."
-                      : "Ninguna licencia coincide con el filtro."}
+                {programa.filas.length === 0 ? (
+                  <p className="rounded-lg border border-dashed border-border-strong px-4 py-6 text-sm text-muted-foreground">
+                    Nadie tiene este programa asignado.
                   </p>
+                ) : filas.length === 0 ? (
+                  <SinCoincidencias
+                    mensaje="Ninguna licencia coincide con la búsqueda y los filtros."
+                    onLimpiar={limpiarFiltros}
+                  />
                 ) : (
-                  <div className="rounded-lg border">
+                  <div className="overflow-hidden rounded-lg border bg-card">
                     <Table>
                       <TableHeader className="bg-subtle">
                         <TableRow>
@@ -613,7 +755,7 @@ export function LicensesView({
                       </TableHeader>
                       <TableBody>
                         {filas.map((f) => (
-                          <TableRow key={f.licenseId}>
+                          <TableRow key={f.licenseId} className="hover:bg-subtle">
                             <TableCell className="font-medium">
                               {f.titular === "profesor" ? (
                                 <>
@@ -622,7 +764,7 @@ export function LicensesView({
                                     href="/academico?tab=profesores"
                                     className="underline decoration-dotted underline-offset-2 hover:decoration-solid"
                                   >
-                                    {f.contactName}
+                                    <Resaltado texto={f.contactName} busqueda={q} />
                                   </Link>{" "}
                                   <Badge variant="outline">Profesor</Badge>
                                 </>
@@ -631,7 +773,7 @@ export function LicensesView({
                                   href={`/contacts/${f.contactId}/legajo`}
                                   className="underline decoration-dotted underline-offset-2 hover:decoration-solid"
                                 >
-                                  {f.contactName}
+                                  <Resaltado texto={f.contactName} busqueda={q} />
                                 </Link>
                               )}
                               {/* 2026-10-21 — Solo viaja con contactos.ver. */}

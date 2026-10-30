@@ -49,20 +49,21 @@ import { AssessmentModelsDialog } from "@/components/academic/assessment-models-
 import { TeacherForm } from "@/components/academic/teacher-form";
 import { TeacherLicensesDialog } from "@/components/academic/teacher-licenses-dialog";
 import { RoomsPanel } from "@/components/academic/rooms-panel";
+import { EtiquetaDeTipo, SegmentadoDeEstado } from "@/components/academic/academic-toolbar";
+import { AvatarDeCurso, TONO_DE_ESTADO } from "@/components/listados/curso-visual";
 import {
-  AvatarDeCurso,
   Buscador,
   Desplegable,
-  EtiquetaDeTipo,
+  EncabezadoDeSeccion,
   OpcionAccion,
   OpcionMarcable,
   OpcionUnica,
   Resaltado,
   ResumenDeFiltros,
-  SegmentadoDeEstado,
-  TONO_DE_ESTADO,
+  SinCoincidencias,
+  TarjetaDeFiltros,
   type FiltroActivo,
-} from "@/components/academic/academic-toolbar";
+} from "@/components/listados/filtros";
 import { notify } from "@/lib/notify";
 import type { PestanaAcademico } from "@/lib/pestanas";
 import { usePestanaEnUrl } from "@/components/use-pestana-en-url";
@@ -233,7 +234,7 @@ export function AcademicClient({
   canEdit?: boolean;
   /** `accesos.gestionar`: el acceso al portal de un profesor. */
   canManageAccess?: boolean;
-  /** `licencias.gestionar`: asignar y quitar las licencias de un profesor (0088). */
+  /** `licencias.gestionar`: asignar y quitar las licencias de un profesor (0090). */
   canManageLicenses?: boolean;
   /** Pestaña inicial, de `?tab=` (la valida el servidor con `leerPestana`). */
   initialTab?: PestanaAcademico;
@@ -415,7 +416,7 @@ export function AcademicClient({
   const [teacherForm, setTeacherForm] = useState<
     { mode: "create" } | { mode: "edit"; teacher: TeacherDto } | null
   >(null);
-  /** 0088 — El profesor cuyas licencias se están viendo. */
+  /** 0090 — El profesor cuyas licencias se están viendo. */
   const [teacherLicenses, setTeacherLicenses] = useState<TeacherDto | null>(null);
 
   /**
@@ -832,90 +833,92 @@ export function AcademicClient({
 
         {/* ------------------------------------------------ Grupos */}
         {!loading && tab === "grupos" && cohorts.length > 0 && (
-          <div className="mb-5 rounded-lg border bg-card shadow-sm">
-            <div className="flex flex-wrap items-center gap-2.5 p-2.5">
-              <Buscador
-                value={busquedaGrupos}
-                onChange={setBusquedaGrupos}
-                placeholder="Buscar grupo por nombre, curso o profesor…"
+          <TarjetaDeFiltros
+            className="mb-5"
+            pie={
+              <ResumenDeFiltros
+                mostrando={grupos.length}
+                total={todasLasFilas.length}
+                sustantivo={{ uno: "grupo", varios: "grupos" }}
+                activos={filtrosActivosDeGrupos}
+                onLimpiar={limpiarFiltrosDeGrupos}
               />
-              <SegmentadoDeEstado
-                orden={ORDEN_DE_SECCION}
-                etiquetas={ETIQUETA_DE_ESTADO}
-                value={statusFilter}
-                total={contadores.todas}
-                conteos={contadores.estados}
-                onTodos={() => setStatusFilter(new Set(STATUS_ORDER))}
-                onAlternar={(e) => setStatusFilter(nextStatusFilter(statusFilter, e))}
-              />
-              {/* 032 (FR-011) — año: inicio o fin en él; se recuerda por navegador. */}
-              <Desplegable
-                etiqueta="Año"
-                valor={etiquetaDeAnio(yearFilter)}
-                activo={yearFilter !== TODOS_LOS_ANIOS}
-              >
-                {(cerrar) => (
-                  <>
+            }
+          >
+            <Buscador
+              value={busquedaGrupos}
+              onChange={setBusquedaGrupos}
+              placeholder="Buscar grupo por nombre, curso o profesor…"
+            />
+            <SegmentadoDeEstado
+              orden={ORDEN_DE_SECCION}
+              etiquetas={ETIQUETA_DE_ESTADO}
+              value={statusFilter}
+              total={contadores.todas}
+              conteos={contadores.estados}
+              onTodos={() => setStatusFilter(new Set(STATUS_ORDER))}
+              onAlternar={(e) => setStatusFilter(nextStatusFilter(statusFilter, e))}
+            />
+            {/* 032 (FR-011) — año: inicio o fin en él; se recuerda por navegador. */}
+            <Desplegable
+              etiqueta="Año"
+              valor={etiquetaDeAnio(yearFilter)}
+              activo={yearFilter !== TODOS_LOS_ANIOS}
+            >
+              {(cerrar) => (
+                <>
+                  <OpcionUnica
+                    elegida={yearFilter === TODOS_LOS_ANIOS}
+                    cantidad={contadores.todosLosAnios}
+                    onElegir={() => {
+                      elegirAnio(TODOS_LOS_ANIOS);
+                      cerrar();
+                    }}
+                  >
+                    Todos los años
+                  </OpcionUnica>
+                  {contadores.anios.map(({ anio, count }) => (
                     <OpcionUnica
-                      elegida={yearFilter === TODOS_LOS_ANIOS}
-                      cantidad={contadores.todosLosAnios}
+                      key={anio}
+                      elegida={yearFilter === anio}
+                      cantidad={count}
                       onElegir={() => {
-                        elegirAnio(TODOS_LOS_ANIOS);
+                        elegirAnio(anio);
                         cerrar();
                       }}
                     >
-                      Todos los años
+                      {anio === anioActual ? `Este año (${anio})` : anio}
                     </OpcionUnica>
-                    {contadores.anios.map(({ anio, count }) => (
-                      <OpcionUnica
-                        key={anio}
-                        elegida={yearFilter === anio}
-                        cantidad={count}
-                        onElegir={() => {
-                          elegirAnio(anio);
-                          cerrar();
-                        }}
-                      >
-                        {anio === anioActual ? `Este año (${anio})` : anio}
-                      </OpcionUnica>
-                    ))}
-                  </>
-                )}
-              </Desplegable>
-              {/* 032 (FR-013) — tipo: la madre o alguno de sus módulos. */}
-              <Desplegable
-                etiqueta="Tipo"
-                valor={etiquetaDeTipos(cohortKindFilter)}
-                activo={cohortKindFilter.size < COURSE_KINDS.length}
-                alinear="derecha"
-              >
-                {() => (
-                  <>
-                    {COURSE_KINDS.map((k) => (
-                      <OpcionMarcable
-                        key={k}
-                        marcada={cohortKindFilter.has(k)}
-                        cantidad={contadores.tipos[k]}
-                        onAlternar={() => setCohortKindFilter(alternarTipo(cohortKindFilter, k))}
-                      >
-                        {COURSE_KIND_LABEL[k]}
-                      </OpcionMarcable>
-                    ))}
-                    <OpcionAccion onClick={() => setCohortKindFilter(new Set(COURSE_KINDS))}>
-                      Ver todos los tipos
-                    </OpcionAccion>
-                  </>
-                )}
-              </Desplegable>
-            </div>
-            <ResumenDeFiltros
-              mostrando={grupos.length}
-              total={todasLasFilas.length}
-              sustantivo={{ uno: "grupo", varios: "grupos" }}
-              activos={filtrosActivosDeGrupos}
-              onLimpiar={limpiarFiltrosDeGrupos}
-            />
-          </div>
+                  ))}
+                </>
+              )}
+            </Desplegable>
+            {/* 032 (FR-013) — tipo: la madre o alguno de sus módulos. */}
+            <Desplegable
+              etiqueta="Tipo"
+              valor={etiquetaDeTipos(cohortKindFilter)}
+              activo={cohortKindFilter.size < COURSE_KINDS.length}
+              alinear="derecha"
+            >
+              {() => (
+                <>
+                  {COURSE_KINDS.map((k) => (
+                    <OpcionMarcable
+                      key={k}
+                      marcada={cohortKindFilter.has(k)}
+                      cantidad={contadores.tipos[k]}
+                      onAlternar={() => setCohortKindFilter(alternarTipo(cohortKindFilter, k))}
+                    >
+                      {COURSE_KIND_LABEL[k]}
+                    </OpcionMarcable>
+                  ))}
+                  <OpcionAccion onClick={() => setCohortKindFilter(new Set(COURSE_KINDS))}>
+                    Ver todos los tipos
+                  </OpcionAccion>
+                </>
+              )}
+            </Desplegable>
+          </TarjetaDeFiltros>
         )}
         {!loading && tab === "grupos" &&
           (cohorts.length === 0 ? (
@@ -927,12 +930,10 @@ export function AcademicClient({
               </p>
             </div>
           ) : grupos.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-border-strong p-7 text-center text-sm text-muted-foreground">
-              <p>Ningún grupo coincide con la búsqueda y los filtros.</p>
-              <Button size="sm" className="mt-3" onClick={limpiarFiltrosDeGrupos}>
-                Limpiar filtros
-              </Button>
-            </div>
+            <SinCoincidencias
+              mensaje="Ningún grupo coincide con la búsqueda y los filtros."
+              onLimpiar={limpiarFiltrosDeGrupos}
+            />
           ) : (
             <div className="space-y-5">
               {ORDEN_DE_SECCION.map((estado) => {
@@ -941,24 +942,13 @@ export function AcademicClient({
                 const tono = TONO_DE_ESTADO[estado];
                 return (
                   <section key={estado} aria-labelledby={`seccion-${estado}`}>
-                    <h3
+                    <EncabezadoDeSeccion
                       id={`seccion-${estado}`}
-                      className={cn(
-                        "mb-2 flex items-center gap-2.5 text-xs font-semibold uppercase tracking-[0.04em]",
-                        tono.texto
-                      )}
-                    >
-                      {ETIQUETA_DE_ESTADO[estado]}
-                      <span
-                        className={cn(
-                          "rounded-full px-2 py-px text-[11px] font-semibold normal-case tracking-normal tabular-nums",
-                          tono.pastilla
-                        )}
-                      >
-                        {grupo.length}
-                      </span>
-                      <span aria-hidden className="h-px flex-1 bg-border" />
-                    </h3>
+                      titulo={ETIQUETA_DE_ESTADO[estado]}
+                      cantidad={grupo.length}
+                      claseTexto={tono.texto}
+                      clasePastilla={tono.pastilla}
+                    />
                     <ul className="divide-y overflow-hidden rounded-lg border bg-card">
                       {grupo.map(({ cohort, modules, seccion }) => {
                         const abierta = desplegadas.has(cohort.id);
@@ -1010,58 +1000,58 @@ export function AcademicClient({
 
         {/* ------------------------------------------------ Cursos */}
         {!loading && tab === "cursos" && courses.length > 0 && (
-          <div className="mb-5 rounded-lg border bg-card shadow-sm">
-            <div className="flex flex-wrap items-center gap-2.5 p-2.5">
-              <Buscador
-                value={busquedaCursos}
-                onChange={setBusquedaCursos}
-                placeholder="Buscar curso por nombre…"
+          <TarjetaDeFiltros
+            className="mb-5"
+            pie={
+              <ResumenDeFiltros
+                mostrando={cursosVisibles.length}
+                total={courses.length}
+                sustantivo={{ uno: "curso", varios: "cursos" }}
+                activos={filtrosActivosDeCursos}
+                onLimpiar={limpiarFiltrosDeCursos}
               />
-              {/* 032 (FR-009) — arranca en "solo Curso". */}
-              <Desplegable
-                etiqueta="Tipo"
-                valor={etiquetaDeTipos(courseKindFilter)}
-                activo={courseKindFilter.size < COURSE_KINDS.length}
-                alinear="derecha"
-              >
-                {() => (
-                  <>
-                    {COURSE_KINDS.map((k) => (
-                      <OpcionMarcable
-                        key={k}
-                        marcada={courseKindFilter.has(k)}
-                        cantidad={cursosPorTipo[k]}
-                        onAlternar={() => setCourseKindFilter(alternarTipo(courseKindFilter, k))}
-                      >
-                        {COURSE_KIND_LABEL[k]}
-                      </OpcionMarcable>
-                    ))}
-                    <OpcionAccion onClick={() => setCourseKindFilter(new Set(COURSE_KINDS))}>
-                      Ver todos los tipos
-                    </OpcionAccion>
-                  </>
-                )}
-              </Desplegable>
-            </div>
-            <ResumenDeFiltros
-              mostrando={cursosVisibles.length}
-              total={courses.length}
-              sustantivo={{ uno: "curso", varios: "cursos" }}
-              activos={filtrosActivosDeCursos}
-              onLimpiar={limpiarFiltrosDeCursos}
+            }
+          >
+            <Buscador
+              value={busquedaCursos}
+              onChange={setBusquedaCursos}
+              placeholder="Buscar curso por nombre…"
             />
-          </div>
+            {/* 032 (FR-009) — arranca en "solo Curso". */}
+            <Desplegable
+              etiqueta="Tipo"
+              valor={etiquetaDeTipos(courseKindFilter)}
+              activo={courseKindFilter.size < COURSE_KINDS.length}
+              alinear="derecha"
+            >
+              {() => (
+                <>
+                  {COURSE_KINDS.map((k) => (
+                    <OpcionMarcable
+                      key={k}
+                      marcada={courseKindFilter.has(k)}
+                      cantidad={cursosPorTipo[k]}
+                      onAlternar={() => setCourseKindFilter(alternarTipo(courseKindFilter, k))}
+                    >
+                      {COURSE_KIND_LABEL[k]}
+                    </OpcionMarcable>
+                  ))}
+                  <OpcionAccion onClick={() => setCourseKindFilter(new Set(COURSE_KINDS))}>
+                    Ver todos los tipos
+                  </OpcionAccion>
+                </>
+              )}
+            </Desplegable>
+          </TarjetaDeFiltros>
         )}
         {!loading && tab === "cursos" &&
           (courses.length === 0 ? (
             <p className="text-sm text-muted-foreground">Sin cursos todavía.</p>
           ) : cursosVisibles.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-border-strong p-7 text-center text-sm text-muted-foreground">
-              <p>Ningún curso coincide con la búsqueda y los filtros.</p>
-              <Button size="sm" className="mt-3" onClick={limpiarFiltrosDeCursos}>
-                Limpiar filtros
-              </Button>
-            </div>
+            <SinCoincidencias
+              mensaje="Ningún curso coincide con la búsqueda y los filtros."
+              onLimpiar={limpiarFiltrosDeCursos}
+            />
           ) : (
             <ul className="divide-y overflow-hidden rounded-lg border bg-card">
               {cursosVisibles.map((c) => {
@@ -1217,7 +1207,7 @@ export function AcademicClient({
                         Cargá su correo para poder invitarlo
                       </span>
                     )}
-                    {/* 0088 — Todos los que ven Académico las miran; asignar es de
+                    {/* 0090 — Todos los que ven Académico las miran; asignar es de
                         quien tiene `licencias.gestionar`. */}
                     <Button
                       variant="ghost"

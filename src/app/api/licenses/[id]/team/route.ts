@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 type Params = { params: Promise<{ id: string }> };
 
 /**
- * 0088 — Pasa UNA licencia al cupo de otro equipo (estaba cargada en el
+ * 0090 — Pasa UNA licencia al cupo de otro equipo (estaba cargada en el
  * equivocado). 409 `no_stock` si el destino no tiene un asiento libre y la
  * licencia hoy ocupa uno; 409 `asignado_al_grupo` para las del grupo, que se
  * mueven con el programa. `licencias.gestionar`: es una reasignación.

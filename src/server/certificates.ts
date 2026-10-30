@@ -1,4 +1,5 @@
 import { asc, eq } from "drizzle-orm";
+import { GRUPO_SIN_CERTIFICADO, grupoEmiteCertificado } from "@/lib/taller-config";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
@@ -124,6 +125,10 @@ async function emitirCertificado(
       id: schema.enrollment.id,
       cohortId: schema.enrollment.cohortId,
       grantsCertificate: schema.course.grantsCertificate,
+      // 2026-10-29 — Config del grupo si es un taller (`src/lib/taller-config.ts`).
+      courseKind: schema.course.kind,
+      registrationStatus: schema.cohort.registrationStatus,
+      issuesCertificate: schema.cohort.issuesCertificate,
       // 038 (FR-008) — la fecha de fin viaja en la MISMA consulta.
       cohortEndDate: schema.cohort.endDate,
       attendanceWaiverAt: schema.enrollment.attendanceWaiverAt,
@@ -151,6 +156,15 @@ async function emitirCertificado(
     };
   }
   const dispensada = dispensaVigente(enrollment);
+
+  /**
+   * 2026-10-29 — Un grupo de taller que NO emite no emite ni devuelve
+   * certificados: los ya emitidos quedan SUSPENDIDOS (la fila no se toca; si
+   * el grupo vuelve a "emite", vuelven a valer).
+   */
+  if (!grupoEmiteCertificado(enrollment)) {
+    return { ok: false, ...GRUPO_SIN_CERTIFICADO };
+  }
 
   const existing = await db
     .select()
@@ -655,6 +669,9 @@ export async function verifyCertificate(code: string): Promise<PublicCertificate
       courseName: schema.course.name,
       cohortName: schema.cohort.name,
       totalHours: schema.course.totalHours,
+      courseKind: schema.course.kind,
+      registrationStatus: schema.cohort.registrationStatus,
+      issuesCertificate: schema.cohort.issuesCertificate,
     })
     .from(schema.certificate)
     .innerJoin(schema.enrollment, eq(schema.certificate.enrollmentId, schema.enrollment.id))

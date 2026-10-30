@@ -55,6 +55,8 @@ const planilla = vi.hoisted(() => ({
   grupoCompleto: true,
 }));
 
+vi.mock("@/server/taller-config", () => ({ exigirEvaluacionesDeGrupo: async () => null }));
+
 vi.mock("@/server/grading", () => ({
   cohortGrading: async () => ({
     assessments: [{ id: "as_1", required: true }],

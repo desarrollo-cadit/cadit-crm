@@ -25,7 +25,7 @@ export const ALIAS_ACADEMICO: Readonly<Record<string, PestanaAcademico>> = {
 
 /* ------------------------------------------------------------ /licencias */
 
-/** 0089 — «Conciliación» es el reporte contra el Excel de usuarios de Autodesk. */
+/** 0091 — «Conciliación» es el reporte contra el Excel de usuarios de Autodesk. */
 export const PESTANAS_LICENCIAS = ["programas", "conciliacion"] as const;
 export type PestanaLicencias = (typeof PESTANAS_LICENCIAS)[number];
 
@@ -57,7 +57,16 @@ export const ALIAS_DEL_GRUPO: Readonly<Record<string, PestanaDelGrupo>> = {
 export function pestanasDelGrupo(opts: {
   esEspecializacion: boolean;
   verCursosOffline: boolean;
+  /**
+   * 2026-10-29 — Taller configurado sin evaluaciones / sin certificado
+   * (`src/lib/taller-config.ts`). Omitidos = sí. La pestaña `evaluacion` sigue
+   * SOLO si el grupo tiene evaluaciones o emite certificado (en ese último
+   * caso se muestra como lista de certificados).
+   */
+  tieneEvaluaciones?: boolean;
+  emiteCertificado?: boolean;
 }): PestanaDelGrupo[] {
+  // La pestaña existe siempre: sin evaluaciones es «Resultado final» y certificados.
   return [
     ...(opts.esEspecializacion ? (["recorrido"] as const) : []),
     "alumnos",
@@ -107,6 +116,13 @@ export type PestanaMarketing = (typeof PESTANAS_MARKETING)[number];
 /** `/portal/cohortes/[id]` — el grupo como lo ve el profesor. */
 /** 0086 — `cierre`: el resultado final de cada alumno, que confirma el profesor. */
 export const PESTANAS_PORTAL_GRUPO = ["clases", "evaluaciones", "entregas", "cierre", "material"] as const;
+/** 2026-10-29 — Las pestañas del profesor de un grupo; sin evaluaciones no hay Evaluaciones, Entregas ni Cierre. */
+export function pestanasPortalGrupo(opts: { tieneEvaluaciones: boolean }): PestanaPortalGrupo[] {
+  return PESTANAS_PORTAL_GRUPO.filter(
+    // «Resultado final» (cierre) sigue: lo confirma una persona en todo grupo.
+    (p) => opts.tieneEvaluaciones || (p !== "evaluaciones" && p !== "entregas")
+  );
+}
 export type PestanaPortalGrupo = (typeof PESTANAS_PORTAL_GRUPO)[number];
 export const ALIAS_PORTAL_GRUPO: Readonly<Record<string, PestanaPortalGrupo>> = {
   evaluacion: "evaluaciones",
@@ -125,3 +141,7 @@ export const PESTANAS_PORTAL_CURSADA = [
   "avisos",
 ] as const;
 export type PestanaPortalCursada = (typeof PESTANAS_PORTAL_CURSADA)[number];
+/** 2026-10-29 — Las del alumno; sin evaluaciones no hay Evaluaciones. */
+export function pestanasPortalCursada(opts: { tieneEvaluaciones: boolean }): PestanaPortalCursada[] {
+  return PESTANAS_PORTAL_CURSADA.filter((p) => opts.tieneEvaluaciones || p !== "evaluaciones");
+}

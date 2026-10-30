@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * 0088 — Mover un programa de un equipo a otro («AutoCAD figura en el equipo 1
+ * 0090 — Mover un programa de un equipo a otro («AutoCAD figura en el equipo 1
  * y es del 2») y cambiar de equipo UNA licencia. El programa se mueve entero:
  * el cupo, TODAS sus licencias y el equipo de los grupos que lo tienen; si algo
  * no cierra no se escribe nada.

@@ -23,7 +23,7 @@ async function leerError(res: Response | null, porDefecto: string) {
 }
 
 /**
- * 0088 — Las licencias de un profesor (Revit, AutoCAD…): quién de los
+ * 0090 — Las licencias de un profesor (Revit, AutoCAD…): quién de los
  * profesores tiene una asignada y de qué equipo sale. Cada una descuenta del
  * cupo de su equipo igual que la de un alumno, y se queda hasta que alguien la
  * libera: un profesor no tiene un curso que la termine.

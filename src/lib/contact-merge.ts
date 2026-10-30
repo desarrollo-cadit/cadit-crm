@@ -216,7 +216,7 @@ export const TABLAS_SIMPLES = [
   "staff_notice",
   // 0080 — lo aprendido de Zoom: la llave sigue siendo de la misma persona.
   "zoom_participant_alias",
-  // 0089 — vínculos de correo de Autodesk y tareas pendientes de la conciliación.
+  // 0091 — vínculos de correo de Autodesk y tareas pendientes de la conciliación.
   "license_email_alias",
   "license_autodesk_task",
 ] as const;

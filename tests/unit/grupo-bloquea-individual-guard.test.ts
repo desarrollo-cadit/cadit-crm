@@ -59,7 +59,7 @@ describe("licencias (FR-008)", () => {
   });
 
   it("nadie más escribe `license`: sólo licenses.ts, group-licenses.ts y license-teams.ts", () => {
-    // 0087/0088 — license-teams.ts sólo MUEVE licencias de equipo (con el candado de stock de los dos).
+    // 0089/0090 — license-teams.ts sólo MUEVE licencias de equipo (con el candado de stock de los dos).
     const permitidos = new Set([
       "src/server/licenses.ts",
       "src/server/group-licenses.ts",

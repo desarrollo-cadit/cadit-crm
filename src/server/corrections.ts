@@ -16,6 +16,12 @@ import { onAfterCommit } from "@/lib/db/tenant-context";
 import { fullName } from "@/lib/utils";
 import { avisarCorreccionPublicada } from "@/server/email/assessment-notices";
 import { recordResults } from "@/server/grading";
+import {
+  evaluacionEsDeGrupoConEvaluaciones,
+  exigirEvaluacionesDeEvaluacion,
+  grupoConEvaluacionesSql,
+  grupoTieneEvaluacionesPorId,
+} from "@/server/taller-config";
 import { teacherCohortDetail, teacherReachesCohort } from "@/server/teacher-portal";
 
 /**
@@ -145,6 +151,9 @@ async function contexto(
     .limit(1);
   const fila = filas[0];
   if (!fila) return null;
+  // 2026-10-29 — Taller sin evaluaciones: ausencia (404). El staff además
+  // pasa por `exigirEvaluacionesDeEvaluacion` (409) en `guardarCorreccion`.
+  if (!(await evaluacionEsDeGrupoConEvaluaciones(organizationId, assessmentId))) return null;
   return { cohortId: fila.cohortId, template: leerPlantilla(fila) };
 }
 
@@ -533,6 +542,8 @@ export async function guardarCorreccion(
   input: CorrectionInput,
   puedeAprobar: boolean
 ): Promise<CorrectionResult<CorrectionDto>> {
+  const sinEvaluaciones = await exigirEvaluacionesDeEvaluacion(organizationId, assessmentId);
+  if (sinEvaluaciones) return sinEvaluaciones;
   const ctx = await contexto(organizationId, assessmentId, enrollmentId);
   if (!ctx) return NO_ENCONTRADA;
   return guardarConContexto(
@@ -705,7 +716,9 @@ async function versionConPlantilla(organizationId: string, correctionId: string)
       scoped(schema.correction.organizationId, organizationId, eq(schema.correction.id, correctionId))
     )
     .limit(1);
-  return filas[0] ?? null;
+  const fila = filas[0] ?? null;
+  if (fila && !(await evaluacionEsDeGrupoConEvaluaciones(organizationId, fila.assessmentId))) return null;
+  return fila;
 }
 
 const SOLO_PENDIENTE = {
@@ -861,6 +874,11 @@ export async function listarPendientes(
         organizationId,
         and(
           eq(schema.correction.status, "pending"),
+          grupoConEvaluacionesSql(
+            schema.course.kind,
+            schema.cohort.registrationStatus,
+            schema.cohort.hasAssessments
+          ),
           filtro.cohortId ? eq(schema.cohort.id, filtro.cohortId) : undefined
         )
       )
@@ -916,6 +934,7 @@ export async function detalleParaAprobar(
       .limit(1)
   )[0];
   if (!v) return null;
+  if (!(await evaluacionEsDeGrupoConEvaluaciones(organizationId, v.assessmentId))) return null;
 
   const [vigentes, entregas] = await Promise.all([
     db
@@ -1033,6 +1052,8 @@ export async function correccionesPublicadasDeCursada(
       .limit(1)
   )[0];
   if (!inscripcion?.cohortId) return null;
+  // Taller sin evaluaciones: ausencia = 404 (jamás 403).
+  if (!(await grupoTieneEvaluacionesPorId(organizationId, inscripcion.cohortId))) return null;
 
   const [evaluaciones, publicadas] = await Promise.all([
     db

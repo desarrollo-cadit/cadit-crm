@@ -5,6 +5,7 @@ import { scoped } from "@/lib/db/tenant";
 import type { AttendanceStatus } from "@/server/attendance";
 import { listCohortClasses, type ClassRowDto, type CohortClassesDto } from "@/server/classes";
 import { computeCohortStatus } from "@/lib/cohort-status";
+import { progresoDeCursada, type ProgresoDeCursada } from "@/lib/cohort-progress";
 import { ACADEMY_TIME_ZONE } from "@/lib/schedule-time";
 import { resumenDeHoras, type ResumenDeHoras } from "@/lib/class-hours";
 import { cohortGrading, recordResults, type AssessmentDto } from "@/server/grading";
@@ -17,6 +18,8 @@ import {
 } from "@/server/resources";
 import { modulosConOrdinal } from "@/server/program-modules";
 import type { ResourceKind } from "@/lib/db/schema";
+import { grupoTieneEvaluacionesPorId } from "@/server/taller-config";
+import { grupoTieneEvaluaciones } from "@/lib/taller-config";
 import type { ConfirmacionDeResultado } from "@/lib/resultado-final";
 import {
   cierreDeCursada,
@@ -158,6 +161,8 @@ export async function teacherReachesCohort(
  */
 export type TeacherCohortDto = {
   id: string;
+  /** 2026-10-30 — Solo para el color del avatar (la paleta categórica es por curso). */
+  courseId: string;
   /** La cohorte puede no tener nombre propio; ahí manda el del curso. */
   name: string | null;
   courseName: string;
@@ -180,6 +185,8 @@ export type TeacherCohortDto = {
   virtualRoom: { name: string } | null;
   status: "planificada" | "en_curso" | "finalizada";
   role: "titular" | "suplente";
+  /** 2026-10-29 — `grupoTieneEvaluaciones`: sin evaluaciones no hay pestañas Evaluaciones ni Entregas. */
+  tieneEvaluaciones: boolean;
   students: number;
   /**
    * 028 (FR-029) — **Lo único que este portal gana con las especializaciones**:
@@ -198,6 +205,13 @@ export type TeacherCohortDto = {
    * un árbol.
    */
   program: { name: string; ordinal: number | null } | null;
+  /**
+   * 2026-10-30 — "Clase X de Y" (`progresoDeCursada`, la MISMA regla del
+   * listado de Académico): cuántas clases reales ya terminaron de cuántas.
+   * Solo cuenta fechas y cancelaciones; `null` sin cronograma. Viene solo
+   * cuando se pide (`conProgreso`): el detalle no lo usa.
+   */
+  progress?: ProgresoDeCursada | null;
 };
 
 /**
@@ -241,7 +255,9 @@ export async function teacherPortalTimezone(organizationId: string): Promise<str
 /** Las cohortes de este profesor, la más reciente primero. */
 export async function listTeacherCohorts(
   organizationId: string,
-  teacherId: string
+  teacherId: string,
+  /** 2026-10-30 — La lista "Mis grupos" pide el progreso, en la zona de la academia. */
+  opciones: { conProgreso?: { timeZone: string; now?: Date } } = {}
 ): Promise<TeacherCohortDto[]> {
   const alcance = await resolveTeacherScope(organizationId, teacherId);
   if (alcance.length === 0) return [];
@@ -251,6 +267,7 @@ export async function listTeacherCohorts(
   const rows = await db
     .select({
       id: schema.cohort.id,
+      courseId: schema.cohort.courseId,
       name: schema.cohort.name,
       teacherId: schema.cohort.teacherId,
       startDate: schema.cohort.startDate,
@@ -262,6 +279,9 @@ export async function listTeacherCohorts(
       roomName: schema.virtualRoom.name,
       parentCohortId: schema.cohort.parentCohortId,
       position: schema.cohort.position,
+      courseKind: schema.course.kind,
+      registrationStatus: schema.cohort.registrationStatus,
+      hasAssessments: schema.cohort.hasAssessments,
     })
     .from(schema.cohort)
     .innerJoin(schema.course, eq(schema.cohort.courseId, schema.course.id))
@@ -346,9 +366,41 @@ export async function listTeacherCohorts(
     cuantos.set(e.cohortId, (cuantos.get(e.cohortId) ?? 0) + 1);
   }
 
+  /**
+   * 2026-10-30 — Las clases de sus cohortes, para "Clase X de Y": SOLO fecha,
+   * hora de fin y si se canceló. Una consulta para toda la lista.
+   */
+  const progreso = new Map<string, ProgresoDeCursada | null>();
+  if (opciones.conProgreso) {
+    const clases = await db
+      .select({
+        cohortId: schema.classSession.cohortId,
+        date: schema.classSession.date,
+        endTime: schema.classSession.endTime,
+        canceledAt: schema.classSession.canceledAt,
+      })
+      .from(schema.classSession)
+      .where(
+        scoped(
+          schema.classSession.organizationId,
+          organizationId,
+          inArray(schema.classSession.cohortId, alcance)
+        )
+      );
+    const porCohorte = new Map<string, { sessionDate: Date; endTime: string | null; canceled: boolean }[]>();
+    for (const k of clases) {
+      const lista = porCohorte.get(k.cohortId) ?? [];
+      lista.push({ sessionDate: k.date, endTime: k.endTime, canceled: k.canceledAt !== null });
+      porCohorte.set(k.cohortId, lista);
+    }
+    const reloj = { timeZone: opciones.conProgreso.timeZone, now: opciones.conProgreso.now ?? new Date() };
+    for (const [id, lista] of porCohorte) progreso.set(id, progresoDeCursada(lista, reloj));
+  }
+
   return rows
     .map((c) => ({
       id: c.id,
+      courseId: c.courseId,
       name: c.name,
       courseName: c.courseName,
       startDate: c.startDate.toISOString(),
@@ -359,12 +411,14 @@ export async function listTeacherCohorts(
       virtualRoom: c.roomName ? { name: c.roomName } : null,
       status: computeCohortStatus(c.startDate, c.endDate),
       role: c.teacherId === teacherId ? ("titular" as const) : ("suplente" as const),
+      tieneEvaluaciones: grupoTieneEvaluaciones(c),
       students: cuantos.get(c.id) ?? 0,
       program: nombreDelPrograma(
         c.parentCohortId,
         programas,
         ordinalDeModulo.get(c.id) ?? null
       ),
+      ...(opciones.conProgreso ? { progress: progreso.get(c.id) ?? null } : {}),
     }))
     // Con 18 cohortes (las de Ovidio) el orden no es cosmético: lo que está en
     // curso es lo único que se usa un martes a las 18:30.
@@ -625,6 +679,8 @@ export async function teacherCohortGrading(
 ): Promise<TeacherGradingDto | null> {
   const detalle = await teacherCohortDetail(organizationId, teacherId, cohortId);
   if (!detalle) return null;
+  // 2026-10-29 — Taller sin evaluaciones: ausencia = 404 (jamás 403).
+  if (!(await grupoTieneEvaluacionesPorId(organizationId, cohortId))) return null;
 
   const planilla = await cohortGrading(organizationId, cohortId);
   if (!planilla) return null;
@@ -667,7 +723,7 @@ export async function teacherRecordResult(
   }
 
   const detalle = await teacherCohortDetail(organizationId, teacherId, asignada.cohortId);
-  if (!detalle) {
+  if (!detalle || !(await grupoTieneEvaluacionesPorId(organizationId, asignada.cohortId))) {
     // Misma respuesta que si no existiera: no se confirma que exista.
     return { ok: false, status: 404, code: "not_found", message: "Evaluación no encontrada" };
   }

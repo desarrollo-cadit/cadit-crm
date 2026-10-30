@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
  * Desasignar se ofrece sólo con `licencias.gestionar` (2026-10-26: es de
  * soporte), la capacidad de la ruta.
  *
- * 0089 — `?tab=programas|conciliacion`. La conciliación con Autodesk se opera
+ * 0091 — `?tab=programas|conciliacion`. La conciliación con Autodesk se opera
  * con `licencias.gestionar`; se ve con `academico.ver`, y las personas y
  * correos solo con `contactos.ver` (lo decide también el servidor).
  */

@@ -3,6 +3,11 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
+import {
+  evaluacionEsDeGrupoConEvaluaciones,
+  exigirEvaluacionesDeEvaluacion,
+  exigirEvaluacionesDeGrupo,
+} from "@/server/taller-config";
 import { instanteDeEntregaFinal } from "@/lib/entrega-final";
 import {
   admiteAtajo,
@@ -133,6 +138,8 @@ export type StudentGrading = {
      * alumno no lo ve y la verificación pública no lo valida.
      */
     suspended: boolean;
+    /** 2026-10-29 — el motivo de la suspensión es que el grupo NO EMITE certificado. */
+    noEmite: boolean;
     /** 2026-10-29 — su grupo terminó sin la asistencia completa: cuenta como anulado. */
     annulledIncompleteGroup: boolean;
   } | null;
@@ -292,6 +299,8 @@ export async function createAssessment(
   if (!cohortRows[0]) {
     return { ok: false, status: 404, code: "not_found", message: "Grupo no encontrado" };
   }
+  const sinEvaluaciones = await exigirEvaluacionesDeGrupo(organizationId, cohortId);
+  if (sinEvaluaciones) return sinEvaluaciones;
 
   const existing = await listAssessments(organizationId, cohortId);
   const inserted = await db
@@ -335,6 +344,8 @@ export async function guardarPlantilla(
   if (!fila) {
     return { ok: false, status: 404, code: "not_found", message: "Evaluación no encontrada" };
   }
+  const sinEvaluaciones = await exigirEvaluacionesDeEvaluacion(organizationId, assessmentId);
+  if (sinEvaluaciones) return sinEvaluaciones;
 
   // 0084 — Normalizar antes de comparar: un espacio de más en una frase de la
   // rúbrica no es un cambio de plantilla.
@@ -440,6 +451,8 @@ export async function recordResults(
   if (!evaluacion) {
     return { ok: false, status: 404, code: "not_found", message: "Evaluación no encontrada" };
   }
+  const sinEvaluaciones = await exigirEvaluacionesDeEvaluacion(organizationId, assessmentId);
+  if (sinEvaluaciones) return sinEvaluaciones;
   if (!desdeCorreccion && !admiteAtajo(plantillaDe({
     scale: evaluacion.scale === "numeric" ? "numeric" : "pass_fail",
     requiresApproval: evaluacion.requiresApproval,
@@ -661,7 +674,16 @@ export type CopyAssessmentsDto = {
 export async function copyAssessments(
   organizationId: string,
   desdeCohorteId: string,
-  haciaCohorteId: string
+  haciaCohorteId: string,
+  opciones: {
+    /**
+     * "Clonar grupo" — El plazo de cada copia, por id de la evaluación de
+     * ORIGEN (instante ISO). Copiar de otro grupo no lo pasa: ahí el plazo
+     * no viaja. Al clonar, las fechas se corren con `planDeFechasDeGrupo`
+     * (`src/lib/clonar-grupo.ts`) y llegan acá ya decididas.
+     */
+    plazos?: ReadonlyMap<string, string | null>;
+  } = {}
 ): Promise<GradingResult<CopyAssessmentsDto>> {
   if (desdeCohorteId === haciaCohorteId) {
     return {
@@ -698,6 +720,8 @@ export async function copyAssessments(
       message: "El grupo de origen no existe",
     };
   }
+  const sinEvaluaciones = await exigirEvaluacionesDeGrupo(organizationId, haciaCohorteId);
+  if (sinEvaluaciones) return sinEvaluaciones;
 
   const [origen, destino] = await Promise.all([
     listAssessments(organizationId, desdeCohorteId),
@@ -705,7 +729,7 @@ export async function copyAssessments(
   ]);
 
   const plan = planAssessmentCopy(origen, destino);
-  await insertarCopias(organizationId, haciaCohorteId, plan, "assessment");
+  await insertarCopias(organizationId, haciaCohorteId, plan, "assessment", opciones.plazos);
 
   return {
     ok: true,
@@ -718,6 +742,15 @@ export async function copyAssessments(
   };
 }
 
+/** El plazo de una copia: solo si quien copia lo decidió (clonar grupo). */
+function plazoDeCopia(
+  plazos: ReadonlyMap<string, string | null> | undefined,
+  origenId: string | undefined
+): Date | null {
+  const iso = plazos && origenId ? plazos.get(origenId) : null;
+  return iso ? new Date(iso) : null;
+}
+
 /**
  * Inserta lo que decidió el plan y copia los adjuntos de la consigna de cada
  * origen (0084): filas NUEVAS de `resource`, la copia no comparte nada.
@@ -726,10 +759,11 @@ async function insertarCopias(
   organizationId: string,
   cohortId: string,
   plan: CopyPlan,
-  origen: "assessment" | "courseAssessmentTemplate"
+  origen: "assessment" | "courseAssessmentTemplate",
+  plazos?: ReadonlyMap<string, string | null>
 ): Promise<void> {
   if (plan.aCopiar.length === 0) return;
-  const filas = plan.aCopiar.map((a) => ({
+  const filas = plan.aCopiar.map((a, i) => ({
     id: newId("assessment"),
     organizationId,
     cohortId,
@@ -742,6 +776,7 @@ async function insertarCopias(
     requiresApproval: a.requiresApproval,
     criteria: a.criteria,
     textFields: a.textFields,
+    dueAt: plazoDeCopia(plazos, plan.origenIds[i]),
   }));
   await getDb().insert(schema.assessment).values(filas);
   await copiarAdjuntos(
@@ -774,6 +809,8 @@ export async function tomarEvaluacionesDelCurso(
   if (!cohorte) {
     return { ok: false, status: 404, code: "not_found", message: "Grupo no encontrado" };
   }
+  const sinEvaluaciones = await exigirEvaluacionesDeGrupo(organizationId, cohortId);
+  if (sinEvaluaciones) return sinEvaluaciones;
 
   const modelos = await db
     .select()
@@ -835,6 +872,8 @@ export async function leerConsigna(
     )
     .limit(1);
   if (!fila) return null;
+  // Taller sin evaluaciones: ausencia (la ruta responde 404).
+  if (!(await evaluacionEsDeGrupoConEvaluaciones(organizationId, assessmentId))) return null;
   const adjuntos = await adjuntosPorContenedor(organizationId, "assessment", [assessmentId]);
   return { instructionsMd: fila.instructionsMd, adjuntos: adjuntos.get(assessmentId) ?? [] };
 }
@@ -852,6 +891,8 @@ export async function guardarConsigna(
   assessmentId: string,
   entrada: ConsignaInput
 ): Promise<GradingResult<ConsignaDto>> {
+  const sinEvaluaciones = await exigirEvaluacionesDeEvaluacion(organizationId, assessmentId);
+  if (sinEvaluaciones) return sinEvaluaciones;
   const valida = validarConsigna(entrada);
   if (!valida.ok) return { ok: false, status: 422, code: valida.code, message: valida.mensaje };
 
@@ -1405,6 +1446,7 @@ export async function cohortGrading(
               revokeReason: cert.certificate.revokeReason,
               revokedByName: cert.revokedByName,
               historical: cert.certificate.historical,
+              noEmite: afirmados.get(e.id)?.noEmite ?? false,
               suspended: visibilidadSegun(cert.certificate.revokedAt, afirmados.get(e.id)) === "suspendido",
               annulledIncompleteGroup:
                 visibilidadSegun(cert.certificate.revokedAt, afirmados.get(e.id)) === "anulado_sin_asistencia",

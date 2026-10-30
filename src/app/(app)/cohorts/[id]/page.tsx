@@ -8,6 +8,8 @@ import { encabezadoDeCohorte } from "@/server/cohort-header";
 import { estadoDeConfirmacion } from "@/server/cohort-confirmation";
 import { leerPestana } from "@/lib/tab-param";
 import { ALIAS_DEL_GRUPO, pestanasDelGrupo } from "@/lib/pestanas";
+import { configDeGrupo } from "@/server/taller-config";
+import { grupoEmiteCertificado, grupoTieneEvaluaciones } from "@/lib/taller-config";
 
 export const dynamic = "force-dynamic";
 
@@ -88,9 +90,17 @@ export default async function CohortPage({
    * `academico.ver` caen a la default, no se abren.
    */
   const esModulo = header?.partOf != null;
+  // 2026-10-29 — Taller sin evaluaciones / sin certificado (RLS: dentro de la transacción).
+  const config = session
+    ? await withTenantTransaction(session, () => configDeGrupo(session.organizationId, id))
+    : null;
+  const tieneEvaluaciones = config ? grupoTieneEvaluaciones(config) : true;
+  const emiteCertificado = config ? grupoEmiteCertificado(config) : true;
   const pestanas = pestanasDelGrupo({
     esEspecializacion: isSpecialization,
     verCursosOffline: puedeVerPrograma && !esModulo,
+    tieneEvaluaciones,
+    emiteCertificado,
   });
   const pestanaPorDefecto = isSpecialization ? "recorrido" : "alumnos";
   const initialTab = leerPestana(tab, pestanas, pestanaPorDefecto, ALIAS_DEL_GRUPO);
@@ -127,6 +137,8 @@ export default async function CohortPage({
           esEspecializacion={isSpecialization}
           // 034 (FR-016) — un módulo es el que tiene especialización arriba.
           esModulo={esModulo}
+          tieneEvaluaciones={tieneEvaluaciones}
+          emiteCertificado={emiteCertificado}
           initialTab={initialTab}
         />
       </div>

@@ -17,25 +17,25 @@ import type { LicenseSource } from "./license-source";
  * excepción es el correo de la LICENCIA (2026-10-21), y solo con
  * `contactos.ver`: quien ya ve el correo del alumno.
  *
- * 0087 — El stock es por equipo de licencias: cada programa lleva su cupo,
+ * 0089 — El stock es por equipo de licencias: cada programa lleva su cupo,
  * asignadas y libres POR EQUIPO (`porEquipo`), y cada fila dice de qué equipo
  * sale. El total del programa es la suma de los equipos activos.
  */
 
 export type EstadoDeLicencia = "en_uso" | "vencida" | "curso_terminado";
 
-/** 0088 — Quién tiene la licencia: un alumno (inscripción) o un profesor. */
+/** 0090 — Quién tiene la licencia: un alumno (inscripción) o un profesor. */
 export type TitularDeLicencia = "alumno" | "profesor";
 
 export type FilaDeLicenciaVista = {
   licenseId: string;
   /** `null` en la de un profesor, que no tiene inscripción. */
   enrollmentId: string | null;
-  /** 0088 — Solo en la de un profesor. */
+  /** 0090 — Solo en la de un profesor. */
   teacherId: string | null;
   titular: TitularDeLicencia;
   softwareId: string;
-  /** 0087 — El equipo del que sale el asiento. */
+  /** 0089 — El equipo del que sale el asiento. */
   teamId: string;
   /** `null` en la de un profesor (no es un contacto). */
   contactId: string | null;
@@ -65,12 +65,12 @@ export type FaltanteDelGrupo = {
   cohortName: string;
 };
 
-/** 0087 — El cupo de un programa en un equipo, con lo que ocupa hoy. */
+/** 0089 — El cupo de un programa en un equipo, con lo que ocupa hoy. */
 export type CupoPorEquipoVista = {
   teamId: string;
   total: number;
   asignadas: number;
-  /** 0089 — Ocupados en Autodesk sin titular en el campus (restan de lo libre). */
+  /** 0091 — Ocupados en Autodesk sin titular en el campus (restan de lo libre). */
   externos: number;
   libres: number;
 };
@@ -84,10 +84,10 @@ export type ProgramaDeLaVista = {
   hasPhoto: boolean;
   /** Las que OCUPAN hoy (= el stock). */
   asignadas: number;
-  /** 0089 — La suma de los asientos ajenos de todos los equipos. */
+  /** 0091 — La suma de los asientos ajenos de todos los equipos. */
   externos: number;
   libres: number;
-  /** 0087 — El mismo conteo, equipo por equipo. */
+  /** 0089 — El mismo conteo, equipo por equipo. */
   porEquipo: CupoPorEquipoVista[];
   filas: FilaDeLicenciaVista[];
   faltantes: FaltanteDelGrupo[];
@@ -106,7 +106,7 @@ export function estadoDeLicencia(
 }
 
 /**
- * 0088 — El estado de la licencia de un profesor: no tiene cohorte, así que
+ * 0090 — El estado de la licencia de un profesor: no tiene cohorte, así que
  * no puede estar "curso terminado"; o está en uso o venció.
  */
 export function estadoDeLicenciaDeProfesor(
@@ -122,9 +122,9 @@ export function armarVistaDeLicencias(
   software: readonly { id: string; name: string; total: number; hasPhoto?: boolean }[],
   filas: readonly FilaDeLicenciaVista[],
   faltantes: readonly FaltanteDelGrupo[],
-  /** 0087 — El cupo de cada equipo en cada programa. */
+  /** 0089 — El cupo de cada equipo en cada programa. */
   cupos: readonly { teamId: string; softwareId: string; total: number }[] = [],
-  /** 0089 — Asientos ajenos por `claveDeStock(equipo, programa)`. */
+  /** 0091 — Asientos ajenos por `claveDeStock(equipo, programa)`. */
   ajenos: ReadonlyMap<string, number> = new Map()
 ): ProgramaDeLaVista[] {
   return software.map((s) => {
@@ -202,7 +202,7 @@ export function filtrarFilas<
     cohortId?: string | null;
     source?: LicenseSource | null;
     teamId?: string | null;
-    /** 0088 — Alumnos o profesores. */
+    /** 0090 — Alumnos o profesores. */
     titular?: TitularDeLicencia | null;
     q?: string;
   }
@@ -216,4 +216,63 @@ export function filtrarFilas<
       (!filtro.titular || (f.titular ?? "alumno") === filtro.titular) &&
       coincideConBusqueda(q, { texto: [f.contactName] })
   );
+}
+
+/**
+ * 2026-10-30 — Las cantidades de los desplegables de la vista (como en
+ * Académico): cada filtro cuenta con los DEMÁS puestos y sin el suyo, así el
+ * número dice qué pasaría al elegirlo. Solo cuenta licencias (no faltantes).
+ */
+export function contadoresDeLicencias<
+  T extends Pick<FilaDeLicenciaVista, "cohortId" | "source" | "contactName"> & {
+    teamId?: string;
+    titular?: TitularDeLicencia;
+  },
+>(
+  filas: readonly T[],
+  filtro: {
+    cohortId?: string | null;
+    source?: LicenseSource | null;
+    teamId?: string | null;
+    titular?: TitularDeLicencia | null;
+    q?: string;
+  }
+): {
+  grupos: Map<string, number>;
+  todosLosGrupos: number;
+  origen: { todos: number; grupo: number; individual: number };
+  /** 0091 — Por equipo (sin el filtro de equipo puesto). */
+  equipos: Map<string, number>;
+  todosLosEquipos: number;
+  /** 0090 — Alumnos y profesores (sin el filtro de titular puesto). */
+  titular: { todos: number; alumno: number; profesor: number };
+} {
+  const sinGrupo = filtrarFilas(filas, { ...filtro, cohortId: null });
+  const grupos = new Map<string, number>();
+  for (const f of sinGrupo) {
+    if (f.cohortId) grupos.set(f.cohortId, (grupos.get(f.cohortId) ?? 0) + 1);
+  }
+  const sinOrigen = filtrarFilas(filas, { ...filtro, source: null });
+  const sinEquipo = filtrarFilas(filas, { ...filtro, teamId: null });
+  const equipos = new Map<string, number>();
+  for (const f of sinEquipo) {
+    if (f.teamId) equipos.set(f.teamId, (equipos.get(f.teamId) ?? 0) + 1);
+  }
+  const sinTitular = filtrarFilas(filas, { ...filtro, titular: null });
+  return {
+    grupos,
+    todosLosGrupos: sinGrupo.length,
+    origen: {
+      todos: sinOrigen.length,
+      grupo: sinOrigen.filter((f) => f.source === "grupo").length,
+      individual: sinOrigen.filter((f) => f.source === "individual").length,
+    },
+    equipos,
+    todosLosEquipos: sinEquipo.length,
+    titular: {
+      todos: sinTitular.length,
+      alumno: sinTitular.filter((f) => (f.titular ?? "alumno") === "alumno").length,
+      profesor: sinTitular.filter((f) => f.titular === "profesor").length,
+    },
+  };
 }

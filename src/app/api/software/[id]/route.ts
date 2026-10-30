@@ -16,7 +16,7 @@ const patchSchema = z.object({
  * seguir el mismo patrón REST que el resto de las rutas de edición del
  * repo (`/api/cohorts/[id]`, `/api/enrollments/[id]/checklist`).
  *
- * 0087 — El cupo ya no se edita acá: es por equipo
+ * 0089 — El cupo ya no se edita acá: es por equipo
  * (`PUT /api/license-teams/[id]/seats`).
  */
 export const PATCH = requireCapability(

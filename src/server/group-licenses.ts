@@ -42,7 +42,7 @@ import {
 export type GroupLicenseDto = {
   softwareId: string;
   name: string;
-  /** 0087 — El equipo de licencias del que salen las del grupo. */
+  /** 0089 — El equipo de licencias del que salen las del grupo. */
   teamId: string;
   teamName: string;
   expiresAt: string | null;
@@ -181,7 +181,7 @@ async function licenciasDe(
       )
     );
   const ahora = new Date();
-  // 0088 — El join con la inscripción deja afuera las licencias de profesores
+  // 0090 — El join con la inscripción deja afuera las licencias de profesores
   // (las del grupo solo conocen inscripciones); el flatMap lo dice al tipo.
   return rows.flatMap((r) => (r.enrollmentId ? [{ ...r, enrollmentId: r.enrollmentId }] : [])).map((r) => ({
     id: r.id,
@@ -255,7 +255,7 @@ export type GroupLicenseResult<T> =
  * por miembro activo, todo o nada. Las individuales que ya ocupan pasan a ser
  * del grupo sin descontar otra vez.
  *
- * 0087 — `teamId` es el equipo del que salen TODAS las del grupo: se elige una
+ * 0089 — `teamId` es el equipo del que salen TODAS las del grupo: se elige una
  * vez acá, queda en `cohort_group_software.team_id` y lo reusan las altas
  * posteriores, los módulos automáticos y «Mudar». Una individual que ocupaba
  * un asiento de otro equipo pasa a este y pide stock acá.
@@ -504,7 +504,7 @@ export async function sincronizarLicenciasDelGrupo(
     return { sinStock: [] };
   }
 
-  // 0087 — El stock es del equipo de cada programa del grupo: dos cohortes
+  // 0089 — El stock es del equipo de cada programa del grupo: dos cohortes
   // pueden usar el mismo programa desde equipos distintos.
   const stocks = [
     ...new Map(

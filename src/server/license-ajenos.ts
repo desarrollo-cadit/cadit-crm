@@ -9,7 +9,7 @@ import {
 import { licenciaDeProfesorOcupada, licenciaOcupada } from "@/lib/license-rules";
 
 /**
- * 0089 — Los asientos que Autodesk tiene ocupados y el campus NO cuenta.
+ * 0091 — Los asientos que Autodesk tiene ocupados y el campus NO cuenta.
  *
  * La última importación de cada equipo es una foto de Autodesk. Cada fila
  * (correo, programa) que no tiene un titular que ocupe asiento en el campus

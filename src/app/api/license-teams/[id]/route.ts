@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 type Params = { params: Promise<{ id: string }> };
 
 /**
- * 0087 — Renombrar un equipo, cambiar su alias de Autodesk o archivarlo.
+ * 0089 — Renombrar un equipo, cambiar su alias de Autodesk o archivarlo.
  * Archivar un equipo con licencias ocupadas (o que es el de un grupo) responde
  * 409 `equipo_en_uso`. `academico.editar`.
  */

@@ -138,7 +138,7 @@ describe("fechas desconocidas no liberan la licencia", () => {
 });
 
 /**
- * 0088 — La licencia de un PROFESOR no tiene cohorte: nada la "termina". Ocupa
+ * 0090 — La licencia de un PROFESOR no tiene cohorte: nada la "termina". Ocupa
  * hasta que alguien la libera (`assigned = false`) o vence (`expiresAt`).
  */
 describe("la licencia de un profesor", () => {

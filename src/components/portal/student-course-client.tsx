@@ -128,6 +128,7 @@ type Detail = {
     totalClasses: number;
     completedClasses: number;
     minAttendancePct: number | null;
+    tieneEvaluaciones?: boolean;
     approval: ApprovalValue;
     approvalReasons: string[];
     /** 0086 — terminó y falta confirmar el resultado final. */
@@ -256,7 +257,9 @@ export function StudentCourseClient({
   const canceladas = data.classes.filter((c) => c.canceled).length;
   const modulos = course.modules ?? [];
   const activa: TabKey =
-    tab && (tab !== "modulos" || modulos.length > 0)
+    tab &&
+    (tab !== "modulos" || modulos.length > 0) &&
+    (tab !== "evaluaciones" || course.tieneEvaluaciones !== false)
       ? tab
       : modulos.length > 0
         ? "modulos"
@@ -273,11 +276,15 @@ export function StudentCourseClient({
       ? [{ key: "modulos" as const, label: "Módulos", count: modulos.length }]
       : []),
     { key: "clases", label: "Clases", count: data.classes.length || null },
-    {
-      key: "evaluaciones",
-      label: "Evaluaciones",
-      count: course.assessments.length || null,
-    },
+    ...(course.tieneEvaluaciones === false
+      ? []
+      : [
+          {
+            key: "evaluaciones" as const,
+            label: "Evaluaciones",
+            count: course.assessments.length || null,
+          },
+        ]),
     { key: "material", label: "Material", count: data.resources.length || null },
     { key: "avisos", label: "Avisos", count: data.announcements.length || null },
   ];

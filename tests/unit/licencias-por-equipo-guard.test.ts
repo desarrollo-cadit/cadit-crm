@@ -5,7 +5,7 @@ import { z } from "zod";
 import { cuposSchema, equipoEdicionSchema, equipoNuevoSchema } from "@/lib/license-team";
 
 /**
- * 0087 — Licencias por equipo. Lo que no se prueba con los mocks de la base:
+ * 0089 — Licencias por equipo. Lo que no se prueba con los mocks de la base:
  * que asignar sin equipo sea 422 en las DOS puertas, que la migración deje
  * todo lo existente en «Sin asignar» sin tocar el stock de nadie, y que las
  * rutas nuevas declaren su capacidad.
@@ -68,8 +68,8 @@ describe("las rutas de equipos declaran capacidad", () => {
   });
 });
 
-describe("migración 0087", () => {
-  const sql = leer("drizzle", "0087_licencias_por_equipo.sql");
+describe("migración 0089", () => {
+  const sql = leer("drizzle", "0089_licencias_por_equipo.sql");
 
   it("crea «Sin asignar» por organización con programas, solo si no tiene equipos", () => {
     expect(sql).toContain("'Sin asignar'");

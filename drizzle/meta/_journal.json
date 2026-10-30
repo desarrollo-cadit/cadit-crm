@@ -614,22 +614,36 @@
     {
       "idx": 87,
       "version": "7",
-      "when": 1793363509087,
-      "tag": "0087_licencias_por_equipo",
+      "when": 1793320000000,
+      "tag": "0087_talleres_config",
       "breakpoints": true
     },
     {
       "idx": 88,
       "version": "7",
-      "when": 1793371800651,
-      "tag": "0088_licencias_de_profesores",
+      "when": 1793330000000,
+      "tag": "0088_material_de_clase_de_origen",
       "breakpoints": true
     },
     {
       "idx": 89,
       "version": "7",
+      "when": 1793363509087,
+      "tag": "0089_licencias_por_equipo",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1793371800651,
+      "tag": "0090_licencias_de_profesores",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
       "when": 1793374800091,
-      "tag": "0089_licencias_conciliacion",
+      "tag": "0091_licencias_conciliacion",
       "breakpoints": true
     }
   ]

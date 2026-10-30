@@ -28,13 +28,13 @@ export type VistaDeLicenciasDto = {
   programas: ProgramaDeLaVista[];
   /** Las cohortes que aparecen en la lista, para el filtro. */
   cohortes: { id: string; name: string }[];
-  /** 0087 — Los equipos de licencias (los archivados al final). */
+  /** 0089 — Los equipos de licencias (los archivados al final). */
   equipos: {
     id: string;
     name: string;
     autodeskAlias: string | null;
     archived: boolean;
-    /** 0089 — De cuándo es la última importación de Autodesk de este equipo. */
+    /** 0091 — De cuándo es la última importación de Autodesk de este equipo. */
     importadoEn: string | null;
   }[];
 };
@@ -62,7 +62,7 @@ export async function vistaDeLicencias(
     .orderBy(asc(schema.software.name));
   if (software.length === 0) return { programas: [], cohortes: [], equipos: [] };
 
-  // 0087 — El cupo es de cada equipo; el total de un programa es la suma de
+  // 0089 — El cupo es de cada equipo; el total de un programa es la suma de
   // los equipos ACTIVOS (un archivado no tiene licencias ocupadas).
   const [equiposRows, cupos] = await Promise.all([
     db
@@ -83,7 +83,7 @@ export async function vistaDeLicencias(
       .from(schema.licenseTeamSeat)
       .where(scoped(schema.licenseTeamSeat.organizationId, organizationId)),
   ]);
-  // 0089 — Lo que Autodesk tiene ocupado y el campus no cuenta, y de cuándo es esa foto.
+  // 0091 — Lo que Autodesk tiene ocupado y el campus no cuenta, y de cuándo es esa foto.
   const [ajenos, fotos] = await Promise.all([
     asientosAjenos(organizationId),
     fotosDeLosEquipos(organizationId),
@@ -122,7 +122,7 @@ export async function vistaDeLicencias(
         endDate: schema.cohort.endDate,
       })
       .from(schema.license)
-      // 0088 — leftJoin: la licencia de un profesor no tiene inscripción ni contacto.
+      // 0090 — leftJoin: la licencia de un profesor no tiene inscripción ni contacto.
       .leftJoin(schema.enrollment, eq(schema.license.enrollmentId, schema.enrollment.id))
       .leftJoin(schema.contact, eq(schema.enrollment.contactId, schema.contact.id))
       .leftJoin(schema.teacher, eq(schema.license.teacherId, schema.teacher.id))

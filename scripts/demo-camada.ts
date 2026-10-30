@@ -334,7 +334,7 @@ async function crear() {
     organizationId: org!.id,
     name: `${MARCA} AutoCAD demo`,
   });
-  // 0087 — El cupo es de un equipo de licencias.
+  // 0089 — El cupo es de un equipo de licencias.
   const equipoId = await equipoPorDefecto(org!.id);
   await db.insert(schema.licenseTeamSeat).values({
     organizationId: org!.id,

@@ -323,7 +323,7 @@ export const teacher = pgTable(
 /**
  * 005 — Catálogo de software con licencias limitadas (Revit, Civil3D...).
  *
- * 0087 — El cupo ya NO es de acá sino de cada equipo de licencias
+ * 0089 — El cupo ya NO es de acá sino de cada equipo de licencias
  * (`license_team_seat`): disponibles = cupo del equipo − licencias ocupadas de
  * ese equipo. `total_licenses` queda como columna heredada (la migración la
  * copió al equipo «Sin asignar») y nada la lee ni la escribe más.
@@ -336,7 +336,7 @@ export const software = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    /** @deprecated 0087 — el cupo vive en `license_team_seat`. */
+    /** @deprecated 0089 — el cupo vive en `license_team_seat`. */
     totalLicenses: integer("total_licenses").notNull().default(0),
     /** 005 iteración 5 — foto opcional del producto, mismo patrón que teacher. */
     photoMimeType: text("photo_mime_type"),
@@ -806,6 +806,14 @@ export const cohort = pgTable(
     confirmedAt: timestamp("confirmed_at"),
     /** Quién la confirmó. `set null`: que alguien deje la academia no borra el acto. */
     confirmedBy: text("confirmed_by").references(() => user.id, { onDelete: "set null" }),
+    /**
+     * 0087 — Configuración de un grupo de curso TALLER (`src/lib/taller-config.ts`):
+     * ¿tiene evaluaciones? ¿emite certificado? Default true: ningún grupo
+     * existente cambia hasta que alguien lo configure. Para un grupo que no es
+     * un taller cursable se IGNORAN (valen "sí" siempre).
+     */
+    hasAssessments: boolean("has_assessments").notNull().default(true),
+    issuesCertificate: boolean("issues_certificate").notNull().default(true),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -1162,7 +1170,7 @@ export const workshopRegistration = pgTable(
 );
 
 /**
- * 0087 — Equipo de licencias: un equipo de Autodesk (Uruguay ATC, Paraguay
+ * 0089 — Equipo de licencias: un equipo de Autodesk (Uruguay ATC, Paraguay
  * ATC…) con SU cupo por programa. El stock ya no es uno solo por programa: la
  * licencia que se asigna descuenta del equipo que se eligió al asignarla.
  *
@@ -1189,7 +1197,7 @@ export const licenseTeam = pgTable(
   ]
 );
 
-/** 0087 — Cuántas licencias de un programa tiene un equipo (el cupo). */
+/** 0089 — Cuántas licencias de un programa tiene un equipo (el cupo). */
 export const licenseTeamSeat = pgTable(
   "license_team_seat",
   {
@@ -1232,7 +1240,7 @@ export const license = pgTable(
     /** Quien la tiene: una inscripción O un profesor (`license_un_titular`). */
     enrollmentId: text("enrollment_id").references(() => enrollment.id, { onDelete: "cascade" }),
     /**
-     * 0088 — La licencia de un PROFESOR (no tiene inscripción ni cohorte).
+     * 0090 — La licencia de un PROFESOR (no tiene inscripción ni cohorte).
      * Ocupa un asiento de su equipo hasta que alguien la libera o vence.
      */
     teacherId: text("teacher_id").references(() => teacher.id, { onDelete: "cascade" }),
@@ -1241,8 +1249,8 @@ export const license = pgTable(
       .notNull()
       .references(() => software.id, { onDelete: "restrict" }),
     /**
-     * 0087 — De qué equipo de licencias sale este asiento. Cada licencia
-     * descuenta del cupo de SU equipo; las anteriores a la 0087 quedaron en el
+     * 0089 — De qué equipo de licencias sale este asiento. Cada licencia
+     * descuenta del cupo de SU equipo; las anteriores a la 0089 quedaron en el
      * equipo «Sin asignar» que creó la migración.
      */
     teamId: text("team_id")
@@ -1266,7 +1274,7 @@ export const license = pgTable(
     // 034 (FR-020) — Una por programa y por inscripción: asignar dos veces el
     // mismo programa a la misma inscripción no tiene sentido (escenario 3).
     uniqueIndex("license_enrollment_software_uq").on(t.enrollmentId, t.softwareId),
-    // 0088 — Lo mismo por profesor. Los NULL no chocan entre sí: cada índice
+    // 0090 — Lo mismo por profesor. Los NULL no chocan entre sí: cada índice
     // solo ve a su propio titular.
     uniqueIndex("license_teacher_software_uq").on(t.teacherId, t.softwareId),
     index("license_teacher_idx").on(t.teacherId),
@@ -1293,7 +1301,7 @@ export const license = pgTable(
  * `expires_at` (opcional) es el vencimiento de TODAS las licencias del
  * grupo: se define al asignar y vale para todos.
  *
- * 0087 — `team_id` es el equipo de licencias del que salen las del grupo,
+ * 0089 — `team_id` es el equipo de licencias del que salen las del grupo,
  * elegido UNA vez al asignar el programa al grupo. Las altas posteriores, los
  * módulos automáticos y «Mudar» lo reusan: no se vuelve a preguntar.
  */
@@ -1324,7 +1332,7 @@ export const cohortGroupSoftware = pgTable(
 );
 
 /**
- * 0089 — Importaciones de usuarios de Autodesk, POR EQUIPO.
+ * 0091 — Importaciones de usuarios de Autodesk, POR EQUIPO.
  *
  * Una importación es una FOTO de lo que decía manage.autodesk.com un día: se
  * guarda (las últimas 6 por equipo) para conciliarla contra el campus y para
@@ -1393,7 +1401,7 @@ export const licenseImportRow = pgTable(
 );
 
 /**
- * 0089 — Qué programa del campus es cada oferta de Autodesk («Revit», «AutoCAD
+ * 0091 — Qué programa del campus es cada oferta de Autodesk («Revit», «AutoCAD
  * - including specialized toolsets»). Se elige UNA vez y se recuerda.
  * `software_id` NULL = «el campus no gestiona esta oferta»: se ignora al importar.
  */
@@ -1413,7 +1421,7 @@ export const licenseOfferingMap = pgTable(
 );
 
 /**
- * 0089 — «Este correo de Autodesk es esta persona» (alumno o profesor), cuando
+ * 0091 — «Este correo de Autodesk es esta persona» (alumno o profesor), cuando
  * el correo no coincide con ninguno que el campus conozca. Se recuerda para no
  * volver a preguntarlo en la próxima importación.
  */
@@ -1437,7 +1445,7 @@ export const licenseEmailAlias = pgTable(
 );
 
 /**
- * 0089 — Una decisión sobre un caso de la conciliación («mantener a propósito»,
+ * 0091 — Una decisión sobre un caso de la conciliación («mantener a propósito»,
  * «omitir»). El caso no vuelve a aparecer como pendiente MIENTRAS su `fingerprint`
  * no cambie: si el estado cambia (otra inscripción, otro curso), se vuelve a mirar.
  * `subject` es `e:<correo>` o `p:<persona>`.
@@ -1470,7 +1478,7 @@ export const licenseCaseResolution = pgTable(
 );
 
 /**
- * 0089 — Algo que hay que hacer en manage.autodesk.com: asignarle o sacarle una
+ * 0091 — Algo que hay que hacer en manage.autodesk.com: asignarle o sacarle una
  * licencia a alguien. Se CIERRA SOLA con la próxima importación del equipo en la
  * que el archivo ya muestra la tarea hecha. A lo sumo una abierta por
  * (equipo, programa, tipo, persona).
@@ -3038,6 +3046,15 @@ export const resource = pgTable(
     url: text("url").notNull(),
     kind: text("kind", { enum: RESOURCE_KINDS }).notNull().default("enlace"),
     position: integer("position").notNull().default(0),
+    /**
+     * 0088 — Clonar grupo: material de una CLASE del grupo original, copiado
+     * como material del grupo porque el grupo nuevo todavía no tiene clases.
+     * Recuerda de qué clase venía (número, para sugerir la del mismo número, y
+     * una etiqueta legible) hasta que alguien lo asigna a una clase; ahí las
+     * dos vuelven a NULL. Ver `asignarMaterialAClase` (`src/server/resources.ts`).
+     */
+    originClassNumber: integer("origin_class_number"),
+    originClassLabel: text("origin_class_label"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

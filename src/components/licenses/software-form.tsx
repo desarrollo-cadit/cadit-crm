@@ -14,7 +14,7 @@ import { Modal, useDirty } from "@/components/ui/modal";
  * programa; antes era la pestaña "Software" de /academico. `initial` presente = edición
  * (PATCH `/api/software/:id`); ausente = alta (POST `/api/software`).
  *
- * 0087 — Acá ya no se carga el total: el cupo es de cada equipo de licencias
+ * 0089 — Acá ya no se carga el total: el cupo es de cada equipo de licencias
  * y se edita en «Editar equipo» (`TeamForm`).
  *
  * Iteración 5 (feedback en vivo: "adjuntar foto de los productos de

@@ -1,7 +1,7 @@
 import { inflateRawSync } from "node:zlib";
 
 /**
- * 0089 — Un lector de .xlsx mínimo y propio, SIN dependencias nuevas
+ * 0091 — Un lector de .xlsx mínimo y propio, SIN dependencias nuevas
  * (constitución II): un .xlsx es un zip con XML adentro. Lee la primera hoja y
  * devuelve las filas como listas de texto.
  *

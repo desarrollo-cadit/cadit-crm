@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   armarVistaDeLicencias,
+  contadoresDeLicencias,
   estadoDeLicencia,
   estadoDeLicenciaDeProfesor,
   faltantesDelGrupo,
@@ -123,7 +124,7 @@ describe("armarVistaDeLicencias (FR-013)", () => {
   });
 });
 
-describe("0087 — la vista por equipo", () => {
+describe("0089 — la vista por equipo", () => {
   it("cada programa lleva su cupo, asignadas y libres POR EQUIPO", () => {
     const [p] = armarVistaDeLicencias(
       [{ id: "sw_revit", name: "Revit", total: 110 }],
@@ -226,7 +227,39 @@ describe("filtrarFilas (FR-014)", () => {
   });
 });
 
-describe("licencias de profesores (0088)", () => {
+describe("contadoresDeLicencias (2026-10-30)", () => {
+  const filas = [
+    { cohortId: "coh_1", source: "grupo" as const, contactName: "Ana Pérez" },
+    { cohortId: "coh_1", source: "individual" as const, contactName: "Bruno Núñez" },
+    { cohortId: "coh_2", source: "individual" as const, contactName: "Ana Ruiz" },
+    { cohortId: null, source: "individual" as const, contactName: "Carla Díaz" },
+  ];
+
+  it("sin filtros cuenta todo; una licencia sin grupo no suma a ningún grupo", () => {
+    const c = contadoresDeLicencias(filas, {});
+    expect(c.todosLosGrupos).toBe(4);
+    expect([...c.grupos.entries()]).toEqual([
+      ["coh_1", 2],
+      ["coh_2", 1],
+    ]);
+    expect(c.origen).toEqual({ todos: 4, grupo: 1, individual: 3 });
+  });
+
+  it("cada desplegable cuenta con los demás filtros y sin el suyo", () => {
+    const c = contadoresDeLicencias(filas, { cohortId: "coh_1", source: "individual", q: "" });
+    expect(c.todosLosGrupos).toBe(3);
+    expect(c.grupos.get("coh_1")).toBe(1);
+    expect(c.origen).toEqual({ todos: 2, grupo: 1, individual: 1 });
+  });
+
+  it("la búsqueda achica los conteos", () => {
+    const c = contadoresDeLicencias(filas, { q: "ana" });
+    expect(c.todosLosGrupos).toBe(2);
+    expect(c.origen).toEqual({ todos: 2, grupo: 1, individual: 1 });
+  });
+});
+
+describe("licencias de profesores (0090)", () => {
   const profesor = fila({
     licenseId: "prof_1",
     enrollmentId: null,

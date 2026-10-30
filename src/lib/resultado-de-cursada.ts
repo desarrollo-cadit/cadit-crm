@@ -42,7 +42,8 @@ export function resultadoDeCursada(input: {
   // Mientras el grupo no terminó no hay resultado, aunque alguien lo haya cargado.
   if (input.estadoDelGrupo === "en_curso") return "en_curso";
   if (!input.grupoCompleto) return "sin_datos";
-  return input.resultadoConfirmado ?? "pendiente";
+  if (input.resultadoConfirmado) return input.resultadoConfirmado;
+  return "pendiente";
 }
 
 export const ETIQUETA_DE_RESULTADO: Record<ResultadoDeCursada, string> = {
