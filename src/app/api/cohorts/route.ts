@@ -7,6 +7,8 @@ import {
   listCohorts,
 } from "@/server/courses";
 import { resolverCursoDelAlta } from "@/lib/course-kind";
+import { diaSchema } from "@/lib/clonar-grupo";
+import { crearGrupoBasadoEn } from "@/server/clonar-grupo";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +43,28 @@ const createSchema = z.object({
   newModuleName: z.string().max(500).optional(),
   startDate: z.coerce.date(),
   ...cohortInputSchema,
+  /**
+   * "Basar en un grupo existente" — Copia además el material, las
+   * evaluaciones y (en una especialización) los módulos del grupo de origen,
+   * con las fechas que eligió la persona para cada módulo. Sin esto, el alta
+   * es la de siempre.
+   */
+  cloneFrom: z
+    .object({
+      cohortId: z.string().min(1),
+      modules: z
+        .array(
+          z.object({
+            sourceCohortId: z.string().min(1),
+            name: z.string().trim().max(200).nullable().optional(),
+            startDate: diaSchema,
+            endDate: diaSchema.nullable(),
+          })
+        )
+        .max(50)
+        .optional(),
+    })
+    .optional(),
 });
 
 // 005 (T012, US1) — planificar una cohorte completa (FR-005).
@@ -50,13 +74,38 @@ export const POST = requireCapability(
   const body = await parseBody(req, createSchema);
   if (!body.ok) return body.response;
 
-  const { courseId, newModuleName, ...cohortFields } = body.data;
+  const { courseId, newModuleName, cloneFrom, ...cohortFields } = body.data;
   const curso = resolverCursoDelAlta({
     courseId,
     newModuleName,
     parentCohortId: cohortFields.parentCohortId,
   });
   if (!curso.ok) return apiError(422, "invalid_body", curso.message);
+
+  if (cloneFrom) {
+    if (curso.via !== "existente") {
+      return apiError(422, "invalid_body", "Un módulo nuevo no se basa en otro grupo.");
+    }
+    // Todo en la transacción del pedido: lo inválido responde 422 antes de
+    // escribir; lo que falla después lanza y revierte el alta entera.
+    const basado = await crearGrupoBasadoEn(
+      session.organizationId,
+      { ...cohortFields, courseId: curso.courseId },
+      { cohortId: cloneFrom.cohortId, modules: cloneFrom.modules ?? [] }
+    );
+    if (!basado.ok) return apiError(basado.status, basado.code, basado.message);
+    return Response.json(
+      {
+        cohort: { id: basado.id },
+        licenseWarnings: basado.licenseWarnings,
+        scheduleWarnings: basado.scheduleWarnings,
+        autoEnrolled: basado.autoEnrolled,
+        moduleIds: basado.moduleIds,
+        cloneWarnings: basado.avisos,
+      },
+      { status: 201 }
+    );
+  }
 
   // 005 (T029/T034, US4/US5) — licenseWarnings/scheduleWarnings viajan junto
   // a la respuesta: FR-006/FR-008 son advertencias, no bloqueos. La

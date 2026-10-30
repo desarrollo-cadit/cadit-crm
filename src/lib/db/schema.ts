@@ -2763,6 +2763,15 @@ export const resource = pgTable(
     url: text("url").notNull(),
     kind: text("kind", { enum: RESOURCE_KINDS }).notNull().default("enlace"),
     position: integer("position").notNull().default(0),
+    /**
+     * 0087 — Clonar grupo: material de una CLASE del grupo original, copiado
+     * como material del grupo porque el grupo nuevo todavía no tiene clases.
+     * Recuerda de qué clase venía (número, para sugerir la del mismo número, y
+     * una etiqueta legible) hasta que alguien lo asigna a una clase; ahí las
+     * dos vuelven a NULL. Ver `asignarMaterialAClase` (`src/server/resources.ts`).
+     */
+    originClassNumber: integer("origin_class_number"),
+    originClassLabel: text("origin_class_label"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

@@ -1,5 +1,5 @@
 import { httpUrl } from "@/lib/url-schema";
-import { asc, eq, inArray, or } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
@@ -375,6 +375,102 @@ export async function deleteResource(
     return { ok: false, status: 404, code: "not_found", message: "Material no encontrado" };
   }
   return { ok: true, data: { id } };
+}
+
+/* ============================================================
+ * 0087 — Material de clase del grupo en que se basó el alta
+ * ============================================================
+ *
+ * "Basar en un grupo existente" copia el material de las CLASES del origen
+ * como material del grupo, recordando de qué clase venía: el grupo nuevo
+ * todavía no tiene clases. Se asigna a mano, una por una.
+ */
+
+export type MaterialPorAsignarDto = {
+  id: string;
+  title: string;
+  url: string;
+  kind: ResourceKind;
+  /** Número de la clase de origen: sugiere la del mismo número. */
+  originClassNumber: number | null;
+  /** "Clase 3 · 12/03 · Muros". */
+  originClassLabel: string;
+};
+
+/** El material del grupo que todavía recuerda su clase de origen. */
+export async function materialPorAsignar(
+  organizationId: string,
+  cohortId: string
+): Promise<MaterialPorAsignarDto[]> {
+  const rows = await getDb()
+    .select({
+      id: schema.resource.id,
+      title: schema.resource.title,
+      url: schema.resource.url,
+      kind: schema.resource.kind,
+      originClassNumber: schema.resource.originClassNumber,
+      originClassLabel: schema.resource.originClassLabel,
+    })
+    .from(schema.resource)
+    .where(
+      scoped(
+        schema.resource.organizationId,
+        organizationId,
+        and(eq(schema.resource.cohortId, cohortId), isNotNull(schema.resource.originClassLabel))
+      )
+    )
+    .orderBy(asc(schema.resource.originClassNumber), asc(schema.resource.position));
+  return rows.map((r) => ({ ...r, originClassLabel: r.originClassLabel ?? "" }));
+}
+
+/**
+ * Mueve un material del grupo a UNA de sus clases: deja de colgar del grupo
+ * (un solo contenedor, `resource_contenedor_unico`) y olvida su clase de
+ * origen. La clase tiene que ser del MISMO grupo; si no, 404 como si no
+ * existiera.
+ */
+export async function asignarMaterialAClase(
+  organizationId: string,
+  resourceId: string,
+  classSessionId: string
+): Promise<ResourceResult<{ id: string; classSessionId: string }>> {
+  const db = getDb();
+  const [material] = await db
+    .select({ id: schema.resource.id, cohortId: schema.resource.cohortId })
+    .from(schema.resource)
+    .where(scoped(schema.resource.organizationId, organizationId, eq(schema.resource.id, resourceId)))
+    .limit(1);
+  if (!material?.cohortId) {
+    return { ok: false, status: 404, code: "not_found", message: "Material no encontrado" };
+  }
+  const [clase] = await db
+    .select({ id: schema.classSession.id })
+    .from(schema.classSession)
+    .where(
+      scoped(
+        schema.classSession.organizationId,
+        organizationId,
+        and(
+          eq(schema.classSession.id, classSessionId),
+          eq(schema.classSession.cohortId, material.cohortId)
+        )
+      )
+    )
+    .limit(1);
+  if (!clase) {
+    return { ok: false, status: 404, code: "class_not_found", message: "Clase no encontrada en este grupo" };
+  }
+  await db
+    .update(schema.resource)
+    .set({
+      cohortId: null,
+      classSessionId,
+      originClassNumber: null,
+      originClassLabel: null,
+      updatedAt: new Date(),
+    })
+    .where(scoped(schema.resource.organizationId, organizationId, eq(schema.resource.id, resourceId)));
+  return { ok: true, data: { id: resourceId, classSessionId } };
 }
 
 /* ============================================================
