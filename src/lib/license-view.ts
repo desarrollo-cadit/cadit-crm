@@ -139,3 +139,35 @@ export function filtrarFilas<T extends Pick<FilaDeLicenciaVista, "cohortId" | "s
       coincideConBusqueda(q, { texto: [f.contactName] })
   );
 }
+
+/**
+ * 2026-10-30 — Las cantidades de los desplegables de la vista (como en
+ * Académico): cada filtro cuenta con los DEMÁS puestos y sin el suyo, así el
+ * número dice qué pasaría al elegirlo. Solo cuenta licencias (no faltantes).
+ */
+export function contadoresDeLicencias<
+  T extends Pick<FilaDeLicenciaVista, "cohortId" | "source" | "contactName">,
+>(
+  filas: readonly T[],
+  filtro: { cohortId?: string | null; source?: LicenseSource | null; q?: string }
+): {
+  grupos: Map<string, number>;
+  todosLosGrupos: number;
+  origen: { todos: number; grupo: number; individual: number };
+} {
+  const sinGrupo = filtrarFilas(filas, { ...filtro, cohortId: null });
+  const grupos = new Map<string, number>();
+  for (const f of sinGrupo) {
+    if (f.cohortId) grupos.set(f.cohortId, (grupos.get(f.cohortId) ?? 0) + 1);
+  }
+  const sinOrigen = filtrarFilas(filas, { ...filtro, source: null });
+  return {
+    grupos,
+    todosLosGrupos: sinGrupo.length,
+    origen: {
+      todos: sinOrigen.length,
+      grupo: sinOrigen.filter((f) => f.source === "grupo").length,
+      individual: sinOrigen.filter((f) => f.source === "individual").length,
+    },
+  };
+}

@@ -72,4 +72,23 @@ describe("Piezas compartidas de listados", () => {
     expect(src).toMatch(/params\.set\("page", String\(page\)\)/);
     expect(src).toMatch(/Página \{page\} de \{totalPages\}/);
   });
+
+  it("2026-10-30 — Empresas, Grabaciones, Facturación, Finanzas, Licencias y Correcciones usan la tarjeta de filtros", () => {
+    const pantallas = {
+      "src/components/companies/companies-client.tsx": "@/lib/company-filters",
+      "src/components/recordings/recordings-client.tsx": "@/lib/recording-filters",
+      "src/components/facturacion/facturacion-client.tsx": "@/lib/facturacion",
+      "src/components/finanzas/finanzas-client.tsx": "@/lib/finanzas-filters",
+      "src/components/licenses/licenses-view.tsx": "@/lib/license-view",
+      "src/components/grading/correction-inbox.tsx": "@/lib/correction-filters",
+    };
+    for (const [archivo, logica] of Object.entries(pantallas)) {
+      const src = leer(archivo);
+      expect(src, archivo).toMatch(/from "@\/components\/listados\/filtros"/);
+      expect(src, archivo).toContain(`from "${logica}"`);
+      expect(src, archivo).toMatch(/<TarjetaDeFiltros\b/);
+      expect(src, archivo).toMatch(/<ResumenDeFiltros\b/);
+      expect(src, archivo).not.toMatch(/dangerouslySetInnerHTML|\.innerHTML\b/);
+    }
+  });
 });

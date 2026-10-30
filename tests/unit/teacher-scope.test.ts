@@ -279,6 +279,8 @@ describe("T021 — ni plata ni datos de contacto salen del portal", () => {
 
     expect(Object.keys(cohorte ?? {}).sort()).toEqual([
       "classroom",
+      /** 2026-10-30 — Solo el id del curso, para el color del avatar en "Mis grupos". */
+      "courseId",
       "courseName",
       "endDate",
       "endTime",
@@ -300,6 +302,8 @@ describe("T021 — ni plata ni datos de contacto salen del portal", () => {
       "startTime",
       "status",
       "students",
+      /** 2026-10-29 — Sin evaluaciones no hay pestañas Evaluaciones ni Entregas. */
+      "tieneEvaluaciones",
       /**
        * 023 (FR-010) — El aula VIRTUAL, agregada a propósito y con su motivo
        * escrito: el profesor tiene que saber dónde le toca dictar.

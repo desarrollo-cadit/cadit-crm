@@ -3,8 +3,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Ban, Wallet } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -19,7 +17,17 @@ import { formatCalendarDay } from "@/lib/utils";
 import { formatMinorNumber } from "@/lib/money";
 import type { PestanaFinanzas } from "@/lib/pestanas";
 import { usePestanaEnUrl } from "@/components/use-pestana-en-url";
-import { coincideConBusqueda } from "@/lib/contact-search";
+import { coincideFilaDeFinanzas, conteoDeFilas } from "@/lib/finanzas-filters";
+import {
+  Buscador,
+  Desplegable,
+  OpcionUnica,
+  Resaltado,
+  ResumenDeFiltros,
+  Segmentado,
+  TarjetaDeFiltros,
+  type FiltroActivo,
+} from "@/components/listados/filtros";
 
 /**
  * 026 — Administración y finanzas: el cierre de un mes, para transcribir.
@@ -242,7 +250,35 @@ export function FinanzasClient({
 
   // 2026-10-26 — Cada palabra en alumno, grupo o curso, sin tildes ni mayúsculas.
   const filtra = (fila: { alumno: string; cohorte: string; curso: string }) =>
-    coincideConBusqueda(busqueda, { texto: [fila.alumno, fila.cohorte, fila.curso] });
+    coincideFilaDeFinanzas(fila, busqueda);
+
+  /**
+   * 2026-10-30 — Como Académico: los filtros en una tarjeta con el resumen al
+   * pie. El período no es un "filtro" que se quita (siempre hay uno), así que
+   * no lleva etiqueta; el grupo y la búsqueda sí.
+   */
+  const nombreDeCohorte = (c: Cohorte) => c.name ?? c.courseName ?? c.id;
+  const grupoElegido = cohortId ? cohortes.find((c) => c.id === cohortId) : undefined;
+  const nombreDeGrupo = cohortId ? (grupoElegido ? nombreDeCohorte(grupoElegido) : "Otro grupo") : null;
+  const textoDelMes = meses.find((m) => m.valor === mes)?.texto ?? cierre?.periodo.etiqueta ?? "…";
+  const filtrosActivos: FiltroActivo[] = [
+    ...(busqueda.trim()
+      ? [{ clave: "q", etiqueta: `“${busqueda.trim()}”`, quitar: () => setBusqueda("") }]
+      : []),
+    ...(nombreDeGrupo
+      ? [{ clave: "grupo", etiqueta: `Grupo: ${nombreDeGrupo}`, quitar: () => setCohortId("") }]
+      : []),
+  ];
+  function limpiarFiltros() {
+    setBusqueda("");
+    setCohortId("");
+  }
+  const conteo =
+    cierre && vista === "caja"
+      ? { ...conteoDeFilas(cierre.caja, busqueda), sustantivo: { uno: "cobro", varios: "cobros" } }
+      : cierre && vista === "devengado"
+        ? { ...conteoDeFilas(cierre.devengado, busqueda), sustantivo: { uno: "cuota", varios: "cuotas" } }
+        : null;
 
   return (
     <div className="space-y-5 p-6">
@@ -259,57 +295,77 @@ export function FinanzasClient({
           </p>
         </div>
 
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1 text-xs text-text-3">
-            Período
-            <Select
-              className="w-52"
-              value={mes}
-              onChange={(e) => setMes(e.target.value)}
-              aria-label="Período"
-            >
-              {meses.map((m) => (
-                <option key={m.valor} value={m.valor}>
-                  {m.texto}
-                </option>
-              ))}
-            </Select>
-          </label>
-
-          {/* DV-005 — Filtro opcional por camada, encima del período: cuando
-              algo no cuadra, la pregunta siguiente siempre es de qué camada era. */}
-          <label className="flex flex-col gap-1 text-xs text-text-3">
-            Grupo
-            <Select
-              className="w-64"
-              value={cohortId}
-              onChange={(e) => setCohortId(e.target.value)}
-              aria-label="Grupo"
-            >
-              <option value="">Todas</option>
-              {cohortes.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name ?? c.courseName ?? c.id}
-                </option>
-              ))}
-            </Select>
-          </label>
-
+        <TarjetaDeFiltros
+          pie={
+            conteo ? (
+              <ResumenDeFiltros
+                mostrando={conteo.mostrando}
+                total={conteo.total}
+                sustantivo={conteo.sustantivo}
+                activos={filtrosActivos}
+                onLimpiar={limpiarFiltros}
+              />
+            ) : undefined
+          }
+        >
           {/*
             DV-001, la alternativa barata: no hay marca de "transcrito", así
             que la forma de no perder el hilo es acotar. La búsqueda no cambia
             los totales del bloque —eso sería una trampa— sólo esconde filas.
           */}
-          <label className="flex flex-col gap-1 text-xs text-text-3">
-            Buscar en las filas
-            <Input
-              className="w-64"
-              placeholder="Alumno, grupo o curso"
-              value={busqueda}
-              onChange={(e) => setBusqueda(e.target.value)}
-            />
-          </label>
-        </div>
+          <Buscador
+            value={busqueda}
+            onChange={setBusqueda}
+            placeholder="Buscar en las filas por alumno, grupo o curso…"
+          />
+          <Desplegable etiqueta="Período" valor={textoDelMes} activo={false}>
+            {(cerrar) => (
+              <>
+                {meses.map((m) => (
+                  <OpcionUnica
+                    key={m.valor}
+                    elegida={mes === m.valor}
+                    onElegir={() => {
+                      setMes(m.valor);
+                      cerrar();
+                    }}
+                  >
+                    {m.texto}
+                  </OpcionUnica>
+                ))}
+              </>
+            )}
+          </Desplegable>
+          {/* DV-005 — Filtro opcional por camada, encima del período: cuando
+              algo no cuadra, la pregunta siguiente siempre es de qué camada era. */}
+          <Desplegable etiqueta="Grupo" valor={nombreDeGrupo ?? "Todos"} activo={Boolean(cohortId)}>
+            {(cerrar) => (
+              <>
+                <OpcionUnica
+                  elegida={!cohortId}
+                  onElegir={() => {
+                    setCohortId("");
+                    cerrar();
+                  }}
+                >
+                  Todos los grupos
+                </OpcionUnica>
+                {cohortes.map((c) => (
+                  <OpcionUnica
+                    key={c.id}
+                    elegida={cohortId === c.id}
+                    onElegir={() => {
+                      setCohortId(c.id);
+                      cerrar();
+                    }}
+                  >
+                    {nombreDeCohorte(c)}
+                  </OpcionUnica>
+                ))}
+              </>
+            )}
+          </Desplegable>
+        </TarjetaDeFiltros>
       </header>
 
       {error && (
@@ -326,30 +382,20 @@ export function FinanzasClient({
         </div>
       ) : cierre ? (
         <>
-          <div className="flex gap-2 border-b border-border">
-            {(
-              [
-                { key: "caja", label: "Caja" },
-                { key: "devengado", label: "Devengado" },
+          {/* 2026-10-30 — Las pestañas siguen en la URL (`?tab=`); se ven como control segmentado. */}
+          <div className="flex flex-wrap items-center gap-2">
+            <Segmentado<PestanaFinanzas>
+              etiqueta="Vista"
+              opciones={[
+                { clave: "caja", etiqueta: "Caja" },
+                { clave: "devengado", etiqueta: "Devengado" },
                 // 2026-10-06 — para pagar comisiones; otra pregunta, otra pestaña.
-                { key: "ventas", label: "Ventas por vendedor" },
-              ] as const
-            ).map((t) => (
-              <button
-                key={t.key}
-                type="button"
-                aria-pressed={vista === t.key}
-                className={`rounded-t-md px-3 py-2 text-sm font-medium transition-colors ${
-                  vista === t.key
-                    ? "border-b-2 border-primary text-foreground"
-                    : "text-muted-foreground hover:bg-accent"
-                }`}
-                onClick={() => setVista(t.key)}
-              >
-                {t.label}
-              </button>
-            ))}
-            <span className="ml-auto self-center text-xs text-text-3">
+                { clave: "ventas", etiqueta: "Ventas por vendedor" },
+              ]}
+              encendida={(k) => vista === k}
+              onElegir={setVista}
+            />
+            <span className="ml-auto text-xs text-text-3">
               {cierre.periodo.etiqueta} · {cierre.periodo.timezone}
             </span>
           </div>
@@ -366,8 +412,8 @@ export function FinanzasClient({
                 <Vacio texto="No hubo cobros en este período." />
               ) : (
                 cierre.caja.map((bloque) => (
-                  <div key={bloque.currency} className="rounded-md border border-border">
-                    <div className="flex items-center justify-between border-b border-border px-4 py-2">
+                  <div key={bloque.currency} className="overflow-hidden rounded-lg border bg-card">
+                    <div className="flex items-center justify-between border-b bg-subtle px-4 py-2">
                       <h3 className="text-sm font-semibold">
                         Caja en {bloque.currency}
                       </h3>
@@ -391,13 +437,16 @@ export function FinanzasClient({
                       </TableHeader>
                       <TableBody>
                         {bloque.filas.filter(filtra).map((f) => (
-                          <TableRow key={f.id}>
+                          <TableRow key={f.id} className="hover:bg-subtle">
                             <TableCell className="tabular-nums">
                               {dia(f.fecha)}
                             </TableCell>
-                            <TableCell>{f.alumno}</TableCell>
+                            <TableCell>
+                              <Resaltado texto={f.alumno} busqueda={busqueda} />
+                            </TableCell>
                             <TableCell className="text-text-2">
-                              {f.cohorte} · {f.curso}
+                              <Resaltado texto={f.cohorte} busqueda={busqueda} /> ·{" "}
+                              <Resaltado texto={f.curso} busqueda={busqueda} />
                             </TableCell>
                             <TableCell>{METODO[f.metodo]}</TableCell>
                             <TableCell className="text-text-3">{f.recibo ?? "—"}</TableCell>
@@ -422,8 +471,8 @@ export function FinanzasClient({
                 <Vacio texto="No se emitieron cuotas con vencimiento en este período." />
               ) : (
                 cierre.devengado.map((bloque) => (
-                  <div key={bloque.currency} className="rounded-md border border-border">
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2">
+                  <div key={bloque.currency} className="overflow-hidden rounded-lg border bg-card">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-subtle px-4 py-2">
                       <h3 className="text-sm font-semibold">
                         Devengado en {bloque.currency}
                       </h3>
@@ -463,13 +512,16 @@ export function FinanzasClient({
                       </TableHeader>
                       <TableBody>
                         {bloque.filas.filter(filtra).map((f) => (
-                          <TableRow key={f.id}>
+                          <TableRow key={f.id} className="hover:bg-subtle">
                             <TableCell className="tabular-nums">
                               {dia(f.vencimiento)}
                             </TableCell>
-                            <TableCell>{f.alumno}</TableCell>
+                            <TableCell>
+                              <Resaltado texto={f.alumno} busqueda={busqueda} />
+                            </TableCell>
                             <TableCell className="text-text-2">
-                              {f.cohorte} · {f.curso}
+                              <Resaltado texto={f.cohorte} busqueda={busqueda} /> ·{" "}
+                              <Resaltado texto={f.curso} busqueda={busqueda} />
                             </TableCell>
                             <TableCell className="tabular-nums">#{f.numero}</TableCell>
                             <TableCell>
@@ -503,7 +555,7 @@ export function FinanzasClient({
             encontrar, en vez de desaparecer sin explicación.
           */}
           {vista !== "ventas" && cierre.anulados.length > 0 && (
-            <section className="rounded-md border border-dashed border-border">
+            <section className="rounded-lg border border-dashed border-border-strong bg-card">
               <div className="flex items-center gap-2 border-b border-border px-4 py-2">
                 <Ban className="h-4 w-4 text-text-3" />
                 <h3 className="text-sm font-semibold">
@@ -556,7 +608,7 @@ export function FinanzasClient({
 
 function Vacio({ texto }: { texto: string }) {
   return (
-    <p className="rounded-md border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
+    <p className="rounded-lg border border-dashed border-border-strong px-4 py-6 text-sm text-muted-foreground">
       {texto}
     </p>
   );

@@ -7,10 +7,26 @@ import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, FileText, RefreshCw, Sea
 import { Badge } from "@/components/ui/badge";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Desplegable,
+  OpcionUnica,
+  RangoDeFechas,
+  ResumenDeFiltros,
+  Segmentado,
+  SinCoincidencias,
+  TarjetaDeFiltros,
+  type FiltroActivo,
+} from "@/components/listados/filtros";
+import {
+  ESTADOS_DE_GRABACION,
+  ETIQUETA_DE_ESTADO,
+  SIN_FILTROS_DE_GRABACIONES,
+  etiquetasDeFiltros,
+  type EstadoDeGrabacion,
+} from "@/lib/recording-filters";
 import { formatDuration } from "@/lib/duration";
 import { esGrabacionCorta, MINUTOS_MINIMOS_GRABACION } from "@/lib/recording-duration";
 import { notify } from "@/lib/notify";
@@ -32,6 +48,14 @@ const ESTADOS: Record<
   conflicto: { label: "En conflicto", variant: "destructive" },
   sin_clase: { label: "Sin clase", variant: "secondary" },
   pendiente: { label: "Pendiente", variant: "secondary" },
+};
+
+/** El tono de cada estado en el control segmentado: lo que pide atención, en su color. */
+const TONO_DE_FILTRO: Partial<Record<EstadoDeGrabacion, { punto: string; tono: string }>> = {
+  asignada: { punto: "bg-success", tono: "bg-success-soft text-success" },
+  ambigua: { punto: "bg-warning", tono: "bg-warning-soft text-warning" },
+  conflicto: { punto: "bg-danger", tono: "bg-danger-soft text-danger" },
+  faltante: { punto: "bg-danger", tono: "bg-danger-soft text-danger" },
 };
 
 const TAMANIOS = [25, 50, 100] as const;
@@ -201,6 +225,7 @@ export function RecordingsClient({
       page: body.page,
       pageSize: body.pageSize,
       totalPages: body.totalPages,
+      stateCounts: body.stateCounts,
     });
   }, [apiQuery]);
 
@@ -330,6 +355,18 @@ export function RecordingsClient({
   const desde = total === 0 ? 0 : (paginaActual - 1) * vista.pageSize + 1;
   const hasta = Math.min(total, paginaActual * vista.pageSize);
   const hayFiltros = Boolean(vista.connectionId || vista.roomId || vista.from || vista.to || vista.state);
+  const nombresDeCuentas = new Map(conexiones.map((c) => [c.id, c.name]));
+  const nombresDeAulas = new Map(rooms.map((r) => [r.id, r.name]));
+  const nombreDeCuenta = vista.connectionId ? (nombresDeCuentas.get(vista.connectionId) ?? "Otra cuenta") : null;
+  const nombreDeAula = vista.roomId ? (nombresDeAulas.get(vista.roomId) ?? "Otra aula") : null;
+  const filtrosActivos: FiltroActivo[] = etiquetasDeFiltros(vista, {
+    cuentas: nombresDeCuentas,
+    aulas: nombresDeAulas,
+  }).map((f) => ({
+    clave: f.clave,
+    etiqueta: f.etiqueta,
+    quitar: () => navegar(f.clave === "fechas" ? { from: "", to: "" } : { [f.clave]: "" }),
+  }));
 
   return (
     <div className="flex h-full min-w-0 flex-col">
@@ -389,63 +426,104 @@ export function RecordingsClient({
           </div>
         ) : (
           <>
-            <div className="flex flex-wrap items-end gap-3">
-              <label className="flex w-full flex-col gap-1 text-xs text-text-3 sm:w-44">
-                Cuenta
-                <Select
-                  id="rec-connection"
-                  value={vista.connectionId}
-                  onChange={(e) => navegar({ connectionId: e.target.value })}
-                >
-                  <option value="">Todas</option>
-                  {conexiones.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </Select>
-              </label>
-              <label className="flex w-full flex-col gap-1 text-xs text-text-3 sm:w-44">
-                Aula
-                <Select id="rec-room" value={vista.roomId} onChange={(e) => navegar({ roomId: e.target.value })}>
-                  <option value="">Todas</option>
-                  {rooms.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name}
-                    </option>
-                  ))}
-                </Select>
-              </label>
-              <label className="flex flex-1 flex-col gap-1 text-xs text-text-3 sm:w-40 sm:flex-none">
-                Desde
-                <Input id="rec-from" type="date" value={vista.from} onChange={(e) => navegar({ from: e.target.value })} />
-              </label>
-              <label className="flex flex-1 flex-col gap-1 text-xs text-text-3 sm:w-40 sm:flex-none">
-                Hasta
-                <Input id="rec-to" type="date" value={vista.to} onChange={(e) => navegar({ to: e.target.value })} />
-              </label>
-              <label className="flex w-full flex-col gap-1 text-xs text-text-3 sm:w-40">
-                Estado
-                <Select id="rec-state" value={vista.state} onChange={(e) => navegar({ state: e.target.value })}>
-                  <option value="">Todos</option>
-                  <option value="pendiente">Pendiente</option>
-                  <option value="asignada">Asignada</option>
-                  <option value="ambigua">Ambigua</option>
-                  <option value="conflicto">En conflicto</option>
-                  <option value="sin_clase">Sin clase</option>
-                  <option value="faltante">Ya no está en Zoom</option>
-                </Select>
-              </label>
-              {hayFiltros && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => navegar({ connectionId: "", roomId: "", from: "", to: "", state: "" })}
-                >
-                  Quitar filtros
-                </Button>
-              )}
-            </div>
+            {/*
+              2026-10-30 — Como Académico: los filtros en UNA tarjeta, el
+              estado como control segmentado con su cantidad y el resumen al
+              pie. Siguen en la URL con los nombres de siempre (`?state=` lo
+              enlaza Tareas de Hoy). Los `id` (`rec-*`) los usa el E2E.
+            */}
+            <TarjetaDeFiltros
+              pie={
+                <ResumenDeFiltros
+                  mostrando={total > vista.pageSize && rows.length > 0 ? `${desde}–${hasta}` : rows.length}
+                  total={total}
+                  sustantivo={{ uno: "grabación", varios: "grabaciones" }}
+                  activos={filtrosActivos}
+                  onLimpiar={() => navegar({ ...SIN_FILTROS_DE_GRABACIONES })}
+                />
+              }
+            >
+              <Segmentado
+                etiqueta="Estado"
+                opciones={[
+                  { clave: "", etiqueta: "Todos", cantidad: data?.stateCounts?.todas ?? null },
+                  ...ESTADOS_DE_GRABACION.map((e) => ({
+                    clave: e,
+                    etiqueta: ETIQUETA_DE_ESTADO[e],
+                    cantidad: data?.stateCounts?.[e] ?? null,
+                    ...TONO_DE_FILTRO[e],
+                  })),
+                ]}
+                encendida={(clave) => vista.state === clave}
+                onElegir={(clave) => navegar({ state: clave })}
+              />
+              <div id="rec-connection">
+                <Desplegable etiqueta="Cuenta" valor={nombreDeCuenta ?? "Todas"} activo={Boolean(vista.connectionId)}>
+                  {(cerrar) => (
+                    <>
+                      <OpcionUnica
+                        elegida={!vista.connectionId}
+                        onElegir={() => {
+                          navegar({ connectionId: "" });
+                          cerrar();
+                        }}
+                      >
+                        <span data-valor="">Todas las cuentas</span>
+                      </OpcionUnica>
+                      {conexiones.map((c) => (
+                        <OpcionUnica
+                          key={c.id}
+                          elegida={vista.connectionId === c.id}
+                          onElegir={() => {
+                            navegar({ connectionId: c.id });
+                            cerrar();
+                          }}
+                        >
+                          <span data-valor={c.id}>{c.name}</span>
+                        </OpcionUnica>
+                      ))}
+                    </>
+                  )}
+                </Desplegable>
+              </div>
+              <div id="rec-room">
+                <Desplegable etiqueta="Aula" valor={nombreDeAula ?? "Todas"} activo={Boolean(vista.roomId)}>
+                  {(cerrar) => (
+                    <>
+                      <OpcionUnica
+                        elegida={!vista.roomId}
+                        onElegir={() => {
+                          navegar({ roomId: "" });
+                          cerrar();
+                        }}
+                      >
+                        <span data-valor="">Todas las aulas</span>
+                      </OpcionUnica>
+                      {rooms.map((r) => (
+                        <OpcionUnica
+                          key={r.id}
+                          elegida={vista.roomId === r.id}
+                          onElegir={() => {
+                            navegar({ roomId: r.id });
+                            cerrar();
+                          }}
+                        >
+                          <span data-valor={r.id}>{r.name}</span>
+                        </OpcionUnica>
+                      ))}
+                    </>
+                  )}
+                </Desplegable>
+              </div>
+              <RangoDeFechas
+                desde={vista.from}
+                hasta={vista.to}
+                onDesde={(v) => navegar({ from: v })}
+                onHasta={(v) => navegar({ to: v })}
+                idDesde="rec-from"
+                idHasta="rec-to"
+              />
+            </TarjetaDeFiltros>
 
             {loadError && (
               <p className="text-sm text-destructive">
@@ -459,10 +537,15 @@ export function RecordingsClient({
                 <Skeleton className="h-10 w-full" />
                 <Skeleton className="h-10 w-full" />
               </div>
+            ) : rows.length === 0 && !loadError && hayFiltros ? (
+              <SinCoincidencias
+                mensaje="Ninguna grabación coincide con los filtros."
+                onLimpiar={() => navegar({ ...SIN_FILTROS_DE_GRABACIONES })}
+              />
             ) : rows.length === 0 && !loadError ? (
-              <p className="rounded-md border border-dashed px-4 py-6 text-sm text-muted-foreground">
-                {hayFiltros ? "No hay grabaciones con estos filtros." : "Todavía no hay grabaciones."}
-                {canManage && !hayFiltros && " Si recién vinculaste las aulas, apretá Sincronizar."}
+              <p className="rounded-lg border border-dashed border-border-strong px-4 py-6 text-sm text-muted-foreground">
+                Todavía no hay grabaciones.
+                {canManage && " Si recién vinculaste las aulas, apretá Sincronizar."}
               </p>
             ) : (
               <>
@@ -475,12 +558,12 @@ export function RecordingsClient({
                   data-recordings-table
                   aria-busy={loading}
                   containerClassName={cn(
-                    "max-h-[70vh] min-h-0 shrink-0 rounded-md border transition-opacity md:max-h-none md:shrink",
+                    "max-h-[70vh] min-h-0 shrink-0 rounded-lg border bg-card transition-opacity md:max-h-none md:shrink",
                     loading && "opacity-60"
                   )}
                   className="min-w-[1100px]"
                 >
-                  <TableHeader className="sticky top-0 z-10 bg-card">
+                  <TableHeader className="sticky top-0 z-10 bg-subtle">
                     <TableRow className="hover:bg-transparent">
                       <TableHead aria-sort={vista.sort === "desc" ? "descending" : "ascending"}>
                         <button
@@ -519,7 +602,7 @@ export function RecordingsClient({
                           <TableRow
                             data-recording-id={r.id}
                             data-state={r.assignment.state}
-                            className={destacada ? "bg-warning-soft" : undefined}
+                            className={destacada ? "bg-warning-soft" : "hover:bg-subtle"}
                           >
                             <TableCell className="whitespace-nowrap">{fecha.format(new Date(r.startTime))}</TableCell>
                             <TableCell className="whitespace-nowrap">

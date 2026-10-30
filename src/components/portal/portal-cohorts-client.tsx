@@ -6,9 +6,15 @@ import { CalendarDays, MapPin, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ACADEMY_TIME_ZONE, conZona } from "@/lib/schedule-time";
+import { porcentajeDeProgreso, type ProgresoDeCursada } from "@/lib/cohort-progress";
+import { seccionesDeMisGrupos } from "@/lib/teacher-cohort-sections";
+import { EncabezadoDeSeccion } from "@/components/listados/filtros";
+import { AvatarDeCurso, TONO_DE_ESTADO, type EstadoDeGrupo } from "@/components/listados/curso-visual";
 
 type Cohort = {
   id: string;
+  /** 2026-10-30 — Para el color del avatar (el mismo del curso en Académico y el calendario). */
+  courseId: string;
   name: string | null;
   courseName: string;
   /**
@@ -34,6 +40,8 @@ type Cohort = {
   status: "planificada" | "en_curso" | "finalizada";
   role: "titular" | "suplente";
   students: number;
+  /** 2026-10-30 — "Clase X de Y"; `null` sin cronograma. */
+  progress?: ProgresoDeCursada | null;
 };
 
 const ESTADO: Record<
@@ -104,21 +112,30 @@ export function PortalCohortsClient() {
     );
   }
 
-  const activas = cohorts.filter((c) => c.status !== "finalizada");
-  const cerradas = cohorts.filter((c) => c.status === "finalizada");
+  /**
+   * 2026-10-30 — Como Académico: secciones con el tono de su estado y su
+   * cantidad (En curso, Próximos, Finalizados), y cada grupo con el color de
+   * su curso y "Clase X de Y".
+   */
+  const { enCurso, proximos, finalizados } = seccionesDeMisGrupos(cohorts);
 
   return (
     <div className="space-y-6">
-      <Grupo
-        titulo="En curso"
-        cohorts={activas}
-        timezone={timezone}
-        vacio="No hay grupos en curso."
-      />
-      {cerradas.length > 0 && (
+      {enCurso.length === 0 && proximos.length === 0 && (
+        <p className="text-sm text-muted-foreground">No hay grupos en curso ni por empezar.</p>
+      )}
+      {enCurso.length > 0 && (
+        <Grupo id="mis-grupos-en-curso" titulo="En curso" tono="en_curso" cohorts={enCurso} timezone={timezone} />
+      )}
+      {proximos.length > 0 && (
+        <Grupo id="mis-grupos-proximos" titulo="Próximos" tono="planificada" cohorts={proximos} timezone={timezone} />
+      )}
+      {finalizados.length > 0 && (
         <Grupo
-          titulo={`Finalizados (${cerradas.length})`}
-          cohorts={cerradas}
+          id="mis-grupos-finalizados"
+          titulo="Finalizados"
+          tono="finalizada"
+          cohorts={finalizados}
           timezone={timezone}
         />
       )}
@@ -126,82 +143,116 @@ export function PortalCohortsClient() {
   );
 }
 
+/** "Clase 6 de 10 · 60 %" con su barra, como en el listado de Académico. */
+function BarraDeProgreso({ progreso }: { progreso: ProgresoDeCursada }) {
+  const pct = porcentajeDeProgreso(progreso);
+  return (
+    <div className="mt-3 flex min-w-0 flex-col gap-1.5">
+      <div className="flex justify-between gap-2 text-xs text-muted-foreground">
+        <span>
+          Clase {progreso.dictadas} de {progreso.total}
+        </span>
+        <span className="tabular-nums">{pct} %</span>
+      </div>
+      <div
+        role="progressbar"
+        aria-label={`Clase ${progreso.dictadas} de ${progreso.total}`}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={pct}
+        className="h-1.5 overflow-hidden rounded-full bg-accent"
+      >
+        <div className="h-full rounded-full bg-success" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
 function Grupo({
+  id,
   titulo,
+  tono,
   cohorts,
   timezone,
-  vacio,
 }: {
+  id: string;
   titulo: string;
+  tono: EstadoDeGrupo;
   cohorts: Cohort[];
   /** Zona de la academia, para decir de qué zona es la hora. */
   timezone: string;
-  vacio?: string;
 }) {
+  const colores = TONO_DE_ESTADO[tono];
   return (
-    <section className="space-y-2">
-      <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        {titulo}
-      </h2>
-      {cohorts.length === 0 ? (
-        <p className="text-sm text-muted-foreground">{vacio}</p>
-      ) : (
-        <ul className="space-y-2">
-          {cohorts.map((c) => (
-            <li key={c.id}>
-              <Link
-                href={`/portal/cohortes/${c.id}`}
-                className="block rounded-lg border p-[var(--portal-card-pad)] shadow-sm transition-colors hover:border-brand-soft hover:bg-accent"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-base font-semibold">{c.courseName}</p>
-                    <p className="truncate text-sm text-muted-foreground">
-                      {c.name ?? "Grupo sin nombre"}
+    <section aria-labelledby={id}>
+      <EncabezadoDeSeccion
+        id={id}
+        titulo={titulo}
+        cantidad={cohorts.length}
+        claseTexto={colores.texto}
+        clasePastilla={colores.pastilla}
+      />
+      <ul className="space-y-2">
+        {cohorts.map((c) => (
+          <li key={c.id}>
+            <Link
+              href={`/portal/cohortes/${c.id}`}
+              className="block rounded-lg border bg-card p-[var(--portal-card-pad)] shadow-sm transition-colors hover:border-brand-soft hover:bg-accent"
+            >
+              <div className="flex items-start gap-3">
+                <AvatarDeCurso
+                  courseId={c.courseId ?? c.id}
+                  nombre={c.courseName}
+                  apagado={c.status === "finalizada"}
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-base font-semibold">{c.courseName}</p>
+                  <p className="truncate text-sm text-muted-foreground">
+                    {c.name ?? "Grupo sin nombre"}
+                  </p>
+                  {c.program && (
+                    <p className="truncate text-xs text-text-3">
+                      {c.program.ordinal !== null &&
+                        `Módulo ${c.program.ordinal} · `}
+                      {c.program.name}
                     </p>
-                    {c.program && (
-                      <p className="truncate text-xs text-text-3">
-                        {c.program.ordinal !== null &&
-                          `Módulo ${c.program.ordinal} · `}
-                        {c.program.name}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex shrink-0 flex-col items-end gap-1">
-                    <Badge variant={ESTADO[c.status].variant}>
-                      {ESTADO[c.status].label}
-                    </Badge>
-                    {/* Por qué te aparece una cohorte que no es tuya. */}
-                    {c.role === "suplente" && (
-                      <span className="text-[10px] text-muted-foreground">
-                        suplencia
-                      </span>
-                    )}
-                  </div>
+                  )}
                 </div>
-
-                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                  <span className="inline-flex items-center gap-1">
-                    <CalendarDays className="h-3.5 w-3.5" />
-                    {fecha(c.startDate)}
-                    {c.startTime && ` · ${conZona(c.startTime, timezone)}`}
-                  </span>
-                  <span className="inline-flex items-center gap-1">
-                    <Users className="h-3.5 w-3.5" />
-                    {c.students} {c.students === 1 ? "alumno" : "alumnos"}
-                  </span>
-                  {c.classroom && (
-                    <span className="inline-flex items-center gap-1">
-                      <MapPin className="h-3.5 w-3.5" />
-                      {c.classroom}
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  <Badge variant={ESTADO[c.status].variant}>
+                    {ESTADO[c.status].label}
+                  </Badge>
+                  {/* Por qué te aparece una cohorte que no es tuya. */}
+                  {c.role === "suplente" && (
+                    <span className="text-[10px] text-muted-foreground">
+                      suplencia
                     </span>
                   )}
                 </div>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                <span className="inline-flex items-center gap-1">
+                  <CalendarDays className="h-3.5 w-3.5" />
+                  {fecha(c.startDate)}
+                  {c.startTime && ` · ${conZona(c.startTime, timezone)}`}
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <Users className="h-3.5 w-3.5" />
+                  {c.students} {c.students === 1 ? "alumno" : "alumnos"}
+                </span>
+                {c.classroom && (
+                  <span className="inline-flex items-center gap-1">
+                    <MapPin className="h-3.5 w-3.5" />
+                    {c.classroom}
+                  </span>
+                )}
+              </div>
+              {c.status === "en_curso" && c.progress && <BarraDeProgreso progreso={c.progress} />}
+            </Link>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }

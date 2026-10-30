@@ -3,6 +3,7 @@ import { minorToCsv } from "@/lib/money";
 import type { CourseKind } from "@/lib/course-kind";
 import { esVentaParaAviso } from "@/lib/billing-notices";
 import { csvField } from "@/lib/csv";
+import { coincideConBusqueda } from "@/lib/contact-search";
 import { estaFacturada, normalizarNumero, pendienteDeFacturar } from "@/lib/facturacion-regla";
 
 /**
@@ -98,7 +99,28 @@ export type FiltrosFacturacion = {
   hasta: string | null;
   soloConfirmadas: boolean;
   empresa: "todas" | "con" | "sin";
+  /**
+   * 2026-10-30 — Texto libre (la regla de contactos): alumno, curso, grupo,
+   * vendedor, empresa, RUT y número de factura. Opcional: sin él, no filtra.
+   */
+  busqueda?: string;
 };
+
+/** Lo que la fila muestra y se busca. */
+export function textosDeFacturacion(r: FilaFacturacion): (string | null)[] {
+  return [
+    r.alumno,
+    r.curso,
+    r.cohorte,
+    r.vendedor,
+    r.invoiceNumber,
+    r.empresa?.razonSocial ?? null,
+    r.empresa?.rut ?? null,
+  ];
+}
+
+const pasaBusqueda = (r: FilaFacturacion, q: string | undefined) =>
+  !q || coincideConBusqueda(q, { texto: textosDeFacturacion(r) });
 
 /**
  * Filtra y ORDENA (inicio, alumno, id): una pantalla que se transcribe tiene
@@ -110,6 +132,7 @@ export function filtrarFacturacion(
   f: FiltrosFacturacion
 ): FilaFacturacion[] {
   return filas
+    .filter((r) => pasaBusqueda(r, f.busqueda))
     .filter((r) => !f.cohortId || r.cohortId === f.cohortId)
     .filter((r) => !f.desde || r.inicio >= f.desde)
     .filter((r) => !f.hasta || r.inicio <= f.hasta)
@@ -121,6 +144,40 @@ export function filtrarFacturacion(
         a.alumno.localeCompare(b.alumno, "es") ||
         a.enrollmentId.localeCompare(b.enrollmentId)
     );
+}
+
+/**
+ * 2026-10-30 — Las cantidades de los desplegables: cada filtro cuenta con
+ * TODOS los demás puestos y sin el suyo (dice qué pasaría al elegirlo), como
+ * en Académico.
+ */
+export function contadoresDeFacturacion(
+  filas: readonly FilaFacturacion[],
+  f: FiltrosFacturacion
+): {
+  grupos: Map<string, number>;
+  todosLosGrupos: number;
+  empresa: Record<FiltrosFacturacion["empresa"], number>;
+  confirmacion: { todas: number; soloConfirmadas: number };
+} {
+  const sinGrupo = filtrarFacturacion(filas, { ...f, cohortId: null });
+  const grupos = new Map<string, number>();
+  for (const r of sinGrupo) grupos.set(r.cohortId, (grupos.get(r.cohortId) ?? 0) + 1);
+  const sinEmpresa = filtrarFacturacion(filas, { ...f, empresa: "todas" });
+  const sinConfirmacion = filtrarFacturacion(filas, { ...f, soloConfirmadas: false });
+  return {
+    grupos,
+    todosLosGrupos: sinGrupo.length,
+    empresa: {
+      todas: sinEmpresa.length,
+      con: sinEmpresa.filter((r) => r.empresa !== null).length,
+      sin: sinEmpresa.filter((r) => r.empresa === null).length,
+    },
+    confirmacion: {
+      todas: sinConfirmacion.length,
+      soloConfirmadas: sinConfirmacion.filter((r) => r.confirmada).length,
+    },
+  };
 }
 
 /**

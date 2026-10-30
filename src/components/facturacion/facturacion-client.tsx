@@ -5,9 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Download, Receipt } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CheckboxField } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -22,7 +20,20 @@ import { notify } from "@/lib/notify";
 import type { PestanaFacturacion } from "@/lib/pestanas";
 import { usePestanaEnUrl } from "@/components/use-pestana-en-url";
 import {
+  Buscador,
+  Desplegable,
+  OpcionUnica,
+  RangoDeFechas,
+  Resaltado,
+  ResumenDeFiltros,
+  Segmentado,
+  SinCoincidencias,
+  TarjetaDeFiltros,
+  type FiltroActivo,
+} from "@/components/listados/filtros";
+import {
   MAX_NUMERO,
+  contadoresDeFacturacion,
   facturacionCsv,
   filtrarFacturacion,
   normalizarNumero,
@@ -58,12 +69,24 @@ const dia = (iso: string) =>
     timeZone: "UTC",
   });
 
+const ETIQUETA_DE_EMPRESA: Record<FiltrosFacturacion["empresa"], string> = {
+  todas: "Con y sin",
+  con: "Con empresa",
+  sin: "Sin empresa",
+};
+const OPCION_DE_EMPRESA: Record<FiltrosFacturacion["empresa"], string> = {
+  todas: "Con y sin empresa",
+  con: "Solo con empresa",
+  sin: "Solo sin empresa",
+};
+
 const FILTROS_INICIALES: FiltrosFacturacion = {
   cohortId: null,
   desde: null,
   hasta: null,
   soloConfirmadas: false,
   empresa: "todas",
+  busqueda: "",
 };
 
 async function mensajeDeError(res: Response | null, fallback: string): Promise<string> {
@@ -122,6 +145,42 @@ export function FacturacionClient({
 
   const visibles = useMemo(() => filtrarFacturacion(filas, filtros), [filas, filtros]);
   const totales = useMemo(() => totalesPorMoneda(visibles), [visibles]);
+  const contadores = useMemo(() => contadoresDeFacturacion(filas, filtros), [filas, filtros]);
+  const nombreDeGrupo = filtros.cohortId
+    ? (cohortes.find(([id]) => id === filtros.cohortId)?.[1] ?? "Otro grupo")
+    : null;
+  const busqueda = filtros.busqueda ?? "";
+  const filtrosActivos: FiltroActivo[] = [
+    ...(busqueda.trim()
+      ? [{ clave: "q", etiqueta: `“${busqueda.trim()}”`, quitar: () => setFiltro("busqueda", "") }]
+      : []),
+    ...(nombreDeGrupo
+      ? [{ clave: "grupo", etiqueta: `Grupo: ${nombreDeGrupo}`, quitar: () => setFiltro("cohortId", null) }]
+      : []),
+    ...(filtros.empresa !== "todas"
+      ? [{ clave: "empresa", etiqueta: OPCION_DE_EMPRESA[filtros.empresa], quitar: () => setFiltro("empresa", "todas") }]
+      : []),
+    ...(filtros.soloConfirmadas
+      ? [{ clave: "confirmadas", etiqueta: "Solo grupos confirmados", quitar: () => setFiltro("soloConfirmadas", false) }]
+      : []),
+    ...(filtros.desde || filtros.hasta
+      ? [
+          {
+            clave: "fechas",
+            etiqueta: [
+              filtros.desde ? `Inicio desde ${dia(filtros.desde)}` : null,
+              filtros.hasta ? `${filtros.desde ? "hasta" : "Inicio hasta"} ${dia(filtros.hasta)}` : null,
+            ]
+              .filter(Boolean)
+              .join(" "),
+            quitar: () => setFiltros((f) => ({ ...f, desde: null, hasta: null })),
+          },
+        ]
+      : []),
+  ];
+  function limpiarFiltros() {
+    setFiltros(FILTROS_INICIALES);
+  }
 
   function setFiltro<K extends keyof FiltrosFacturacion>(k: K, v: FiltrosFacturacion[K]) {
     setFiltros((f) => ({ ...f, [k]: v }));
@@ -195,95 +254,129 @@ export function FacturacionClient({
           </p>
         </div>
 
-        <div className="flex gap-2 border-b border-border">
-          {(
-            [
-              { key: "pendientes", label: "Pendientes" },
-              { key: "facturadas", label: "Facturadas" },
-            ] as const
-          ).map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              aria-pressed={estado === t.key}
-              className={`rounded-t-md px-3 py-2 text-sm font-medium transition-colors ${
-                estado === t.key
-                  ? "border-b-2 border-primary text-foreground"
-                  : "text-muted-foreground hover:bg-accent"
-              }`}
-              onClick={() => setEstado(t.key)}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1 text-xs text-text-3">
-            Grupo
-            <Select
-              className="w-64"
-              value={filtros.cohortId ?? ""}
-              onChange={(e) => setFiltro("cohortId", e.target.value || null)}
-              aria-label="Grupo"
-            >
-              <option value="">Todas</option>
-              {cohortes.map(([id, nombre]) => (
-                <option key={id} value={id}>
-                  {nombre}
-                </option>
-              ))}
-            </Select>
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-text-3">
-            Inicio desde
-            <Input
-              type="date"
-              className="w-40"
-              value={filtros.desde ?? ""}
-              onChange={(e) => setFiltro("desde", e.target.value || null)}
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-text-3">
-            Inicio hasta
-            <Input
-              type="date"
-              className="w-40"
-              value={filtros.hasta ?? ""}
-              onChange={(e) => setFiltro("hasta", e.target.value || null)}
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-text-3">
-            Empresa
-            <Select
-              className="w-44"
-              value={filtros.empresa}
-              onChange={(e) => setFiltro("empresa", e.target.value as FiltrosFacturacion["empresa"])}
-              aria-label="Empresa"
-            >
-              <option value="todas">Con y sin empresa</option>
-              <option value="con">Solo con empresa</option>
-              <option value="sin">Solo sin empresa</option>
-            </Select>
-          </label>
-          <div className="pb-2">
-            <CheckboxField
-              label="Solo grupos confirmados"
-              checked={filtros.soloConfirmadas}
-              onChange={(e) => setFiltro("soloConfirmadas", e.target.checked)}
-            />
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="ml-auto"
-            disabled={visibles.length === 0}
-            onClick={exportar}
-          >
+        {/* 2026-10-30 — Las pestañas siguen en la URL (`?tab=`); se ven como control segmentado. */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Segmentado<EstadoFacturacion>
+            etiqueta="Ventas"
+            opciones={[
+              { clave: "pendientes", etiqueta: "Pendientes" },
+              { clave: "facturadas", etiqueta: "Facturadas" },
+            ]}
+            encendida={(k) => estado === k}
+            onElegir={setEstado}
+          />
+          <Button variant="outline" size="sm" disabled={visibles.length === 0} onClick={exportar}>
             <Download className="mr-1.5 h-4 w-4" />
             Exportar CSV
           </Button>
         </div>
+
+        <TarjetaDeFiltros
+          pie={
+            <ResumenDeFiltros
+              mostrando={visibles.length}
+              total={filas.length}
+              sustantivo={{ uno: "venta", varios: "ventas" }}
+              activos={filtrosActivos}
+              onLimpiar={limpiarFiltros}
+            />
+          }
+        >
+          <Buscador
+            value={filtros.busqueda ?? ""}
+            onChange={(v) => setFiltro("busqueda", v)}
+            placeholder="Buscar por alumno, curso, vendedor, empresa o factura…"
+          />
+          <Desplegable etiqueta="Grupo" valor={nombreDeGrupo ?? "Todos"} activo={filtros.cohortId !== null}>
+            {(cerrar) => (
+              <>
+                <OpcionUnica
+                  elegida={filtros.cohortId === null}
+                  cantidad={contadores.todosLosGrupos}
+                  onElegir={() => {
+                    setFiltro("cohortId", null);
+                    cerrar();
+                  }}
+                >
+                  Todos los grupos
+                </OpcionUnica>
+                {cohortes.map(([id, nombre]) => (
+                  <OpcionUnica
+                    key={id}
+                    elegida={filtros.cohortId === id}
+                    cantidad={contadores.grupos.get(id) ?? 0}
+                    onElegir={() => {
+                      setFiltro("cohortId", id);
+                      cerrar();
+                    }}
+                  >
+                    {nombre}
+                  </OpcionUnica>
+                ))}
+              </>
+            )}
+          </Desplegable>
+          <Desplegable
+            etiqueta="Empresa"
+            valor={ETIQUETA_DE_EMPRESA[filtros.empresa]}
+            activo={filtros.empresa !== "todas"}
+          >
+            {(cerrar) => (
+              <>
+                {(["todas", "con", "sin"] as const).map((k) => (
+                  <OpcionUnica
+                    key={k}
+                    elegida={filtros.empresa === k}
+                    cantidad={contadores.empresa[k]}
+                    onElegir={() => {
+                      setFiltro("empresa", k);
+                      cerrar();
+                    }}
+                  >
+                    {OPCION_DE_EMPRESA[k]}
+                  </OpcionUnica>
+                ))}
+              </>
+            )}
+          </Desplegable>
+          <Desplegable
+            etiqueta="Grupos"
+            valor={filtros.soloConfirmadas ? "Solo confirmados" : "Todos"}
+            activo={filtros.soloConfirmadas}
+          >
+            {(cerrar) => (
+              <>
+                <OpcionUnica
+                  elegida={!filtros.soloConfirmadas}
+                  cantidad={contadores.confirmacion.todas}
+                  onElegir={() => {
+                    setFiltro("soloConfirmadas", false);
+                    cerrar();
+                  }}
+                >
+                  Confirmados y sin confirmar
+                </OpcionUnica>
+                <OpcionUnica
+                  elegida={filtros.soloConfirmadas}
+                  cantidad={contadores.confirmacion.soloConfirmadas}
+                  onElegir={() => {
+                    setFiltro("soloConfirmadas", true);
+                    cerrar();
+                  }}
+                >
+                  Solo grupos confirmados
+                </OpcionUnica>
+              </>
+            )}
+          </Desplegable>
+          <RangoDeFechas
+            etiqueta="Inicio desde"
+            desde={filtros.desde ?? ""}
+            hasta={filtros.hasta ?? ""}
+            onDesde={(v) => setFiltro("desde", v || null)}
+            onHasta={(v) => setFiltro("hasta", v || null)}
+          />
+        </TarjetaDeFiltros>
       </header>
 
       {error && (
@@ -298,20 +391,18 @@ export function FacturacionClient({
           <Skeleton className="h-10 w-full" />
           <Skeleton className="h-10 w-full" />
         </div>
-      ) : visibles.length === 0 ? (
-        <p className="rounded-md border border-border px-4 py-6 text-center text-sm text-muted-foreground">
-          {filas.length === 0
-            ? estado === "pendientes"
-              ? "No hay ventas pendientes de facturar."
-              : "Todavía no hay ventas facturadas."
-            : "Ninguna venta coincide con los filtros."}
+      ) : filas.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-border-strong px-4 py-6 text-center text-sm text-muted-foreground">
+          {estado === "pendientes" ? "No hay ventas pendientes de facturar." : "Todavía no hay ventas facturadas."}
         </p>
+      ) : visibles.length === 0 ? (
+        <SinCoincidencias mensaje="Ninguna venta coincide con la búsqueda y los filtros." onLimpiar={limpiarFiltros} />
       ) : (
         <>
-          <div className="overflow-x-auto rounded-md border border-border">
+          <div className="overflow-x-auto rounded-lg border bg-card">
             <Table>
-              <TableHeader>
-                <TableRow>
+              <TableHeader className="bg-subtle">
+                <TableRow className="hover:bg-transparent">
                   <TableHead>Alumno</TableHead>
                   <TableHead>Curso y grupo</TableHead>
                   <TableHead>Inicio</TableHead>
@@ -325,15 +416,21 @@ export function FacturacionClient({
                 {visibles.map((f) => {
                   const borrador = borradores[f.enrollmentId] ?? f.invoiceNumber ?? "";
                   return (
-                    <TableRow key={f.enrollmentId}>
+                    <TableRow key={f.enrollmentId} className="hover:bg-subtle">
                       <TableCell className="font-medium">
                         <Link href={`/contacts/${f.contactId}`} className="hover:underline">
-                          {f.alumno}
+                          <Resaltado texto={f.alumno} busqueda={busqueda} />
                         </Link>
                       </TableCell>
                       <TableCell>
-                        <span>{f.curso}</span>
-                        {f.cohorte && <span className="block text-xs text-muted-foreground">{f.cohorte}</span>}
+                        <span>
+                          <Resaltado texto={f.curso} busqueda={busqueda} />
+                        </span>
+                        {f.cohorte && (
+                          <span className="block text-xs text-muted-foreground">
+                            <Resaltado texto={f.cohorte} busqueda={busqueda} />
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell className="whitespace-nowrap">
                         <span>{dia(f.inicio)}</span>
@@ -345,7 +442,13 @@ export function FacturacionClient({
                           )}
                         </span>
                       </TableCell>
-                      <TableCell>{f.vendedor ?? <span className="text-muted-foreground">—</span>}</TableCell>
+                      <TableCell>
+                        {f.vendedor ? (
+                          <Resaltado texto={f.vendedor} busqueda={busqueda} />
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
                       <TableCell className="whitespace-nowrap text-right tabular-nums">
                         {f.amount === null ? (
                           <span className="text-muted-foreground">Sin monto</span>
@@ -356,8 +459,14 @@ export function FacturacionClient({
                       <TableCell className="text-xs">
                         {f.empresa ? (
                           <>
-                            <span className="block text-sm">{f.empresa.razonSocial}</span>
-                            {f.empresa.rut && <span className="block text-muted-foreground">RUT {f.empresa.rut}</span>}
+                            <span className="block text-sm">
+                              <Resaltado texto={f.empresa.razonSocial} busqueda={busqueda} />
+                            </span>
+                            {f.empresa.rut && (
+                              <span className="block text-muted-foreground">
+                                RUT <Resaltado texto={f.empresa.rut} busqueda={busqueda} />
+                              </span>
+                            )}
                             {f.empresa.billingEmail && (
                               <span className="block text-muted-foreground">{f.empresa.billingEmail}</span>
                             )}
