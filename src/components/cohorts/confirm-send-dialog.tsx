@@ -16,6 +16,7 @@ export function ConfirmSendDialog({
   confirmLabel,
   busy = false,
   busyLabel = "Enviando…",
+  confirmDisabled = false,
   onConfirm,
   onClose,
 }: {
@@ -25,6 +26,8 @@ export function ConfirmSendDialog({
   busy?: boolean;
   /** 035 — El rótulo mientras el pedido está en vuelo (no siempre es un correo). */
   busyLabel?: string;
+  /** Falta algo por elegir: apaga el botón sin hacerlo pasar por «en vuelo». */
+  confirmDisabled?: boolean;
   onConfirm: () => void;
   onClose: () => void;
 }) {
@@ -58,7 +61,7 @@ export function ConfirmSendDialog({
           <Button autoFocus variant="ghost" onClick={onClose} disabled={busy}>
             Cancelar
           </Button>
-          <Button onClick={onConfirm} loading={busy}>
+          <Button onClick={onConfirm} loading={busy} disabled={confirmDisabled}>
             {busy ? busyLabel : confirmLabel}
           </Button>
         </div>

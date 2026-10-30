@@ -94,7 +94,8 @@ export function VincularDialog({
       title="Vincular el correo a una persona"
       confirmLabel="Vincular"
       busyLabel="Vinculando…"
-      busy={busy || !elegida}
+      busy={busy}
+      confirmDisabled={!elegida}
       onClose={onClose}
       onConfirm={() => elegida && onConfirm(elegida)}
     >
