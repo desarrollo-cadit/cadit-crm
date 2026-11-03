@@ -49,7 +49,6 @@ describe("licencias.gestionar — las rutas que asignan y quitan", () => {
   it.each([
     ["src/app/api/enrollments/[id]/license/route.ts", "PUT"],
     ["src/app/api/enrollments/[id]/license/route.ts", "DELETE"],
-    ["src/app/api/enrollments/[id]/license-email/route.ts", "PATCH"],
     ["src/app/api/cohorts/[id]/group-licenses/route.ts", "POST"],
     ["src/app/api/cohorts/[id]/group-licenses/[softwareId]/route.ts", "DELETE"],
   ])("%s %s exige licencias.gestionar", (archivo, metodo) => {
@@ -61,6 +60,14 @@ describe("licencias.gestionar — las rutas que asignan y quitan", () => {
     "src/app/api/cohorts/[id]/group-licenses/route.ts",
   ])("%s: el GET sigue con academico.ver (coordinación ve)", (archivo) => {
     expect(leer(archivo)).toMatch(/export const GET = requireCapability\(\s*"academico\.ver"/);
+  });
+
+  it("el correo para la licencia es de academico.editar: Capacitaciones lo deja cargado, no asigna", () => {
+    const ruta = leer("src/app/api/enrollments/[id]/license-email/route.ts");
+    expect(ruta).toMatch(/export const PATCH = requireCapability\(\s*"academico\.editar"/);
+    const tabs = leer("src/components/cohorts/cohort-tabs.tsx");
+    const usos = [...tabs.matchAll(/canEditLicenseEmail=\{(\w+)\}/g)].map((m) => m[1]);
+    expect(usos).toEqual(["canEditAcademic", "canEditAcademic"]);
   });
 
   it("el catálogo de programas sigue con academico.editar", () => {

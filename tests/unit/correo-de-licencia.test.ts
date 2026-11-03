@@ -84,10 +84,10 @@ describe("quién ve el correo de la licencia", () => {
     expect(ruta).toMatch(/vistaDeLicencias\(session\.organizationId, \{ conCorreo \}\)/);
   });
 
-  // 2026-10-26 — Es tarea de soporte, como asignar la licencia.
-  it("editarlo exige licencias.gestionar, como asignar una licencia", () => {
+  // 2026-11-03 — Capacitaciones lo carga para Soporte; asignar sigue siendo de soporte.
+  it("editarlo exige academico.editar, no licencias.gestionar", () => {
     const ruta = leer("src/app/api/enrollments/[id]/license-email/route.ts");
-    expect(ruta).toMatch(/requireCapability\(\s*"licencias\.gestionar"/);
+    expect(ruta).toMatch(/requireCapability\(\s*"academico\.editar"/);
   });
 
   it.each([

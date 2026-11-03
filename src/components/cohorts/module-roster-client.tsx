@@ -53,12 +53,15 @@ export function ModuleRosterClient({
   cohortId,
   canEditEnrollments,
   canEditLicenses,
+  canEditLicenseEmail,
 }: {
   cohortId: string;
   /** `inscripciones.editar` — sacar del módulo. */
   canEditEnrollments: boolean;
   /** `licencias.gestionar` (2026-10-26) — asignar y liberar licencias. */
   canEditLicenses: boolean;
+  /** `academico.editar` — el correo para la licencia (no asigna licencias). */
+  canEditLicenseEmail: boolean;
 }) {
   const [data, setData] = useState<Roster | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -173,7 +176,7 @@ export function ModuleRosterClient({
                   <LicenseEmailField
                     enrollmentId={a.enrollmentId}
                     value={a.licenseEmail}
-                    canEdit={canEditLicenses}
+                    canEdit={canEditLicenseEmail}
                     onChanged={() => void refetch()}
                   />
                 </span>

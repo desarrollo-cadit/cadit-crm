@@ -168,6 +168,7 @@ export function CohortTabs({
             cohortId={cohortId}
             canEditEnrollments={canEditEnrollments}
             canEditLicenses={canManageLicenses}
+            canEditLicenseEmail={canEditAcademic}
           />
         ) : tab === "alumnos" ? (
           <RosterClient
@@ -177,6 +178,7 @@ export function CohortTabs({
             canEditOfflineCourses={canEditAcademic}
             canManageAccess={canManageAccess}
             canEditLicenses={canManageLicenses}
+            canEditLicenseEmail={canEditAcademic}
             canFollowUp={canFollowUp}
             canInvoice={canInvoice}
           />
