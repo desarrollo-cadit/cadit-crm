@@ -8,7 +8,7 @@ import {
   accumulateVideoProgress,
   decideCompletion,
   nextUnlockedTopicId,
-  topicUnlocked,
+  topicOpenFor,
   type CompletionSource,
   type CourseState,
   type CourseCompletion,
@@ -174,13 +174,14 @@ async function studentTopic(orgId: string, contactId: string, courseId: string, 
   const { outline, rows, state } = await contactCourseProgressOne(orgId, contactId, courseId);
   const topic = outline.topics.find((t) => t.id === topicId);
   if (!topic) return null;
-  if (!topicUnlocked(state.orderedTopicIds, state.doneTopicIds, topicId)) return null;
+  if (!topicOpenFor(state, topicId)) return null;
   const existing: StoredProgress | null = rows.find((r) => r.topicId === topicId) ?? null;
   return {
     topic,
     orderedIds: state.orderedTopicIds,
     existing,
     recognized: state.recognizedTopicIds.has(topicId),
+    completedBefore: state.completedBefore,
   };
 }
 
@@ -189,12 +190,16 @@ async function studentTopic(orgId: string, contactId: string, courseId: string, 
  * the next one, so the successor is computed over both.
  */
 const answer = (
-  found: { orderedIds: string[]; recognized: boolean },
+  found: { orderedIds: string[]; recognized: boolean; completedBefore: boolean },
   topicId: string,
   stored: { watchedRatio: number; completed: boolean }
 ): TopicProgressAnswer => ({
   ...stored,
-  nextTopicId: nextUnlockedTopicId(found.orderedIds, topicId, stored.completed || found.recognized),
+  nextTopicId: nextUnlockedTopicId(
+    found.orderedIds,
+    topicId,
+    stored.completed || found.recognized || found.completedBefore
+  ),
 });
 
 /** The player's report: played ranges + duration of a topic WITH a video. */

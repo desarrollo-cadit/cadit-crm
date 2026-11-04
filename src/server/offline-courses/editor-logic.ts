@@ -211,7 +211,12 @@ export const coursePatchSchema = z
 export const lessonBodySchema = z.object({ title, contentMd: markdown.optional() }).strict();
 
 export const lessonPatchSchema = z
-  .object({ title: title.optional(), contentMd: markdown.optional() })
+  .object({
+    title: title.optional(),
+    contentMd: markdown.optional(),
+    /** Deshabilitar (true) o volver a habilitar (false); nunca borra. */
+    disabled: z.boolean().optional(),
+  })
   .strict()
   .refine(atLeastOneField, EMPTY_PATCH);
 
@@ -234,6 +239,8 @@ export const topicPatchSchema = z
     videoShown: z.enum(OFFLINE_VIDEO_SHOWN).optional(),
     /** Move the topic to another lesson of the same course (appended at its end). */
     lessonId: id.optional(),
+    /** Deshabilitar (true) o volver a habilitar (false); nunca borra. */
+    disabled: z.boolean().optional(),
   })
   .strict()
   .refine(atLeastOneField, EMPTY_PATCH);

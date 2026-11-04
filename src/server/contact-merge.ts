@@ -515,6 +515,19 @@ export async function aplicarUnificacion(
       scoped(schema.offlineRecognition.organizationId, organizationId, eq(schema.offlineRecognition.contactId, x))
     );
 
+  // 5b. Curso offline terminado: se conserva. Si los dos lo terminaron queda
+  // una sola fila (índice único por contacto y curso).
+  const terminado = schema.offlineCourseCompletion;
+  await db
+    .delete(terminado)
+    .where(
+      sql`${terminado.organizationId} = ${organizationId} and ${terminado.contactId} = ${x} and ${terminado.courseId} in (select course_id from offline_course_completion where organization_id = ${organizationId} and contact_id = ${s})`
+    );
+  await db
+    .update(terminado)
+    .set({ contactId: s })
+    .where(scoped(terminado.organizationId, organizationId, eq(terminado.contactId, x)));
+
   // 6. Historial importado: la llave lleva el id del contacto.
   if (plan.historialABorrar.length > 0) {
     await db

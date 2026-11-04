@@ -4,7 +4,7 @@ import { scoped } from "@/lib/db/tenant";
 import { offlineAccessForContact } from "./access";
 import type { OfflineVideoShown } from "@/lib/db/schema";
 import { parseVimeoUrl } from "@/lib/vimeo";
-import { attemptsRemaining, topicUnlocked, type CourseCompletion } from "./logic";
+import { attemptsRemaining, topicOpenFor, type CourseCompletion } from "./logic";
 import { contactCourseProgress, contactCourseProgressOne, type OutlineTopic } from "./outline";
 import {
   quizStatus,
@@ -101,6 +101,8 @@ export type StudentOfflineCourse = {
       completed: boolean;
       /** Done only because of a recognition — shown as "Reconocido". */
       recognized: boolean;
+      /** Not required: this person already finished the course (the topic came back after being disabled). */
+      optional: boolean;
       unlocked: boolean;
     }>;
   }>;
@@ -117,6 +119,10 @@ export type StudentOfflineTopic = {
   video: { id: string; hash: string | null; shown: OfflineVideoShown } | null;
   /** `completed` includes a recognition; `recognized` = done only because of one. */
   progress: { completed: boolean; recognized: boolean; watchedRatio: number };
+  /** This topic is optional for this person, who already finished the course. */
+  optional: boolean;
+  /** Already finished the course: the next topic opens without finishing this one. */
+  courseCompleted: boolean;
   prev: { id: string; title: string } | null;
   next: { id: string; title: string } | null;
 };
@@ -361,7 +367,8 @@ export async function myCourse(
           title: t.title,
           completed: state.doneTopicIds.has(t.id),
           recognized: state.recognizedTopicIds.has(t.id),
-          unlocked: topicUnlocked(state.orderedTopicIds, state.doneTopicIds, t.id),
+          optional: state.optionalTopicIds.has(t.id),
+          unlocked: topicOpenFor(state, t.id),
         })),
     })),
     quizzes: quizzes.map((q) => summarize(q, attempts, state.recognizedQuizIds)),
@@ -386,7 +393,7 @@ export async function myTopic(
   if (!current) return null;
 
   // Locked = not found: the content does not travel before its turn.
-  if (!topicUnlocked(state.orderedTopicIds, state.doneTopicIds, current.id)) return null;
+  if (!topicOpenFor(state, current.id)) return null;
 
   const [content] = await getDb()
     .select({ contentMd: offlineTopic.contentMd })
@@ -404,6 +411,8 @@ export async function myTopic(
       recognized: state.recognizedTopicIds.has(current.id),
       watchedRatio: rows.find((p) => p.topicId === current.id)?.watchedRatio ?? 0,
     },
+    optional: state.optionalTopicIds.has(current.id),
+    courseCompleted: state.completedBefore,
     ...topicNeighbors(outline.topics, current.id),
   };
 }

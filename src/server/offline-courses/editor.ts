@@ -26,6 +26,7 @@ import {
   type TopicBody,
   type TopicPatch,
 } from "./editor-logic";
+import { snapshotCompletedContacts } from "./completion-snapshot";
 
 /**
  * cursos-offline T11 — Staff writes on the library (courses, lessons, topics,
@@ -76,7 +77,7 @@ async function courseExists(orgId: string, courseId: string): Promise<boolean> {
 
 async function lessonOf(orgId: string, courseId: string, lessonId: string) {
   const [row] = await getDb()
-    .select({ id: offlineLesson.id })
+    .select({ id: offlineLesson.id, disabledAt: offlineLesson.disabledAt })
     .from(offlineLesson)
     .where(scoped(offlineLesson.organizationId, orgId, eq(offlineLesson.id, lessonId), eq(offlineLesson.courseId, courseId)))
     .limit(1);
@@ -85,7 +86,12 @@ async function lessonOf(orgId: string, courseId: string, lessonId: string) {
 
 async function topicOf(orgId: string, courseId: string, topicId: string) {
   const [row] = await getDb()
-    .select({ id: offlineTopic.id, lessonId: offlineTopic.lessonId })
+    .select({
+      id: offlineTopic.id,
+      lessonId: offlineTopic.lessonId,
+      disabledAt: offlineTopic.disabledAt,
+      lessonDisabledAt: offlineLesson.disabledAt,
+    })
     .from(offlineTopic)
     .innerJoin(offlineLesson, eq(offlineLesson.id, offlineTopic.lessonId))
     .where(
@@ -350,10 +356,21 @@ export async function updateLesson(
   lessonId: string,
   patch: LessonPatch
 ): Promise<EditorResult<{ id: string }>> {
-  if (!(await lessonOf(orgId, courseId, lessonId))) return notFound("Lección no encontrada");
+  const lesson = await lessonOf(orgId, courseId, lessonId);
+  if (!lesson) return notFound("Lección no encontrada");
+
+  const { disabled, ...fields } = patch;
+  const set: Partial<typeof offlineLesson.$inferInsert> = { ...fields };
+  if (disabled === true && lesson.disabledAt === null) set.disabledAt = now();
+  if (disabled === false && lesson.disabledAt !== null) {
+    // Habilitar es lo único que puede quitarle el curso a quien ya lo terminó.
+    await snapshotCompletedContacts(orgId, courseId);
+    set.disabledAt = null;
+  }
+
   await getDb()
     .update(offlineLesson)
-    .set({ ...patch, updatedAt: now() })
+    .set({ ...set, updatedAt: now() })
     .where(scoped(offlineLesson.organizationId, orgId, eq(offlineLesson.id, lessonId)));
   return ok({ id: lessonId });
 }
@@ -426,23 +443,32 @@ export async function updateTopic(
   const topic = await topicOf(orgId, courseId, topicId);
   if (!topic) return notFound("Tema no encontrado");
 
-  const { lessonId: targetLessonId, videoUrl, ...fields } = patch;
+  const { lessonId: targetLessonId, videoUrl, disabled, ...fields } = patch;
   const set: Partial<typeof offlineTopic.$inferInsert> = { ...fields };
   if (videoUrl !== undefined) {
     const video = normalizeVideoUrl(videoUrl);
     if (!video.ok) return video;
     set.videoUrl = video.data;
   }
+  let lessonDisabled = topic.lessonDisabledAt !== null;
   if (targetLessonId !== undefined && targetLessonId !== topic.lessonId) {
-    if (!(await lessonOf(orgId, courseId, targetLessonId))) {
-      return invalid("invalid_lesson", "La lección de destino no es de este curso.");
-    }
+    const target = await lessonOf(orgId, courseId, targetLessonId);
+    if (!target) return invalid("invalid_lesson", "La lección de destino no es de este curso.");
+    lessonDisabled = target.disabledAt !== null;
     set.lessonId = targetLessonId;
     set.position = await nextPosition(
       offlineTopic,
       scoped(offlineTopic.organizationId, orgId, eq(offlineTopic.lessonId, targetLessonId))
     );
   }
+
+  // El tema pasa de apagado a prendido (por habilitarlo, o por mudarlo a una
+  // lección habilitada): ahí, y solo ahí, se anota a quien ya terminó el curso.
+  const offBefore = topic.disabledAt !== null || topic.lessonDisabledAt !== null;
+  const topicOff = disabled === undefined ? topic.disabledAt !== null : disabled;
+  if (disabled === true && topic.disabledAt === null) set.disabledAt = now();
+  if (disabled === false) set.disabledAt = null;
+  if (offBefore && !topicOff && !lessonDisabled) await snapshotCompletedContacts(orgId, courseId);
 
   await getDb()
     .update(offlineTopic)
