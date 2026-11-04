@@ -38,7 +38,7 @@ porque la ruta la tiene inline.
 
 Lo hace una persona del equipo con la capacidad `accesos.gestionar`, desde
 **Configuración › Conexión con Claude** (`/settings/mcp`): se escribe un nombre,
-se crea, y la pantalla muestra el token **una sola vez** junto con el comando
+se elige el **perfil** (ver abajo), se crea, y la pantalla muestra el token **una sola vez** junto con el comando
 `claude mcp add` listo para pegar. Desde ahí también se ven los tokens (último
 uso, estado) y se revocan, con confirmación.
 
@@ -46,16 +46,31 @@ La pantalla usa la API, que también sirve sola:
 
 ```bash
 POST /api/settings/mcp-tokens        { "name": "Claude Code de Cristina" }
+POST /api/settings/mcp-tokens        { "name": "Ventas en claude.ai", "roleId": "rol_…" }
 ```
 
 La respuesta trae `value` (`cadit_mcp_…`) **una sola vez**: en la base queda
 solo su hash SHA-256 y los últimos cuatro caracteres. Si se pierde, se revoca y
 se emite otro.
 
-- El token **es quien lo emitió**: no se puede emitir uno para otra persona, así
-  que nadie obtiene capacidades que no tiene.
-- No lleva capacidades propias: se resuelven en cada pedido desde el rol de su
-  dueña. Cambiarle el rol o sacarla del equipo se nota enseguida.
+- **Token de persona** (sin `roleId`): actúa con el rol de quien lo emitió. No se
+  puede emitir uno para otra persona, así que nadie obtiene capacidades que no
+  tiene. Cambiarle el rol o sacarla del equipo se nota enseguida.
+- **Token de perfil** (con `roleId`, migración 0095): actúa con las capacidades de
+  ESE rol y nada más. Sirve para dar a un equipo (Ventas, Coordinación…) su
+  propio acceso sin que herede el de quien lo creó.
+  - **Escalada**: solo se puede ligar a un rol cuyas capacidades quien emite ya
+    tiene (403 `escalation`, la misma regla que el alta de Equipo). La pantalla
+    solo ofrece esos roles.
+  - Las capacidades se leen del rol en cada pedido: si editás el rol en
+    `/settings/roles`, el token lo sigue. Si el rol se borra, el token se borra
+    con él y deja de servir; nunca cae a algo más amplio.
+  - Quien lo emitió tiene que seguir en el equipo: si se va, sus tokens (de
+    persona y de perfil) dejan de servir.
+  - **Un token de perfil identifica a un perfil, no a una persona.** En los
+    registros el actor es `mcp:<id del token>`. Si hace falta saber QUIÉN
+    consultó, hace falta OAuth (cada persona entra con su sesión); no está hecho.
+- Ningún token guarda capacidades propias.
 - `GET /api/settings/mcp-tokens` lista los de la organización (nunca el valor
   ni el hash). `DELETE /api/settings/mcp-tokens/[id]` lo revoca; rige desde el
   pedido siguiente.
@@ -67,10 +82,26 @@ claude mcp add --transport http cadit https://<dominio>/api/mcp \
   --header "Authorization: Bearer <token>"
 ```
 
+Con un token de perfil, la pantalla arma el comando con el nombre del perfil
+(`cadit-ventas`, `cadit-coordinacion`…) para que varios convivan.
 Después, en una sesión: `/mcp` muestra la conexión y las herramientas.
 
-> Los conectores personalizados de claude.ai podrían exigir OAuth en lugar de un
-> Bearer fijo; este corte no lo implementa. Verificarlo antes de prometerlo.
+### 3. Agregarlo en claude.ai (un conector por perfil)
+
+Lo hace un Owner de la organización de claude.ai: **Configuración › Conectores ›
+Agregar conector personalizado**.
+
+1. **URL**: `https://<dominio>/api/mcp` (HTTPS y pública: el pedido sale de los
+   servidores de Anthropic, `localhost` no sirve).
+2. **Autenticación**: «Sin inicio de sesión» (no es OAuth).
+3. **Encabezados de solicitud**: uno con nombre `Authorization` y valor
+   `Bearer <token>`. El valor se guarda cifrado y no se vuelve a mostrar.
+4. **Transporte**: HTTP transmisible (el que usa este servidor).
+
+Un encabezado fijo es UN token: el conector lo comparten todas las personas que
+lo usan. Por eso, **un conector por perfil**, cada uno con el token de su rol. La
+sección «Encabezados de solicitud» depende de que la organización de claude.ai la
+tenga habilitada; si no aparece, el camino es OAuth (no implementado).
 
 ## Cómo funciona por dentro
 
@@ -82,7 +113,8 @@ Después, en una sesión: `/mcp` muestra la conexión y las herramientas.
   (como `/api/bot/*`) y busca el hash DENTRO de su alcance. **`mcp_token`
   conserva su política `tenant_isolation`**; no es una de las excepciones a RLS.
 - **Transacción por herramienta.** Cada llamada corre en
-  `withTenantTransaction` con la organización y la persona como actor.
+  `withTenantTransaction` con la organización y el TOKEN como actor
+  (`mcp:<id>`, `actorDeToken`): no hay una persona detrás de un token de perfil.
 - **Límites.** 120 pedidos por minuto por token; los intentos con un token
   inválido se cuentan juntos (60 por minuto) y pasan a 429 sin bloquear a los
   tokens válidos.
@@ -112,4 +144,4 @@ Después, en una sesión: `/mcp` muestra la conexión y las herramientas.
 - `src/app/api/settings/mcp-tokens/` — administración de tokens (`accesos.gestionar`).
 - `src/app/(app)/settings/mcp/page.tsx` + `src/components/settings/mcp-tokens-client.tsx`
   — la pantalla; `src/lib/mcp-token-ui.ts` — comando, estado y orden (puro, sin `node:crypto`).
-- Tabla `mcp_token` (migración 0092, con RLS).
+- Tabla `mcp_token` (migraciones 0094 y 0095, con RLS).

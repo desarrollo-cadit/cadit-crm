@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   PREFIJO_DE_TOKEN,
+  actorDeToken,
   hashDeToken,
   nuevoToken,
   pareceTokenMcp,
@@ -62,5 +63,11 @@ describe("tokenDeBearer", () => {
     expect(tokenDeBearer(`Basic ${token}`)).toBeNull();
     expect(tokenDeBearer("Bearer abc")).toBeNull();
     expect(tokenDeBearer(`Bearer ${token} extra`)).toBeNull();
+  });
+});
+
+describe("actorDeToken", () => {
+  it("dice qué TOKEN actuó, con el estilo x:y de las etiquetas del sistema", () => {
+    expect(actorDeToken("mcpt_abc")).toBe("mcp:mcpt_abc");
   });
 });

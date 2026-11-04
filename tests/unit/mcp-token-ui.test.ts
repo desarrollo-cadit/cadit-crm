@@ -4,7 +4,10 @@ import { describe, expect, it } from "vitest";
 import { SETTINGS_TABS } from "@/lib/nav";
 import {
   comandoDeConexion,
+  datosDeConectorClaudeAi,
   estadoDeToken,
+  etiquetaDePerfil,
+  nombreDeServidor,
   ordenarTokens,
   textoDeUltimoUso,
 } from "@/lib/mcp-token-ui";
@@ -68,5 +71,33 @@ describe("pantalla /settings/mcp", () => {
     const cliente = readFileSync(path.join(raiz, "src/components/settings/mcp-tokens-client.tsx"), "utf8");
     expect(cliente).not.toMatch(/from "@\/lib\/mcp-token"/);
     expect(cliente).not.toMatch(/from "@\/server\//);
+  });
+});
+
+describe("tokens de perfil (0095)", () => {
+  it("la etiqueta es «Persona» sin rol y el nombre del rol con rol", () => {
+    expect(etiquetaDePerfil({ roleName: null })).toBe("Persona");
+    expect(etiquetaDePerfil({ roleName: "Ventas" })).toBe("Ventas");
+  });
+
+  it("el servidor de Claude Code es «cadit» para una persona y «cadit-<perfil>» para un rol", () => {
+    expect(nombreDeServidor()).toBe("cadit");
+    expect(nombreDeServidor(null)).toBe("cadit");
+    expect(nombreDeServidor("Ventas")).toBe("cadit-ventas");
+    expect(nombreDeServidor("Coordinación Académica")).toBe("cadit-coordinacion-academica");
+  });
+
+  it("el comando de un perfil lleva su nombre de servidor", () => {
+    expect(comandoDeConexion("https://crm.ejemplo.com", TOKEN, "Ventas")).toBe(
+      `claude mcp add --transport http cadit-ventas https://crm.ejemplo.com/api/mcp --header "Authorization: Bearer ${TOKEN}"`
+    );
+  });
+
+  it("los datos del conector de claude.ai: URL de /api/mcp y un solo encabezado Bearer", () => {
+    expect(datosDeConectorClaudeAi("https://crm.ejemplo.com/", TOKEN)).toEqual({
+      url: "https://crm.ejemplo.com/api/mcp",
+      encabezado: "Authorization",
+      valor: `Bearer ${TOKEN}`,
+    });
   });
 });

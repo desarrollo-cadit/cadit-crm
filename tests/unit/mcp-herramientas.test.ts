@@ -509,3 +509,11 @@ describe("la superficie MCP no se mezcla con lo que no le corresponde", () => {
     expect(leer("src/app/api/settings/mcp-tokens/route.ts")).toContain('"Cache-Control": "no-store"');
   });
 });
+
+describe("quién actúa en la transacción de cada herramienta (0095)", () => {
+  it("el actor es el TOKEN (mcp:<id>), no la persona que lo emitió", () => {
+    const fuente = readFileSync("src/server/mcp/tools.ts", "utf8");
+    expect(fuente).toContain("userId: actorDeToken(ctx.tokenId)");
+    expect(fuente).not.toContain("userId: ctx.userId");
+  });
+});

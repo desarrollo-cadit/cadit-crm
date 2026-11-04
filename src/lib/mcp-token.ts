@@ -30,6 +30,15 @@ export function nuevoToken(): TokenNuevo {
   return { token, hash: hashDeToken(token), last4: token.slice(-4) };
 }
 
+/**
+ * 0095 — Quién actuó, para `app.current_actor`: el id del TOKEN. Un token de rol
+ * identifica a un perfil y no a una persona, así que el registro dice qué token
+ * fue. Mismo estilo `x:y` que las etiquetas `system:*`.
+ */
+export function actorDeToken(tokenId: string): string {
+  return `mcp:${tokenId}`;
+}
+
 /** ¿Tiene la forma de un token nuestro? Descarta basura sin ir a la base. */
 export function pareceTokenMcp(valor: string): boolean {
   return /^cadit_mcp_[A-Za-z0-9_-]{43}$/.test(valor);

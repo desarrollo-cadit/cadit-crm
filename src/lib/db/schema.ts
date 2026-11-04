@@ -4995,9 +4995,13 @@ export const historicalCourseTaking = pgTable(
 /**
  * 0092 — Token de acceso del MCP remoto (`/api/mcp`).
  *
- * Un token ES una persona del equipo: no guarda capacidades propias, las
- * resuelve al usarse desde el rol de `user_id` (la misma regla que la sesión),
- * así que cambiarle el rol o sacarla del equipo se nota en el próximo pedido.
+ * Un token no guarda capacidades propias: las resuelve al usarse. Sin
+ * `role_id` es una PERSONA del equipo: usa el rol de `user_id` (la misma regla
+ * que la sesión), así que cambiarle el rol o sacarla del equipo se nota en el
+ * próximo pedido. Con `role_id` (0095) es un PERFIL: usa las capacidades de ESE
+ * rol, y `user_id` queda como quien lo emitió (si deja el equipo, el token
+ * deja de servir). Si el rol se borra, el token se borra con él (cascada): nunca
+ * cae a algo más amplio.
  *
  * El token en claro se muestra UNA vez al emitirlo y jamás se guarda: solo su
  * hash SHA-256 (`token_hash`) y los últimos cuatro caracteres (`last4`), para
@@ -5014,6 +5018,11 @@ export const mcpToken = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
+    /**
+     * 0095 — El perfil del token. `null` = token de PERSONA (capacidades del rol
+     * de `user_id`); con valor, las capacidades son las de ese rol y nada más.
+     */
+    roleId: text("role_id").references(() => role.id, { onDelete: "cascade" }),
     /** Para qué se usa ("Claude Code de Cristina"); lo escribe quien lo emite. */
     name: text("name").notNull(),
     tokenHash: text("token_hash").notNull(),

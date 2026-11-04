@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Capability } from "@/lib/capabilities";
 import { withTenantTransaction } from "@/lib/db/with-tenant";
+import { actorDeToken } from "@/lib/mcp-token";
 import { formatAmount } from "@/lib/money";
 import { TIPOS_DE_CONTACTO, type TipoDeContacto } from "@/lib/recorrido-comercial";
 import { listOverdue } from "@/server/billing";
@@ -265,7 +266,8 @@ export async function ejecutarHerramienta(
   }
   try {
     const resultado = await withTenantTransaction(
-      { organizationId: ctx.organizationId, userId: ctx.userId },
+      // El actor es el TOKEN (`mcp:<id>`): uno de perfil no identifica a una persona.
+      { organizationId: ctx.organizationId, userId: actorDeToken(ctx.tokenId) },
       () => herramienta.ejecutar(ctx, entrada.data)
     );
     return comoTexto(resultado);

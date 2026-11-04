@@ -4,7 +4,8 @@ import { capabilitiesFor } from "@/lib/capabilities";
 import { hashDeToken, nuevoToken } from "@/lib/mcp-token";
 
 /**
- * 0092 — La resolución del token del MCP remoto: emitir, resolver y revocar.
+ * 0092/0095 — La resolución del token del MCP remoto: emitir, resolver y revocar,
+ * de persona y de perfil (ligado a un rol).
  *
  * Sin base: se simulan las consultas. Lo que se fija acá es la LÓGICA —nunca se
  * guarda el valor en claro, un token que no existe / ya no sirve / cuya dueña
@@ -72,7 +73,14 @@ vi.mock("@/server/auth/on-signup", () => ({
   resolveMembership: (...args: unknown[]) => resolveMembership(...args),
 }));
 
-import { emitirToken, listarTokens, resolverToken, revocarToken } from "@/server/mcp/tokens";
+import {
+  emitirToken,
+  listarTokens,
+  resolverToken,
+  revocarToken,
+  rolesLigables,
+  validarRolParaToken,
+} from "@/server/mcp/tokens";
 
 beforeEach(() => {
   selectQueue.length = 0;
@@ -232,5 +240,155 @@ describe("listarTokens", () => {
     const lista = await listarTokens("org_1");
 
     expect(lista.map((t) => t.id)).toEqual(["vigente-viejo", "revocado-nuevo"]);
+  });
+});
+
+describe("emitirToken — token de perfil (0095)", () => {
+  it("sin roleId guarda null: es un token de persona, como siempre", async () => {
+    await emitirToken("org_1", "user_1", "x");
+    expect(inserts[0]!.roleId).toBeNull();
+  });
+
+  it("con roleId lo guarda, y el valor en claro sigue sin persistirse", async () => {
+    const emitido = await emitirToken("org_1", "user_1", "Ventas en claude.ai", "rol_ventas");
+
+    expect(inserts[0]).toMatchObject({ userId: "user_1", roleId: "rol_ventas" });
+    expect(JSON.stringify(inserts[0])).not.toContain(emitido.token);
+    expect(emitido.roleId).toBe("rol_ventas");
+  });
+});
+
+describe("resolverToken — token de perfil (0095)", () => {
+  const ahora = new Date("2026-11-04T12:00:00Z");
+  const valido = nuevoToken().token;
+  const filaDePerfil = { id: "mcpt_9", userId: "user_dir", roleId: "rol_ventas", lastUsedAt: null };
+  // Quien lo emitió es Dirección, que puede MUCHO más que el perfil.
+  const direccion = {
+    organizationId: "org_1",
+    role: "direccion",
+    capabilities: ["cobranza.ver", "contactos.ver", "academico.ver", "accesos.gestionar"],
+  };
+
+  it("usa SOLO las capacidades del rol del token, no las de quien lo emitió", async () => {
+    selectQueue.push([filaDePerfil], [{ capabilities: ["contactos.ver", "capacidad.inventada"] }]);
+    resolveMembership.mockResolvedValue(direccion);
+
+    const ctx = await resolverToken(valido, ahora);
+
+    expect(ctx).toEqual({
+      tokenId: "mcpt_9",
+      organizationId: "org_1",
+      userId: "user_dir",
+      capacidades: ["contactos.ver"],
+    });
+    expect(ctx?.capacidades).not.toContain("cobranza.ver");
+  });
+
+  it("si cambian las capacidades del rol, el token lo sigue en el pedido siguiente", async () => {
+    resolveMembership.mockResolvedValue(direccion);
+
+    selectQueue.push([filaDePerfil], [{ capabilities: ["contactos.ver"] }]);
+    expect((await resolverToken(valido, ahora))?.capacidades).toEqual(["contactos.ver"]);
+
+    selectQueue.push([filaDePerfil], [{ capabilities: ["contactos.ver", "cobranza.ver"] }]);
+    expect((await resolverToken(valido, ahora))?.capacidades).toEqual(["contactos.ver", "cobranza.ver"]);
+  });
+
+  it("si el rol se borró (ya no hay fila) → null, nunca cae a las capacidades de la persona", async () => {
+    selectQueue.push([filaDePerfil], []);
+    resolveMembership.mockResolvedValue(direccion);
+
+    expect(await resolverToken(valido, ahora)).toBeNull();
+  });
+
+  it("si quien lo emitió salió del equipo → null, aunque el rol exista", async () => {
+    selectQueue.push([filaDePerfil], [{ capabilities: ["contactos.ver"] }]);
+    resolveMembership.mockResolvedValue(null);
+
+    expect(await resolverToken(valido, ahora)).toBeNull();
+  });
+
+  it("un token de persona sigue resolviendo por el rol de su dueña (sin leer la tabla de roles)", async () => {
+    selectQueue.push([{ id: "mcpt_1", userId: "user_1", roleId: null, lastUsedAt: null }]);
+    resolveMembership.mockResolvedValue({
+      organizationId: "org_1",
+      role: "coordinacion",
+      capabilities: ["academico.ver"],
+    });
+
+    const ctx = await resolverToken(valido, ahora);
+
+    expect(ctx?.capacidades).toEqual(["academico.ver"]);
+    expect(selectQueue).toHaveLength(0);
+  });
+
+  it("el rol se lee dentro del alcance de la organización", () => {
+    const fuente = readFileSync("src/server/mcp/tokens.ts", "utf8");
+    const cuerpo = fuente.slice(
+      fuente.indexOf("export async function resolverToken"),
+      fuente.indexOf("export type TokenEmitido")
+    );
+    expect(cuerpo).toContain("scoped(schema.role.organizationId, organizationId, eq(schema.role.id, fila.roleId))");
+  });
+});
+
+describe("la regla de escalada de los tokens de perfil (0095)", () => {
+  const rolVentas = { id: "rol_ventas", name: "Ventas", capabilities: ["contactos.ver", "academico.ver"] };
+  const rolFinanzas = { id: "rol_fin", name: "Finanzas", capabilities: ["contactos.ver", "cobranza.ver"] };
+
+  it("ofrece solo los roles cuyas capacidades quien emite ya tiene", async () => {
+    selectQueue.push([rolVentas, rolFinanzas]);
+
+    const ligables = await rolesLigables("org_1", ["contactos.ver", "academico.ver"]);
+
+    expect(ligables.map((r) => r.name)).toEqual(["Ventas"]);
+  });
+
+  it("un rol con una capacidad que quien emite no tiene → 403 escalation", async () => {
+    selectQueue.push([rolFinanzas]);
+
+    const r = await validarRolParaToken("org_1", "rol_fin", ["contactos.ver", "academico.ver"]);
+
+    expect(r).toMatchObject({ ok: false, status: 403, code: "escalation" });
+    expect(r.ok === false && r.message).toContain("cobranza.ver");
+  });
+
+  it("un rol que no existe en la organización → 404", async () => {
+    selectQueue.push([]);
+
+    expect(await validarRolParaToken("org_1", "rol_ajeno", ["contactos.ver"])).toMatchObject({
+      ok: false,
+      status: 404,
+    });
+  });
+
+  it("un rol dentro de lo que quien emite puede → ok, con su nombre", async () => {
+    selectQueue.push([rolVentas]);
+
+    expect(await validarRolParaToken("org_1", "rol_ventas", ["contactos.ver", "academico.ver", "cobranza.ver"])).toEqual({
+      ok: true,
+      data: { id: "rol_ventas", name: "Ventas" },
+    });
+  });
+
+  it("la ruta que emite valida el rol ANTES de crear el token", () => {
+    const fuente = readFileSync("src/app/api/settings/mcp-tokens/route.ts", "utf8");
+    const post = fuente.slice(fuente.indexOf("export const POST"));
+    expect(post.indexOf("validarRolParaToken")).toBeGreaterThan(-1);
+    expect(post.indexOf("validarRolParaToken")).toBeLessThan(post.indexOf("emitirToken("));
+  });
+});
+
+describe("listarTokens — perfil (0095)", () => {
+  it("lleva el nombre del rol de los tokens de perfil y null en los de persona", async () => {
+    const base = { name: "n", last4: "abcd", userId: "u", userName: "U", userEmail: "u@x.uy", lastUsedAt: null, revokedAt: null };
+    selectQueue.push([
+      { ...base, id: "a", roleId: "rol_ventas", roleName: "Ventas", createdAt: new Date("2026-11-02T00:00:00Z") },
+      { ...base, id: "b", roleId: null, roleName: null, createdAt: new Date("2026-11-01T00:00:00Z") },
+    ]);
+
+    const lista = await listarTokens("org_1");
+
+    expect(lista.map((t) => [t.id, t.roleName])).toEqual([["a", "Ventas"], ["b", null]]);
   });
 });
