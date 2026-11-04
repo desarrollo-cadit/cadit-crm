@@ -652,6 +652,13 @@
       "when": 1793803432106,
       "tag": "0092_leccion_offline_deshabilitada",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1793803500000,
+      "tag": "0093_pantallas_academicas_propias",
+      "breakpoints": true
     }
   ]
 }

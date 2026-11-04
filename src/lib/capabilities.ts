@@ -41,6 +41,22 @@ export const CAPABILITIES = [
    */
   "licencias.gestionar",
   /**
+   * 2026-11-04 (decisión del dueño) — Abrir las tres pantallas que hasta hoy
+   * colgaban de `academico.ver`: Licencias (`/licencias`), Cursos offline
+   * (`/cursos-offline`) y Talleres (`/talleres`).
+   *
+   * `academico.ver` no se puede quitar de Administración —sin ella las filas
+   * de cobranza dicen un id de cohorte en vez de un curso— y por eso esas tres
+   * pantallas, que Administración no usa, necesitaban capacidad propia. Las
+   * reciben todos los roles que tenían `academico.ver` MENOS `administracion`
+   * (su lista es explícita; ver la migración 0092 para las bases existentes),
+   * así que nadie más pierde nada. Escribir sigue en `academico.editar` /
+   * `licencias.gestionar`.
+   */
+  "licencias.ver",
+  "cursosoffline.ver",
+  "talleres.ver",
+  /**
    * 039 — Confirmar (y quitar la confirmación de) una cohorte: "esta cohorte
    * sale". Dispara el aviso por correo a Soporte y habilita los avisos de
    * facturación a Administración 7 y 2 días antes del inicio. La reciben
@@ -372,6 +388,10 @@ export const SYSTEM_ROLES: readonly {
    * capacidad, y un rol que reescribe su propio permiso no tiene un permiso:
    * los tiene todos—.
    *
+   * 2026-11-04 — Quedan afuera además `licencias.ver`, `cursosoffline.ver` y
+   * `talleres.ver`: Licencias, Cursos offline y Talleres no son pantallas de
+   * quien transcribe facturas, y colgaban de `academico.ver` sin motivo.
+   *
    * El costo asumido de `academico.ver` y `contactos.ver` es que también
    * abren `/academico`, `/calendar`, `/contacts` y `/empresas` en lectura. La
    * alternativa —un DTO de finanzas que lleve los nombres sin exigir la
@@ -422,6 +442,11 @@ export const SYSTEM_ROLES: readonly {
       "contactos.ver",
       "inscripciones.ver",
       "empresas.editar",
+      // 2026-11-04 — Las tres pantallas que se separaron de `academico.ver`:
+      // Ventas las sigue viendo (la oferta, los talleres y las licencias).
+      "licencias.ver",
+      "cursosoffline.ver",
+      "talleres.ver",
       // 045 (P-02) — arma audiencias y campañas y las envía; no configura.
       "marketing.ver",
       "marketing.enviar",

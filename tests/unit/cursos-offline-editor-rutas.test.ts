@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 /**
  * cursos-offline T11 — Editing the library is `academico.editar`; reading it is
- * `academico.ver`. A new route under `api/offline-courses/**` that writes with
+ * `cursosoffline.ver`. A new route under `api/offline-courses/**` that writes with
  * the read capability (or with none) would let anyone who may LOOK at the
  * library rewrite it. Structural, so the next route cannot forget it.
  */
@@ -49,12 +49,15 @@ describe("offline-courses routes: capabilities", () => {
     expect(wrong).toEqual([]);
   });
 
-  it("every read handler requires academico.ver", () => {
+  // 2026-11-04 — Reading the library is `cursosoffline.ver`, not `academico.ver`:
+  // the Administración role keeps `academico.ver` for billing rows and must not
+  // get the library.
+  it("every read handler requires cursosoffline.ver", () => {
     const wrong: string[] = [];
     for (const file of files) {
       const src = readFileSync(file, "utf8");
       for (const m of src.matchAll(READ)) {
-        if (m[1]!.trim() !== "requireCapability" || m[2] !== "academico.ver") {
+        if (m[1]!.trim() !== "requireCapability" || m[2] !== "cursosoffline.ver") {
           wrong.push(`${rel(file)} GET: ${m[1]!.trim()}("${m[2]}")`);
         }
       }

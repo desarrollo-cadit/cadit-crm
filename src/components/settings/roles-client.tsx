@@ -38,6 +38,9 @@ const CAPABILITY_LABELS: Record<string, string> = {
   "correcciones.aprobar": "Aprobar las correcciones de los profesores",
   "certificados.emitir": "Emitir certificados",
   "licencias.gestionar": "Asignar y quitar licencias",
+  "licencias.ver": "Ver la pantalla de Licencias",
+  "cursosoffline.ver": "Ver la biblioteca de cursos offline",
+  "talleres.ver": "Ver Talleres",
   "cohortes.confirmar": "Confirmar grupos (avisa a Soporte y a Administración)",
   "contactos.ver": "Ver contactos",
   "contactos.editar": "Crear y editar contactos",
@@ -76,8 +79,9 @@ const GROUPS: { title: string; match: (c: string) => boolean }[] = [
     // 030 — `grabaciones.*` va con lo académico, igual que en la guía.
     // 031 — `correcciones.*` también.
     // 2026-10-26 — `licencias.gestionar` también, igual que en la guía.
+    // 2026-11-04 — Y `cursosoffline.ver` / `talleres.ver`, igual que en la guía.
     match: (c) =>
-      /^(academico|asistencia|evaluacion|correcciones|certificados|grabaciones|cohortes|licencias)\./.test(
+      /^(academico|asistencia|evaluacion|correcciones|certificados|grabaciones|cohortes|licencias|cursosoffline|talleres)\./.test(
         c
       ),
   },

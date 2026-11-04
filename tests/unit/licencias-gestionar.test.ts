@@ -100,7 +100,7 @@ describe("licencias.gestionar — la pantalla", () => {
   it("/settings/roles la muestra (rótulo y grupo Académico)", () => {
     const roles = leer("src/components/settings/roles-client.tsx");
     expect(roles).toContain(`"licencias.gestionar": "Asignar y quitar licencias"`);
-    expect(roles).toMatch(/\|cohortes\|licencias\)\\\./);
+    expect(roles).toMatch(/\|cohortes\|licencias\|cursosoffline\|talleres\)\\\./);
   });
 
   it("el roster falla cerrado: sin el permiso, no hay controles", () => {

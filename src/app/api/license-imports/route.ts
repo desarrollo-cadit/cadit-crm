@@ -10,10 +10,10 @@ export const dynamic = "force-dynamic";
  * 0091 — El reporte de la conciliación con Autodesk: por equipo, la última
  * importación, las cuentas por programa (cupo, ocupadas, en Autodesk, solo en
  * Autodesk) y los casos a resolver, externos y tareas pendientes en Autodesk.
- * `academico.ver`, como `/api/licenses`. Los correos y las personas solo viajan
+ * `licencias.ver`, como `/api/licenses`. Los correos y las personas solo viajan
  * con `contactos.ver`: sin ella llegan las cuentas y nada más. Sin plata.
  */
-export const GET = requireCapability("academico.ver", async (session, req: Request) => {
+export const GET = requireCapability("licencias.ver", async (session, req: Request) => {
   const query = parseQuery(new URL(req.url), reporteQuerySchema);
   if (!query.ok) return query.response;
   const conDetalle = sessionCapabilities(session).includes("contactos.ver");

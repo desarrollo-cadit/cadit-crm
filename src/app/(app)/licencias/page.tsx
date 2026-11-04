@@ -15,8 +15,9 @@ export const dynamic = "force-dynamic";
  * soporte), la capacidad de la ruta.
  *
  * 0091 — `?tab=programas|conciliacion`. La conciliación con Autodesk se opera
- * con `licencias.gestionar`; se ve con `academico.ver`, y las personas y
- * correos solo con `contactos.ver` (lo decide también el servidor).
+ * con `licencias.gestionar`; se ve con `licencias.ver` (2026-11-04: antes
+ * `academico.ver`, que Administración necesita para la cobranza), y las
+ * personas y correos solo con `contactos.ver` (lo decide también el servidor).
  */
 export default async function LicenciasPage({
   searchParams,
@@ -26,7 +27,7 @@ export default async function LicenciasPage({
   const [{ tab }, session] = await Promise.all([searchParams, getSessionOrNull()]);
   if (!session) redirect("/login");
   const caps = sessionCapabilities(session);
-  if (!caps.includes("academico.ver")) redirect("/");
+  if (!caps.includes("licencias.ver")) redirect("/");
   return (
     <LicensesView
       canEdit={caps.includes("academico.editar")}

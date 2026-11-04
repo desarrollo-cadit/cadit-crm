@@ -18,7 +18,7 @@ export default async function TallerPage({ params }: Props) {
   const session = await getSessionOrNull();
   if (!session) redirect("/login");
   const capabilities = sessionCapabilities(session);
-  if (!capabilities.includes("academico.ver")) redirect("/");
+  if (!capabilities.includes("talleres.ver")) redirect("/");
   const { id } = await params;
 
   return (

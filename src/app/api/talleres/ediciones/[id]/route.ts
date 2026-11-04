@@ -12,10 +12,11 @@ type Params = { params: Promise<{ id: string }> };
 
 /**
  * 033 (US2) — Una edición con sus inscriptos. El estado de pago viaja solo
- * con `cobranza.ver` (lo decide el servidor, no la pantalla).
+ * con `cobranza.ver` (lo decide el servidor, no la pantalla). `talleres.ver`
+ * desde 2026-11-04 (antes `academico.ver`).
  */
 export const GET = requireCapability(
-  "academico.ver",
+  "talleres.ver",
   async (session, _req: Request, ctx: Params) => {
     const { id } = await ctx.params;
     const detail = await getWorkshopEdition(

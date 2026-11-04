@@ -5,8 +5,11 @@ import { listCourses } from "@/server/offline-courses/library";
 
 export const dynamic = "force-dynamic";
 
-/** cursos-offline (T4) — The library, for staff: titles, status and counts. */
-export const GET = requireCapability("academico.ver", async (session) => {
+/**
+ * cursos-offline (T4) — The library, for staff: titles, status and counts.
+ * `cursosoffline.ver` since 2026-11-04 (it used to be `academico.ver`).
+ */
+export const GET = requireCapability("cursosoffline.ver", async (session) => {
   const courses = await listCourses(session.organizationId);
   return Response.json({ courses });
 });

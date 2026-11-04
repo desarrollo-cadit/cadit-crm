@@ -100,11 +100,12 @@ export const NAV_GROUPS = [
        */
       { href: "/marketing", label: "Marketing", icon: Megaphone, capability: "marketing.ver" },
       /**
-       * 033 (FR-001) — Los talleres, con su propia sección. `academico.ver` y
-       * no una capacidad nueva: un taller es un curso de tipo taller, y verlo
-       * es ver la gestión académica (FR-022).
+       * 033 (FR-001) — Los talleres, con su propia sección. Hasta 2026-11-04
+       * colgaban de `academico.ver` (un taller es un curso de tipo taller);
+       * se separó `talleres.ver` porque Administración necesita `academico.ver`
+       * para leer la cobranza y no tiene nada que hacer acá.
        */
-      { href: "/talleres", label: "Talleres", icon: Presentation, capability: "academico.ver" },
+      { href: "/talleres", label: "Talleres", icon: Presentation, capability: "talleres.ver" },
     ],
   },
   {
@@ -123,14 +124,15 @@ export const NAV_GROUPS = [
         icon: ClipboardCheck,
         capability: "correcciones.aprobar",
       },
-      // cursos-offline — The imported LearnDash library. `academico.ver` and
-      // not a capability of its own: it is course content, which is what that
-      // capability already governs (no role data migration).
+      // cursos-offline — The imported LearnDash library. It used to hang from
+      // `academico.ver`; since 2026-11-04 it has `cursosoffline.ver` of its own
+      // so the Administración role (which needs `academico.ver` to read billing
+      // rows) does not get the library.
       {
         href: "/cursos-offline",
         label: "Cursos offline",
         icon: Library,
-        capability: "academico.ver",
+        capability: "cursosoffline.ver",
       },
     ],
   },
@@ -138,11 +140,12 @@ export const NAV_GROUPS = [
     label: "Soporte",
     items: [
       /**
-       * 035 (US3, FR-013) — Quién tiene cada licencia, por programa.
-       * `academico.ver` y no una capacidad nueva (FR-021): el software y sus
-       * licencias ya son parte de la gestión académica.
+       * 035 (US3, FR-013) — Quién tiene cada licencia, por programa. Colgaba
+       * de `academico.ver` (FR-021); desde 2026-11-04 tiene `licencias.ver`
+       * porque Administración necesita `academico.ver` para leer la cobranza y
+       * no debe ver quién tiene cada licencia.
        */
-      { href: "/licencias", label: "Licencias", icon: KeyRound, capability: "academico.ver" },
+      { href: "/licencias", label: "Licencias", icon: KeyRound, capability: "licencias.ver" },
       /**
        * 030 (US1) — Las grabaciones de Zoom de todas las aulas en una tabla.
        * Capacidad propia (DV-009): sin `grabaciones.ver` el ítem no aparece.

@@ -8,9 +8,10 @@ type Params = { params: Promise<{ id: string }> };
 /**
  * 043 — "Quiénes tienen acceso": cada fuente de acceso al curso (cohorte,
  * otorgado a una inscripción, acceso directo), con su fecha y si venció.
+ * `cursosoffline.ver` desde 2026-11-04 (antes `academico.ver`).
  */
 export const GET = requireCapability(
-  "academico.ver",
+  "cursosoffline.ver",
   async (session, _req: Request, ctx: Params) => {
     const { id } = await ctx.params;
     const rows = await courseAccessList(session.organizationId, id);

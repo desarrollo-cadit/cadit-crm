@@ -16,7 +16,7 @@ export default async function TalleresPage() {
   const session = await getSessionOrNull();
   if (!session) redirect("/login");
   const capabilities = sessionCapabilities(session);
-  if (!capabilities.includes("academico.ver")) redirect("/");
+  if (!capabilities.includes("talleres.ver")) redirect("/");
 
   return (
     <div className="h-full overflow-y-auto">

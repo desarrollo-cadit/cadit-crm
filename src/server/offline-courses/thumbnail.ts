@@ -9,7 +9,7 @@ import { readMediaFile } from "@/server/whatsapp/media";
  * The importer stored each thumbnail as a regular `media_asset` + file in
  * `MEDIA_DIR` (T3). `/api/media/<id>` asks for `inbox.ver`, which neither a
  * student nor every academic staff member has, so the library serves the
- * file through two routes of its own: the staff one (`academico.ver`) and the
+ * file through two routes of its own: the staff one (`cursosoffline.ver`) and the
  * portal one (effective access). Both decide WHO may see it and then call
  * this; the file path comes from the same `readMediaFile` the inbox uses.
  *

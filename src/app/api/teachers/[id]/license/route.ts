@@ -11,12 +11,13 @@ export const dynamic = "force-dynamic";
 type Params = { params: Promise<{ id: string }> };
 
 /**
- * 0090 — Las licencias asignadas a un profesor. `academico.ver`, como la
- * vista de Licencias. Es de STAFF: el portal del profesor no tiene ninguna
- * ruta de licencias (`tests/unit/licencias-de-profesores.test.ts`).
+ * 0090 — Las licencias asignadas a un profesor. `licencias.ver`, como la
+ * vista de Licencias (2026-11-04: antes `academico.ver`). Es de STAFF: el
+ * portal del profesor no tiene ninguna ruta de licencias
+ * (`tests/unit/licencias-de-profesores.test.ts`).
  */
 export const GET = requireCapability(
-  "academico.ver",
+  "licencias.ver",
   async (session, _req: Request, ctx: Params) => {
     const { id } = await ctx.params;
     return Response.json({ licenses: await listTeacherLicenses(session.organizationId, id) });

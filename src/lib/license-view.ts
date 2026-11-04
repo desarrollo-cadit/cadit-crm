@@ -13,7 +13,7 @@ import type { LicenseSource } from "./license-source";
  * asignación (SC-003).
  *
  * Sin teléfono, correo ni nada de plata: la vista se abre con
- * `academico.ver` y lo que ese permiso no debe ver no viaja. La única
+ * `licencias.ver` y lo que ese permiso no debe ver no viaja. La única
  * excepción es el correo de la LICENCIA (2026-10-21), y solo con
  * `contactos.ver`: quien ya ve el correo del alumno.
  *

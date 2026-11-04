@@ -806,8 +806,8 @@ describe("migración 0091", () => {
 });
 
 describe("las rutas declaran su capacidad", () => {
-  it("leer el reporte es academico.ver; importar, previsualizar y actuar, licencias.gestionar", () => {
-    expect(leer("src", "app", "api", "license-imports", "route.ts")).toMatch(/GET = requireCapability\("academico\.ver"/);
+  it("leer el reporte es licencias.ver; importar, previsualizar y actuar, licencias.gestionar", () => {
+    expect(leer("src", "app", "api", "license-imports", "route.ts")).toMatch(/GET = requireCapability\("licencias\.ver"/);
     expect(leer("src", "app", "api", "license-imports", "route.ts")).toMatch(/POST = requireCapability\("licencias\.gestionar"/);
     for (const r of ["preview", "cases", "apply-safe"]) {
       expect(leer("src", "app", "api", "license-imports", r, "route.ts"), r).toMatch(

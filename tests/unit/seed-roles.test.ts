@@ -71,6 +71,9 @@ const GRANTS = [
   migracion("0078_contactos_unificar.sql"),
   // 2026-10-29 — `empresas.unificar` (los mismos: dirección, coordinación y soporte).
   migracion("0085_empresas_unificar.sql"),
+  // 2026-11-04 — `licencias.ver`, `cursosoffline.ver` y `talleres.ver` (todos
+  // los roles con `academico.ver` menos `administracion`).
+  migracion("0093_pantallas_academicas_propias.sql"),
 ].join("\n");
 
 /**

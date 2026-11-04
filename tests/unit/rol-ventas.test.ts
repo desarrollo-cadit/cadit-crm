@@ -42,7 +42,7 @@ describe("040 — el rol `ventas`", () => {
     expect(ventas!.name).toBe("Ventas");
   });
 
-  it("lleva exactamente sus ocho capacidades", () => {
+  it("lleva exactamente sus once capacidades", () => {
     expect([...ventas!.capabilities].sort()).toEqual(
       [
         "academico.ver",
@@ -51,6 +51,10 @@ describe("040 — el rol `ventas`", () => {
         "contactos.ver",
         "inscripciones.ver",
         "empresas.editar",
+        // 2026-11-04 — las tres pantallas que se separaron de `academico.ver`.
+        "licencias.ver",
+        "cursosoffline.ver",
+        "talleres.ver",
         // 045 (P-02) — arma audiencias y campañas, y las envía.
         "marketing.ver",
         "marketing.enviar",
