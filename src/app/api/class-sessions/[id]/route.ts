@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { apiError, parseBody, requireCapability } from "@/lib/api";
+import { sessionCapabilities } from "@/lib/capabilities";
 import { cancelSession, markAttendance } from "@/server/attendance";
-import { borrarClase } from "@/server/class-changes";
+import { borrarClase, reemplazarClaseSuspendida } from "@/server/class-changes";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,12 @@ const patchSchema = z.object({
   onlyUnmarked: z.boolean().optional(),
   /** Motivo de cancelación: cancelar saca la clase del cálculo de todos. */
   cancelReason: z.string().trim().min(1).max(500).optional(),
+  /**
+   * 2026-11-04 — Al suspender, crear sola la clase de reemplazo (próximo día de
+   * cursada después de la última clase). Por defecto sí; `false` = solo
+   * suspender y reponerla a mano. Sin `academico.editar` nunca se crea.
+   */
+  autoReplacement: z.boolean().optional(),
 });
 
 /**
@@ -50,7 +57,18 @@ export const PATCH = requireCapability(
       body.data.cancelReason
     );
     if (!canceled.ok) return apiError(canceled.status, canceled.code, canceled.message);
-    return Response.json({ session: canceled.data });
+    // Crear la clase es editar el cronograma (y a veces el fin del grupo): `academico.editar`.
+    const puedeReponer = sessionCapabilities(session).includes("academico.editar");
+    if (body.data.autoReplacement === false || !puedeReponer) {
+      return Response.json({ session: canceled.data, replacement: null });
+    }
+    // Un fallo acá no deshace la suspensión (ya está hecha): se informa y se repone a mano.
+    const reemplazo = await reemplazarClaseSuspendida(session.organizationId, id, puedeReponer);
+    return Response.json({
+      session: canceled.data,
+      replacement: reemplazo.ok ? reemplazo.data : null,
+      replacementError: reemplazo.ok ? null : { code: reemplazo.code, message: reemplazo.message },
+    });
   }
 
   if (body.data.attendance) {

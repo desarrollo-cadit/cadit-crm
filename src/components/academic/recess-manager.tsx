@@ -14,7 +14,24 @@ type Receso = {
   toDate: string;
   cohortId: string | null;
   cohortName: string | null;
+  /** Feriado que se repite todos los años (un solo día). */
+  recurring: boolean;
 };
+
+/** Un rango, un día de ESTE año, o un día que se repite cada año. */
+type TipoDeReceso = "rango" | "dia" | "anual";
+
+const TIPOS: { valor: TipoDeReceso; etiqueta: string }[] = [
+  { valor: "rango", etiqueta: "Un rango de fechas" },
+  { valor: "dia", etiqueta: "Un día solo este año" },
+  { valor: "anual", etiqueta: "Un día que se repite todos los años" },
+];
+
+/** "2026-12-25" → "25/12": el feriado anual no tiene año. */
+function diaYMes(iso: string): string {
+  const [, m, d] = iso.slice(0, 10).split("-");
+  return `${d}/${m}`;
+}
 
 type Conservada = { id: string; cohortName: string; date: string; detalle: string };
 
@@ -56,6 +73,7 @@ export function RecessManager({
   const [nombre, setNombre] = useState("");
   const [desde, setDesde] = useState("");
   const [hasta, setHasta] = useState("");
+  const [tipo, setTipo] = useState<TipoDeReceso>("rango");
   const [guardando, setGuardando] = useState(false);
   const [conservadas, setConservadas] = useState<Conservada[]>([]);
 
@@ -79,7 +97,14 @@ export function RecessManager({
     const res = await fetch("/api/recesses", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: nombre, fromDate: desde, toDate: hasta, cohortId: cohortId ?? null }),
+      body: JSON.stringify({
+        name: nombre,
+        fromDate: desde,
+        // Un día (de este año o anual) es un rango de un solo día.
+        toDate: tipo === "rango" ? hasta : desde,
+        recurring: tipo === "anual",
+        cohortId: cohortId ?? null,
+      }),
     }).catch(() => null);
     setGuardando(false);
     if (!res?.ok) {
@@ -100,6 +125,7 @@ export function RecessManager({
     setNombre("");
     setDesde("");
     setHasta("");
+    setTipo("rango");
     await cargar();
     onChanged?.();
   }
@@ -117,7 +143,8 @@ export function RecessManager({
     onChanged?.();
   }
 
-  const valido = nombre.trim() !== "" && desde !== "" && hasta !== "" && hasta >= desde;
+  const valido =
+    nombre.trim() !== "" && desde !== "" && (tipo !== "rango" || (hasta !== "" && hasta >= desde));
 
   return (
     <section aria-label="Recesos" className="space-y-3">
@@ -143,7 +170,11 @@ export function RecessManager({
               <li key={r.id} className="flex flex-wrap items-center gap-3 px-3 py-2">
                 <span className="font-medium text-foreground">{r.name}</span>
                 <span className="text-muted-foreground">
-                  {dia(r.fromDate)} — {dia(r.toDate)}
+                  {r.recurring
+                    ? `${diaYMes(r.fromDate)} · todos los años`
+                    : r.fromDate === r.toDate
+                      ? dia(r.fromDate)
+                      : `${dia(r.fromDate)} — ${dia(r.toDate)}`}
                 </span>
                 {r.cohortId === null && cohortId ? <Badge variant="secondary">Academia</Badge> : null}
                 {canEdit && propio ? (
@@ -166,26 +197,50 @@ export function RecessManager({
       ) : null}
 
       {canEdit ? (
-        <div className="flex flex-wrap items-end gap-2">
-          <label className="flex min-w-[12rem] flex-1 flex-col gap-1 text-xs text-muted-foreground">
-            Nombre
-            <Input
-              value={nombre}
-              placeholder="Receso de verano"
-              onChange={(e) => setNombre(e.target.value)}
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-            Desde
-            <Input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} />
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-            Hasta
-            <Input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} />
-          </label>
-          <Button size="sm" disabled={!valido} loading={guardando} onClick={() => void crear()}>
-            Cargar receso
-          </Button>
+        <div className="space-y-2">
+          <fieldset className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            <legend className="sr-only">Tipo de receso</legend>
+            {TIPOS.map((t) => (
+              <label key={t.valor} className="flex items-center gap-1.5">
+                <input
+                  type="radio"
+                  name={`tipo-de-receso-${cohortId ?? "academia"}`}
+                  checked={tipo === t.valor}
+                  onChange={() => setTipo(t.valor)}
+                />
+                {t.etiqueta}
+              </label>
+            ))}
+          </fieldset>
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="flex min-w-[12rem] flex-1 flex-col gap-1 text-xs text-muted-foreground">
+              Nombre
+              <Input
+                value={nombre}
+                placeholder={tipo === "rango" ? "Receso de verano" : "Navidad"}
+                onChange={(e) => setNombre(e.target.value)}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+              {tipo === "rango" ? "Desde" : "Día"}
+              <Input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} />
+            </label>
+            {tipo === "rango" ? (
+              <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                Hasta
+                <Input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} />
+              </label>
+            ) : null}
+            <Button size="sm" disabled={!valido} loading={guardando} onClick={() => void crear()}>
+              Cargar receso
+            </Button>
+          </div>
+          {tipo === "anual" ? (
+            <p className="text-xs text-muted-foreground">
+              Vale ese día todos los años, desde el año elegido. Un 29/02 pasa al 28/02 en los años
+              que no son bisiestos.
+            </p>
+          ) : null}
         </div>
       ) : null}
 

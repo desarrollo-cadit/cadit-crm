@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Ban, CalendarClock, CalendarDays, DoorOpen, Link2, Trash2, Video } from "lucide-react";
 import { RecessManager } from "@/components/academic/recess-manager";
 import { MaterialPorAsignar } from "@/components/cohorts/material-por-asignar";
-import { ReprogramarClase, SuspenderClase } from "@/components/cohorts/suspender-clase";
+import { MoverClase, ReprogramarClase, SuspenderClase } from "@/components/cohorts/suspender-clase";
 import { ResourcesPanel, useClassMaterial } from "@/components/academic/resources-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -120,6 +120,7 @@ export function ClassesClient({
    */
   const [suspendiendo, setSuspendiendo] = useState<ClassRow | null>(null);
   const [reprogramando, setReprogramando] = useState<ClassRow | null>(null);
+  const [moviendo, setMoviendo] = useState<ClassRow | null>(null);
   const [rangoDesde, setRangoDesde] = useState("");
   const [rangoHasta, setRangoHasta] = useState("");
   const [borrando, setBorrando] = useState(false);
@@ -631,6 +632,12 @@ export function ClassesClient({
                     Crear clase de reemplazo
                   </Button>
                 ) : null}
+                {!c.canceled ? (
+                  <Button size="sm" variant="ghost" onClick={() => setMoviendo(c)}>
+                    <CalendarClock className="h-4 w-4" aria-hidden />
+                    Cambiar fecha
+                  </Button>
+                ) : null}
                 <Button
                   size="sm"
                   variant="ghost"
@@ -687,6 +694,14 @@ export function ClassesClient({
           clase={{ ...suspendiendo, id: suspendiendo.id }}
           canReschedule={canEdit}
           onClose={() => setSuspendiendo(null)}
+          onChanged={() => void refetch()}
+        />
+      )}
+      {moviendo?.id && (
+        <MoverClase
+          cohortId={cohortId}
+          clase={{ ...moviendo, id: moviendo.id }}
+          onClose={() => setMoviendo(null)}
           onChanged={() => void refetch()}
         />
       )}

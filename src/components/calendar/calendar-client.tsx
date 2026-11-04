@@ -193,6 +193,7 @@ type CalendarRecess = {
   toDate: string;
   cohortId: string | null;
   cohortName: string | null;
+  recurring?: boolean;
 };
 
 /** 034 — Los recesos que cubren un día ("YYYY-MM-DD", inclusive en las dos puntas). */
@@ -578,7 +579,7 @@ export function CalendarClient() {
                   {recesosDelDia(isoDay(day), recesses).map((r) => (
                     <span
                       key={r.id}
-                      title={`${r.name}${r.cohortName ? ` (${r.cohortName})` : ""}: del ${r.fromDate} al ${r.toDate}`}
+                      title={`${r.name}${r.cohortName ? ` (${r.cohortName})` : ""}: ${r.fromDate === r.toDate ? `el ${r.fromDate}` : `del ${r.fromDate} al ${r.toDate}`}`}
                       className="block truncate rounded border border-warning-border bg-warning-soft px-1 py-0.5 text-[10.5px] font-medium text-foreground"
                     >
                       Receso: {r.name}

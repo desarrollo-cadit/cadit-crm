@@ -1,10 +1,12 @@
-import { and, asc, eq, gte, inArray, isNull, lte, or } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import {
   decidirBorradoDeClases,
   MOTIVO_PARA_CONSERVAR,
+  fechaEnReceso,
+  recesosDelRango,
   validarReceso,
   type MotivoParaConservar,
   type Receso,
@@ -64,6 +66,7 @@ export async function leerRecesos(
       fromDate: schema.recess.fromDate,
       toDate: schema.recess.toDate,
       cohortId: schema.recess.cohortId,
+      recurring: schema.recess.recurring,
     })
     .from(schema.recess)
     .where(
@@ -131,10 +134,19 @@ export async function borrarClasesSinHistoria(
     toDate?: string;
     cohortId: string | null;
     classIds?: readonly string[];
+    /**
+     * Feriado anual (día de referencia "YYYY-MM-DD"): las clases de CUALQUIER
+     * año que caen en ese mes y día, de hoy en adelante — las de años
+     * anteriores ya pasaron y no se tocan.
+     */
+    anual?: string;
   }
 ): Promise<BorradoDeClasesDto> {
   const db = getDb();
-  const clases = await db
+  const anual = filtro.anual ? { fromDate: filtro.anual, toDate: filtro.anual, recurring: true } : null;
+  const hoy = new Date().toISOString().slice(0, 10);
+  const mesDia = filtro.anual?.slice(5);
+  const clasesDelRango = await db
     .select({
       id: schema.classSession.id,
       cohortId: schema.classSession.cohortId,
@@ -148,10 +160,22 @@ export async function borrarClasesSinHistoria(
         organizationId,
         filtro.fromDate ? gte(schema.classSession.date, desde(filtro.fromDate)) : undefined,
         filtro.toDate ? lte(schema.classSession.date, hasta(filtro.toDate)) : undefined,
+        anual
+          ? gte(schema.classSession.date, desde(anual.fromDate > hoy ? anual.fromDate : hoy))
+          : undefined,
+        // Un 29/02 también cae el 28/02 en los años no bisiestos; el filtro
+        // exacto lo hace `fechaEnReceso` más abajo.
+        mesDia
+          ? sql`to_char(${schema.classSession.date}, 'MM-DD') in (${sql.join(
+              (mesDia === "02-29" ? ["02-29", "02-28"] : [mesDia]).map((d) => sql`${d}`),
+              sql`, `
+            )})`
+          : undefined,
         filtro.cohortId ? eq(schema.classSession.cohortId, filtro.cohortId) : undefined,
         filtro.classIds ? inArray(schema.classSession.id, [...filtro.classIds]) : undefined
       )
     );
+  const clases = anual ? clasesDelRango.filter((c) => fechaEnReceso(c.date, [anual])) : clasesDelRango;
   if (clases.length === 0) return { deleted: 0, kept: [] };
 
   const conAsistencia = new Set(
@@ -214,6 +238,8 @@ export type RecesoInput = {
   fromDate: string;
   toDate: string;
   cohortId: string | null;
+  /** Feriado que se repite todos los años: un solo día (`fromDate` = `toDate`). */
+  recurring?: boolean;
 };
 
 async function cohorteExiste(db: Db, organizationId: string, cohortId: string): Promise<boolean> {
@@ -253,14 +279,16 @@ export async function crearReceso(
     name: input.name.trim(),
     fromDate: input.fromDate,
     toDate: input.toDate,
+    recurring: input.recurring === true,
     createdBy: actorUserId,
   });
 
-  const borrado = await borrarClasesSinHistoria(organizationId, {
-    fromDate: input.fromDate,
-    toDate: input.toDate,
-    cohortId: input.cohortId,
-  });
+  const borrado = await borrarClasesSinHistoria(
+    organizationId,
+    input.recurring
+      ? { cohortId: input.cohortId, anual: input.fromDate }
+      : { fromDate: input.fromDate, toDate: input.toDate, cohortId: input.cohortId }
+  );
   const nombre = input.cohortId
     ? ((await nombresDeCohortes(db, organizationId, [input.cohortId])).get(input.cohortId) ?? null)
     : null;
@@ -268,7 +296,15 @@ export async function crearReceso(
   return {
     ok: true,
     data: {
-      recess: { id, name: input.name.trim(), fromDate: input.fromDate, toDate: input.toDate, cohortId: input.cohortId, cohortName: nombre },
+      recess: {
+        id,
+        name: input.name.trim(),
+        fromDate: input.fromDate,
+        toDate: input.toDate,
+        cohortId: input.cohortId,
+        recurring: input.recurring === true,
+        cohortName: nombre,
+      },
       ...borrado,
     },
   };
@@ -282,24 +318,33 @@ export async function crearReceso(
 export async function actualizarReceso(
   organizationId: string,
   recessId: string,
-  input: { name: string; fromDate: string; toDate: string }
+  input: { name: string; fromDate: string; toDate: string; recurring?: boolean }
 ): Promise<RecessResult<{ recess: RecesoDto } & BorradoDeClasesDto>> {
-  const error = validarReceso(input);
+  const db = getDb();
+  const [previo] = await db
+    .select({ recurring: schema.recess.recurring })
+    .from(schema.recess)
+    .where(scoped(schema.recess.organizationId, organizationId, eq(schema.recess.id, recessId)))
+    .limit(1);
+  if (!previo) return { ok: false, status: 404, code: "not_found", message: "Receso no encontrado" };
+  // Sin `recurring` en el pedido, el receso conserva lo que era.
+  const recurring = input.recurring ?? previo.recurring;
+  const error = validarReceso({ ...input, recurring });
   if (error) return { ok: false, status: 422, code: "invalid_body", message: error };
 
-  const db = getDb();
   const [actual] = await db
     .update(schema.recess)
-    .set({ name: input.name.trim(), fromDate: input.fromDate, toDate: input.toDate })
+    .set({ name: input.name.trim(), fromDate: input.fromDate, toDate: input.toDate, recurring })
     .where(scoped(schema.recess.organizationId, organizationId, eq(schema.recess.id, recessId)))
     .returning();
   if (!actual) return { ok: false, status: 404, code: "not_found", message: "Receso no encontrado" };
 
-  const borrado = await borrarClasesSinHistoria(organizationId, {
-    fromDate: input.fromDate,
-    toDate: input.toDate,
-    cohortId: actual.cohortId,
-  });
+  const borrado = await borrarClasesSinHistoria(
+    organizationId,
+    recurring
+      ? { cohortId: actual.cohortId, anual: input.fromDate }
+      : { fromDate: input.fromDate, toDate: input.toDate, cohortId: actual.cohortId }
+  );
   const nombre = actual.cohortId
     ? ((await nombresDeCohortes(db, organizationId, [actual.cohortId])).get(actual.cohortId) ?? null)
     : null;
@@ -312,6 +357,7 @@ export async function actualizarReceso(
         fromDate: actual.fromDate,
         toDate: actual.toDate,
         cohortId: actual.cohortId,
+        recurring: actual.recurring,
         cohortName: nombre,
       },
       ...borrado,
@@ -331,13 +377,18 @@ export async function borrarReceso(organizationId: string, recessId: string): Pr
   return borrados.length > 0;
 }
 
-/** Los recesos que se superponen con un rango, para marcar el calendario (FR-011). */
+/**
+ * Los recesos que tocan un rango, para marcar el calendario (FR-011). Los
+ * feriados anuales vuelven como el día concreto de cada año que cae adentro.
+ */
 export async function recesosEnRango(
   organizationId: string,
   from: Date,
   to: Date
 ): Promise<RecesoDto[]> {
   const db = getDb();
+  const desdeDia = from.toISOString().slice(0, 10);
+  const hastaDia = to.toISOString().slice(0, 10);
   const filas = await db
     .select({
       id: schema.recess.id,
@@ -345,24 +396,25 @@ export async function recesosEnRango(
       fromDate: schema.recess.fromDate,
       toDate: schema.recess.toDate,
       cohortId: schema.recess.cohortId,
+      recurring: schema.recess.recurring,
     })
     .from(schema.recess)
     .where(
       scoped(
         schema.recess.organizationId,
         organizationId,
-        and(
-          lte(schema.recess.fromDate, to.toISOString().slice(0, 10)),
-          gte(schema.recess.toDate, from.toISOString().slice(0, 10))
+        or(
+          eq(schema.recess.recurring, true),
+          and(lte(schema.recess.fromDate, hastaDia), gte(schema.recess.toDate, desdeDia))
         )
       )
     )
     .orderBy(asc(schema.recess.fromDate));
-  const ids = [...new Set(filas.map((r) => r.cohortId).filter((c): c is string => !!c))];
+  const enRango = recesosDelRango(filas, desdeDia, hastaDia);
+  const ids = [...new Set(enRango.map((r) => r.cohortId).filter((c): c is string => !!c))];
   const nombres = await nombresDeCohortes(db, organizationId, ids);
-  return filas.map((r) => ({
+  return enRango.map((r) => ({
     ...r,
     cohortName: r.cohortId ? (nombres.get(r.cohortId) ?? null) : null,
   }));
 }
-

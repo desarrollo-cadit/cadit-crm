@@ -10,7 +10,7 @@ import {
   type RelojDeAsistencia,
 } from "@/lib/attendance-percentage";
 import { computeCohortStatus } from "@/lib/cohort-status";
-import { fechaEnReceso, type Receso } from "@/lib/recess";
+import { fechaEnReceso, type RangoDeReceso } from "@/lib/recess";
 import {
   ETIQUETA_DE_RESULTADO,
   resultadoDeCursada,
@@ -78,7 +78,7 @@ export type GrupoDeConstancia = {
   endTime: string | null;
   clases: readonly ClaseDeConstancia[];
   /** Los recesos que alcanzan a este grupo (`recesosDeCohorte`). */
-  recesos: readonly Pick<Receso, "fromDate" | "toDate">[];
+  recesos: readonly RangoDeReceso[];
   alumnos: readonly AlumnoDeConstancia[];
 };
 

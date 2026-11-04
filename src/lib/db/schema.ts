@@ -2273,11 +2273,18 @@ export const recess = pgTable(
     name: text("name").notNull(),
     fromDate: date("from_date", { mode: "string" }).notNull(),
     toDate: date("to_date", { mode: "string" }).notNull(),
+    /**
+     * 2026-11-04 — Feriado que se repite todos los años: un solo día cuyo mes
+     * y día valen desde el año de `from_date` en adelante. Un rango nunca es
+     * anual (CHECK `recess_anual_un_dia`).
+     */
+    recurring: boolean("recurring").notNull().default(false),
     createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [
     check("recess_rango_valido", sql`${t.toDate} >= ${t.fromDate}`),
+    check("recess_anual_un_dia", sql`(NOT ${t.recurring}) OR ${t.fromDate} = ${t.toDate}`),
     index("recess_org_dates_idx").on(t.organizationId, t.fromDate, t.toDate),
     index("recess_org_cohort_idx").on(t.organizationId, t.cohortId),
   ]

@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  avisoDeExtension,
   diaCorto,
   efectoDelReemplazo,
   planDeReemplazo,
+  proximoDiaDeClase,
   sumarDias,
 } from "@/lib/clase-de-reemplazo";
 
@@ -138,5 +140,51 @@ describe("planDeReemplazo", () => {
     expect(
       planDeReemplazo({ ...base, reemplazo: "2026-11-25", opcion: { tipo: "fecha", fecha: "2026-02-30" } })
     ).toMatchObject({ ok: false, status: 422, code: "invalid_body" });
+  });
+});
+
+describe("proximoDiaDeClase", () => {
+  // Lunes y jueves (0 = lunes).
+  const dias = "0,3";
+
+  it("es el próximo día de cursada después de la última clase", () => {
+    // 2026-11-02 es lunes: el próximo es el jueves 05.
+    expect(proximoDiaDeClase({ despuesDe: "2026-11-02", daysOfWeek: dias, recesos: [] })).toBe("2026-11-05");
+    expect(proximoDiaDeClase({ despuesDe: "2026-11-05", daysOfWeek: dias, recesos: [] })).toBe("2026-11-09");
+  });
+
+  it("saltea rangos de receso y feriados anuales", () => {
+    const recesos = [
+      { fromDate: "2026-11-09", toDate: "2026-11-09" },
+      { fromDate: "2026-11-12", toDate: "2026-11-12", recurring: true },
+    ];
+    expect(proximoDiaDeClase({ despuesDe: "2026-11-05", daysOfWeek: dias, recesos })).toBe("2026-11-16");
+    // Y el mismo feriado anual en otro año.
+    expect(
+      proximoDiaDeClase({ despuesDe: "2027-11-08", daysOfWeek: "4", recesos })
+    ).toBe("2027-11-19");
+  });
+
+  it("sin días de cursada no hay día que calcular", () => {
+    expect(proximoDiaDeClase({ despuesDe: "2026-11-02", daysOfWeek: null, recesos: [] })).toBeNull();
+    expect(proximoDiaDeClase({ despuesDe: "2026-11-02", daysOfWeek: " , ", recesos: [] })).toBeNull();
+  });
+
+  it("encadena con el efecto: pasa el fin y corre la entrega", () => {
+    const fecha = proximoDiaDeClase({ despuesDe: "2026-11-19", daysOfWeek: dias, recesos: [] });
+    expect(fecha).toBe("2026-11-23");
+    const efecto = efectoDelReemplazo({ endDate: "2026-11-20", deliveryDeadline: "2026-11-30", reemplazo: fecha! });
+    expect(avisoDeExtension({ endDate: efecto.finNuevo, deliveryDeadline: efecto.entregaCorrida })).toBe(
+      "El fin del curso pasa a ser 23/11 y la entrega final a 03/12."
+    );
+  });
+});
+
+describe("avisoDeExtension", () => {
+  it("sin fin nuevo no hay aviso; sin entrega solo habla del fin", () => {
+    expect(avisoDeExtension({ endDate: null, deliveryDeadline: null })).toBeNull();
+    expect(avisoDeExtension({ endDate: "2026-11-25", deliveryDeadline: null })).toBe(
+      "El fin del curso pasa a ser 25/11."
+    );
   });
 });

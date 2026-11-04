@@ -25,6 +25,8 @@ const createSchema = z.object({
   name: z.string().trim().min(1).max(200),
   fromDate: DIA,
   toDate: DIA,
+  /** Feriado que se repite todos los años: un solo día (`fromDate` = `toDate`). */
+  recurring: z.boolean().optional(),
   /** `null`/ausente = receso de toda la academia. */
   cohortId: z.string().min(1).nullable().optional(),
 });

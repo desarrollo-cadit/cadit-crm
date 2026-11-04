@@ -12,6 +12,8 @@ const patchSchema = z.object({
   name: z.string().trim().min(1).max(200),
   fromDate: DIA,
   toDate: DIA,
+  /** Sin mandarlo, el receso conserva si se repite o no. */
+  recurring: z.boolean().optional(),
 });
 
 /**

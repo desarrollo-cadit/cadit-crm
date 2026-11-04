@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { notify } from "@/lib/notify";
 import { avisarQueCambiaronLasClases } from "@/lib/clases-cambiaron";
 import {
+  avisoDeExtension,
   diaCorto,
   efectoDelReemplazo,
   type OpcionDeEntrega,
@@ -76,23 +77,50 @@ export function SuspenderClase({
   /** Algo cambió en el servidor: quien abrió el diálogo recarga. */
   onChanged: () => void;
 }) {
+  const router = useRouter();
   const [paso, setPaso] = useState<"motivo" | "suspendida" | "reemplazo">("motivo");
   const [motivo, setMotivo] = useState("");
   const [busy, setBusy] = useState(false);
+  /** 2026-11-04 — Crear sola la clase de reemplazo al suspender (si puede). */
+  const [reponerSola, setReponerSola] = useState(true);
+  const [resultado, setResultado] = useState<{
+    reemplazo: { date: string; aviso: string | null } | null;
+    motivoSinReemplazo: string | null;
+  } | null>(null);
 
   async function suspender() {
     setBusy(true);
+    const automatico = canReschedule && reponerSola;
     const res = await fetch(`/api/class-sessions/${clase.id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ cancelReason: motivo.trim() }),
+      body: JSON.stringify({ cancelReason: motivo.trim(), autoReplacement: automatico }),
     }).catch(() => null);
     setBusy(false);
     if (!res?.ok) {
       notify.error((await leerError(res, "No se pudo suspender la clase")).message);
       return;
     }
-    notify.success("Clase suspendida: ya no cuenta para la asistencia.");
+    const body = (await res.json().catch(() => null)) as {
+      replacement?: { date: string; aviso: string | null } | null;
+      replacementError?: { message: string } | null;
+    } | null;
+    const reemplazo = body?.replacement ?? null;
+    setResultado({
+      reemplazo,
+      motivoSinReemplazo: !automatico
+        ? null
+        : (body?.replacementError?.message ??
+          (reemplazo ? null : "El grupo no declara días de cursada, así que no se pudo calcular el día.")),
+    });
+    notify.success(
+      reemplazo
+        ? `Clase suspendida. Clase de reemplazo creada el ${fechaDeClase(reemplazo.date)}.`
+        : "Clase suspendida: ya no cuenta para la asistencia.",
+      reemplazo?.aviso ? { description: reemplazo.aviso } : undefined
+    );
+    if (reemplazo) avisarQueCambiaronLasClases(cohortId);
+    if (reemplazo?.aviso) router.refresh();
     setPaso("suspendida");
     onChanged();
   }
@@ -127,6 +155,24 @@ export function SuspenderClase({
             maxLength={500}
             onChange={(e) => setMotivo(e.target.value)}
           />
+          {canReschedule && (
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={reponerSola}
+                onChange={(e) => setReponerSola(e.target.checked)}
+              />
+              <span>
+                Crear sola la clase de reemplazo
+                <span className="block text-xs text-muted-foreground">
+                  Queda en el próximo día de cursada después de la última clase del grupo, sin
+                  contar recesos ni feriados. Si pasa el fin del grupo, se estira el fin y se corre
+                  la entrega final.
+                </span>
+              </span>
+            </label>
+          )}
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={busy}>
               Volver
@@ -141,15 +187,37 @@ export function SuspenderClase({
           <h2 id="suspender-clase" className="pr-6 text-base font-semibold">
             Clase {clase.number} suspendida
           </h2>
-          <p className="text-sm text-muted-foreground">
-            ¿Se recupera en otro día? La clase de reemplazo queda vinculada a la suspendida.
-          </p>
+          {resultado?.reemplazo ? (
+            <div className="space-y-1 text-sm">
+              <p>
+                Se creó la clase de reemplazo el <strong>{fechaDeClase(resultado.reemplazo.date)}</strong>.
+                Queda vinculada a la suspendida.
+              </p>
+              {resultado.reemplazo.aviso && (
+                <p className="rounded-md border border-warning-border bg-warning-soft px-3 py-2">
+                  {resultado.reemplazo.aviso}
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Si querés otro día, cambiale la fecha a la clase de reemplazo desde la pestaña Clases.
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              ¿Se recupera en otro día? La clase de reemplazo queda vinculada a la suspendida.
+            </p>
+          )}
+          {resultado?.motivoSinReemplazo && (
+            <p className="text-sm text-warning">
+              No se creó la clase de reemplazo: {resultado.motivoSinReemplazo}
+            </p>
+          )}
           {!canReschedule && <p className="text-sm text-muted-foreground">{SIN_PERMISO_DE_REEMPLAZO}</p>}
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" size="sm" onClick={onClose}>
               Listo
             </Button>
-            {canReschedule && (
+            {canReschedule && !resultado?.reemplazo && (
               <Button type="button" size="sm" onClick={() => setPaso("reemplazo")}>
                 <CalendarClock className="h-4 w-4" aria-hidden />
                 Crear clase de reemplazo
@@ -229,7 +297,7 @@ function ClaseDeReemplazoForm({
   const [date, setDate] = useState("");
   const [startTime, setStartTime] = useState(clase.startTime ?? "");
   const [endTime, setEndTime] = useState(clase.endTime ?? "");
-  const [entrega, setEntrega] = useState<TipoDeEntrega | null>(null);
+  const [entregaElegida, setEntrega] = useState<TipoDeEntrega | null>(null);
   const [otraFecha, setOtraFecha] = useState("");
   const [receso, setReceso] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -261,13 +329,15 @@ function ClaseDeReemplazoForm({
       ? efectoDelReemplazo({ endDate: fechas.endDate, deliveryDeadline: fechas.deliveryDeadline, reemplazo: date })
       : null;
   const finNuevo = efecto?.finNuevo ?? null;
+  // 2026-11-04 — Sin elegir nada, la entrega final se corre los mismos días que el fin.
+  const entrega: TipoDeEntrega | null = entregaElegida ?? (efecto?.pideEntrega ? "correr" : null);
   const otraFechaValida = Boolean(otraFecha && finNuevo && otraFecha > finNuevo);
-  const entregaElegida =
+  const entregaLista =
     !efecto?.pideEntrega ||
     (entrega === "mantener" && efecto.mantenerPermitido) ||
     entrega === "correr" ||
     (entrega === "fecha" && otraFechaValida);
-  const puedeEnviar = Boolean(fechas && date && entregaElegida);
+  const puedeEnviar = Boolean(fechas && date && entregaLista);
 
   function opcionDeEntrega(): OpcionDeEntrega | null {
     if (!efecto?.pideEntrega || !entrega) return null;
@@ -441,5 +511,154 @@ function ClaseDeReemplazoForm({
         </Button>
       </div>
     </form>
+  );
+}
+
+/**
+ * 2026-11-04 — Cambiar el día (y, si hace falta, el horario) de una clase viva.
+ * Si el día nuevo pasa el fin del grupo, se avisa ANTES de confirmar qué va a
+ * pasar —el fin se estira y la entrega final se corre los mismos días— y se
+ * repite DESPUÉS con lo que el servidor escribió (`POST …/move`, que recalcula
+ * todo con lo que dice la base).
+ */
+export function MoverClase({
+  cohortId,
+  clase,
+  onClose,
+  onChanged,
+}: {
+  cohortId: string;
+  clase: ClaseASuspender;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const router = useRouter();
+  const [fechas, setFechas] = useState<FechasDelGrupo | null>(null);
+  const [errorDeCarga, setErrorDeCarga] = useState<string | null>(null);
+  const [date, setDate] = useState(clase.date.slice(0, 10));
+  const [startTime, setStartTime] = useState(clase.startTime ?? "");
+  const [endTime, setEndTime] = useState(clase.endTime ?? "");
+  const [receso, setReceso] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let vigente = true;
+    void (async () => {
+      const res = await fetch(`/api/cohorts/${cohortId}`).catch(() => null);
+      if (!vigente) return;
+      if (!res?.ok) {
+        // "No pude leerlo" no es "no tiene fin": sin las fechas no se puede avisar.
+        setErrorDeCarga("No se pudo leer el fin del grupo.");
+        return;
+      }
+      const { cohort } = (await res.json()) as {
+        cohort: { endDate: string | null; deliveryDeadline: string | null };
+      };
+      setFechas({
+        endDate: cohort.endDate?.slice(0, 10) ?? null,
+        deliveryDeadline: cohort.deliveryDeadline?.slice(0, 10) ?? null,
+      });
+    })();
+    return () => {
+      vigente = false;
+    };
+  }, [cohortId]);
+
+  const efecto =
+    fechas && date
+      ? efectoDelReemplazo({ endDate: fechas.endDate, deliveryDeadline: fechas.deliveryDeadline, reemplazo: date })
+      : null;
+  const aviso = efecto?.extiendeFin
+    ? avisoDeExtension({ endDate: efecto.finNuevo, deliveryDeadline: efecto.entregaCorrida })
+    : null;
+  const sinCambios =
+    date === clase.date.slice(0, 10) &&
+    startTime === (clase.startTime ?? "") &&
+    endTime === (clase.endTime ?? "");
+  const puedeEnviar = Boolean(date && !sinCambios && fechas);
+
+  async function mover(confirmRecess: boolean) {
+    setBusy(true);
+    const res = await fetch(`/api/class-sessions/${clase.id}/move`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        date,
+        startTime: startTime || null,
+        endTime: endTime || null,
+        confirmRecess,
+      }),
+    }).catch(() => null);
+    setBusy(false);
+    if (!res?.ok) {
+      const { code, message } = await leerError(res, "No se pudo cambiar la fecha de la clase");
+      if (code === "en_receso") {
+        setReceso(message);
+        return;
+      }
+      notify.error(message);
+      return;
+    }
+    const { session } = (await res.json()) as { session: { aviso: string | null } };
+    notify.success("Fecha de la clase cambiada.", session.aviso ? { description: session.aviso } : undefined);
+    avisarQueCambiaronLasClases(cohortId);
+    if (session.aviso) router.refresh();
+    onChanged();
+    onClose();
+  }
+
+  return (
+    <Modal onClose={onClose} busy={busy} labelledBy="mover-clase">
+      <form
+        className="space-y-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (puedeEnviar) void mover(receso !== null);
+        }}
+      >
+        <h2 id="mover-clase" className="pr-6 text-base font-semibold">
+          Cambiar la fecha de la clase {clase.number} · {fechaDeClase(clase.date)}
+        </h2>
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Día
+            <Input
+              type="date"
+              autoFocus
+              value={date}
+              onChange={(e) => {
+                setDate(e.target.value);
+                setReceso(null);
+              }}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Desde
+            <Input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Hasta
+            <Input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
+          </label>
+        </div>
+
+        {errorDeCarga && <p className="text-sm text-danger">{errorDeCarga}</p>}
+        {aviso && (
+          <p className="rounded-md border border-warning-border bg-warning-soft px-3 py-2 text-sm">
+            La clase queda después del fin del grupo. {aviso}
+          </p>
+        )}
+        {receso && <p className="text-xs text-warning">{receso}</p>}
+
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={busy}>
+            Cancelar
+          </Button>
+          <Button type="submit" size="sm" loading={busy} disabled={!puedeEnviar}>
+            {receso ? "Confirmar igual" : aviso ? "Cambiar y mover el fin" : "Cambiar fecha"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
   );
 }

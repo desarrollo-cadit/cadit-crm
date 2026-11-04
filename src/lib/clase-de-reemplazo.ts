@@ -1,5 +1,6 @@
 import { diaCalendario, diaComoFecha, esDiaValido } from "@/lib/access-expiry";
 import { ENTREGA_FINAL_ANTES_DEL_FIN, entregaFinalValida } from "@/lib/entrega-final";
+import { recesoCubreDia, type RangoDeReceso } from "@/lib/recess";
 
 /**
  * 2026-10-30 — La clase de REEMPLAZO de una suspendida, y qué les pasa a las
@@ -34,6 +35,38 @@ export function sumarDias(ymd: string, n: number): string {
 
 function diasEntre(desde: string, hasta: string): number {
   return Math.round((diaComoFecha(hasta).getTime() - diaComoFecha(desde).getTime()) / DIA_MS);
+}
+
+/**
+ * 2026-11-04 — El día de la clase de reemplazo cuando se suspende una clase
+ * sin elegir fecha: el PRÓXIMO día de cursada del grupo después de `despuesDe`
+ * (su última clase vigente), salteando recesos y feriados. `null` = el grupo no
+ * declara días de cursada (o no hay uno en los próximos dos años): no se puede
+ * calcular y la clase se crea a mano.
+ *
+ * Los días cuentan desde el LUNES (0..6), igual que `days_of_week`.
+ */
+export function proximoDiaDeClase(args: {
+  despuesDe: string;
+  daysOfWeek: string | null;
+  recesos: readonly RangoDeReceso[];
+}): string | null {
+  const dias = new Set(
+    (args.daysOfWeek ?? "")
+      .split(",")
+      .map((d) => d.trim())
+      .filter((d) => d !== "")
+      .map(Number)
+      .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
+  );
+  if (dias.size === 0) return null;
+  let dia = args.despuesDe;
+  for (let i = 0; i < 732; i++) {
+    dia = sumarDias(dia, 1);
+    const indice = (diaComoFecha(dia).getUTCDay() + 6) % 7;
+    if (dias.has(indice) && !args.recesos.some((r) => recesoCubreDia(r, dia))) return dia;
+  }
+  return null;
 }
 
 /** "25/11": así lo dice la pantalla. */
@@ -151,4 +184,20 @@ export function planDeReemplazo(
     return { ...ENTREGA_FINAL_ANTES_DEL_FIN, ok: false };
   }
   return { ok: true, endDate: fin, deliveryDeadline: opcion.fecha };
+}
+
+/**
+ * 2026-11-04 — Lo que el sistema hizo solo cuando una clase quedó después del
+ * fin del grupo: "El fin del curso pasa a ser 25/11 y la entrega final a
+ * 02/12." Sirve igual para avisar ANTES (con lo que `efectoDelReemplazo`
+ * calcula) y DESPUÉS (con lo que el servidor escribió). `null` = no cambió nada.
+ */
+export function avisoDeExtension(cambios: {
+  endDate: string | null;
+  deliveryDeadline: string | null;
+}): string | null {
+  if (!cambios.endDate) return null;
+  return cambios.deliveryDeadline
+    ? `El fin del curso pasa a ser ${diaCorto(cambios.endDate)} y la entrega final a ${diaCorto(cambios.deliveryDeadline)}.`
+    : `El fin del curso pasa a ser ${diaCorto(cambios.endDate)}.`;
 }

@@ -673,6 +673,13 @@
       "when": 1793812928065,
       "tag": "0095_mcp_token_rol",
       "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1793821082844,
+      "tag": "0096_feriados_anuales",
+      "breakpoints": true
     }
   ]
 }

@@ -4,6 +4,7 @@ import {
   diaDeClase,
   fechaEnReceso,
   recesosDeCohorte,
+  recesosDelRango,
   validarReceso,
   validarReprogramacion,
   type Receso,
@@ -24,6 +25,7 @@ const VERANO: Receso = {
   fromDate: "2026-12-15",
   toDate: "2027-01-31",
   cohortId: null,
+  recurring: false,
 };
 
 const utc = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
@@ -198,5 +200,72 @@ describe("vinculosDeReprogramacion (FR-013)", () => {
       date: "2026-11-07T00:00:00.000Z",
     });
     expect(v.get("cs_otra")).toBeUndefined();
+  });
+});
+
+describe("feriados que se repiten todos los años", () => {
+  const NAVIDAD = { fromDate: "2026-12-25", toDate: "2026-12-25", recurring: true };
+
+  it("cae el mismo mes y día de cada año, desde el año elegido", () => {
+    expect(fechaEnReceso(utc("2026-12-25"), [NAVIDAD])).not.toBeNull();
+    expect(fechaEnReceso(utc("2027-12-25"), [NAVIDAD])).not.toBeNull();
+    expect(fechaEnReceso(utc("2031-12-25"), [NAVIDAD])).not.toBeNull();
+    expect(fechaEnReceso(utc("2027-12-24"), [NAVIDAD])).toBeNull();
+  });
+
+  it("no se aplica hacia atrás del año en que se cargó", () => {
+    expect(fechaEnReceso(utc("2025-12-25"), [NAVIDAD])).toBeNull();
+  });
+
+  it("un día de un solo año no se repite", () => {
+    const unaVez = { fromDate: "2026-12-25", toDate: "2026-12-25", recurring: false };
+    expect(fechaEnReceso(utc("2026-12-25"), [unaVez])).not.toBeNull();
+    expect(fechaEnReceso(utc("2027-12-25"), [unaVez])).toBeNull();
+  });
+
+  it("un 29/02 cae el 28/02 en los años que no son bisiestos", () => {
+    const bisiesto = { fromDate: "2028-02-29", toDate: "2028-02-29", recurring: true };
+    expect(fechaEnReceso(utc("2028-02-29"), [bisiesto])).not.toBeNull();
+    expect(fechaEnReceso(utc("2028-02-28"), [bisiesto])).toBeNull();
+    expect(fechaEnReceso(utc("2029-02-28"), [bisiesto])).not.toBeNull();
+    expect(fechaEnReceso(utc("2032-02-28"), [bisiesto])).toBeNull();
+    expect(fechaEnReceso(utc("2032-02-29"), [bisiesto])).not.toBeNull();
+  });
+
+  it("el cronograma saltea el feriado anual en todos los años", () => {
+    const clases = buildClassSchedule(
+      utc("2026-12-21"),
+      utc("2027-01-05"),
+      "0,3",
+      null,
+      [{ fromDate: "2026-12-24", toDate: "2026-12-24", recurring: true }]
+    ).map((c) => diaDeClase(c.date));
+    expect(clases).toEqual(["2026-12-21", "2026-12-28", "2026-12-31", "2027-01-04"]);
+    const otroAnio = buildClassSchedule(
+      utc("2027-12-20"),
+      utc("2027-12-27"),
+      "0,4",
+      null,
+      [{ fromDate: "2026-12-24", toDate: "2026-12-24", recurring: true }]
+    ).map((c) => diaDeClase(c.date));
+    expect(otroAnio).toEqual(["2027-12-20", "2027-12-27"]);
+  });
+
+  it("recesosDelRango los vuelve el día concreto de cada año", () => {
+    const r = { id: "rc_n", name: "Navidad", cohortId: null, ...NAVIDAD };
+    const rango = recesosDelRango([r, VERANO], "2026-12-20", "2028-01-10");
+    expect(rango.map((x) => `${x.id}:${x.fromDate}:${x.toDate}`)).toEqual([
+      "rc_1:2026-12-15:2027-01-31",
+      "rc_n:2026-12-25:2026-12-25",
+      "rc_n:2027-12-25:2027-12-25",
+    ]);
+    expect(recesosDelRango([r], "2027-03-01", "2027-06-01")).toEqual([]);
+  });
+
+  it("validarReceso: lo anual es un solo día", () => {
+    expect(validarReceso({ name: "Navidad", fromDate: "2026-12-25", toDate: "2026-12-25", recurring: true })).toBeNull();
+    expect(
+      validarReceso({ name: "Verano", fromDate: "2026-12-15", toDate: "2027-01-31", recurring: true })
+    ).toMatch(/un solo día/);
   });
 });

@@ -3,7 +3,7 @@ import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { etiquetaDeModulo, modulosConOrdinal } from "@/lib/program-order";
-import { fechaEnReceso, recesosDeCohorte, type Receso } from "@/lib/recess";
+import { fechaEnReceso, recesosDeCohorte, type RangoDeReceso, type Receso } from "@/lib/recess";
 import { leerRecesos } from "@/server/recesses";
 import { resumenDeHoras } from "@/lib/class-hours";
 import { ACADEMY_TIME_ZONE } from "@/lib/schedule-time";
@@ -100,7 +100,7 @@ export function buildClassSchedule(
    * proyecta, y la numeración sigue corrida: la clase 5 es la quinta que se
    * dicta, no la quinta que habría habido. Vacío = exactamente lo de antes.
    */
-  recesos: readonly Pick<Receso, "fromDate" | "toDate">[] = []
+  recesos: readonly RangoDeReceso[] = []
 ): { number: number; date: Date; hours: number | null }[] {
   if (!daysOfWeek) return [];
   const days = new Set(
@@ -452,7 +452,7 @@ export function planDeCronogramaDelPrograma(
   modulos: readonly ModuloParaCronograma[],
   conClases: ReadonlySet<string>,
   /** 034 (FR-007) — Todos los recesos que alcanzan a algún módulo; se filtran por módulo. */
-  recesos: readonly Pick<Receso, "fromDate" | "toDate" | "cohortId">[] = []
+  recesos: readonly (RangoDeReceso & Pick<Receso, "cohortId">)[] = []
 ) {
   const filas: {
     cohortId: string;
