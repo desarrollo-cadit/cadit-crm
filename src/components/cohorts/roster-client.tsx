@@ -99,6 +99,7 @@ export function RosterClient({
   canEditOfflineCourses = false,
   canManageAccess = false,
   canEditLicenses = false,
+  canEditLicenseEmail = false,
   canFollowUp = false,
   canInvoice = false,
 }: {
@@ -118,6 +119,8 @@ export function RosterClient({
    * ofrecen botones que devolverían 403.
    */
   canEditLicenses?: boolean;
+  /** `academico.editar` — el correo para la licencia (no asigna licencias). */
+  canEditLicenseEmail?: boolean;
   /** 2026-10-05 — `accesos.gestionar`: ofrecer el acceso al portal a toda la cohorte. */
   canManageAccess?: boolean;
   /** cursos-offline — `academico.ver`: draw the per-student library panel. */
@@ -693,7 +696,7 @@ export function RosterClient({
                     key={`${e.id}-${e.licenseEmail.propio ?? ""}`}
                     enrollmentId={e.id}
                     value={e.licenseEmail}
-                    canEdit={canEditLicenses}
+                    canEdit={canEditLicenseEmail}
                     onChanged={() => void refetch()}
                   />
                   {CHECKLIST_ITEMS.map((item) => (

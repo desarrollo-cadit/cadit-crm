@@ -743,6 +743,11 @@ describe("FR-007/FR-008 — la vista se gobierna con `cobranza.ver` y se declara
       "contactos.unificar",
       // 2026-10-29 — unificar empresas duplicadas, tampoco.
       "empresas.unificar",
+      // 2026-11-04 — las tres pantallas que se separaron de `academico.ver`
+      // (Licencias, Cursos offline, Talleres), tampoco.
+      "licencias.ver",
+      "cursosoffline.ver",
+      "talleres.ver",
     ]);
     expect(CAPABILITIES.filter((c) => !posteriores.has(c))).toHaveLength(17);
     expect(CAPABILITIES).not.toContain("finanzas.ver" as Capability);

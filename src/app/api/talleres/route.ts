@@ -10,9 +10,10 @@ export const dynamic = "force-dynamic";
 
 /**
  * 033 (FR-001, US5) — Las ediciones de taller (próximas primero) y los
- * talleres existentes, para "agregar otra edición".
+ * talleres existentes, para "agregar otra edición". `talleres.ver` desde
+ * 2026-11-04 (antes `academico.ver`).
  */
-export const GET = requireCapability("academico.ver", async (session) => {
+export const GET = requireCapability("talleres.ver", async (session) => {
   const [editions, courses] = await Promise.all([
     listWorkshopEditions(session.organizationId),
     listWorkshopCourses(session.organizationId),

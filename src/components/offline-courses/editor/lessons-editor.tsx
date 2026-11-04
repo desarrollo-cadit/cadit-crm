@@ -1,7 +1,8 @@
 "use client";
 
 import { useId, useState } from "react";
-import { Pencil, Plus, Trash2, Video } from "lucide-react";
+import { Eye, EyeOff, Pencil, Plus, Trash2, Video } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +16,7 @@ import { MarkdownField } from "./markdown-field";
 import { SortableList } from "./sortable-list";
 import { TopicDialog } from "./topic-dialog";
 import { notify } from "@/lib/notify";
+import { cn } from "@/lib/utils";
 
 type Course = OfflineCourseDetail;
 export type Lesson = Course["lessons"][number];
@@ -51,6 +53,18 @@ export function LessonsEditor({ course, refresh }: { course: Course; refresh: ()
     return result;
   }
 
+  /** Apagar o prender una lección o un tema: nunca borra, y se puede deshacer. */
+  async function setDisabled(url: string, disabled: boolean) {
+    const result = await callApi(url, "PATCH", { disabled });
+    if (!result.ok) return notify.error(result.message);
+    notify.success(
+      disabled
+        ? "Deshabilitado. Los alumnos ya no lo ven y no cuenta para completar el curso."
+        : "Habilitado. Quienes ya terminaron el curso lo conservan y lo ven como opcional."
+    );
+    refresh();
+  }
+
   return (
     <section aria-labelledby="lecciones" className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -76,12 +90,27 @@ export function LessonsEditor({ course, refresh }: { course: Course; refresh: ()
             <>
               <div className="flex items-center gap-2 px-2 py-2">
                 {handle}
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                <span className={cn("min-w-0 flex-1 truncate text-sm font-medium", lesson.disabled && "opacity-60")}>
                   {index + 1}. {lesson.title}{" "}
                   <span className="font-normal text-muted-foreground">
                     ({plural(lesson.topics.length, "tema", "temas")})
                   </span>
                 </span>
+                {lesson.disabled && <Badge variant="warning">Deshabilitada</Badge>}
+                <IconButton
+                  label={
+                    lesson.disabled
+                      ? `Habilitar la lección «${lesson.title}»`
+                      : `Deshabilitar la lección «${lesson.title}»`
+                  }
+                  onClick={() => void setDisabled(`${base}/lessons/${lesson.id}`, !lesson.disabled)}
+                >
+                  {lesson.disabled ? (
+                    <Eye className="h-3.5 w-3.5" aria-hidden />
+                  ) : (
+                    <EyeOff className="h-3.5 w-3.5" aria-hidden />
+                  )}
+                </IconButton>
                 <IconButton label={`Editar la lección «${lesson.title}»`} onClick={() => setEditing({ kind: "lesson", lesson })}>
                   <Pencil className="h-3.5 w-3.5" aria-hidden />
                 </IconButton>
@@ -92,7 +121,7 @@ export function LessonsEditor({ course, refresh }: { course: Course; refresh: ()
                   <Trash2 className="h-3.5 w-3.5" aria-hidden />
                 </IconButton>
               </div>
-              <div className="space-y-2 border-t px-3 py-3">
+              <div className={cn("space-y-2 border-t px-3 py-3", lesson.disabled && "opacity-60")}>
                 {lesson.contentMd.trim() && <Markdown source={lesson.contentMd} className="text-sm" />}
                 {lesson.topics.length === 0 ? (
                   <p className="text-xs text-muted-foreground">Sin temas.</p>
@@ -106,11 +135,16 @@ export function LessonsEditor({ course, refresh }: { course: Course; refresh: ()
                     renderItem={(topic, topicHandle) => (
                       <>
                         {topicHandle.handle}
-                        <details className="min-w-0 flex-1 py-1">
+                        <details className={cn("min-w-0 flex-1 py-1", topic.disabled && "opacity-60")}>
                           <summary className="cursor-pointer text-sm">
                             {topic.title}
                             {topic.videoUrl && (
                               <Video className="ml-2 inline h-3.5 w-3.5 text-muted-foreground" aria-label="Tiene video" />
+                            )}
+                            {topic.disabled && (
+                              <Badge variant="warning" className="ml-2">
+                                Deshabilitado
+                              </Badge>
                             )}
                           </summary>
                           <div className="mt-2 space-y-2 border-t pt-2">
@@ -122,6 +156,20 @@ export function LessonsEditor({ course, refresh }: { course: Course; refresh: ()
                             )}
                           </div>
                         </details>
+                        <IconButton
+                          label={
+                            topic.disabled
+                              ? `Habilitar el tema «${topic.title}»`
+                              : `Deshabilitar el tema «${topic.title}»`
+                          }
+                          onClick={() => void setDisabled(`${base}/topics/${topic.id}`, !topic.disabled)}
+                        >
+                          {topic.disabled ? (
+                            <Eye className="h-3.5 w-3.5" aria-hidden />
+                          ) : (
+                            <EyeOff className="h-3.5 w-3.5" aria-hidden />
+                          )}
+                        </IconButton>
                         <IconButton
                           label={`Editar el tema «${topic.title}»`}
                           onClick={() => setEditing({ kind: "topic", lessonId: lesson.id, topic })}

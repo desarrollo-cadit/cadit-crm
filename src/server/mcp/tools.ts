@@ -185,7 +185,7 @@ export const HERRAMIENTAS: readonly HerramientaMcp[] = [
   {
     nombre: "estado_de_licencias",
     // La misma puerta que `GET /api/licenses`.
-    capacidad: "academico.ver",
+    capacidad: "licencias.ver",
     descripcion:
       "El stock de licencias por programa: total, asignadas, de afuera (Autodesk) y libres, también " +
       "por equipo, más cuántos alumnos del grupo faltan por asignar. Con detalle suma quién tiene " +

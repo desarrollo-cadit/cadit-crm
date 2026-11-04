@@ -39,6 +39,8 @@ export type OfflineCourseDetail = {
     title: string;
     contentMd: string;
     position: number;
+    /** Deshabilitada a mano: no se muestra al alumno ni cuenta para completar el curso. */
+    disabled: boolean;
     topics: Array<{
       id: string;
       title: string;
@@ -46,6 +48,8 @@ export type OfflineCourseDetail = {
       position: number;
       videoUrl: string | null;
       videoShown: "before" | "after";
+      /** Deshabilitado él mismo (aparte de que lo esté su lección). */
+      disabled: boolean;
     }>;
   }>;
   quizzes: Array<{
@@ -166,6 +170,7 @@ export async function courseDetail(
         title: offlineLesson.title,
         contentMd: offlineLesson.contentMd,
         position: offlineLesson.position,
+        disabledAt: offlineLesson.disabledAt,
       })
       .from(offlineLesson)
       .where(scoped(offlineLesson.organizationId, orgId, eq(offlineLesson.courseId, courseId)))
@@ -199,6 +204,7 @@ export async function courseDetail(
             videoUrl: offlineTopic.videoUrl,
             videoShown: offlineTopic.videoShown,
             position: offlineTopic.position,
+            disabledAt: offlineTopic.disabledAt,
           })
           .from(offlineTopic)
           .where(scoped(offlineTopic.organizationId, orgId, inArray(offlineTopic.lessonId, lessonIds)))
@@ -241,17 +247,19 @@ export async function courseDetail(
 
   return {
     ...course,
-    lessons: lessons.map((l) => ({
+    lessons: lessons.map(({ disabledAt: lessonDisabledAt, ...l }) => ({
       ...l,
+      disabled: lessonDisabledAt !== null,
       topics: topics
         .filter((t) => t.lessonId === l.id)
-        .map(({ id, title, contentMd, videoUrl, videoShown, position }) => ({
+        .map(({ id, title, contentMd, videoUrl, videoShown, position, disabledAt }) => ({
           id,
           title,
           contentMd,
           videoUrl,
           videoShown,
           position,
+          disabled: disabledAt !== null,
         })),
     })),
     quizzes: quizzes.map((q) => ({

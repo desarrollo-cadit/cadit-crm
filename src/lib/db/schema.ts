@@ -3276,6 +3276,12 @@ export const offlineLesson = pgTable(
     title: text("title").notNull(),
     contentMd: text("content_md").notNull().default(""),
     position: integer("position").notNull().default(0),
+    /**
+     * Deshabilitada a mano (por ejemplo, sus videos no andan): ni se muestra ni
+     * cuenta para completar el curso. Nunca se borra: al volver a habilitarla
+     * quien ya terminó el curso lo conserva (`offline_course_completion`).
+     */
+    disabledAt: timestamp("disabled_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -3306,6 +3312,8 @@ export const offlineTopic = pgTable(
      */
     videoUrl: text("video_url"),
     videoShown: text("video_shown", { enum: OFFLINE_VIDEO_SHOWN }).notNull().default("after"),
+    /** Igual que en la lección: el tema deshabilitado no se muestra ni cuenta, y no se borra. */
+    disabledAt: timestamp("disabled_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -3657,6 +3665,37 @@ export const offlineRecognition = pgTable(
     index("offline_recognition_org_course_idx").on(t.organizationId, t.courseId),
     index("offline_recognition_org_lesson_idx").on(t.organizationId, t.lessonId),
     check("offline_recognition_reason_present", sql`length(trim(${t.reason})) between 1 and 500`),
+  ]
+);
+
+/**
+ * Quien YA terminó un curso offline lo conserva aunque cambie el curso.
+ *
+ * "Curso completado" se DERIVA al leer (`courseProgressState`), así que
+ * volver a habilitar un tema que estuvo deshabilitado dejaría "incompleto" a
+ * quien terminó mientras tanto. Esta fila lo evita: se escribe UNA vez, en el
+ * momento en que se habilita un tema o una lección (`snapshotCompletedContacts`),
+ * para cada persona que en ese instante cumplía el curso. Nunca se actualiza ni
+ * se borra por cambios del curso; lo que esa persona no hizo pasa a ser opcional.
+ */
+export const offlineCourseCompletion = pgTable(
+  "offline_course_completion",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    contactId: text("contact_id")
+      .notNull()
+      .references(() => contact.id, { onDelete: "cascade" }),
+    courseId: text("course_id")
+      .notNull()
+      .references(() => offlineCourse.id, { onDelete: "cascade" }),
+    completedAt: timestamp("completed_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("offline_course_completion_contact_course_uq").on(t.contactId, t.courseId),
+    index("offline_course_completion_org_course_idx").on(t.organizationId, t.courseId),
   ]
 );
 

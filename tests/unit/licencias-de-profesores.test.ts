@@ -234,8 +234,8 @@ describe("migración 0090 y esquema", () => {
 describe("las rutas declaran su capacidad", () => {
   const ruta = leer("src", "app", "api", "teachers", "[id]", "license", "route.ts");
 
-  it("leer es academico.ver; asignar y quitar, licencias.gestionar", () => {
-    expect(ruta).toMatch(/GET = requireCapability\(\s*"academico\.ver"/);
+  it("leer es licencias.ver; asignar y quitar, licencias.gestionar", () => {
+    expect(ruta).toMatch(/GET = requireCapability\(\s*"licencias\.ver"/);
     expect(ruta).toMatch(/PUT = requireCapability\(\s*"licencias\.gestionar"/);
     expect(ruta).toMatch(/DELETE = requireCapability\(\s*"licencias\.gestionar"/);
   });

@@ -11,10 +11,11 @@ type Params = { params: Promise<{ id: string }> };
 /**
  * cursos-offline (T5) — A course's thumbnail for staff. The stored URL points
  * at `/api/media`, which asks for `inbox.ver`; the library only needs
- * `academico.ver`, so it serves the same file through here.
+ * `cursosoffline.ver` (2026-11-04: it used to be `academico.ver`), so it
+ * serves the same file through here.
  */
 export const GET = requireCapability(
-  "academico.ver",
+  "cursosoffline.ver",
   async (session, _req: Request, ctx: Params) => {
     const { id } = await ctx.params;
     const assetId = await courseThumbnailAssetId(session.organizationId, id);

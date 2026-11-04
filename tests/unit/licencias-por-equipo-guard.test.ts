@@ -49,9 +49,9 @@ describe("teamId es obligatorio al asignar (422)", () => {
 });
 
 describe("las rutas de equipos declaran capacidad", () => {
-  it("GET con academico.ver; alta, edición y cupos con academico.editar", () => {
+  it("GET con licencias.ver; alta, edición y cupos con academico.editar", () => {
     const coleccion = leer("src", "app", "api", "license-teams", "route.ts");
-    expect(coleccion).toMatch(/GET = requireCapability\("academico\.ver"/);
+    expect(coleccion).toMatch(/GET = requireCapability\("licencias\.ver"/);
     expect(coleccion).toMatch(/POST = requireCapability\("academico\.editar"/);
     expect(leer("src", "app", "api", "license-teams", "[id]", "route.ts")).toMatch(
       /PATCH = requireCapability\(\s*"academico\.editar"/

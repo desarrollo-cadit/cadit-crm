@@ -21,7 +21,7 @@ servidor que la pantalla equivalente:
 | `buscar_contactos` | `contactos.ver` | Búsqueda por texto (la regla de `GET /api/contacts`): id, nombre, tipo y empresa; sin teléfono ni correo. Argumentos: `texto`, `tipo`, `limite`. |
 | `legajo_de_alumno` | `contactos.ver` | El legajo (`getStudentRecord`). El estado de cuenta solo se arma si el rol tiene `cobranza.ver`. Argumento: `contactoId`. |
 | `recorrido_comercial` | `contactos.ver` | Qué cursó de verdad y qué le podría interesar (`recorridoComercialDelContacto`). Sin montos. Argumento: `contactoId`. |
-| `estado_de_licencias` | `academico.ver` | Stock por programa y equipo (`vistaDeLicencias`); con `detalle`, quién tiene cada una. El correo de la licencia solo viaja con `contactos.ver`. |
+| `estado_de_licencias` | `licencias.ver` | Stock por programa y equipo (`vistaDeLicencias`); con `detalle`, quién tiene cada una. El correo de la licencia solo viaja con `contactos.ver`. |
 
 Cada herramienta declara su capacidad en `src/server/mcp/tools.ts`
 (`HERRAMIENTAS`). A quien no la tiene, la herramienta ni se le ofrece ni se

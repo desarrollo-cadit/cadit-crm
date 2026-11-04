@@ -67,7 +67,7 @@ export type EntradaGuia = {
 export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
   // ── Académico ──────────────────────────────────────────────────────────
   "academico.ver": {
-    que: "ver los cursos, los grupos en marcha, el cronograma de clases y quién tiene cada licencia",
+    que: "ver los cursos, los grupos en marcha y el cronograma de clases. También lo necesita quien lee la cobranza, para que cada fila diga de qué curso es. Los talleres, los cursos offline y las licencias tienen su propia capacidad",
     donde: "/academico",
   },
   "academico.editar": {
@@ -97,6 +97,18 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
   "licencias.gestionar": {
     que: "asignarle o quitarle una licencia de software a un alumno o a todo un grupo, cambiar el correo al que va la licencia y desasignarla desde Licencias. Por defecto la tienen Soporte y Dirección; sin ella las licencias se ven pero no se cambian",
     donde: "Académico → el grupo → Alumnos",
+  },
+  "licencias.ver": {
+    que: "abrir Licencias y ver cuántas hay de cada programa, cuántas están asignadas y quién tiene cada una, con el estado de la conciliación con Autodesk. Por defecto la tienen todos los roles menos Administración",
+    donde: "/licencias",
+  },
+  "cursosoffline.ver": {
+    que: "abrir la biblioteca de cursos offline: ver sus temas y lecciones, quiénes tienen acceso y hasta cuándo. Por defecto la tienen todos los roles menos Administración",
+    donde: "/cursos-offline",
+  },
+  "talleres.ver": {
+    que: "abrir Talleres y ver sus ediciones, los inscriptos y los cupos. Por defecto la tienen todos los roles menos Administración",
+    donde: "/talleres",
   },
   "cohortes.confirmar": {
     que: "confirmar que un grupo sale (o quitarle la confirmación): al confirmarlo le llega a Soporte la lista de alumnos con sus licencias, y a Administración los que todavía no tienen factura, 7 y 2 días antes del inicio",
@@ -260,8 +272,10 @@ export const GRUPOS_CAPACIDADES: readonly {
     // 030 — Las grabaciones son de la cursada: van con lo académico.
     // 031 — Las correcciones también.
     // 2026-10-26 — Y asignar licencias: son de la cursada del alumno.
+    // 2026-11-04 — Y las pantallas que se separaron de `academico.ver`:
+    // `licencias.ver`, `cursosoffline.ver` y `talleres.ver`.
     incluye: (c) =>
-      /^(academico|asistencia|evaluacion|correcciones|certificados|grabaciones|cohortes|licencias)\./.test(
+      /^(academico|asistencia|evaluacion|correcciones|certificados|grabaciones|cohortes|licencias|cursosoffline|talleres)\./.test(
         c
       ),
   },

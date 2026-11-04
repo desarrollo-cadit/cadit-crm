@@ -10,10 +10,11 @@ type Params = { params: Promise<{ id: string }> };
 /**
  * cursos-offline (T4) — One library course WITH the correct answers and the
  * positions/ids the editor needs (T11). Staff only: the student portal has
- * its own route and never sees `isCorrect`.
+ * its own route and never sees `isCorrect`. `cursosoffline.ver` since
+ * 2026-11-04 (it used to be `academico.ver`).
  */
 export const GET = requireCapability(
-  "academico.ver",
+  "cursosoffline.ver",
   async (session, _req: Request, ctx: Params) => {
     const { id } = await ctx.params;
     const course = await courseDetail(session.organizationId, id);

@@ -56,6 +56,10 @@ export default async function HomePage() {
 
   const verReportes = session ? sessionCapabilities(session).includes("reportes.ver") : false;
 
+  // 2026-11-04 — El inventario de licencias es el de la pantalla de Licencias:
+  // sin `licencias.ver` (Administración) ni se pide ni se dibuja.
+  const verLicencias = session ? sessionCapabilities(session).includes("licencias.ver") : false;
+
   // 2026-10-26 — La bandeja "Para resolver" solo aparece si la persona
   // puede ver al menos una de sus reglas (cada una pide SU capacidad).
   const verTareas = session ? reglasPermitidas(sessionCapabilities(session)).length > 0 : false;
@@ -95,7 +99,7 @@ export default async function HomePage() {
           {/* 008 — la morosidad va junto a las finanzas y con el mismo gate. */}
           {fullAccess && <FinancePanel />}
           {fullAccess && <MorosidadResumen />}
-          <LicenseInventoryPanel />
+          {verLicencias && <LicenseInventoryPanel />}
         </section>
 
         {/* 046 US8 (FR-026) — Reportes: con `reportes.ver` (Dirección y Coordinación), en su pantalla. */}

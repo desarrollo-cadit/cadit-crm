@@ -172,7 +172,7 @@ const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 /**
  * Upload/replace/remove. The preview comes from the staff thumbnail route
- * (`academico.ver`); the stored URL changes with each upload, so it also
+ * (`cursosoffline.ver`); the stored URL changes with each upload, so it also
  * busts the browser cache.
  */
 function ThumbnailField({ course, refresh }: { course: OfflineCourseDetail; refresh: () => void }) {

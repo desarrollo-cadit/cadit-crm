@@ -11,8 +11,11 @@ export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ id: string }> };
 
-/** Las empresas que tienen personas hoy (las únicas que tiene sentido elegir). */
-export const GET = requireCapability("academico.ver", async (session) => {
+/**
+ * Las empresas que tienen personas hoy (las únicas que tiene sentido elegir).
+ * `cursosoffline.ver` desde 2026-11-04 (antes `academico.ver`).
+ */
+export const GET = requireCapability("cursosoffline.ver", async (session) => {
   return Response.json({ companies: await companiesWithPeople(session.organizationId) });
 });
 

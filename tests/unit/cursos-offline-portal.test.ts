@@ -74,9 +74,12 @@ describe("cursos-offline — student read module", () => {
    * answers null (→ 404) like one that does not exist. Hiding the link alone
    * would leave the content one typed URL away.
    */
-  it("gates the topic content on topicUnlocked", () => {
+  it("gates the topic content on topicOpenFor (the sequential gate, topicUnlocked, plus 'finished before')", () => {
     const myTopic = codigo.slice(codigo.indexOf("export async function myTopic"));
-    expect(myTopic).toContain("topicUnlocked(");
+    expect(myTopic).toContain("topicOpenFor(");
+    const logica = readFileSync(path.join(process.cwd(), "src", "server", "offline-courses", "logic.ts"), "utf8");
+    const gate = logica.slice(logica.indexOf("export function topicOpenFor"));
+    expect(gate.slice(0, gate.indexOf("\n}"))).toContain("topicUnlocked(");
   });
 
   it("does not import the progress writes", () => {

@@ -478,16 +478,30 @@ export interface RecognitionRef {
 }
 
 export interface CourseProgressInput {
-  /** Reading order (lesson position, then topic position). */
+  /**
+   * Reading order (lesson position, then topic position). Only the topics that
+   * are ENABLED: a disabled topic or lesson is left out before getting here, so
+   * it neither blocks the next topic nor counts for completing the course.
+   */
   topics: Array<{ id: string; lessonId: string }>;
   quizzes: Array<{ id: string; lessonId: string | null }>;
   completedTopicIds: Iterable<string>;
   passedQuizIds: Iterable<string>;
   recognitions: RecognitionRef[];
+  /**
+   * This person ALREADY finished the course (`offline_course_completion`).
+   * That never goes back: whatever they have not done is optional, and every
+   * topic stays open.
+   */
+  completedBefore?: boolean;
 }
 
 export interface CourseProgressState {
   orderedTopicIds: string[];
+  /** Enabled topics this person has not done and does not have to (they finished the course before). */
+  optionalTopicIds: Set<string>;
+  /** Finished before; the sequential gate does not apply. */
+  completedBefore: boolean;
   /** Real completion ∪ covered by an active recognition. */
   doneTopicIds: Set<string>;
   passedQuizIds: Set<string>;
@@ -547,21 +561,102 @@ export function courseProgressState(input: CourseProgressInput): CourseProgressS
   }
 
   const orderedTopicIds = input.topics.map((t) => t.id);
+  const completedBefore = input.completedBefore === true;
+  // Quien ya terminó el curso no debe nada más: lo que no hizo es opcional y
+  // no entra en el "X de Y temas" (si no, diría 8 de 10 junto a "completado").
+  const optionalTopicIds = new Set(
+    completedBefore ? orderedTopicIds.filter((id) => !doneTopicIds.has(id)) : []
+  );
+  const completion = courseCompletion({
+    topicIds: orderedTopicIds.filter((id) => !optionalTopicIds.has(id)),
+    completedTopicIds: doneTopicIds,
+    quizIds: input.quizzes.map((q) => q.id),
+    passedQuizIds,
+  });
   return {
     orderedTopicIds,
+    optionalTopicIds,
+    completedBefore,
     doneTopicIds,
     passedQuizIds,
     recognizedTopicIds,
     recognizedQuizIds,
     recognizedLessonIds,
     courseRecognized,
-    completion: courseCompletion({
-      topicIds: orderedTopicIds,
-      completedTopicIds: doneTopicIds,
-      quizIds: input.quizzes.map((q) => q.id),
-      passedQuizIds,
-    }),
+    completion: { ...completion, completed: completion.completed || completedBefore },
   };
+}
+
+/**
+ * Whether this person may open the topic: the sequential gate (`topicUnlocked`)
+ * for everyone, except whoever already finished the course — a topic that
+ * came back as optional must not be locked behind another optional one.
+ */
+export function topicOpenFor(
+  state: Pick<CourseProgressState, "orderedTopicIds" | "doneTopicIds" | "completedBefore">,
+  topicId: string
+): boolean {
+  if (state.completedBefore) return state.orderedTopicIds.includes(topicId);
+  return topicUnlocked(state.orderedTopicIds, state.doneTopicIds, topicId);
+}
+
+/**
+ * What a student gets to see of the course: a disabled lesson goes out with
+ * all its topics, a disabled topic goes out alone, and a lesson whose topics
+ * are ALL disabled has nothing left to show, so it goes out too. A lesson that
+ * never had topics stays (it can still carry a quiz or an introduction).
+ * Order is kept.
+ */
+export function enabledOutline<
+  L extends { id: string; disabled: boolean },
+  T extends { lessonId: string; disabled: boolean },
+>(lessons: L[], topics: T[]): { lessons: L[]; topics: T[] } {
+  const liveLessons = lessons.filter((l) => !l.disabled);
+  const kept = liveLessons.filter((l) => {
+    const own = topics.filter((t) => t.lessonId === l.id);
+    return own.length === 0 || own.some((t) => !t.disabled);
+  });
+  const keptIds = new Set(kept.map((l) => l.id));
+  return {
+    lessons: kept,
+    topics: topics.filter((t) => keptIds.has(t.lessonId) && !t.disabled),
+  };
+}
+
+/** What the completion snapshot needs for one candidate person. */
+export interface SnapshotCandidate {
+  contactId: string;
+  completedTopicIds: Iterable<string>;
+  passedQuizIds: Iterable<string>;
+  recognitions: RecognitionRef[];
+}
+
+/**
+ * Who has to be written down as "finished the course" right now: the people
+ * who complete it with the topics as they are at this moment, and have no
+ * snapshot yet. Called JUST BEFORE a topic or lesson is enabled again — the one
+ * change that would otherwise take their completion away.
+ */
+export function contactsToSnapshot(input: {
+  topics: CourseProgressInput["topics"];
+  quizzes: CourseProgressInput["quizzes"];
+  candidates: SnapshotCandidate[];
+  alreadySnapshot: Iterable<string>;
+}): string[] {
+  const already = new Set(input.alreadySnapshot);
+  return input.candidates
+    .filter((c) => !already.has(c.contactId))
+    .filter(
+      (c) =>
+        courseProgressState({
+          topics: input.topics,
+          quizzes: input.quizzes,
+          completedTopicIds: c.completedTopicIds,
+          passedQuizIds: c.passedQuizIds,
+          recognitions: c.recognitions,
+        }).completion.completed
+    )
+    .map((c) => c.contactId);
 }
 
 export const RECOGNITION_REASON_MAX = 500;

@@ -110,13 +110,13 @@ describe("POST /api/mcp — quién entra", () => {
 describe("POST /api/mcp — con un token válido", () => {
   beforeEach(() => resolverToken.mockResolvedValue(CTX));
 
-  it("tools/list ofrece las herramientas de academico.ver como JSON", async () => {
+  it("tools/list ofrece las herramientas que abre la capacidad del token como JSON", async () => {
     const r = await POST(pedido(LISTAR));
 
     expect(r.status).toBe(200);
     expect(r.headers.get("content-type")).toContain("application/json");
     const cuerpo = (await r.json()) as { result: { tools: { name: string }[] } };
-    expect(cuerpo.result.tools.map((t) => t.name).sort()).toEqual(["estado_de_licencias", "tareas_de_hoy"]);
+    expect(cuerpo.result.tools.map((t) => t.name).sort()).toEqual(["tareas_de_hoy"]);
   });
 
   it("tools/call tareas_de_hoy lee con las capacidades del token", async () => {

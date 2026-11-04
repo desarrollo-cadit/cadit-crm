@@ -24,7 +24,7 @@ export default async function OfflineCoursesPage() {
   const session = await getSessionOrNull();
   if (!session) redirect("/login");
   const capabilities = sessionCapabilities(session);
-  if (!capabilities.includes("academico.ver")) redirect("/");
+  if (!capabilities.includes("cursosoffline.ver")) redirect("/");
   const canEdit = capabilities.includes("academico.editar");
 
   const courses = await withTenantTransaction(session, () =>
@@ -64,7 +64,7 @@ export default async function OfflineCoursesPage() {
                 >
                   {thumbnailAssetId(c.thumbnailUrl) ? (
                     // The stored URL is `/api/media/<id>`, which asks for
-                    // `inbox.ver`; the library's own route asks `academico.ver`.
+                    // `inbox.ver`; the library's own route asks `cursosoffline.ver`.
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={`/api/offline-courses/${c.id}/thumbnail`}

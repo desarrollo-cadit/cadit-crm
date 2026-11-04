@@ -20,7 +20,7 @@ import {
  * Las cuentas son puras (`src/lib/license-view.ts`); acá sólo se juntan las
  * filas. Se seleccionan columnas, no filas enteras: el contacto viaja con su
  * nombre y nada más (ni teléfono ni correo), y la inscripción sin ningún
- * dato comercial. La vista se abre con `academico.ver`, y lo que ese permiso
+ * dato comercial. La vista se abre con `licencias.ver`, y lo que ese permiso
  * no debe ver no se consulta.
  */
 

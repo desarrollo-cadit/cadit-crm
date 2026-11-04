@@ -163,7 +163,7 @@ describe("las herramientas de la fase 1 declaran la misma puerta que su pantalla
     ["buscar_contactos", "contactos.ver"],
     ["legajo_de_alumno", "contactos.ver"],
     ["recorrido_comercial", "contactos.ver"],
-    ["estado_de_licencias", "academico.ver"],
+    ["estado_de_licencias", "licencias.ver"],
   ] as const)("%s pide %s", (nombre, capacidad) => {
     expect(herramientaNamed(nombre).capacidad).toBe(capacidad);
   });
@@ -348,16 +348,16 @@ describe("estado_de_licencias", () => {
     vistaDeLicencias.mockResolvedValue({ programas: [], cohortes: [], equipos: [] });
     const h = herramientaNamed("estado_de_licencias");
 
-    await ejecutarHerramienta(h, ctxCon(["academico.ver"]));
+    await ejecutarHerramienta(h, ctxCon(["licencias.ver"]));
     expect(vistaDeLicencias).toHaveBeenLastCalledWith("org_1", { conCorreo: false });
 
-    await ejecutarHerramienta(h, ctxCon(["academico.ver", "contactos.ver"]));
+    await ejecutarHerramienta(h, ctxCon(["licencias.ver", "contactos.ver"]));
     expect(vistaDeLicencias).toHaveBeenLastCalledWith("org_1", { conCorreo: true });
   });
 
   it("por defecto resume el stock, sin listar personas", async () => {
     vistaDeLicencias.mockResolvedValue({ programas: [programa(40)], cohortes: [], equipos: [] });
-    const r = await ejecutarHerramienta(herramientaNamed("estado_de_licencias"), ctxCon(["academico.ver"]));
+    const r = await ejecutarHerramienta(herramientaNamed("estado_de_licencias"), ctxCon(["licencias.ver"]));
     const [p] = JSON.parse(r.content[0]!.text).programas;
 
     expect(p).toMatchObject({ nombre: "Revit", total: 10, asignadas: 4, externos: 1, libres: 5, faltantesDelGrupo: 15 });
@@ -367,7 +367,7 @@ describe("estado_de_licencias", () => {
 
   it("con detalle acota las licencias por programa y dice cuántas omitió", async () => {
     vistaDeLicencias.mockResolvedValue({ programas: [programa(40)], cohortes: [], equipos: [] });
-    const r = await ejecutarHerramienta(herramientaNamed("estado_de_licencias"), ctxCon(["academico.ver"]), {
+    const r = await ejecutarHerramienta(herramientaNamed("estado_de_licencias"), ctxCon(["licencias.ver"]), {
       detalle: true,
     });
     const [p] = JSON.parse(r.content[0]!.text).programas;
@@ -386,16 +386,17 @@ describe("el servidor MCP por pedido (cliente real, transporte en memoria)", () 
     return cliente;
   }
 
-  it("ofrece a quien tiene academico.ver solo lo que esa capacidad abre, todo de solo lectura", async () => {
+  it("ofrece a quien tiene academico.ver solo lo que esa capacidad abre (sin licencias), todo de solo lectura", async () => {
     const cliente = await conectar(ctxCon(["academico.ver"]));
     const { tools } = await cliente.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(["estado_de_licencias", "tareas_de_hoy"]);
+    expect(tools.map((t) => t.name).sort()).toEqual(["tareas_de_hoy"]);
     for (const t of tools) expect(t.annotations?.readOnlyHint, t.name).toBe(true);
   });
 
   it("cada rol ve SOLO las herramientas de sus capacidades", async () => {
     const porCapacidad: [Capability, string[]][] = [
       ["cobranza.ver", ["morosidad"]],
+      ["licencias.ver", ["estado_de_licencias"]],
       ["contactos.ver", ["buscar_contactos", "legajo_de_alumno", "recorrido_comercial"]],
     ];
     for (const [capacidad, esperadas] of porCapacidad) {

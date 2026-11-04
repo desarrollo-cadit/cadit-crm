@@ -6,10 +6,11 @@ export const dynamic = "force-dynamic";
 
 /**
  * 0089 — Los equipos de licencias (Uruguay ATC, Paraguay ATC…) con su cupo por
- * programa, lo ocupado y lo libre. `academico.ver`: es lo mismo que ya muestra
- * `/api/licenses`, y los selectores de «Equipo» de cada asignación lo leen.
+ * programa, lo ocupado y lo libre. `licencias.ver`: es lo mismo que ya muestra
+ * `/api/licenses`, y los selectores de «Equipo» de cada asignación lo leen
+ * (quien asigna —`licencias.gestionar`— tiene también `licencias.ver`).
  */
-export const GET = requireCapability("academico.ver", async (session) => {
+export const GET = requireCapability("licencias.ver", async (session) => {
   return Response.json({ teams: await listarEquipos(session.organizationId) });
 });
 

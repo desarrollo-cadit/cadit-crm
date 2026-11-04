@@ -4,6 +4,7 @@ import { scoped } from "@/lib/db/tenant";
 import type { OfflineVideoShown } from "@/lib/db/schema";
 import {
   courseProgressState,
+  enabledOutline,
   type CompletionSource,
   type CourseProgressState,
   type RecognitionRef,
@@ -26,8 +27,15 @@ import {
  * `tests/unit/cursos-offline-portal.test.ts`).
  */
 
-const { offlineLesson, offlineTopic, offlineQuiz, offlineQuizAttempt, offlineTopicProgress, offlineRecognition } =
-  schema;
+const {
+  offlineLesson,
+  offlineTopic,
+  offlineQuiz,
+  offlineQuizAttempt,
+  offlineTopicProgress,
+  offlineRecognition,
+  offlineCourseCompletion,
+} = schema;
 
 export type OutlineTopic = {
   id: string;
@@ -43,17 +51,30 @@ export type CourseOutline = {
   topics: OutlineTopic[];
 };
 
-/** Every requested course's outline; a course without lessons gets an empty one. */
+/**
+ * Every requested course's outline; a course without lessons gets an empty one.
+ *
+ * A DISABLED lesson or topic is left out (see `enabledOutline`): this is the
+ * outline every student read, the sequential gate and the completion start
+ * from, so a disabled topic cannot be opened, blocks nobody and counts for
+ * nothing. `includeDisabled` keeps them, for whoever must see the whole course.
+ */
 export async function courseOutlines(
   orgId: string,
-  courseIds: string[]
+  courseIds: string[],
+  options: { includeDisabled?: boolean } = {}
 ): Promise<Map<string, CourseOutline>> {
   const out = new Map<string, CourseOutline>(courseIds.map((id) => [id, { lessons: [], topics: [] }]));
   if (courseIds.length === 0) return out;
   const db = getDb();
 
   const lessons = await db
-    .select({ id: offlineLesson.id, courseId: offlineLesson.courseId, title: offlineLesson.title })
+    .select({
+      id: offlineLesson.id,
+      courseId: offlineLesson.courseId,
+      title: offlineLesson.title,
+      disabledAt: offlineLesson.disabledAt,
+    })
     .from(offlineLesson)
     .where(scoped(offlineLesson.organizationId, orgId, inArray(offlineLesson.courseId, courseIds)))
     .orderBy(asc(offlineLesson.position), asc(offlineLesson.title));
@@ -66,6 +87,7 @@ export async function courseOutlines(
       title: offlineTopic.title,
       videoUrl: offlineTopic.videoUrl,
       videoShown: offlineTopic.videoShown,
+      disabledAt: offlineTopic.disabledAt,
     })
     .from(offlineTopic)
     .where(
@@ -80,11 +102,21 @@ export async function courseOutlines(
     )
     .orderBy(asc(offlineTopic.position), asc(offlineTopic.title));
 
-  for (const lesson of lessons) {
+  const visible = options.includeDisabled
+    ? { lessons, topics }
+    : enabledOutline(
+        lessons.map((l) => ({ ...l, disabled: l.disabledAt !== null })),
+        topics.map((t) => ({ ...t, disabled: t.disabledAt !== null }))
+      );
+  for (const lesson of visible.lessons) {
     const outline = out.get(lesson.courseId);
     if (!outline) continue;
     outline.lessons.push({ id: lesson.id, title: lesson.title });
-    outline.topics.push(...topics.filter((t) => t.lessonId === lesson.id));
+    outline.topics.push(
+      ...visible.topics
+        .filter((t) => t.lessonId === lesson.id)
+        .map(({ id, lessonId, title, videoUrl, videoShown }) => ({ id, lessonId, title, videoUrl, videoShown }))
+    );
   }
   return out;
 }
@@ -179,6 +211,27 @@ export async function recognitionsFor(
   return out;
 }
 
+/** The courses (of these) this person already finished: their completion never goes back. */
+export async function finishedCourseIdsFor(
+  orgId: string,
+  contactId: string,
+  courseIds: string[]
+): Promise<Set<string>> {
+  if (courseIds.length === 0) return new Set();
+  const rows = await getDb()
+    .select({ courseId: offlineCourseCompletion.courseId })
+    .from(offlineCourseCompletion)
+    .where(
+      scoped(
+        offlineCourseCompletion.organizationId,
+        orgId,
+        eq(offlineCourseCompletion.contactId, contactId),
+        inArray(offlineCourseCompletion.courseId, courseIds)
+      )
+    );
+  return new Set(rows.map((r) => r.courseId));
+}
+
 export type ContactCourseProgress = {
   outline: CourseOutline;
   quizzes: QuizRef[];
@@ -198,10 +251,11 @@ export async function contactCourseProgress(
   contactId: string,
   courseIds: string[]
 ): Promise<Map<string, ContactCourseProgress>> {
-  const [outlines, quizzes, recognitions] = await Promise.all([
+  const [outlines, quizzes, recognitions, finished] = await Promise.all([
     courseOutlines(orgId, courseIds),
     quizRefsByCourse(orgId, courseIds),
     recognitionsFor(orgId, contactId, courseIds),
+    finishedCourseIdsFor(orgId, contactId, courseIds),
   ]);
   const topicIds = [...outlines.values()].flatMap((o) => o.topics.map((t) => t.id));
   const [rows, passed] = await Promise.all([
@@ -229,6 +283,7 @@ export async function contactCourseProgress(
         completedTopicIds: done,
         passedQuizIds: passed,
         recognitions: recognitions.get(courseId) ?? [],
+        completedBefore: finished.has(courseId),
       }),
     });
   }

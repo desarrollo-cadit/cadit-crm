@@ -18,7 +18,7 @@ export const dynamic = "force-dynamic";
  * cursos-offline (T4) — One library course, read-only.
  *
  * T11b: with `academico.editar` the same page is the course editor; with
- * only `academico.ver` it stays exactly this read-only view.
+ * only `cursosoffline.ver` it stays exactly this read-only view.
  *
  * Staff view: the quizzes show which answers are correct. That is exactly
  * what the student portal must never show, so this page and its query are
@@ -36,7 +36,7 @@ export default async function OfflineCoursePage({
   const session = await getSessionOrNull();
   if (!session) redirect("/login");
   const capabilities = sessionCapabilities(session);
-  if (!capabilities.includes("academico.ver")) redirect("/");
+  if (!capabilities.includes("cursosoffline.ver")) redirect("/");
 
   const course = await withTenantTransaction(session, () =>
     courseDetail(session.organizationId, id)

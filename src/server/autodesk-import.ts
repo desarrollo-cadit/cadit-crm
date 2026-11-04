@@ -329,6 +329,7 @@ async function cargarEntrada(
       ref: { tipo: "alumno", contactId: i.contactId },
       enrollmentId: i.id,
       grupo: i.cohortName ?? i.courseName ?? null,
+      conGrupo: Boolean(i.cohortId),
       curso: estadoDelCurso(cohorte, ahora),
       programasDelGrupo: i.cohortId ? (programasDelGrupoDe.get(i.cohortId) ?? []) : [],
       licenciaPropia: i.hadOwnLicense || Boolean(i.parentHadOwnLicense),

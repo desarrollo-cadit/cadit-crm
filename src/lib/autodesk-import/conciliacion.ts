@@ -70,6 +70,11 @@ export type TitularDeLicencias = {
   ref: RefDePersona;
   enrollmentId: string | null;
   grupo: string | null;
+  /**
+   * `false` en un interesado: una inscripción sin grupo (pipeline) no es un curso
+   * donde marcar una licencia. Ausente = `true` (compatibilidad).
+   */
+  conGrupo?: boolean;
   /** `null` en un profesor. */
   curso: EstadoDelCurso | null;
   /** Programas asignados a TODO el grupo de su cohorte (no se asignan por alumno). */
@@ -395,7 +400,7 @@ export function planDeConciliacion(e: EntradaDeConciliacion): PlanDeConciliacion
     } else {
       const delAlumno = titularesDe.get(pk) ?? [];
       const candidatas: CandidataDeAsignacion[] = delAlumno
-        .filter((t) => t.enrollmentId !== null)
+        .filter((t) => t.enrollmentId !== null && t.conGrupo !== false)
         .map((t) => ({
           enrollmentId: t.enrollmentId!,
           grupo: t.grupo ?? "Sin grupo",

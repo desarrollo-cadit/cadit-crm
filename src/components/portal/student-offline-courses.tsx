@@ -362,6 +362,7 @@ function CourseBody({ course }: { course: StudentOfflineCourse }) {
                             <FileText className="h-4 w-4 shrink-0 text-text-3" strokeWidth={1.7} />
                           )}
                           <span className="flex-1">{t.title}</span>
+                          {t.optional && <ChipDeEstado tono="neutro">Opcional</ChipDeEstado>}
                           {t.recognized && <RecognizedChip />}
                           <ChevronRight className="h-4 w-4 shrink-0 text-text-3" />
                         </Link>
@@ -441,7 +442,7 @@ export function StudentOfflineTopicClient({
 type SaveState = "idle" | "saving" | "error";
 
 function TopicBody({ data, courseId }: { data: StudentOfflineTopic; courseId: string }) {
-  const { course, lessonTitle, topic, video, prev, next } = data;
+  const { course, lessonTitle, topic, video, prev, next, optional, courseCompleted } = data;
   const base = `${OFFLINE_BASE}/${courseId}`;
   const progressUrl = `${API_BASE}/${courseId}/topics/${topic.id}/progress`;
   const [progress, setProgress] = useState(data.progress);
@@ -508,11 +509,19 @@ function TopicBody({ data, courseId }: { data: StudentOfflineTopic; courseId: st
         acciones={
           progress.recognized ? (
             <RecognizedChip />
+          ) : progress.completed ? (
+            <ChipDeEstado tono="ok">Tema completado</ChipDeEstado>
           ) : (
-            progress.completed && <ChipDeEstado tono="ok">Tema completado</ChipDeEstado>
+            optional && <ChipDeEstado tono="neutro">Opcional</ChipDeEstado>
           )
         }
       />
+
+      {optional && !progress.completed && (
+        <p className="text-sm text-text-3">
+          Este tema es opcional: ya completaste el curso y no hace falta verlo para conservarlo.
+        </p>
+      )}
 
       {video?.shown === "before" && player}
 
@@ -547,7 +556,7 @@ function TopicBody({ data, courseId }: { data: StudentOfflineTopic; courseId: st
           <span />
         )}
         {next ? (
-          progress.completed ? (
+          progress.completed || courseCompleted ? (
             <Link
               href={`${base}/temas/${next.id}`}
               className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-on-accent transition-colors hover:bg-brand-hover"
