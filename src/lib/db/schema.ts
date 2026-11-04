@@ -4952,3 +4952,39 @@ export const historicalCourseTaking = pgTable(
     index("historical_course_taking_org_batch_idx").on(t.organizationId, t.batchId),
   ]
 );
+
+/**
+ * 0092 — Token de acceso del MCP remoto (`/api/mcp`).
+ *
+ * Un token ES una persona del equipo: no guarda capacidades propias, las
+ * resuelve al usarse desde el rol de `user_id` (la misma regla que la sesión),
+ * así que cambiarle el rol o sacarla del equipo se nota en el próximo pedido.
+ *
+ * El token en claro se muestra UNA vez al emitirlo y jamás se guarda: solo su
+ * hash SHA-256 (`token_hash`) y los últimos cuatro caracteres (`last4`), para
+ * reconocerlo en la lista. Revocar marca `revoked_at`, no borra: queda el
+ * rastro de quién tuvo acceso y hasta cuándo.
+ */
+export const mcpToken = pgTable(
+  "mcp_token",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    /** Para qué se usa ("Claude Code de Cristina"); lo escribe quien lo emite. */
+    name: text("name").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    last4: text("last4").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    lastUsedAt: timestamp("last_used_at"),
+    revokedAt: timestamp("revoked_at"),
+  },
+  (t) => [
+    uniqueIndex("mcp_token_org_hash_uq").on(t.organizationId, t.tokenHash),
+    index("mcp_token_org_user_idx").on(t.organizationId, t.userId),
+  ]
+);

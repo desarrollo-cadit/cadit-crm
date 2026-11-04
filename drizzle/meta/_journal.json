@@ -645,6 +645,13 @@
       "when": 1793374800091,
       "tag": "0091_licencias_conciliacion",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1793717970449,
+      "tag": "0092_mcp_token",
+      "breakpoints": true
     }
   ]
 }

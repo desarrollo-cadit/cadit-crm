@@ -68,6 +68,11 @@ const SIN_CAPACIDAD: Record<string, string> = {
   "bot/reset/route.ts": "X-API-Key",
   "bot/media/[mediaId]/route.ts": "X-API-Key",
   "webhooks/wa/[webhookToken]/route.ts": "webhook de Meta, firma propia",
+  // 0092 — MCP remoto: Bearer propio que ES una persona del equipo. La
+  // capacidad no la pide la ruta sino cada herramienta (`HERRAMIENTAS`, con
+  // `capacidad` obligatoria; `mcp-herramientas.test.ts` lo exige), porque una
+  // misma ruta sirve herramientas de capacidades distintas.
+  "mcp/route.ts": "Bearer MCP; la capacidad la declara cada herramienta",
   // Mocks del entorno de pruebas: `mockGuard()` responde 404 incondicional
   // fuera de desarrollo (dev-guard.ts). Verificado: las 9 están cubiertas —
   // `ai-mock/chat/completions` hereda el guard por re-export.

@@ -131,6 +131,8 @@ const prefixes = {
   licenseEmailAlias: "lea",
   licenseCaseResolution: "lcr",
   licenseAutodeskTask: "lat",
+  /** 0092 — token de acceso del MCP remoto (`/api/mcp`), uno por persona y por uso. */
+  mcpToken: "mcpt",
 } as const;
 
 export type IdKind = keyof typeof prefixes;
