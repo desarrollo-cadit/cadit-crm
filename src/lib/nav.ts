@@ -347,6 +347,12 @@ export const SETTINGS_TABS = [
    * que solo tiene Dirección. Al final: no cambia a dónde entra nadie.
    */
   { href: "/settings/historial", label: "Importar historial", capability: "historial.importar" },
+  /**
+   * 0092 — Los tokens con los que una persona conecta Claude a la instancia
+   * (MCP remoto). `accesos.gestionar`, la misma que exigen las rutas: un token
+   * es una forma de entrar. Al final: no cambia a dónde entra nadie.
+   */
+  { href: "/settings/mcp", label: "Conexión con Claude", capability: "accesos.gestionar" },
 ] as const;
 
 /**
