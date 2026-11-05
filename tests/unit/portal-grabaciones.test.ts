@@ -112,6 +112,10 @@ describe("030 US6 — los portales no leen las tablas de Zoom", () => {
         "me/offline-courses/[id]/topics/[topicId]/progress/route.ts",
         "me/offline-courses/[id]/topics/[topicId]/route.ts",
         "me/offline-courses/route.ts",
+        // 0097 — los avisos push del dispositivo del alumno; no leen tablas de Zoom.
+        "me/push/config/route.ts",
+        "me/push/dev-test/route.ts",
+        "me/push/subscribe/route.ts",
         "me/route.ts",
       ].sort()
     );

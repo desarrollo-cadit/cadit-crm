@@ -68,6 +68,10 @@ const LOGROS = [
   "cuenta/route.ts",
   "entregas/route.ts",
   "escolaridad/print/route.ts",
+  // 0097 — Avisos push: preferencia del dispositivo de la cuenta, no contenido de curso.
+  "push/config/route.ts",
+  "push/subscribe/route.ts",
+  "push/dev-test/route.ts",
 ];
 
 describe("043 — toda ruta del alumno está clasificada", () => {

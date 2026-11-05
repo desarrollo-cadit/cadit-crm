@@ -116,7 +116,7 @@ function enlaceALaCursada(enrollmentId: string): string {
 }
 
 /** Contacto del Laboratorio: alguna conversación `is_test`. Jamás recibe nada. */
-function esDePrueba() {
+export function esDePrueba() {
   return exists(
     getDb()
       .select({ uno: sql`1` })

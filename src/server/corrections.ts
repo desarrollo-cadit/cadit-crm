@@ -15,6 +15,7 @@ import {
 import { onAfterCommit } from "@/lib/db/tenant-context";
 import { fullName } from "@/lib/utils";
 import { avisarCorreccionPublicada } from "@/server/email/assessment-notices";
+import { avisarPushCorreccionPublicada } from "@/server/push/notices";
 import { recordResults } from "@/server/grading";
 import {
   evaluacionEsDeGrupoConEvaluaciones,
@@ -369,6 +370,8 @@ export async function publicarCorreccion(
     rompe la publicación (`avisarCorreccionPublicada` no lanza).
   */
   onAfterCommit(() => void avisarCorreccionPublicada(organizationId, correctionId));
+  // Push: the same selector as the email above (one rule, two channels). Never throws.
+  onAfterCommit(() => void avisarPushCorreccionPublicada(organizationId, correctionId));
 
   return { ...version, ...publicadas[0], status: "published", publishedAt: ahora, publishedBy: userId };
 }

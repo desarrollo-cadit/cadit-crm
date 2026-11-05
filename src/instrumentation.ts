@@ -13,6 +13,7 @@ export async function register(): Promise<void> {
       cleanupOrphanRuns,
       startAssessmentRemindersOnBoot,
       startMarketingOnBoot,
+      startPushClassRemindersOnBoot,
       startStaffNoticesOnBoot,
       startWorkshopRemindersOnBoot,
       startZoomAttendanceOnBoot,
@@ -24,6 +25,7 @@ export async function register(): Promise<void> {
     await startWorkshopRemindersOnBoot();
     await startStaffNoticesOnBoot();
     await startAssessmentRemindersOnBoot();
+    await startPushClassRemindersOnBoot();
     await startMarketingOnBoot();
   }
 }

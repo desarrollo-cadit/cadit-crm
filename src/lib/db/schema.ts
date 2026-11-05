@@ -5043,3 +5043,69 @@ export const mcpToken = pgTable(
     index("mcp_token_org_user_idx").on(t.organizationId, t.userId),
   ]
 );
+
+/**
+ * 0097 — Suscripciones de Web Push del portal (alumno o profesor).
+ *
+ * Una fila es UN dispositivo/navegador (`endpoint`). Las claves del
+ * dispositivo (`p256dh` y `auth`) se cifran en reposo como cualquier secreto
+ * (`lib/crypto`, un solo JSON): con ellas se puede escribirle a ese celular.
+ * `disabled_at` marca una suscripción muerta (el servicio de push respondió
+ * 404/410): no se borra, así queda el rastro y un reintento no la resucita.
+ * Si el mismo navegador entra con OTRA cuenta, el alta reasigna la fila.
+ */
+export const pushSubscription = pgTable(
+  "push_subscription",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    /** Alumno: su contacto, para que los disparadores apunten a la persona. */
+    contactId: text("contact_id").references(() => contact.id, { onDelete: "cascade" }),
+    endpoint: text("endpoint").notNull(),
+    keysCipher: text("keys_cipher").notNull(),
+    keysIv: text("keys_iv").notNull(),
+    keysTag: text("keys_tag").notNull(),
+    userAgent: text("user_agent"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at").notNull().defaultNow(),
+    disabledAt: timestamp("disabled_at"),
+  },
+  (t) => [
+    uniqueIndex("push_subscription_endpoint_uq").on(t.endpoint),
+    index("push_subscription_org_user_idx").on(t.organizationId, t.userId),
+  ]
+);
+
+/**
+ * 0098 — Avisos push ya reclamados. `dedup_key` (única por organización) hace
+ * que un reinicio o una segunda pasada NUNCA repita un aviso: se reclama la
+ * llave ANTES de mandar. Un push es "a lo sumo una vez": no se reintenta, un
+ * aviso viejo llegando tarde es peor que ninguno.
+ */
+export const pushNotice = pgTable(
+  "push_notice",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    kind: text("kind", {
+      enum: ["correccion_publicada", "prorroga_decidida", "clase_por_empezar"],
+    }).notNull(),
+    contactId: text("contact_id")
+      .notNull()
+      .references(() => contact.id, { onDelete: "cascade" }),
+    dedupKey: text("dedup_key").notNull(),
+    status: text("status", { enum: ["enviado", "omitido", "fallido"] }).notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("push_notice_org_dedup_uq").on(t.organizationId, t.dedupKey),
+    index("push_notice_org_created_idx").on(t.organizationId, t.createdAt),
+  ]
+);

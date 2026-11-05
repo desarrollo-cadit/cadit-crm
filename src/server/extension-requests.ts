@@ -5,6 +5,8 @@ import { scoped } from "@/lib/db/tenant";
 import type { ExtensionRequestStatus } from "@/lib/db/schema";
 import { plazoDeEvaluacion, validarPedidoDeProrroga } from "@/lib/entrega-final";
 import { estadosDeAcceso, zonaDeLaOrganizacion } from "@/server/access-expiry";
+import { onAfterCommit } from "@/lib/db/tenant-context";
+import { avisarPushProrroga } from "@/server/push/notices";
 import { exigirEvaluacionesDeEvaluacion, grupoTieneEvaluacionesPorId } from "@/server/taller-config";
 import {
   componerPlazo,
@@ -420,6 +422,9 @@ export async function decidirPedido(
         set: { dueAt, reason: cerrado.reason, grantedBy: userId, updatedAt: ahora },
       });
   }
+
+  // Push to the student once the decision is committed. Never throws.
+  onAfterCommit(() => void avisarPushProrroga(organizationId, cerrado.id, input.decision));
 
   return {
     ok: true,

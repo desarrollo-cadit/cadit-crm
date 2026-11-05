@@ -443,6 +443,18 @@ export async function aplicarUnificacion(
     .set({ contactId: s, updatedAt: now })
     .where(scoped(schema.accountLink.organizationId, organizationId, eq(schema.accountLink.contactId, x)));
 
+  // 4b. Push: los dispositivos y los avisos ya reclamados siguen a la persona
+  // que queda. Sin restricciones únicas por contacto: es un reapuntado simple
+  // (las llaves de `push_notice` llevan el id viejo, así que no chocan).
+  await db
+    .update(schema.pushSubscription)
+    .set({ contactId: s })
+    .where(scoped(schema.pushSubscription.organizationId, organizationId, eq(schema.pushSubscription.contactId, x)));
+  await db
+    .update(schema.pushNotice)
+    .set({ contactId: s })
+    .where(scoped(schema.pushNotice.organizationId, organizationId, eq(schema.pushNotice.contactId, x)));
+
   // 5. Cursos offline: lo que choca se resuelve antes de mover.
   if (plan.accesosARevocar.length > 0) {
     await db

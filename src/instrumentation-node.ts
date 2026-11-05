@@ -120,6 +120,22 @@ export async function startAssessmentRemindersOnBoot(): Promise<void> {
 }
 
 /**
+ * Push — El aviso "clase por empezar", si `PUSH_CLASS_REMINDER_INTERVAL_MIN > 0`.
+ * La MISMA guarda que las demás (`shouldStartScheduler`): nunca en tests ni en
+ * `next build`, y nada puede tumbar el arranque.
+ */
+export async function startPushClassRemindersOnBoot(): Promise<void> {
+  try {
+    const { shouldStartScheduler } = await import("@/server/zoom/scheduler");
+    if (!shouldStartScheduler(process.env)) return;
+    const { startPushClassReminderScheduler } = await import("@/server/push/notices");
+    startPushClassReminderScheduler();
+  } catch (err) {
+    console.error("[boot] aviso push de clases no arrancó:", err instanceof Error ? err.name : "error");
+  }
+}
+
+/**
  * 045 (DV-003; US3-5) — Campañas de marketing: retoma las que quedaron
  * `enviando` tras un reinicio y enciende la periódica (`MARKETING_TICK_SEC`;
  * 0 = solo al arrancar). La MISMA guarda que las demás (`shouldStartScheduler`,

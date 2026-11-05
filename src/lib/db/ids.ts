@@ -135,6 +135,10 @@ const prefixes = {
   licenseAutodeskTask: "lat",
   /** 0092 — token de acceso del MCP remoto (`/api/mcp`), uno por persona y por uso. */
   mcpToken: "mcpt",
+  /** 0097 — suscripción de Web Push de un dispositivo del portal. */
+  pushSubscription: "psub",
+  /** 0098 — un aviso push ya reclamado (idempotencia de los disparadores). */
+  pushNotice: "pnot",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

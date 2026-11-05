@@ -115,6 +115,13 @@ const envSchema = z.object({
   /** 0084 — Cuántos días antes del plazo vigente se recuerda. Default 2. */
   ASSESSMENT_REMINDER_DAYS: z.coerce.number().int().min(1).max(30).default(2),
   /**
+   * Push — Minutos entre pasadas del aviso "clase por empezar" a los alumnos
+   * con avisos activados; 0 lo apaga (default). Requiere claves VAPID. Ej.: 5.
+   */
+  PUSH_CLASS_REMINDER_INTERVAL_MIN: z.coerce.number().int().min(0).default(0),
+  /** Push — Cuántos minutos antes del inicio se avisa de la clase. Default 60. */
+  PUSH_CLASS_REMINDER_LEAD_MIN: z.coerce.number().int().min(5).max(720).default(60),
+  /**
    * 033 (FR-019) — Confirmación por WhatsApp al anotarse a un taller. Apagada
    * salvo `true` (decisión del dueño, 2026-10-15: por ahora sin WhatsApp).
    */

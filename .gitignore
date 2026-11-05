@@ -86,3 +86,6 @@ backups
 # Respaldos de producción copiados a local (datos personales: nunca a git)
 .respaldos/
 *.dump
+# Dev-only VAPID keypair auto-generated for local push testing
+.dev-vapid.json
+.tmp-push-test.mjs

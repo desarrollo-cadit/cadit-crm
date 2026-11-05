@@ -680,6 +680,20 @@
       "when": 1793821082844,
       "tag": "0096_feriados_anuales",
       "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1793893367052,
+      "tag": "0097_push_subscription",
+      "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1793899676410,
+      "tag": "0098_push_notice",
+      "breakpoints": true
     }
   ]
 }
