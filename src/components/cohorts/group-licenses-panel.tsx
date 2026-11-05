@@ -9,6 +9,7 @@ import { Select } from "@/components/ui/select";
 import { ConfirmSendDialog } from "@/components/cohorts/confirm-send-dialog";
 import {
   equipoInicial,
+  libresDe,
   TeamSelect,
   useEquiposDeLicencias,
 } from "@/components/licenses/team-select";
@@ -91,11 +92,12 @@ export function GroupLicensesPanel({
     })();
   }, [canEdit]);
 
-  // El equipo arranca en el último que usó esta persona con cupo del programa
-  // elegido; si ese programa cambia, vuelve a proponerse.
+  // Igual que la asignación individual: el equipo se elige PRIMERO (arranca en
+  // el último que usó esta persona) y el programa se elige contra su cupo.
   useEffect(() => {
-    if (equipos && elegido) setTeamId(equipoInicial(equipos, elegido));
-  }, [equipos, elegido]);
+    if (equipos && !teamId) setTeamId(equipoInicial(equipos, null));
+  }, [equipos, teamId]);
+  const equipo = equipos?.find((e) => e.id === teamId) ?? null;
 
   async function leerError(res: Response | null, porDefecto: string) {
     const body = (await res?.json().catch(() => null)) as { error?: { message?: string } } | null;
@@ -191,33 +193,43 @@ export function GroupLicensesPanel({
         ))}
         {canEdit && libres.length > 0 && (
           <span className="flex flex-wrap items-center gap-1.5">
-            <Select
-              className="h-7 w-auto px-1.5 py-0.5 text-xs"
-              value={elegido}
-              aria-label="Programa para todo el grupo"
-              onChange={(ev) => setElegido(ev.target.value)}
-            >
-              <option value="">asignar al grupo…</option>
-              {libres.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </Select>
-            {elegido && equipos && equipos.length === 0 && (
+            {equipos && equipos.length === 0 && (
               <span className="text-muted-foreground">
                 Creá un equipo de licencias en Licencias para poder asignar.
               </span>
             )}
-            {elegido && equipos && equipos.length > 0 && (
+            {equipos && equipos.length > 0 && (
               <>
                 <TeamSelect
                   equipos={equipos}
-                  softwareId={elegido}
+                  softwareId={null}
                   value={teamId}
-                  onChange={setTeamId}
+                  onChange={(id) => {
+                    setTeamId(id);
+                    setElegido("");
+                  }}
                   label="Equipo de licencias para todo el grupo"
                 />
+                <Select
+                  className="h-7 w-auto px-1.5 py-0.5 text-xs"
+                  value={elegido}
+                  aria-label="Programa para todo el grupo"
+                  onChange={(ev) => setElegido(ev.target.value)}
+                >
+                  <option value="">asignar al grupo…</option>
+                  {libres.map((s) => {
+                    const quedan = equipo ? libresDe(equipo, s.id) : 0;
+                    return (
+                      <option key={s.id} value={s.id} disabled={quedan <= 0}>
+                        {s.name} · {quedan > 0 ? `${quedan} libres` : "sin cupo"}
+                      </option>
+                    );
+                  })}
+                </Select>
+              </>
+            )}
+            {elegido && equipos && equipos.length > 0 && (
+              <>
                 <label className="flex items-center gap-1 text-muted-foreground">
                   vence (opcional)
                   <Input
