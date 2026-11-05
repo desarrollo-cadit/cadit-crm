@@ -1,7 +1,25 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Versión: 1.8.0 → 1.9.0
+Versión: 1.9.0 → 1.10.0
+
+Cambios (1.10.0, 2026-11-05, propuesta para el aviso push del portal del
+alumno; PENDIENTE DE RATIFICAR por el dueño):
+  - Principio II, nuevo ítem: Web Push (avisos del portal). El navegador del
+    alumno elige su servicio de push (Apple, Google o Mozilla) y el servidor le
+    escribe con una identidad VAPID PROPIA de la instancia. Condiciones (a)–(f):
+    (a) OPCIONAL: sin claves VAPID el push queda apagado y todo funciona igual;
+    (b) tras UN solo adaptador, `src/lib/push` (`web-push` no se importa en
+    otro lado; lo fija un test); (c) sin cuentas, tokens ni paneles de
+    terceros: solo el par VAPID propio, con la clave privada solo en el
+    servidor; (d) el aviso es mínimo —título, frase corta y destino dentro de
+    la app—, jamás notas ni montos, porque la pantalla bloqueada es visible;
+    (e) un fallo del envío JAMÁS deshace la acción de negocio que lo disparó;
+    (f) los tests y entornos de prueba JAMÁS llaman a un servicio de push real.
+  Bump: MINOR — nueva dependencia externa opcional, mismo patrón que Zoom y
+     Vimeo.
+
+Versión anterior: 1.8.0 → 1.9.0
 
 Cambios (1.9.0, 2026-10-27, aprobada por el dueño para la asistencia
 sugerida desde Zoom):
@@ -269,6 +287,15 @@ dependencias externas en runtime es CERRADA:
      portales; (f) es OPCIONAL: sin Zoom, sin plan que incluya reportes o sin
      el permiso, la asistencia se pasa a mano como siempre; (g) los tests y
      entornos de prueba JAMÁS llaman a Zoom real.
+- **Web Push (desde 1.10.0)**: el portal del alumno puede mandar avisos al
+  dispositivo que los activó, por el servicio de push que elija su navegador
+  (Apple, Google o Mozilla), con una identidad VAPID propia de la instancia.
+  Condiciones: (a) OPCIONAL —sin claves el push queda apagado—; (b) tras UN solo
+  adaptador, `src/lib/push`; (c) sin cuentas ni tokens de terceros, y la clave
+  privada solo vive en el servidor; (d) el aviso es mínimo (título, frase corta
+  y destino dentro de la app), nunca notas ni montos; (e) un fallo del envío
+  jamás deshace la acción que lo disparó; (f) los tests JAMÁS llaman a un
+  servicio de push real.
 - **PROHIBIDO en v1**: almacenamiento de objetos externo (S3/R2), Stripe u otro
   billing, y servicios de Google. Cualquier feature que los requiera queda fuera
   del alcance de v1.
@@ -282,7 +309,8 @@ dependencias externas en runtime es CERRADA:
 - Las integraciones externas permitidas se aíslan tras adaptadores dedicados
   (cliente Graph API propio; adaptador LLM; adaptador `src/lib/m365`;
   adaptador `src/lib/zoom`; componente único del reproductor de Vimeo;
-  componente único del reproductor de grabaciones de Zoom) para
+  componente único del reproductor de grabaciones de Zoom; adaptador
+  `src/lib/push`) para
   no acoplar el dominio a ellas.
 
 **Rationale**: El producto se regala para que agencias lo desplieguen en VPS de
@@ -475,4 +503,4 @@ práctica, convención o preferencia; ante un conflicto, gana la constitución.
 - **Propagación**: al enmendar la constitución se revisan y, si procede, se actualizan
   las plantillas dependientes (plan, spec, tasks).
 
-**Version**: 1.9.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-10-27
+**Version**: 1.10.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-11-05
