@@ -1,9 +1,10 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { cookies } from "next/headers";
 import { Geist } from "next/font/google";
 import { accentCssVariables, DEFAULT_BRANDING } from "@/lib/branding";
 import { parseThemeCookie, THEME_COOKIE } from "@/lib/theme";
 import { getBranding } from "@/server/branding";
+import { IOS_LAUNCH_SCREENS, launchScreenMedia, PWA_NAVY } from "@/lib/pwa";
 import "./globals.css";
 
 // next/font descarga la fuente en BUILD y la sirve self-hosted (sin CDN).
@@ -15,11 +16,35 @@ const geist = Geist({
 
 export const dynamic = "force-dynamic";
 
+/**
+ * `viewportFit: "cover"` is what makes `env(safe-area-inset-*)` real on iOS:
+ * without it the installed app is letterboxed (white strip under the status
+ * bar) and the bottom bar collides with the home indicator.
+ */
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: PWA_NAVY,
+};
+
 export async function generateMetadata(): Promise<Metadata> {
   const branding = await getBranding().catch(() => DEFAULT_BRANDING);
   return {
     title: `${branding.name} — Campus de academia y centro de formación`,
     description: "Campus de academia y centro de formación",
+    appleWebApp: {
+      capable: true,
+      title: branding.name,
+      statusBarStyle: "black-translucent",
+      startupImage: IOS_LAUNCH_SCREENS.map((s) => ({
+        url: `/splash/launch-${s.w}x${s.h}.png`,
+        media: launchScreenMedia(s),
+      })),
+    },
+    // Next only emits the unprefixed `mobile-web-app-capable`; Safari on iOS
+    // still keys standalone mode off the Apple-prefixed tag.
+    other: { "apple-mobile-web-app-capable": "yes" },
     /**
      * El isotipo como favicon. Hasta acá no había ninguno y la pestaña salía
      * con el ícono por defecto del navegador.
@@ -58,6 +83,13 @@ export default async function RootLayout({
   return (
     <html lang="es" className={geist.variable} data-theme={tema}>
       <head>
+        {/* Installed app: paint the navy from the very first frame so there is
+            no white flash before globals.css is parsed. */}
+        <style
+          dangerouslySetInnerHTML={{
+            __html: `@media (display-mode: standalone){html{background:${PWA_NAVY}}}`,
+          }}
+        />
         {/* Acento white-label inyectado en SSR: sin flash de tema */}
         <style
           dangerouslySetInnerHTML={{ __html: accentCssVariables(branding.accent) }}

@@ -599,3 +599,98 @@
     }
   }
 }
+
+/* 2026-11-05 — PWA instalada en celular: barra inferior y pantalla de carga.
+   Todo cuelga de `display-mode: standalone`; en el navegador común no existe. */
+.solo-pwa-movil {
+  display: none;
+}
+.pwa-progreso {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  overflow: hidden;
+}
+.pwa-progreso::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: var(--barra-tinta);
+  animation: pwa-splash-carga 0.9s ease-in-out infinite;
+}
+.pwa-splash {
+  display: none;
+}
+@media (display-mode: standalone) {
+  .pwa-splash {
+    display: flex;
+    animation: pwa-splash-salida 0.45s ease 1.1s forwards;
+  }
+  .pwa-splash-marca {
+    animation: pwa-splash-latido 1.1s ease-in-out infinite;
+  }
+  .pwa-splash-barra::after {
+    animation: pwa-splash-carga 1.1s ease-in-out infinite;
+  }
+}
+@media (display-mode: standalone) and (max-width: 767px) {
+  .solo-pwa-movil {
+    display: flex;
+  }
+  .ocultar-en-pwa-movil {
+    display: none !important;
+  }
+  .pwa-movil-relleno {
+    padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+  }
+}
+@keyframes pwa-splash-salida {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+@keyframes pwa-splash-latido {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+}
+@keyframes pwa-splash-carga {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+.pwa-splash-barra {
+  position: relative;
+  overflow: hidden;
+  height: 3px;
+  width: 7rem;
+  border-radius: 9999px;
+  background: color-mix(in srgb, currentColor 20%, transparent);
+}
+.pwa-splash-barra::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  border-radius: 9999px;
+  background: currentColor;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pwa-splash-marca,
+  .pwa-splash-barra::after {
+    animation: none;
+  }
+}

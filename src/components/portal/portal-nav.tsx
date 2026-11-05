@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { GraduationCap, KeyRound, LogOut, Menu, X } from "lucide-react";
+import { ChevronLeft, GraduationCap, KeyRound, LogOut, Menu, MoreHorizontal, X } from "lucide-react";
 import type { Branding } from "@/lib/branding";
 import { cn, initials } from "@/lib/utils";
 import { signOut } from "@/lib/auth/client";
@@ -12,6 +12,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { ViewSwitch } from "@/components/view-switch";
 import type { ThemePreference } from "@/lib/theme";
 import { IsotipoCadIT } from "@/components/logo-cadit";
+import { PushToggle } from "@/components/portal/push-toggle";
 import {
   ITEM_GUIA_PORTAL,
   ITEMS_ALUMNO,
@@ -107,22 +108,49 @@ export function PortalNav({
   const pathname = usePathname();
   const router = useRouter();
   const [abierto, setAbierto] = useState(false);
+  // PWA instalada en celular: la barra inferior abre una hoja (cursos o menú
+  // completo). Es estado aparte del cajón: el cajón sigue siendo el del
+  // navegador común.
+  const [hoja, setHoja] = useState<"cursos" | "mas" | null>(null);
+  // Feedback inmediato: apenas se toca un enlace de la barra inferior o de las
+  // hojas, esa pestaña queda marcada y aparece la barra de progreso, sin
+  // esperar a que el servidor responda la pantalla nueva.
+  const [destino, setDestino] = useState<string | null>(null);
 
   // El cajón del celular se cierra al navegar. Sin esto, tocar un enlace
   // cambia la pantalla detrás de un panel que sigue tapándola.
   useEffect(() => {
     setAbierto(false);
+    setHoja(null);
+    setDestino(null);
   }, [pathname]);
+
+  // Red de seguridad: tocar el enlace de la pantalla en la que ya estás no
+  // cambia la ruta, y el indicador no se puede quedar prendido.
+  useEffect(() => {
+    if (!destino) return;
+    const t = window.setTimeout(() => setDestino(null), 6000);
+    return () => window.clearTimeout(t);
+  }, [destino]);
+
+  const alTocarEnlace = (e: React.MouseEvent) => {
+    const a = (e.target as HTMLElement).closest("a");
+    const href = a?.getAttribute("href");
+    if (href && href.startsWith("/")) setDestino(href);
+  };
 
   // Escape cierra: es lo que espera cualquiera que abrió algo por error.
   useEffect(() => {
-    if (!abierto) return;
+    if (!abierto && !hoja) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setAbierto(false);
+      if (e.key === "Escape") {
+        setAbierto(false);
+        setHoja(null);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [abierto]);
+  }, [abierto, hoja]);
 
   const rol =
     audience.isStudent && audience.isTeacher
@@ -133,6 +161,54 @@ export function PortalNav({
 
   const cursadas = courses.filter((c) => c.active);
   const cerradas = courses.filter((c) => !c.active);
+
+  const pestanas: Pestana[] = [
+    ...(audience.isStudent
+      ? [
+          {
+            clave: "inicio",
+            etiqueta: "Inicio",
+            icono: ITEMS_ALUMNO[0].icon,
+            href: "/portal",
+            activa: (p: string) => p === "/portal",
+          },
+          { clave: "cursos", etiqueta: "Cursos", icono: GraduationCap },
+          {
+            clave: "cuenta",
+            etiqueta: "Cuenta",
+            icono: ITEMS_ALUMNO[1].icon,
+            href: "/portal/cuenta",
+            activa: (p: string) => p.startsWith("/portal/cuenta"),
+          },
+        ]
+      : []),
+    ...(audience.isTeacher
+      ? [
+          {
+            clave: "grupos",
+            etiqueta: "Mis grupos",
+            icono: ITEMS_PROFESOR[0].icon,
+            href: "/portal/dictado",
+            activa: (p: string) => p.startsWith("/portal/dictado"),
+          },
+          ...(audience.isStudent
+            ? []
+            : [
+                {
+                  clave: "horas",
+                  etiqueta: "Horas",
+                  icono: ITEMS_PROFESOR[1].icon,
+                  href: "/portal/horas",
+                  activa: (p: string) => p.startsWith("/portal/horas"),
+                },
+              ]),
+        ]
+      : []),
+  ];
+
+  const raices = ["/portal", ...pestanas.flatMap((p) => (p.href ? [p.href] : []))];
+  const esRaiz = raices.includes(pathname);
+  const rutaActiva = destino ?? pathname;
 
   const contenido = (
     <>
@@ -186,6 +262,8 @@ export function PortalNav({
         </div>
       )}
 
+      {audience.isStudent && <PushToggle />}
+
       <div className="mt-3 flex items-center gap-2.5 rounded-md px-2.5 py-2">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-soft text-xs font-semibold text-brand-text">
           {initials(userName)}
@@ -234,16 +312,29 @@ export function PortalNav({
         Celular: encabezado fijo + cajón. El botón mide 44px porque es el
         mínimo para un pulgar, y el portal se usa parado en un aula.
       */}
-      <header className="barra-marca sticky top-0 z-30 flex items-center gap-2 border-b border-border bg-subtle px-2 py-2 md:hidden">
+      <header className="barra-marca sticky top-0 z-30 flex items-center gap-2 border-b border-border bg-subtle px-2 pb-2 pt-[calc(0.5rem+env(safe-area-inset-top))] md:hidden">
+        {destino && <div className="pwa-progreso" aria-hidden="true" />}
         <button
           type="button"
           onClick={() => setAbierto(true)}
           aria-label="Abrir el menú"
           aria-expanded={abierto}
-          className="flex h-11 w-11 items-center justify-center rounded-md text-text-2 transition-colors hover:bg-accent hover:text-foreground"
+          className="ocultar-en-pwa-movil flex h-11 w-11 items-center justify-center rounded-md text-text-2 transition-colors hover:bg-accent hover:text-foreground"
         >
           <Menu className="h-5 w-5" strokeWidth={1.7} />
         </button>
+        {/* App instalada: el "volver" del stack. Solo fuera de las pantallas
+            raíz de la barra inferior. */}
+        {!esRaiz && (
+          <button
+            type="button"
+            onClick={() => router.back()}
+            aria-label="Volver"
+            className="solo-pwa-movil h-11 w-11 items-center justify-center rounded-md text-text-2 transition-colors active:bg-accent"
+          >
+            <ChevronLeft className="h-6 w-6" strokeWidth={1.9} />
+          </button>
+        )}
         <Link href="/portal" className="flex min-w-0 items-center gap-2">
           <IsotipoCadIT className="h-7 w-7 rounded-sm" />
           <span className="truncate text-sm font-semibold">{branding.name}</span>
@@ -251,6 +342,82 @@ export function PortalNav({
         <div className="flex-1" />
         <ThemeToggle initial={theme} />
       </header>
+
+      {/*
+        PWA instalada en celular: barra inferior con lo principal y "Más", que
+        abre el MISMO contenido que la barra lateral (cursos, docencia, ayuda,
+        cuenta, tema, cerrar sesión). Nada se pierde: lo que no entra en la
+        barra vive en la hoja. Solo se muestra con display-mode: standalone.
+      */}
+      <nav
+        aria-label="Navegación principal"
+        onClick={alTocarEnlace}
+        className="barra-marca solo-pwa-movil fixed inset-x-0 bottom-0 z-30 items-stretch justify-around border-t border-border bg-subtle px-1 pb-[env(safe-area-inset-bottom)]"
+      >
+        {pestanas.map((p) => (
+          <PestanaInferior
+            key={p.clave}
+            etiqueta={p.etiqueta}
+            icono={p.icono}
+            activa={p.href ? (p.activa?.(rutaActiva) ?? false) : hoja === p.clave}
+            href={p.href}
+            onClick={
+              p.href ? undefined : () => setHoja(hoja === "cursos" ? null : "cursos")
+            }
+          />
+        ))}
+        <PestanaInferior
+          etiqueta="Más"
+          icono={MoreHorizontal}
+          activa={hoja === "mas"}
+          onClick={() => setHoja(hoja === "mas" ? null : "mas")}
+        />
+      </nav>
+
+      {hoja && (
+        <div className="solo-pwa-movil fixed inset-0 z-40 items-end">
+          <button
+            type="button"
+            aria-label="Cerrar"
+            className="absolute inset-0 bg-overlay"
+            onClick={() => setHoja(null)}
+          />
+          <div
+            role="dialog"
+            onClick={alTocarEnlace}
+            aria-label={hoja === "cursos" ? "Mis cursos" : "Menú"}
+            className="barra-marca relative flex max-h-[85vh] w-full flex-col overflow-y-auto rounded-t-xl border-t border-border bg-subtle px-3 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-4 shadow-pop"
+          >
+            <button
+              type="button"
+              onClick={() => setHoja(null)}
+              aria-label="Cerrar"
+              className="absolute right-2 top-2 flex h-11 w-11 items-center justify-center rounded-md text-text-3 transition-colors hover:bg-accent hover:text-foreground"
+            >
+              <X className="h-5 w-5" strokeWidth={1.7} />
+            </button>
+            {hoja === "mas" ? (
+              contenido
+            ) : (
+              <div className="flex flex-col gap-4 pt-6">
+                {cursadas.length > 0 && (
+                  <ListaCursos titulo="En curso" cursos={cursadas} pathname={pathname} />
+                )}
+                {cerradas.length > 0 && (
+                  <ListaCursos
+                    titulo={`Finalizados (${cerradas.length})`}
+                    cursos={cerradas}
+                    pathname={pathname}
+                  />
+                )}
+                {courses.length === 0 && (
+                  <p className="px-2.5 text-sm text-text-3">Todavía no tenés cursos.</p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {abierto && (
         <div className="fixed inset-0 z-40 md:hidden">
@@ -274,6 +441,55 @@ export function PortalNav({
         </div>
       )}
     </>
+  );
+}
+
+type Pestana = {
+  clave: string;
+  etiqueta: string;
+  icono: NavItem["icon"];
+  /** Sin href la pestaña abre una hoja en vez de navegar. */
+  href?: string;
+  activa?: (pathname: string) => boolean;
+};
+
+function PestanaInferior({
+  etiqueta,
+  icono: Icono,
+  activa,
+  href,
+  onClick,
+}: {
+  etiqueta: string;
+  icono: NavItem["icon"];
+  activa: boolean;
+  href?: string;
+  onClick?: () => void;
+}) {
+  const clases = cn(
+    // 56px de alto: blanco cómodo para el pulgar.
+    // active: = el dedo está apoyado; la pestaña se achica y se tiñe, así se
+    // nota que el toque llegó.
+    "relative my-1 flex min-h-[52px] flex-1 select-none flex-col items-center justify-center gap-0.5 rounded-lg px-1 text-[11px] transition-[transform,background-color,color] duration-150 [-webkit-tap-highlight-color:transparent] active:scale-90 active:bg-accent",
+    activa ? "font-semibold text-brand-text" : "font-medium text-text-3"
+  );
+  const interior = (
+    <>
+      {activa && (
+        <span className="absolute left-1/2 top-0 h-[3px] w-8 -translate-x-1/2 rounded-b-full bg-brand" />
+      )}
+      <Icono className={cn("h-[22px] w-[22px]", activa && "text-brand")} strokeWidth={1.8} />
+      <span className="max-w-full truncate">{etiqueta}</span>
+    </>
+  );
+  return href ? (
+    <Link href={href} aria-current={activa ? "page" : undefined} className={clases}>
+      {interior}
+    </Link>
+  ) : (
+    <button type="button" aria-pressed={activa} onClick={onClick} className={clases}>
+      {interior}
+    </button>
   );
 }
 

@@ -14,6 +14,8 @@ import { studentNavCourses } from "@/server/student-portal";
 import { PortalNav } from "@/components/portal/portal-nav";
 import { PortalWorld } from "@/components/portal/portal-world";
 import { AppToaster } from "@/components/ui/toaster";
+import { PwaSplash } from "@/components/portal/pwa-splash";
+import { ServiceWorkerRegister } from "@/components/portal/service-worker-register";
 import { parseThemeCookie, THEME_COOKIE } from "@/lib/theme";
 
 /**
@@ -111,12 +113,14 @@ export default async function PortalLayout({
           sobre todo lo demás.
         */}
         <main className="portal-contenido-fondo min-w-0 flex-1 bg-background md:overflow-y-auto">
-          <div className="portal-contenido mx-auto w-full max-w-5xl px-4 py-5 md:px-8 md:py-8 lg:px-10">
+          <div className="portal-contenido pwa-movil-relleno mx-auto w-full max-w-5xl px-4 py-5 md:px-8 md:py-8 lg:px-10">
             {children}
           </div>
         </main>
       </PortalWorld>
       <AppToaster />
+      <ServiceWorkerRegister />
+      <PwaSplash name={branding.name} />
     </div>
   );
 }

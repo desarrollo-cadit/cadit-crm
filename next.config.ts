@@ -16,6 +16,21 @@ const nextConfig: NextConfig = {
    * a function` en rutas al azar— no dice nada sobre la causa.
    */
   distDir: process.env.NEXT_DIST_DIR ?? ".next",
+  /**
+   * The service worker script must never be served from a stale HTTP cache,
+   * or a fixed worker would not reach installed apps.
+   */
+  async headers() {
+    return [
+      {
+        source: "/sw.js",
+        headers: [
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+          { key: "Content-Type", value: "application/javascript; charset=utf-8" },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
