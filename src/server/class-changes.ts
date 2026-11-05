@@ -1,9 +1,10 @@
-import { and, eq, isNull, max } from "drizzle-orm";
+import { and, eq, inArray, isNull, max } from "drizzle-orm";
 import { diaCalendario, diaComoFecha } from "@/lib/access-expiry";
 import {
   avisoDeExtension,
   planDeReemplazo,
   proximoDiaDeClase,
+  sugerirReemplazos,
   type OpcionDeEntrega,
 } from "@/lib/clase-de-reemplazo";
 import { getDb, schema } from "@/lib/db";
@@ -130,6 +131,29 @@ export async function reprogramarClase(
   classSessionId: string,
   input: ReprogramacionInput
 ): Promise<ClassChangeResult<ReprogramacionDto>> {
+  const validada = await validarReprogramacionDeClase(organizationId, classSessionId, input);
+  if (!validada.ok) return validada;
+  return escribirReprogramacion(organizationId, validada.data, input);
+}
+
+type ReprogramacionValidada = {
+  original: typeof schema.classSession.$inferSelect;
+  /** El día nuevo como su medianoche UTC. */
+  nuevaFecha: Date;
+};
+
+/**
+ * Todo lo que puede rechazar una clase de reemplazo ANTES de escribir nada:
+ * la clase existe, el día es válido, es una suspendida sin reemplazo y no cae
+ * en un receso sin confirmar. Sólo LEE. La separación existe para que la
+ * creación en lote pueda validar todas las filas antes de escribir la primera
+ * (devolver un error después de escribir no revierte nada).
+ */
+async function validarReprogramacionDeClase(
+  organizationId: string,
+  classSessionId: string,
+  input: ReprogramacionInput
+): Promise<ClassChangeResult<ReprogramacionValidada>> {
   const db = getDb();
   const [original] = await db
     .select()
@@ -183,6 +207,19 @@ export async function reprogramarClase(
     };
   }
 
+  return { ok: true, data: { original, nuevaFecha } };
+}
+
+/**
+ * La escritura de `reprogramarClase`: arma el plan del grupo, crea la clase y
+ * extiende el fin y la entrega. Parte de una clase YA validada.
+ */
+async function escribirReprogramacion(
+  organizationId: string,
+  { original, nuevaFecha }: ReprogramacionValidada,
+  input: ReprogramacionInput
+): Promise<ClassChangeResult<ReprogramacionDto>> {
+  const db = getDb();
   /*
     2026-10-30 — Una clase de reemplazo después del fin del grupo lo extiende.
     Las fechas se leen de la base: el fin que diga el cliente no se usa.
@@ -471,6 +508,261 @@ export async function moverClase(
       endDate: plan.endDate,
       deliveryDeadline: plan.deliveryDeadline,
       aviso: avisoDeExtension(plan),
+    },
+  };
+}
+
+export type SugerenciaDeReemplazoDto = {
+  /** El fin y la entrega final del grupo hoy ("YYYY-MM-DD"), para avisar qué se estira. */
+  endDate: string | null;
+  deliveryDeadline: string | null;
+  classes: {
+    id: string;
+    number: number;
+    /** El día de la suspendida ("YYYY-MM-DD"). */
+    date: string;
+    startTime: string | null;
+    endTime: string | null;
+    cancelReason: string | null;
+    /** El día sugerido para su reemplazo; `null` = el grupo no declara días de cursada. */
+    suggested: string | null;
+  }[];
+};
+
+/**
+ * 2026-11-05 — Las suspendidas de un grupo que todavía no tienen su clase de
+ * reemplazo, cada una con el día que se sugiere (`sugerirReemplazos`: en fila,
+ * salteando recesos y feriados). Con `classId` devuelve SOLO esa: la sugerencia
+ * es la misma que le habría puesto suspender con "crear sola".
+ */
+export async function sugerenciasDeReemplazo(
+  organizationId: string,
+  cohortId: string,
+  classId: string | null
+): Promise<ClassChangeResult<SugerenciaDeReemplazoDto>> {
+  const db = getDb();
+  const [grupo] = await db
+    .select({
+      daysOfWeek: schema.cohort.daysOfWeek,
+      endDate: schema.cohort.endDate,
+      deliveryDeadline: schema.cohort.deliveryDeadline,
+    })
+    .from(schema.cohort)
+    .where(scoped(schema.cohort.organizationId, organizationId, eq(schema.cohort.id, cohortId)))
+    .limit(1);
+  if (!grupo) return { ok: false, status: 404, code: "not_found", message: "Grupo no encontrado" };
+
+  const clases = await db
+    .select({
+      id: schema.classSession.id,
+      number: schema.classSession.number,
+      date: schema.classSession.date,
+      startTime: schema.classSession.startTime,
+      endTime: schema.classSession.endTime,
+      canceledAt: schema.classSession.canceledAt,
+      cancelReason: schema.classSession.cancelReason,
+      rescheduledFromId: schema.classSession.rescheduledFromId,
+    })
+    .from(schema.classSession)
+    .where(
+      scoped(schema.classSession.organizationId, organizationId, eq(schema.classSession.cohortId, cohortId))
+    );
+
+  const conReemplazo = new Set(clases.flatMap((c) => (c.rescheduledFromId ? [c.rescheduledFromId] : [])));
+  const suspendidas = clases.filter(
+    (c) => c.canceledAt !== null && !conReemplazo.has(c.id) && (classId === null || c.id === classId)
+  );
+  if (classId !== null && suspendidas.length === 0) {
+    return {
+      ok: false,
+      status: 404,
+      code: "not_found",
+      message: "No hay una clase suspendida sin reemplazo con ese id.",
+    };
+  }
+  const ultimaClase = clases
+    .filter((c) => c.canceledAt === null)
+    .reduce<string | null>((max, c) => {
+      const dia = diaDeClase(c.date);
+      return max === null || dia > max ? dia : max;
+    }, null);
+
+  const sugeridas = new Map(
+    sugerirReemplazos({
+      suspendidas: suspendidas.map((c) => ({ id: c.id, date: diaDeClase(c.date) })),
+      ultimaClase,
+      daysOfWeek: grupo.daysOfWeek,
+      recesos: recesosDeCohorte(await leerRecesos(db, organizationId, [cohortId]), cohortId),
+    }).map((s) => [s.id, s.fecha] as const)
+  );
+  return {
+    ok: true,
+    data: {
+      endDate: grupo.endDate ? diaCalendario(grupo.endDate) : null,
+      deliveryDeadline: grupo.deliveryDeadline ? diaCalendario(grupo.deliveryDeadline) : null,
+      classes: suspendidas
+        .sort((a, b) => a.date.getTime() - b.date.getTime() || a.number - b.number)
+        .map((c) => ({
+          id: c.id,
+          number: c.number,
+          date: diaDeClase(c.date),
+          startTime: c.startTime,
+          endTime: c.endTime,
+          cancelReason: c.cancelReason,
+          suggested: sugeridas.get(c.id) ?? null,
+        })),
+    },
+  };
+}
+
+export type ReemplazoDeLote = {
+  classId: string;
+  /** "YYYY-MM-DD"; `null` = ignorar esa suspendida (no se le crea reemplazo). */
+  date: string | null;
+  startTime: string | null;
+  endTime: string | null;
+  /** Dar clase en un día de receso o feriado exige decirlo explícitamente. */
+  confirmRecess: boolean;
+};
+
+export type FilaDeLoteConProblema = {
+  classId: string;
+  code: string;
+  message: string;
+  receso?: string;
+};
+
+export type LoteDeReemplazosDto = {
+  created: { classId: string; id: string; date: string }[];
+  ignored: number;
+  /** El fin y la entrega final nuevos del grupo, si cambiaron ("YYYY-MM-DD"). */
+  endDate: string | null;
+  deliveryDeadline: string | null;
+  /** "El fin del curso pasa a ser 25/11 y la entrega final a 02/12." — `null` si no se movió nada. */
+  aviso: string | null;
+};
+
+export type LoteDeReemplazosResult =
+  | { ok: true; data: LoteDeReemplazosDto }
+  | {
+      ok: false;
+      status: 403 | 404 | 409 | 422;
+      code: string;
+      message: string;
+      /** Qué filas impidieron crear el lote (no se creó ninguna). */
+      filas: FilaDeLoteConProblema[];
+    };
+
+/**
+ * 2026-11-05 — Crea VARIOS reemplazos juntos (todo o nada).
+ *
+ * Pasa por el mismo camino que uno solo: primero se VALIDAN todas las filas
+ * (`validarReprogramacionDeClase`, que sólo lee) y recién si ninguna tiene
+ * problema se escribe, de la fecha más temprana a la más tardía, con
+ * `escribirReprogramacion`. Cada una estira el fin hasta su día y corre la
+ * entrega final esa diferencia (opción `correr`, sin confirmación), así que al
+ * final el grupo queda como lo deja la clase más tardía. Un día de receso sin
+ * `confirmRecess` se informa por fila (`en_receso`), no se crea en silencio.
+ *
+ * Si algo falla DESPUÉS de empezar a escribir (no debería: lo que puede
+ * fallar ya se validó) se LANZA, para que el pedido revierta todo.
+ */
+export async function crearReemplazosEnLote(
+  organizationId: string,
+  cohortId: string,
+  items: ReemplazoDeLote[],
+  puedeMoverFechas: boolean
+): Promise<LoteDeReemplazosResult> {
+  const error = (
+    status: 403 | 404 | 409 | 422,
+    code: string,
+    message: string,
+    filas: FilaDeLoteConProblema[] = []
+  ): LoteDeReemplazosResult => ({ ok: false, status, code, message, filas });
+
+  const ids = items.map((i) => i.classId);
+  if (new Set(ids).size !== ids.length) {
+    return error(422, "invalid_body", "Una clase figura más de una vez en el pedido.");
+  }
+  const aCrear = items
+    .flatMap((i) => (i.date === null ? [] : [{ ...i, date: i.date }]))
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const ignoradas = items.length - aCrear.length;
+  if (aCrear.length === 0) {
+    return {
+      ok: true,
+      data: { created: [], ignored: ignoradas, endDate: null, deliveryDeadline: null, aviso: null },
+    };
+  }
+  if (new Set(aCrear.map((i) => i.date)).size !== aCrear.length) {
+    return error(422, "fechas_repetidas", "Dos clases de reemplazo caen el mismo día: elegí días distintos.");
+  }
+
+  const db = getDb();
+  const delGrupo = await db
+    .select({ id: schema.classSession.id })
+    .from(schema.classSession)
+    .where(
+      scoped(
+        schema.classSession.organizationId,
+        organizationId,
+        eq(schema.classSession.cohortId, cohortId),
+        inArray(schema.classSession.id, ids)
+      )
+    );
+  if (delGrupo.length !== ids.length) {
+    return error(404, "not_found", "Alguna de las clases no existe en este grupo.");
+  }
+
+  const entrada = (i: (typeof aCrear)[number]): ReprogramacionInput => ({
+    date: i.date,
+    startTime: i.startTime,
+    endTime: i.endTime,
+    confirmRecess: i.confirmRecess,
+    confirmEndExtension: true,
+    deliveryOption: { tipo: "correr" },
+    puedeMoverFechas,
+  });
+
+  const validadas: ReprogramacionValidada[] = [];
+  const filas: FilaDeLoteConProblema[] = [];
+  for (const item of aCrear) {
+    const v = await validarReprogramacionDeClase(organizationId, item.classId, entrada(item));
+    if (v.ok) validadas.push(v.data);
+    else filas.push({ classId: item.classId, code: v.code, message: v.message, receso: v.receso });
+  }
+  if (filas.length > 0) {
+    const enReceso = filas.some((f) => f.code === "en_receso");
+    return error(
+      enReceso ? 409 : 422,
+      enReceso ? "en_receso" : "reemplazos_con_problemas",
+      filas.length === 1
+        ? (filas[0]?.message ?? "No se pudo crear el reemplazo.")
+        : `${filas.length} clases no se pudieron reponer. No se creó ninguna.`,
+      filas
+    );
+  }
+
+  const created: LoteDeReemplazosDto["created"] = [];
+  let endDate: string | null = null;
+  let deliveryDeadline: string | null = null;
+  for (const [indice, validada] of validadas.entries()) {
+    const item = aCrear[indice];
+    if (!item) continue;
+    const creada = await escribirReprogramacion(organizationId, validada, entrada(item));
+    if (!creada.ok) throw new Error(`No se pudo crear el reemplazo de ${item.classId}: ${creada.code}`);
+    created.push({ classId: item.classId, id: creada.data.id, date: item.date });
+    endDate = creada.data.endDate ?? endDate;
+    deliveryDeadline = creada.data.deliveryDeadline ?? deliveryDeadline;
+  }
+  return {
+    ok: true,
+    data: {
+      created,
+      ignored: ignoradas,
+      endDate,
+      deliveryDeadline,
+      aviso: avisoDeExtension({ endDate, deliveryDeadline }),
     },
   };
 }

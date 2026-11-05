@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Ban, CalendarClock, CalendarDays, DoorOpen, Link2, Trash2, Video } from "lucide-react";
 import { RecessManager } from "@/components/academic/recess-manager";
+import { CrearReemplazos } from "@/components/cohorts/crear-reemplazos";
 import { MaterialPorAsignar } from "@/components/cohorts/material-por-asignar";
 import { MoverClase, ReprogramarClase, SuspenderClase } from "@/components/cohorts/suspender-clase";
 import { ResourcesPanel, useClassMaterial } from "@/components/academic/resources-panel";
@@ -121,6 +122,7 @@ export function ClassesClient({
   const [suspendiendo, setSuspendiendo] = useState<ClassRow | null>(null);
   const [reprogramando, setReprogramando] = useState<ClassRow | null>(null);
   const [moviendo, setMoviendo] = useState<ClassRow | null>(null);
+  const [creandoReemplazos, setCreandoReemplazos] = useState(false);
   const [rangoDesde, setRangoDesde] = useState("");
   const [rangoHasta, setRangoHasta] = useState("");
   const [borrando, setBorrando] = useState(false);
@@ -333,6 +335,7 @@ export function ClassesClient({
   const nombreDeAula = (id: string | null) =>
     id ? (aulas?.find((a) => a.id === id)?.name ?? null) : null;
   const aulaDeLaCohorte = nombreDeAula(data.cohortVirtualRoomId);
+  const sinReemplazo = data.classes.filter((c) => !c.projected && c.id && c.canceled && !c.rescheduledTo).length;
 
   return (
     <div className="space-y-4 p-6">
@@ -403,6 +406,21 @@ export function ClassesClient({
         )}
         onAsignado={() => void material.reintentar()}
       />
+
+      {/* 2026-11-05 — Las suspendidas que todavía no tienen su reemplazo, todas juntas. */}
+      {canEdit && sinReemplazo > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-warning-border bg-warning-soft px-3 py-2 text-sm">
+          <span>
+            {sinReemplazo === 1
+              ? "Hay 1 clase suspendida sin clase de reemplazo."
+              : `Hay ${sinReemplazo} clases suspendidas sin clase de reemplazo.`}
+          </span>
+          <Button size="sm" onClick={() => setCreandoReemplazos(true)}>
+            <CalendarClock className="h-4 w-4" aria-hidden />
+            Crear reemplazos
+          </Button>
+        </div>
+      )}
 
       {data.classes.length === 0 && (
         <p className="text-sm text-muted-foreground">
@@ -702,6 +720,13 @@ export function ClassesClient({
           cohortId={cohortId}
           clase={{ ...moviendo, id: moviendo.id }}
           onClose={() => setMoviendo(null)}
+          onChanged={() => void refetch()}
+        />
+      )}
+      {creandoReemplazos && (
+        <CrearReemplazos
+          cohortId={cohortId}
+          onClose={() => setCreandoReemplazos(false)}
           onChanged={() => void refetch()}
         />
       )}

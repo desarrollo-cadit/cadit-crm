@@ -201,3 +201,60 @@ export function avisoDeExtension(cambios: {
     ? `El fin del curso pasa a ser ${diaCorto(cambios.endDate)} y la entrega final a ${diaCorto(cambios.deliveryDeadline)}.`
     : `El fin del curso pasa a ser ${diaCorto(cambios.endDate)}.`;
 }
+
+/** Una suspendida que todavía no tiene su clase de reemplazo. `date` es el día ("YYYY-MM-DD"). */
+export type SuspendidaSinReemplazo = { id: string; date: string };
+
+/**
+ * 2026-11-05 — La sugerencia de día para CADA suspendida sin reemplazo.
+ *
+ * Se calculan EN FILA, de la más vieja a la más nueva: cada una cae en el
+ * próximo día de cursada después de la anterior sugerida (o de la última clase
+ * vigente del grupo, la primera), salteando recesos y feriados, así que dos
+ * reemplazos nunca caen el mismo día. Ninguna se sugiere antes de la fecha de
+ * su propia suspendida. Con UNA sola suspendida da lo mismo que
+ * `reemplazarClaseSuspendida` (suspender crea sola el reemplazo).
+ *
+ * `fecha: null` = no se pudo calcular (el grupo no declara días de cursada).
+ */
+export function sugerirReemplazos(args: {
+  suspendidas: readonly SuspendidaSinReemplazo[];
+  /** El día de la última clase NO suspendida del grupo; `null` si no hay. */
+  ultimaClase: string | null;
+  daysOfWeek: string | null;
+  recesos: readonly RangoDeReceso[];
+}): { id: string; fecha: string | null }[] {
+  const ordenadas = [...args.suspendidas].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  let cursor = args.ultimaClase;
+  return ordenadas.map((s) => {
+    const base = cursor && cursor > s.date ? cursor : s.date;
+    const fecha = proximoDiaDeClase({ despuesDe: base, daysOfWeek: args.daysOfWeek, recesos: args.recesos });
+    if (fecha) cursor = fecha;
+    return { id: s.id, fecha };
+  });
+}
+
+/** El día más tardío de una lista de "YYYY-MM-DD"; `null` si está vacía. */
+export function diaMasTardio(dias: readonly string[]): string | null {
+  return dias.reduce<string | null>((max, d) => (max === null || d > max ? d : max), null);
+}
+
+/**
+ * Qué le pasa al grupo si se crean VARIOS reemplazos juntos: lo decide la clase
+ * más tardía, una sola vez. Es lo mismo que da crearlos de a uno en orden
+ * (cada uno estira el fin hasta su día y corre la entrega esa diferencia: la
+ * suma es la del último). Sin días, no cambia nada.
+ */
+export function efectoDeLote(f: {
+  endDate: string | null;
+  deliveryDeadline: string | null;
+  fechas: readonly string[];
+}): EfectoDelReemplazo {
+  const ultimo = diaMasTardio(f.fechas);
+  return efectoDelReemplazo({
+    endDate: f.endDate,
+    deliveryDeadline: f.deliveryDeadline,
+    // Sin fechas no hay nada que extender: un día que nunca pasa el fin.
+    reemplazo: ultimo ?? "0000-01-01",
+  });
+}

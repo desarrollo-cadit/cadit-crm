@@ -226,7 +226,7 @@ export function SuspenderClase({
           </div>
         </div>
       ) : (
-        <ClaseDeReemplazoForm
+        <ReemplazoConSugerencia
           cohortId={cohortId}
           clase={clase}
           tituloId="suspender-clase"
@@ -255,7 +255,7 @@ export function ReprogramarClase({
 }) {
   return (
     <Modal onClose={onClose} labelledBy="reprogramar-clase">
-      <ClaseDeReemplazoForm
+      <ReemplazoConSugerencia
         cohortId={cohortId}
         clase={clase}
         tituloId="reprogramar-clase"
@@ -272,6 +272,164 @@ export function ReprogramarClase({
 type FechasDelGrupo = { endDate: string | null; deliveryDeadline: string | null };
 type TipoDeEntrega = OpcionDeEntrega["tipo"];
 
+type SugerenciaDelServidor = FechasDelGrupo & {
+  classes: { id: string; suggested: string | null }[];
+};
+
+/** "10:00–12:00", o nada si la clase no tiene horario. */
+function horarioDe(clase: ClaseASuspender) {
+  return clase.startTime && clase.endTime ? ` (${clase.startTime}–${clase.endTime})` : "";
+}
+
+/**
+ * 2026-11-05 — El primer paso de una clase de reemplazo: el día SUGERIDO (el
+ * próximo día de cursada después de la última clase del grupo, sin recesos ni
+ * feriados, con el horario de la suspendida) y qué le pasa al fin del grupo y a
+ * la entrega final. Se acepta con un clic o se pasa a "Elegir otra fecha", que
+ * abre el formulario de siempre. Lo que se escribe lo recalcula el servidor.
+ */
+function ReemplazoConSugerencia({
+  cohortId,
+  clase,
+  tituloId,
+  onCancel,
+  onDone,
+}: {
+  cohortId: string;
+  clase: ClaseASuspender;
+  tituloId: string;
+  onCancel: () => void;
+  onDone: () => void;
+}) {
+  const router = useRouter();
+  const [paso, setPaso] = useState<"cargando" | "sugerencia" | "manual">("cargando");
+  const [sugerencia, setSugerencia] = useState<(FechasDelGrupo & { dia: string | null }) | null>(null);
+  const [errorDeCarga, setErrorDeCarga] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const cargar = useCallback(async () => {
+    setErrorDeCarga(null);
+    setPaso("cargando");
+    const res = await fetch(`/api/cohorts/${cohortId}/replacements?classId=${clase.id}`).catch(() => null);
+    if (!res?.ok) {
+      setErrorDeCarga((await leerError(res, "No se pudo calcular el día sugerido.")).message);
+      setPaso("sugerencia");
+      return;
+    }
+    const body = (await res.json()) as SugerenciaDelServidor;
+    const dia = body.classes.find((c) => c.id === clase.id)?.suggested ?? null;
+    setSugerencia({ endDate: body.endDate, deliveryDeadline: body.deliveryDeadline, dia });
+    // Sin días de cursada declarados no hay nada que sugerir: directo a la fecha a mano.
+    setPaso(dia ? "sugerencia" : "manual");
+  }, [cohortId, clase.id]);
+
+  useEffect(() => {
+    void cargar();
+  }, [cargar]);
+
+  async function aceptar() {
+    if (!sugerencia?.dia) return;
+    setBusy(true);
+    const res = await fetch(`/api/class-sessions/${clase.id}/reschedule`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        date: sugerencia.dia,
+        confirmRecess: false,
+        confirmEndExtension: true,
+        deliveryOption: { tipo: "correr" },
+      }),
+    }).catch(() => null);
+    setBusy(false);
+    if (!res?.ok) {
+      notify.error((await leerError(res, "No se pudo crear la clase de reemplazo")).message);
+      // Algo cambió desde que se calculó: se vuelve a sugerir.
+      void cargar();
+      return;
+    }
+    const { session } = (await res.json()) as {
+      session: { endDate: string | null; deliveryDeadline: string | null };
+    };
+    const aviso = avisoDeExtension(session);
+    notify.success("Clase de reemplazo creada.", {
+      description: ["Queda vinculada a la suspendida.", aviso].filter(Boolean).join(" "),
+    });
+    avisarQueCambiaronLasClases(cohortId);
+    if (session.endDate) router.refresh();
+    onDone();
+  }
+
+  if (paso === "manual") {
+    return (
+      <ClaseDeReemplazoForm
+        cohortId={cohortId}
+        clase={clase}
+        tituloId={tituloId}
+        nota={
+          sugerencia && !sugerencia.dia
+            ? "El grupo no declara días de cursada, así que no hay un día para sugerir: elegí uno."
+            : undefined
+        }
+        onCancel={onCancel}
+        onDone={onDone}
+      />
+    );
+  }
+
+  const efecto = sugerencia?.dia
+    ? efectoDelReemplazo({
+        endDate: sugerencia.endDate,
+        deliveryDeadline: sugerencia.deliveryDeadline,
+        reemplazo: sugerencia.dia,
+      })
+    : null;
+  const aviso = efecto?.extiendeFin
+    ? avisoDeExtension({ endDate: efecto.finNuevo, deliveryDeadline: efecto.entregaCorrida })
+    : null;
+
+  return (
+    <div className="space-y-3">
+      <h2 id={tituloId} className="pr-6 text-base font-semibold">
+        Clase de reemplazo de la {clase.number} · {fechaDeClase(clase.date)}
+      </h2>
+      {paso === "cargando" ? (
+        <p className="text-sm text-muted-foreground">Buscando el próximo día de cursada…</p>
+      ) : errorDeCarga ? (
+        <div className="flex flex-wrap items-center gap-3 rounded-md border border-danger-border bg-danger-soft px-3 py-2 text-sm">
+          <span>{errorDeCarga}</span>
+          <Button type="button" size="sm" variant="outline" onClick={() => void cargar()}>
+            Reintentar
+          </Button>
+        </div>
+      ) : sugerencia?.dia ? (
+        <div className="space-y-2 text-sm">
+          <p>
+            Sugerimos reponerla el <strong>{fechaDeClase(`${sugerencia.dia}T00:00:00.000Z`)}</strong>
+            {horarioDe(clase)}: el próximo día de cursada después de la última clase del grupo, sin
+            contar recesos ni feriados.
+          </p>
+          {aviso && (
+            <p className="rounded-md border border-warning-border bg-warning-soft px-3 py-2">
+              {aviso} {efecto?.pideEntrega ? "La entrega final se corre los mismos días que el fin." : ""}
+            </p>
+          )}
+        </div>
+      ) : null}
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button type="button" variant="outline" size="sm" onClick={onCancel} disabled={busy}>
+          Cancelar
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={() => setPaso("manual")} disabled={busy}>
+          Elegir otra fecha
+        </Button>
+        <Button type="button" size="sm" loading={busy} disabled={!sugerencia?.dia} onClick={() => void aceptar()}>
+          Aceptar sugerencia
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /**
  * El formulario de la clase de reemplazo. Muestra ANTES de confirmar si el
  * día elegido pasa el fin del grupo y, con entrega final, pide qué hacer con
@@ -282,12 +440,15 @@ function ClaseDeReemplazoForm({
   cohortId,
   clase,
   tituloId,
+  nota,
   onCancel,
   onDone,
 }: {
   cohortId: string;
   clase: ClaseASuspender;
   tituloId: string;
+  /** Una línea para decir por qué se pide la fecha a mano. */
+  nota?: string;
   onCancel: () => void;
   onDone: () => void;
 }) {
@@ -398,6 +559,7 @@ function ClaseDeReemplazoForm({
       <h2 id={tituloId} className="pr-6 text-base font-semibold">
         Clase de reemplazo de la {clase.number} · {fechaDeClase(clase.date)}
       </h2>
+      {nota && <p className="text-sm text-muted-foreground">{nota}</p>}
       <div className="flex flex-wrap items-end gap-2">
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
           Día

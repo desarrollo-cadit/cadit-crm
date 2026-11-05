@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   avisoDeExtension,
   diaCorto,
+  diaMasTardio,
+  efectoDeLote,
   efectoDelReemplazo,
   planDeReemplazo,
   proximoDiaDeClase,
+  sugerirReemplazos,
   sumarDias,
 } from "@/lib/clase-de-reemplazo";
 
@@ -186,5 +189,118 @@ describe("avisoDeExtension", () => {
     expect(avisoDeExtension({ endDate: "2026-11-25", deliveryDeadline: null })).toBe(
       "El fin del curso pasa a ser 25/11."
     );
+  });
+});
+
+describe("sugerirReemplazos", () => {
+  // Lunes y jueves (0 = lunes).
+  const dias = "0,3";
+
+  it("las pone en fila después de la última clase, sin pisarse", () => {
+    // Última clase vigente: jueves 2026-11-19. Dos suspendidas: la primera cae el lunes 23, la segunda el jueves 26.
+    const r = sugerirReemplazos({
+      suspendidas: [
+        { id: "b", date: "2026-11-05" },
+        { id: "a", date: "2026-11-02" },
+      ],
+      ultimaClase: "2026-11-19",
+      daysOfWeek: dias,
+      recesos: [],
+    });
+    expect(r).toEqual([
+      { id: "a", fecha: "2026-11-23" },
+      { id: "b", fecha: "2026-11-26" },
+    ]);
+  });
+
+  it("saltea recesos y feriados anuales entre una y otra", () => {
+    const r = sugerirReemplazos({
+      suspendidas: [
+        { id: "a", date: "2026-11-02" },
+        { id: "b", date: "2026-11-05" },
+      ],
+      ultimaClase: "2026-11-19",
+      daysOfWeek: dias,
+      recesos: [
+        { fromDate: "2026-11-23", toDate: "2026-11-23" },
+        { fromDate: "2026-11-30", toDate: "2026-11-30", recurring: true },
+      ],
+    });
+    expect(r).toEqual([
+      { id: "a", fecha: "2026-11-26" },
+      { id: "b", fecha: "2026-12-03" },
+    ]);
+  });
+
+  it("nunca sugiere antes de la fecha de su propia suspendida", () => {
+    const r = sugerirReemplazos({
+      suspendidas: [{ id: "a", date: "2026-12-07" }],
+      ultimaClase: "2026-11-19",
+      daysOfWeek: dias,
+      recesos: [],
+    });
+    expect(r).toEqual([{ id: "a", fecha: "2026-12-10" }]);
+  });
+
+  it("sin clases vigentes parte de la suspendida, y sin días de cursada no hay sugerencia", () => {
+    expect(
+      sugerirReemplazos({ suspendidas: [{ id: "a", date: "2026-11-02" }], ultimaClase: null, daysOfWeek: dias, recesos: [] })
+    ).toEqual([{ id: "a", fecha: "2026-11-05" }]);
+    expect(
+      sugerirReemplazos({ suspendidas: [{ id: "a", date: "2026-11-02" }], ultimaClase: null, daysOfWeek: null, recesos: [] })
+    ).toEqual([{ id: "a", fecha: null }]);
+  });
+
+  it("con una sola da lo mismo que el reemplazo automático de suspender", () => {
+    const una = sugerirReemplazos({
+      suspendidas: [{ id: "a", date: "2026-11-05" }],
+      ultimaClase: "2026-11-19",
+      daysOfWeek: dias,
+      recesos: [],
+    });
+    expect(una[0]?.fecha).toBe(proximoDiaDeClase({ despuesDe: "2026-11-19", daysOfWeek: dias, recesos: [] }));
+  });
+});
+
+describe("efectoDeLote", () => {
+  it("lo decide el día más tardío, una sola vez", () => {
+    const efecto = efectoDeLote({
+      endDate: "2026-11-20",
+      deliveryDeadline: "2026-11-30",
+      fechas: ["2026-11-23", "2026-11-26"],
+    });
+    expect(efecto.extiendeFin).toBe(true);
+    expect(efecto.finNuevo).toBe("2026-11-26");
+    expect(efecto.entregaCorrida).toBe("2026-12-06");
+    expect(avisoDeExtension({ endDate: efecto.finNuevo, deliveryDeadline: efecto.entregaCorrida })).toBe(
+      "El fin del curso pasa a ser 26/11 y la entrega final a 06/12."
+    );
+  });
+
+  it("es lo mismo que crearlas de a una, en orden", () => {
+    let fin = "2026-11-20";
+    let entrega = "2026-11-30";
+    for (const f of ["2026-11-23", "2026-11-26"]) {
+      const e = efectoDelReemplazo({ endDate: fin, deliveryDeadline: entrega, reemplazo: f });
+      if (e.extiendeFin && e.finNuevo && e.entregaCorrida) {
+        fin = e.finNuevo;
+        entrega = e.entregaCorrida;
+      }
+    }
+    const lote = efectoDeLote({ endDate: "2026-11-20", deliveryDeadline: "2026-11-30", fechas: ["2026-11-26", "2026-11-23"] });
+    expect({ fin: lote.finNuevo, entrega: lote.entregaCorrida }).toEqual({ fin, entrega });
+  });
+
+  it("si todas caen dentro del grupo, o no hay ninguna, no cambia nada", () => {
+    expect(efectoDeLote({ endDate: "2026-11-20", deliveryDeadline: null, fechas: ["2026-11-10"] }).extiendeFin).toBe(false);
+    expect(efectoDeLote({ endDate: "2026-11-20", deliveryDeadline: null, fechas: [] }).extiendeFin).toBe(false);
+    expect(efectoDeLote({ endDate: null, deliveryDeadline: null, fechas: ["2027-01-01"] }).extiendeFin).toBe(false);
+  });
+});
+
+describe("diaMasTardio", () => {
+  it("devuelve el mayor o null", () => {
+    expect(diaMasTardio(["2026-11-05", "2026-12-01", "2026-11-30"])).toBe("2026-12-01");
+    expect(diaMasTardio([])).toBeNull();
   });
 });
