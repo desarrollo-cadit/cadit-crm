@@ -36,6 +36,8 @@ export default async function FacturacionPage({
     <div className="h-full overflow-y-auto">
       <FacturacionClient
         puedeFacturar={caps.includes("facturacion.editar")}
+        puedeRegistrarCobro={caps.includes("cobranza.registrar")}
+        puedeCorregirCobro={caps.includes("cobranza.editar")}
         initialTab={leerPestana(tab, PESTANAS_FACTURACION, "pendientes")}
         initialCohortId={grupoInicial}
       />

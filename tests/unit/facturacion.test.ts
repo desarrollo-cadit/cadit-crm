@@ -9,6 +9,8 @@ import {
   hasCapability,
 } from "@/lib/capabilities";
 import {
+  agruparPorEmpresa,
+  facturaComun,
   avisoDeFacturaRepetida,
   condicionDePago,
   enLaVista,
@@ -17,6 +19,7 @@ import {
   filtrarFacturacion,
   normalizarNumero,
   pendienteDeFacturar,
+  resumenDeCobro,
   totalesPorMoneda,
   type FilaFacturacion,
   type FiltrosFacturacion,
@@ -181,6 +184,7 @@ const fila = (over: Partial<FilaFacturacion>): FilaFacturacion => ({
   invoiceNumber: null,
   invoiceRecordedAt: null,
   empresa: null,
+  cobro: { cuotas: 0, cuotasPagadas: 0, cuotasVencidas: 0, pagado: 0, saldo: 100000, estado: "sin_plan" },
   ...over,
 });
 
@@ -201,7 +205,7 @@ describe("filtrarFacturacion", () => {
       cohortId: "coh_2",
       inicio: "2026-11-03",
       confirmada: false,
-      empresa: { razonSocial: "ACME SA", rut: "21", billingEmail: null, condicion: null },
+      empresa: { id: "cia_1", razonSocial: "ACME SA", rut: "21", billingEmail: null, condicion: null },
     }),
   ];
 
@@ -299,11 +303,115 @@ describe("avisoDeFacturaRepetida — avisa, no bloquea", () => {
   });
 });
 
+describe("agruparPorEmpresa", () => {
+  const acme = { id: "cia_1", razonSocial: "ACME", rut: "21", billingEmail: null, condicion: null };
+  const otra = { id: "cia_2", razonSocial: "Otra", rut: null, billingEmail: null, condicion: null };
+
+  it("junta a los alumnos de la misma empresa y el mismo grupo, donde aparece el primero", () => {
+    const bloques = agruparPorEmpresa([
+      fila({ enrollmentId: "a", empresa: acme }),
+      fila({ enrollmentId: "b", empresa: null }),
+      fila({ enrollmentId: "c", empresa: acme }),
+    ]);
+    expect(bloques.map((b) => b.tipo)).toEqual(["empresa", "fila"]);
+    const bloque = bloques[0]!;
+    expect(bloque.tipo === "empresa" && bloque.filas.map((f) => f.enrollmentId)).toEqual(["a", "c"]);
+  });
+
+  it("la misma empresa en otro grupo no se junta; una empresa con un solo alumno queda suelta", () => {
+    const bloques = agruparPorEmpresa([
+      fila({ enrollmentId: "a", cohortId: "coh_1", empresa: acme }),
+      fila({ enrollmentId: "b", cohortId: "coh_2", empresa: acme }),
+      fila({ enrollmentId: "c", cohortId: "coh_1", empresa: otra }),
+    ]);
+    expect(bloques.every((b) => b.tipo === "fila")).toBe(true);
+  });
+
+  it("facturaComun: el número compartido, o null si difieren o no hay", () => {
+    expect(facturaComun([fila({ invoiceNumber: "A-1" }), fila({ invoiceNumber: "A-1" })])).toBe("A-1");
+    expect(facturaComun([fila({ invoiceNumber: "A-1" }), fila({ invoiceNumber: null })])).toBeNull();
+    expect(facturaComun([fila({ invoiceNumber: null })])).toBeNull();
+  });
+});
+
+describe("resumenDeCobro", () => {
+  const ahora = new Date("2026-11-10T12:00:00Z");
+  const cuota = (id: string, amount: number, dueDate: string, canceledAt: Date | null = null) => ({
+    id,
+    amount,
+    dueDate: new Date(dueDate),
+    canceledAt,
+  });
+  const pago = (amount: number, installmentId: string | null = null, voidedAt: Date | null = null) => ({
+    installmentId,
+    amount,
+    voidedAt,
+  });
+
+  it("sin plan ni pagos: sin_plan y el saldo es todo lo pactado", () => {
+    expect(resumenDeCobro({ pactado: 90000, cuotas: [], pagos: [] }, ahora)).toEqual({
+      cuotas: 0,
+      cuotasPagadas: 0,
+      cuotasVencidas: 0,
+      pagado: 0,
+      saldo: 90000,
+      estado: "sin_plan",
+    });
+  });
+
+  it("una seña sin cuota baja el saldo aunque no haya plan", () => {
+    const r = resumenDeCobro({ pactado: 90000, cuotas: [], pagos: [pago(30000)] }, ahora);
+    expect(r.pagado).toBe(30000);
+    expect(r.saldo).toBe(60000);
+    expect(r.estado).toBe("sin_plan");
+  });
+
+  it("plan al día: cuotas pagadas y vencimientos futuros", () => {
+    const r = resumenDeCobro(
+      {
+        pactado: 90000,
+        cuotas: [cuota("c1", 45000, "2026-11-01"), cuota("c2", 45000, "2026-12-01")],
+        pagos: [pago(45000, "c1")],
+      },
+      ahora
+    );
+    expect(r).toMatchObject({ cuotas: 2, cuotasPagadas: 1, cuotasVencidas: 0, pagado: 45000, saldo: 45000, estado: "al_dia" });
+  });
+
+  it("una cuota vencida con saldo marca vencida", () => {
+    const r = resumenDeCobro(
+      { pactado: 90000, cuotas: [cuota("c1", 45000, "2026-11-01"), cuota("c2", 45000, "2026-12-01")], pagos: [] },
+      ahora
+    );
+    expect(r.estado).toBe("vencida");
+    expect(r.cuotasVencidas).toBe(1);
+  });
+
+  it("un pago anulado no cuenta y una cuota anulada no se cuenta", () => {
+    const r = resumenDeCobro(
+      {
+        pactado: 90000,
+        cuotas: [cuota("c1", 90000, "2026-12-01"), cuota("viejo", 90000, "2026-10-01", new Date("2026-10-15"))],
+        pagos: [pago(90000, "c1", new Date("2026-11-02"))],
+      },
+      ahora
+    );
+    expect(r).toMatchObject({ cuotas: 1, cuotasVencidas: 0, pagado: 0, saldo: 90000, estado: "al_dia" });
+  });
+
+  it("todo pagado = pagada; sin monto pactado el saldo es null", () => {
+    expect(
+      resumenDeCobro({ pactado: 1000, cuotas: [cuota("c1", 1000, "2026-11-01")], pagos: [pago(1000, "c1")] }, ahora).estado
+    ).toBe("pagada");
+    expect(resumenDeCobro({ pactado: null, cuotas: [], pagos: [pago(500)] }, ahora).saldo).toBeNull();
+  });
+});
+
 describe("facturacionCsv", () => {
   it("encabezado en castellano y una línea por fila, con monto y moneda por separado", () => {
     const csv = facturacionCsv([
       fila({
-        empresa: { razonSocial: "ACME, SA", rut: "2100", billingEmail: "f@acme.uy", condicion: "Contado" },
+        empresa: { id: "cia_1", razonSocial: "ACME, SA", rut: "2100", billingEmail: "f@acme.uy", condicion: "Contado" },
       }),
     ]);
     const [encabezado, linea] = csv.split("\r\n");

@@ -65,12 +65,78 @@ export function enLaVista(
  * ============================================================ */
 
 export type EmpresaParaFacturar = {
+  id: string;
   razonSocial: string;
   rut: string | null;
   billingEmail: string | null;
   /** "Contado", "Crédito a 30 días"… ya en castellano (`condicionDePago`). */
   condicion: string | null;
 };
+
+/**
+ * 2026-11-06 — El cobro de una venta, para el seguimiento desde Facturación.
+ * Se DERIVA de las cuotas y los pagos de siempre (`installment` / `payment`):
+ * no hay un segundo registro. Sin `cobranza.ver` no viaja (la ruta ya lo exige).
+ */
+export type ResumenDeCobro = {
+  /** Cuotas vigentes del plan (0 = todavía no hay plan). */
+  cuotas: number;
+  cuotasPagadas: number;
+  /** Cuotas vencidas con saldo. */
+  cuotasVencidas: number;
+  /** Todo lo cobrado y no anulado, con o sin cuota asignada (una seña cuenta). */
+  pagado: number;
+  /** Lo pactado menos lo pagado; `null` si la venta no tiene monto. */
+  saldo: number | null;
+  estado: "sin_plan" | "al_dia" | "vencida" | "pagada";
+};
+
+/**
+ * Resume el cobro de UNA venta. El saldo es pactado − pagado, sin mirar a qué
+ * cuota se imputó cada pago: una seña cargada antes de armar el plan no baja
+ * ninguna cuota, pero sí es plata que entró. `ahora` se inyecta para probar el
+ * vencimiento sin el reloj de la máquina.
+ */
+export function resumenDeCobro(
+  input: {
+    pactado: number | null;
+    cuotas: readonly { id: string; amount: number; dueDate: Date; canceledAt: Date | null }[];
+    pagos: readonly { installmentId: string | null; amount: number; voidedAt: Date | null }[];
+  },
+  ahora: Date
+): ResumenDeCobro {
+  const vigentes = input.cuotas.filter((c) => !c.canceledAt);
+  const validos = input.pagos.filter((p) => !p.voidedAt);
+  const pagado = validos.reduce((s, p) => s + p.amount, 0);
+  const saldo = input.pactado === null ? null : Math.max(0, input.pactado - pagado);
+
+  const pagadoPorCuota = new Map<string, number>();
+  for (const p of validos) {
+    if (p.installmentId) {
+      pagadoPorCuota.set(p.installmentId, (pagadoPorCuota.get(p.installmentId) ?? 0) + p.amount);
+    }
+  }
+  const conSaldo = vigentes.filter((c) => (pagadoPorCuota.get(c.id) ?? 0) < c.amount);
+  const cuotasVencidas = conSaldo.filter((c) => c.dueDate < ahora).length;
+
+  const saldada = saldo !== null ? saldo === 0 && input.pactado! > 0 : false;
+  const estado: ResumenDeCobro["estado"] = saldada
+    ? "pagada"
+    : vigentes.length === 0
+      ? "sin_plan"
+      : cuotasVencidas > 0
+        ? "vencida"
+        : "al_dia";
+
+  return {
+    cuotas: vigentes.length,
+    cuotasPagadas: vigentes.length - conSaldo.length,
+    cuotasVencidas,
+    pagado,
+    saldo,
+    estado,
+  };
+}
 
 export type FilaFacturacion = {
   enrollmentId: string;
@@ -96,6 +162,8 @@ export type FilaFacturacion = {
   /** 042 — cuándo se anotó (o corrigió) el número, ISO. */
   invoiceRecordedAt: string | null;
   empresa: EmpresaParaFacturar | null;
+  /** 2026-11-06 — Cuánto va cobrado y cómo viene el plan. */
+  cobro: ResumenDeCobro;
 };
 
 export type FiltrosFacturacion = {
@@ -150,6 +218,49 @@ export function filtrarFacturacion(
         a.alumno.localeCompare(b.alumno, "es") ||
         a.enrollmentId.localeCompare(b.enrollmentId)
     );
+}
+
+/**
+ * 2026-11-06 — Unifica el registro de facturación: los alumnos de UNA misma
+ * empresa en UN mismo grupo se muestran juntos, porque a la empresa se le
+ * emite una sola factura. Una empresa con un solo alumno en el grupo, o un
+ * particular, queda como fila suelta. Respeta el orden de `filas` (la lista ya
+ * viene ordenada por `filtrarFacturacion`): cada bloque aparece donde estaba su
+ * primera fila.
+ */
+export type BloqueDeFacturacion =
+  | { tipo: "fila"; fila: FilaFacturacion }
+  | { tipo: "empresa"; clave: string; empresa: EmpresaParaFacturar; filas: FilaFacturacion[] };
+
+export function agruparPorEmpresa(filas: readonly FilaFacturacion[]): BloqueDeFacturacion[] {
+  const claveDe = (f: FilaFacturacion) => (f.empresa ? `${f.cohortId}|${f.empresa.id}` : null);
+  const porClave = new Map<string, FilaFacturacion[]>();
+  for (const f of filas) {
+    const k = claveDe(f);
+    if (k) porClave.set(k, [...(porClave.get(k) ?? []), f]);
+  }
+  const out: BloqueDeFacturacion[] = [];
+  const hechos = new Set<string>();
+  for (const f of filas) {
+    const k = claveDe(f);
+    const miembros = k ? porClave.get(k)! : null;
+    if (!k || !miembros || miembros.length < 2) {
+      out.push({ tipo: "fila", fila: f });
+    } else if (!hechos.has(k)) {
+      hechos.add(k);
+      out.push({ tipo: "empresa", clave: k, empresa: f.empresa!, filas: miembros });
+    }
+  }
+  return out;
+}
+
+/**
+ * El número de factura que comparten todos los miembros de un bloque, o `null`
+ * si hay más de uno distinto (o ninguno). Sirve para precargar el campo único.
+ */
+export function facturaComun(filas: readonly FilaFacturacion[]): string | null {
+  const numeros = new Set(filas.map((f) => f.invoiceNumber));
+  return numeros.size === 1 ? ([...numeros][0] ?? null) : null;
 }
 
 /**

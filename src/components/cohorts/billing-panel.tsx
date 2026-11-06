@@ -34,6 +34,7 @@ type Payment = {
   paidAt: string;
   method: string;
   receiptNumber: string | null;
+  bank: string | null;
   voidedAt: string | null;
   voidReason: string | null;
 };
@@ -60,8 +61,23 @@ const STATUS_CLASS: Record<Status, string> = {
 export function BillingPanel({
   enrollmentId,
   puedeAnotarRecibo = false,
+  puedeRegistrar = true,
+  puedeCorregir = true,
+  currency: monedaDeLaVenta = "UYU",
+  onChanged,
 }: {
   enrollmentId: string;
+  /**
+   * 2026-11-06 — `cobranza.registrar`: armar el plan y registrar pagos (con su
+   * banco). Por defecto sí, que es lo que siempre hizo este panel.
+   */
+  puedeRegistrar?: boolean;
+  /** `cobranza.editar`: refinanciar y anular pagos. Por defecto sí. */
+  puedeCorregir?: boolean;
+  /** Moneda de la venta, para una seña cargada antes de que exista el plan. */
+  currency?: Currency;
+  /** Avisa que algo cambió (Facturación refresca su resumen de cobro). */
+  onChanged?: () => void;
   /**
    * 042 — `facturacion.editar`: anotar o corregir el número de recibo de un
    * pago (el recibo es del PAGO, DV-006 de 008). Sin ella no se ofrece.
@@ -73,7 +89,8 @@ export function BillingPanel({
   const [loading, setLoading] = useState(true);
   const [count, setCount] = useState("3");
   const [firstDueDate, setFirstDueDate] = useState("");
-  const [paying, setPaying] = useState<Installment | null>(null);
+  /** `null` = cerrado; `{ installmentId }` = abierto con ese destino ya elegido (`null` = a cuenta). */
+  const [paying, setPaying] = useState<{ installmentId: string | null } | null>(null);
   /**
    * 008 (T009) — rearmar el plan anula las cuotas vigentes y crea otras. Va
    * detrás de una confirmación porque cambia lo pactado con el alumno.
@@ -94,6 +111,12 @@ export function BillingPanel({
     void refetch();
   }, [refetch]);
 
+  /** Recarga y avisa al padre (Facturación refresca su resumen de cobro). */
+  async function actualizar() {
+    await refetch();
+    onChanged?.();
+  }
+
   async function readError(res: Response | null, fallback: string) {
     const body = (await res?.json().catch(() => null)) as
       | { error?: { message?: string } }
@@ -111,7 +134,7 @@ export function BillingPanel({
     if (!res?.ok) notify.error(await readError(res, "No se pudo generar el plan"));
     else notify.success("Plan de cuotas generado.");
     if (res?.ok) setRefinancing(false);
-    void refetch();
+    void actualizar();
   }
 
   async function voidPayment(paymentId: string) {
@@ -124,7 +147,7 @@ export function BillingPanel({
     }).catch(() => null);
     if (!res?.ok) notify.error(await readError(res, "No se pudo anular el pago"));
     else notify.success("Pago anulado.");
-    void refetch();
+    void actualizar();
   }
 
   async function anotarRecibo(p: Payment) {
@@ -140,7 +163,7 @@ export function BillingPanel({
     }).catch(() => null);
     if (!res?.ok) notify.error(await readError(res, "No se pudo guardar el número de recibo"));
     else notify.success(valor.trim() ? "Recibo anotado." : "Recibo borrado.");
-    void refetch();
+    void actualizar();
   }
 
   // 021 — Esqueleto con la forma de las cuotas, no un texto que después salta.
@@ -156,7 +179,7 @@ export function BillingPanel({
 
   const vigentes = installments.filter((i) => !i.canceledAt);
   const deuda = vigentes.reduce((s, i) => s + i.balance, 0);
-  const currency = vigentes[0]?.currency ?? "UYU";
+  const currency = vigentes[0]?.currency ?? monedaDeLaVenta;
 
   return (
     <div className="space-y-3">
@@ -173,14 +196,26 @@ export function BillingPanel({
               >
                 Estado de cuenta
               </a>
-              <button
-                type="button"
-                className="text-xs underline text-muted-foreground hover:text-foreground"
-                onClick={() => setRefinancing(true)}
-              >
-                Refinanciar
-              </button>
+              {puedeCorregir && (
+                <button
+                  type="button"
+                  className="text-xs underline text-muted-foreground hover:text-foreground"
+                  onClick={() => setRefinancing(true)}
+                >
+                  Refinanciar
+                </button>
+              )}
             </>
+          )}
+          {puedeRegistrar && (
+            <button
+              type="button"
+              className="text-xs underline text-muted-foreground hover:text-foreground"
+              onClick={() => setPaying({ installmentId: null })}
+              title="Una seña o un pago sin cuota asignada todavía; se puede imputar a una cuota al registrarlo"
+            >
+              Registrar seña / pago a cuenta
+            </button>
           )}
         </div>
         {vigentes.length > 0 && (
@@ -194,6 +229,11 @@ export function BillingPanel({
       </div>
 
       {installments.length === 0 ? (
+        !puedeRegistrar ? (
+          <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+            Todavía no hay un plan de cuotas.
+          </p>
+        ) : (
         <div className="flex flex-wrap items-end gap-2 rounded-md border border-dashed p-3">
           <div className="space-y-1">
             <Label htmlFor={`count-${enrollmentId}`} className="text-xs">
@@ -225,6 +265,7 @@ export function BillingPanel({
             Generar plan
           </Button>
         </div>
+        )
       ) : (
         <ul className="divide-y rounded-md border text-xs">
           {installments.map((i) => (
@@ -238,14 +279,16 @@ export function BillingPanel({
                   falta {money(i.balance, i.currency)}
                 </span>
               )}
-              <Button
-                variant="ghost"
-                size="sm"
-                className="ml-auto h-auto p-0 text-xs underline"
-                onClick={() => setPaying(i)}
-              >
-                Registrar pago
-              </Button>
+              {puedeRegistrar && i.balance > 0 && !i.canceledAt && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto h-auto p-0 text-xs underline"
+                  onClick={() => setPaying({ installmentId: i.id })}
+                >
+                  Registrar pago
+                </Button>
+              )}
             </li>
           ))}
         </ul>
@@ -257,6 +300,10 @@ export function BillingPanel({
             <li key={p.id} className="flex items-center gap-2">
               <span className={p.voidedAt ? "line-through" : ""}>
                 {day(p.paidAt)} · {money(p.amount, p.currency)} · {p.method}
+                {p.bank ? ` · ${p.bank}` : ""}
+                {p.installmentId
+                  ? ` · cuota #${installments.find((i) => i.id === p.installmentId)?.number ?? "?"}`
+                  : " · a cuenta"}
                 {p.receiptNumber ? ` · recibo ${p.receiptNumber}` : ""}
               </span>
               {!p.voidedAt && puedeAnotarRecibo && (
@@ -271,13 +318,15 @@ export function BillingPanel({
               {p.voidedAt ? (
                 <span className="text-destructive">anulado: {p.voidReason}</span>
               ) : (
-                <button
-                  type="button"
-                  className="underline hover:text-destructive"
-                  onClick={() => void voidPayment(p.id)}
-                >
-                  anular
-                </button>
+                puedeCorregir && (
+                  <button
+                    type="button"
+                    className="underline hover:text-destructive"
+                    onClick={() => void voidPayment(p.id)}
+                  >
+                    anular
+                  </button>
+                )
               )}
             </li>
           ))}
@@ -331,11 +380,13 @@ export function BillingPanel({
       {paying && (
         <PaymentForm
           enrollmentId={enrollmentId}
-          installment={paying}
+          installments={installments.filter((i) => !i.canceledAt && i.balance > 0)}
+          initialInstallmentId={paying.installmentId}
+          currency={currency}
           onClose={() => setPaying(null)}
           onSaved={() => {
             setPaying(null);
-            void refetch();
+            void actualizar();
           }}
         />
       )}
@@ -367,22 +418,31 @@ function RefinanceDialog({
  */
 function PaymentForm({
   enrollmentId,
-  installment,
+  installments,
+  initialInstallmentId,
+  currency,
   onClose,
   onSaved,
 }: {
   enrollmentId: string;
-  installment: Installment;
+  /** Las cuotas vigentes con saldo, a las que se puede imputar. */
+  installments: Installment[];
+  /** `null` = a cuenta (una seña, sin cuota todavía). */
+  initialInstallmentId: string | null;
+  currency: Currency;
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [amount, setAmount] = useState<number | null>(installment.balance);
+  const [installmentId, setInstallmentId] = useState<string | null>(initialInstallmentId);
+  const installment = installments.find((i) => i.id === installmentId) ?? null;
+  const [amount, setAmount] = useState<number | null>(installment?.balance ?? null);
   const [paidAt, setPaidAt] = useState(new Date().toISOString().slice(0, 10));
   const [method, setMethod] = useState("transferencia");
   const [receiptNumber, setReceiptNumber] = useState("");
+  const [bank, setBank] = useState("");
   const [saving, setSaving] = useState(false);
   const [idempotencyKey] = useState(() => crypto.randomUUID());
-  const dirty = useDirty({ amount, paidAt, method, receiptNumber });
+  const dirty = useDirty({ amount, paidAt, method, receiptNumber, bank, installmentId });
 
   async function submit() {
     setSaving(true);
@@ -390,10 +450,11 @@ function PaymentForm({
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        installmentId: installment.id,
+        installmentId,
         amount,
         paidAt,
         method,
+        bank: bank.trim() || null,
         receiptNumber: receiptNumber.trim() || null,
         idempotencyKey,
       }),
@@ -420,19 +481,45 @@ function PaymentForm({
     >
         <h3 id="pay-title" className="mb-1 font-semibold">Registrar pago</h3>
         <p className="mb-4 text-xs text-muted-foreground">
-          Cuota #{installment.number} · vence {day(installment.dueDate)} · falta{" "}
-          {money(installment.balance, installment.currency)}. Se admite el pago
-          parcial.
+          {installment ? (
+            <>
+              Cuota #{installment.number} · vence {day(installment.dueDate)} · falta{" "}
+              {money(installment.balance, installment.currency)}.{" "}
+            </>
+          ) : (
+            "Sin cuota asignada: queda como pago a cuenta (por ejemplo, una seña). "
+          )}
+          Se admite el pago parcial.
         </p>
 
         <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="pay-dest">Imputar a</Label>
+            <Select
+              id="pay-dest"
+              value={installmentId ?? ""}
+              onChange={(e) => {
+                const id = e.target.value || null;
+                setInstallmentId(id);
+                const destino = installments.find((i) => i.id === id);
+                if (destino) setAmount(destino.balance);
+              }}
+            >
+              <option value="">A cuenta (seña, sin cuota)</option>
+              {installments.map((i) => (
+                <option key={i.id} value={i.id}>
+                  Cuota #{i.number} · vence {day(i.dueDate)} · falta {money(i.balance, i.currency)}
+                </option>
+              ))}
+            </Select>
+          </div>
           <div className="space-y-1.5">
             <Label htmlFor="pay-amount">Monto</Label>
             <MoneyInput
               id="pay-amount"
               value={amount}
               onChange={setAmount}
-              currency={installment.currency}
+              currency={installment?.currency ?? currency}
             />
           </div>
           <div className="space-y-1.5">
@@ -456,6 +543,16 @@ function PaymentForm({
               <option value="tarjeta">Tarjeta</option>
               <option value="otro">Otro</option>
             </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="pay-bank">Banco</Label>
+            <Input
+              id="pay-bank"
+              value={bank}
+              maxLength={120}
+              placeholder="Ej.: Itaú, BROU, Santander…"
+              onChange={(e) => setBank(e.target.value)}
+            />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="pay-receipt">Recibo</Label>

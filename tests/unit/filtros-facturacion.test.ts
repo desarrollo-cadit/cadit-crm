@@ -24,6 +24,7 @@ const fila = (over: Partial<FilaFacturacion>): FilaFacturacion => ({
   invoiceNumber: null,
   invoiceRecordedAt: null,
   empresa: null,
+  cobro: { cuotas: 0, cuotasPagadas: 0, cuotasVencidas: 0, pagado: 0, saldo: 100000, estado: "sin_plan" },
   ...over,
 });
 
@@ -44,7 +45,7 @@ const filas = [
     alumno: "Carla Ríos",
     confirmada: false,
     invoiceNumber: "A-0042",
-    empresa: { razonSocial: "Constructora Acme SA", rut: "21.234.567-0012", billingEmail: null, condicion: null },
+    empresa: { id: "cia_1", razonSocial: "Constructora Acme SA", rut: "21.234.567-0012", billingEmail: null, condicion: null },
   }),
 ];
 const ids = (fs: FilaFacturacion[]) => fs.map((f) => f.enrollmentId);

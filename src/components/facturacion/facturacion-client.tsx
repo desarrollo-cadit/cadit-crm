@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Download, Receipt } from "lucide-react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { ChevronDown, ChevronRight, Download, Receipt } from "lucide-react";
+import { BillingPanel } from "@/components/cohorts/billing-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,14 +34,18 @@ import {
 } from "@/components/listados/filtros";
 import {
   MAX_NUMERO,
+  agruparPorEmpresa,
   contadoresDeFacturacion,
+  facturaComun,
   facturacionCsv,
   filtrarFacturacion,
   normalizarNumero,
   totalesPorMoneda,
+  type BloqueDeFacturacion,
   type EstadoFacturacion,
   type FilaFacturacion,
   type FiltrosFacturacion,
+  type ResumenDeCobro,
 } from "@/lib/facturacion";
 
 /**
@@ -80,6 +85,9 @@ const OPCION_DE_EMPRESA: Record<FiltrosFacturacion["empresa"], string> = {
   sin: "Solo sin empresa",
 };
 
+/** Alumno, curso, inicio, vendedor, monto, empresa, cobro, factura. */
+const COLUMNAS = 8;
+
 const FILTROS_INICIALES: FiltrosFacturacion = {
   cohortId: null,
   desde: null,
@@ -96,10 +104,16 @@ async function mensajeDeError(res: Response | null, fallback: string): Promise<s
 
 export function FacturacionClient({
   puedeFacturar,
+  puedeRegistrarCobro = false,
+  puedeCorregirCobro = false,
   initialTab = "pendientes",
   initialCohortId = null,
 }: {
   puedeFacturar: boolean;
+  /** `cobranza.registrar`: armar el plan y registrar pagos desde la venta. */
+  puedeRegistrarCobro?: boolean;
+  /** `cobranza.editar`: refinanciar y anular pagos desde la venta. */
+  puedeCorregirCobro?: boolean;
   /** 2026-10-26 — De `?tab=pendientes|facturadas`, validada por el servidor. */
   initialTab?: PestanaFacturacion;
   /** 2026-10-26 — De `?grupo=<id>`: abre filtrada por ese grupo. */
@@ -116,20 +130,43 @@ export function FacturacionClient({
   /** Lo que se está escribiendo en cada fila, por id de inscripción. */
   const [borradores, setBorradores] = useState<Record<string, string>>({});
   const [guardando, setGuardando] = useState<Record<string, boolean>>({});
+  /** Las ventas con el seguimiento de pagos abierto (por id de inscripción). */
+  const [abiertas, setAbiertas] = useState<Set<string>>(new Set());
+  /** Lo que se está escribiendo en la factura única de cada empresa, por clave de bloque. */
+  const [borradoresDeEmpresa, setBorradoresDeEmpresa] = useState<Record<string, string>>({});
 
-  const cargar = useCallback(async () => {
-    setCargando(true);
-    setError(null);
-    const res = await fetch(`/api/facturacion?estado=${estado}`).catch(() => null);
-    setCargando(false);
-    if (!res?.ok) {
-      setError("No pudimos cargar las ventas. Si al reintentar sigue igual, avisale a quien administra la instancia.");
-      return;
-    }
-    const data = (await res.json()) as Respuesta;
-    setFilas(data.filas);
-    setBorradores({});
-  }, [estado]);
+  const cargar = useCallback(
+    async (silencioso = false) => {
+      if (!silencioso) {
+        setCargando(true);
+        setError(null);
+      }
+      const res = await fetch(`/api/facturacion?estado=${estado}`).catch(() => null);
+      if (!silencioso) setCargando(false);
+      if (!res?.ok) {
+        if (!silencioso) {
+          setError("No pudimos cargar las ventas. Si al reintentar sigue igual, avisale a quien administra la instancia.");
+        }
+        return;
+      }
+      const data = (await res.json()) as Respuesta;
+      setFilas(data.filas);
+      if (!silencioso) setBorradores({});
+    },
+    [estado]
+  );
+
+  /** Tras registrar un pago o armar un plan: refresca el resumen sin parpadear. */
+  const refrescarCobro = useCallback(() => void cargar(true), [cargar]);
+
+  function alternar(id: string) {
+    setAbiertas((a) => {
+      const n = new Set(a);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  }
 
   useEffect(() => {
     void cargar();
@@ -144,6 +181,7 @@ export function FacturacionClient({
   }, [filas]);
 
   const visibles = useMemo(() => filtrarFacturacion(filas, filtros), [filas, filtros]);
+  const bloques = useMemo(() => agruparPorEmpresa(visibles), [visibles]);
   const totales = useMemo(() => totalesPorMoneda(visibles), [visibles]);
   const contadores = useMemo(() => contadoresDeFacturacion(filas, filtros), [filas, filtros]);
   const nombreDeGrupo = filtros.cohortId
@@ -224,6 +262,40 @@ export function FacturacionClient({
     else notify.success(`Factura ${numero} anotada para ${fila.alumno}.`);
   }
 
+  /** Una sola factura para todos los alumnos de una empresa en el grupo. */
+  async function guardarDeEmpresa(b: Extract<BloqueDeFacturacion, { tipo: "empresa" }>) {
+    const numero = normalizarNumero(borradoresDeEmpresa[b.clave] ?? facturaComun(b.filas) ?? "");
+    if (estado === "pendientes" && numero === null) return;
+    const ids = b.filas.map((f) => f.enrollmentId);
+    const anterior = filas;
+    const sale = (estado === "pendientes") === (numero !== null);
+    setFilas((fs) =>
+      sale
+        ? fs.filter((f) => !ids.includes(f.enrollmentId))
+        : fs.map((f) => (ids.includes(f.enrollmentId) ? { ...f, invoiceNumber: numero } : f))
+    );
+    setGuardando((g) => ({ ...g, [b.clave]: true }));
+    const res = await fetch("/api/facturacion/empresa", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ enrollmentIds: ids, invoiceNumber: numero }),
+    }).catch(() => null);
+    setGuardando((g) => ({ ...g, [b.clave]: false }));
+    if (!res?.ok) {
+      setFilas(anterior);
+      notify.error(await mensajeDeError(res, "No se pudo guardar la factura de la empresa. Las ventas quedaron como estaban."));
+      return;
+    }
+    const data = (await res.json()) as { avisos: string[] };
+    setBorradoresDeEmpresa((d) => {
+      const { [b.clave]: _, ...resto } = d;
+      return resto;
+    });
+    for (const aviso of data.avisos) notify.warning(aviso);
+    if (numero === null) notify.success(`Se borró la factura de ${b.empresa.razonSocial}: vuelve a Pendientes.`);
+    else notify.success(`Factura ${numero} anotada para ${ids.length} alumnos de ${b.empresa.razonSocial}.`);
+  }
+
   function exportar() {
     const csv = facturacionCsv(visibles);
     // BOM: Excel abre el UTF-8 con tildes sin preguntar.
@@ -234,6 +306,248 @@ export function FacturacionClient({
     a.download = `facturacion-${estado}-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+
+  /** Cobro de la venta: cuánto va pagado y cómo viene el plan (de las cuotas y pagos de Cobranza). */
+  function celdaDeCobro(f: FilaFacturacion) {
+    const c: ResumenDeCobro = f.cobro;
+    const abierta = abiertas.has(f.enrollmentId);
+    return (
+      <div className="space-y-1 text-xs">
+        {c.estado === "sin_plan" && c.pagado === 0 ? (
+          <span className="text-muted-foreground">Sin pagos ni plan</span>
+        ) : (
+          <>
+            <span className="block tabular-nums">
+              {dinero(c.pagado, f.currency)}
+              {f.amount !== null && <span className="text-muted-foreground"> de {dinero(f.amount, f.currency)}</span>}
+            </span>
+            <span className="flex flex-wrap items-center gap-1">
+              {c.estado === "pagada" ? (
+                <Badge variant="success">Pagada</Badge>
+              ) : c.estado === "vencida" ? (
+                <Badge variant="destructive">
+                  {c.cuotasVencidas} {c.cuotasVencidas === 1 ? "cuota vencida" : "cuotas vencidas"}
+                </Badge>
+              ) : c.estado === "al_dia" ? (
+                <Badge variant="secondary">Al día</Badge>
+              ) : (
+                <Badge variant="secondary">Sin plan</Badge>
+              )}
+              {c.cuotas > 0 && (
+                <span className="text-muted-foreground">
+                  {c.cuotasPagadas}/{c.cuotas} cuotas
+                </span>
+              )}
+            </span>
+          </>
+        )}
+        <button
+          type="button"
+          className="inline-flex items-center gap-0.5 text-muted-foreground underline hover:text-foreground"
+          aria-expanded={abierta}
+          onClick={() => alternar(f.enrollmentId)}
+        >
+          {abierta ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+          Seguimiento de pagos
+        </button>
+      </div>
+    );
+  }
+
+  /** Una venta; `enGrupo` = va debajo del encabezado de su empresa, que lleva la factura única. */
+  function renderVenta(f: FilaFacturacion, enGrupo: boolean) {
+  const borrador = borradores[f.enrollmentId] ?? f.invoiceNumber ?? "";
+                    return (
+      <>
+      <TableRow key={f.enrollmentId} className="hover:bg-subtle">
+                            <TableCell className="font-medium">
+                              <Link href={`/contacts/${f.contactId}`} className="hover:underline">
+                                <Resaltado texto={f.alumno} busqueda={busqueda} />
+                              </Link>
+                            </TableCell>
+                            <TableCell>
+                              <span>
+                                <Resaltado texto={f.curso} busqueda={busqueda} />
+                              </span>
+                              {f.cohorte && (
+                                <span className="block text-xs text-muted-foreground">
+                                  <Resaltado texto={f.cohorte} busqueda={busqueda} />
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              <span>{dia(f.inicio)}</span>
+                              <span className="mt-0.5 block">
+                                {f.confirmada ? (
+                                  <Badge variant="success">Confirmado</Badge>
+                                ) : (
+                                  <Badge variant="secondary">Sin confirmar</Badge>
+                                )}
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              {f.vendedor ? (
+                                <Resaltado texto={f.vendedor} busqueda={busqueda} />
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-right tabular-nums">
+                              {f.amount === null ? (
+                                <span className="text-muted-foreground">Sin monto</span>
+                              ) : (
+                                dinero(f.amount, f.currency)
+                              )}
+                            </TableCell>
+                            <TableCell className="text-xs">
+                              {f.empresa ? (
+                                <>
+                                  <span className="block text-sm">
+                                    <Resaltado texto={f.empresa.razonSocial} busqueda={busqueda} />
+                                  </span>
+                                  {f.empresa.rut && (
+                                    <span className="block text-muted-foreground">
+                                      RUT <Resaltado texto={f.empresa.rut} busqueda={busqueda} />
+                                    </span>
+                                  )}
+                                  {f.empresa.billingEmail && (
+                                    <span className="block text-muted-foreground">{f.empresa.billingEmail}</span>
+                                  )}
+                                  {f.empresa.condicion && (
+                                    <span className="block text-muted-foreground">{f.empresa.condicion}</span>
+                                  )}
+                                </>
+                              ) : (
+                                <span className="text-muted-foreground">Particular</span>
+                              )}
+                            </TableCell>
+                            <TableCell>{celdaDeCobro(f)}</TableCell>
+                            <TableCell>
+                              {enGrupo ? (
+                                (f.invoiceNumber ?? <span className="text-muted-foreground">—</span>)
+                              ) : puedeFacturar ? (
+                                <form
+                                  className="flex items-center gap-1.5"
+                                  onSubmit={(e) => {
+                                    e.preventDefault();
+                                    void guardar(f);
+                                  }}
+                                >
+                                  <Input
+                                    className="h-8 w-32"
+                                    maxLength={MAX_NUMERO}
+                                    placeholder="N.º de factura"
+                                    aria-label={`Número de factura de ${f.alumno}`}
+                                    value={borrador}
+                                    onChange={(e) =>
+                                      setBorradores((b) => ({ ...b, [f.enrollmentId]: e.target.value }))
+                                    }
+                                  />
+                                  <Button
+                                    type="submit"
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={
+                                      guardando[f.enrollmentId] ||
+                                      normalizarNumero(borrador) === f.invoiceNumber ||
+                                      (estado === "pendientes" && normalizarNumero(borrador) === null)
+                                    }
+                                  >
+                                    {estado === "pendientes" ? "Registrar factura" : "Corregir"}
+                                  </Button>
+                                </form>
+                              ) : (
+                                (f.invoiceNumber ?? <span className="text-muted-foreground">—</span>)
+                              )}
+                            </TableCell>
+                          </TableRow>
+        {abiertas.has(f.enrollmentId) && (
+          <TableRow className="hover:bg-transparent">
+            <TableCell colSpan={COLUMNAS} className="bg-subtle">
+              <BillingPanel
+                enrollmentId={f.enrollmentId}
+                currency={f.currency}
+                puedeRegistrar={puedeRegistrarCobro}
+                puedeCorregir={puedeCorregirCobro}
+                puedeAnotarRecibo={puedeFacturar}
+                onChanged={refrescarCobro}
+              />
+            </TableCell>
+          </TableRow>
+        )}
+      </>
+    );
+  }
+
+  /** El encabezado de una empresa con varios alumnos en el mismo grupo: UNA factura para todos. */
+  function renderEncabezadoDeEmpresa(b: Extract<BloqueDeFacturacion, { tipo: "empresa" }>) {
+    const comun = facturaComun(b.filas);
+    const borrador = borradoresDeEmpresa[b.clave] ?? comun ?? "";
+    const monedas = new Set(b.filas.map((f) => f.currency));
+    const unaMoneda = monedas.size === 1 ? [...monedas][0]! : null;
+    const pactado = b.filas.reduce((s, f) => s + (f.amount ?? 0), 0);
+    const pagado = b.filas.reduce((s, f) => s + f.cobro.pagado, 0);
+    const distintos = new Set(b.filas.map((f) => f.invoiceNumber)).size > 1;
+    return (
+      <TableRow className="bg-subtle hover:bg-subtle">
+        <TableCell colSpan={COLUMNAS - 1} className="text-sm">
+          <span className="font-medium">
+            <Resaltado texto={b.empresa.razonSocial} busqueda={busqueda} />
+          </span>
+          <span className="text-muted-foreground">
+            {" "}
+            · {b.filas.length} alumnos en este grupo
+            {unaMoneda && (
+              <>
+                {" "}
+                · pactado {dinero(pactado, unaMoneda)} · cobrado {dinero(pagado, unaMoneda)}
+              </>
+            )}
+          </span>
+          {distintos && (
+            <span className="block text-xs text-warning">
+              Tienen números de factura distintos: anotar uno acá los unifica.
+            </span>
+          )}
+        </TableCell>
+        <TableCell>
+          {puedeFacturar ? (
+            <form
+              className="flex items-center gap-1.5"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void guardarDeEmpresa(b);
+              }}
+            >
+              <Input
+                className="h-8 w-32"
+                maxLength={MAX_NUMERO}
+                placeholder="N.º de factura"
+                aria-label={`Número de factura de ${b.empresa.razonSocial}`}
+                value={borrador}
+                onChange={(e) => setBorradoresDeEmpresa((d) => ({ ...d, [b.clave]: e.target.value }))}
+              />
+              <Button
+                type="submit"
+                size="sm"
+                variant="outline"
+                disabled={
+                  guardando[b.clave] ||
+                  normalizarNumero(borrador) === comun ||
+                  (estado === "pendientes" && normalizarNumero(borrador) === null)
+                }
+              >
+                {estado === "pendientes" ? "Registrar a todos" : "Corregir a todos"}
+              </Button>
+            </form>
+          ) : (
+            (comun ?? <span className="text-muted-foreground">—</span>)
+          )}
+        </TableCell>
+      </TableRow>
+    );
   }
 
   return (
@@ -409,114 +723,23 @@ export function FacturacionClient({
                   <TableHead>Vendedor</TableHead>
                   <TableHead className="text-right">Monto</TableHead>
                   <TableHead>Empresa</TableHead>
+                  <TableHead>Cobro</TableHead>
                   <TableHead>Factura</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {visibles.map((f) => {
-                  const borrador = borradores[f.enrollmentId] ?? f.invoiceNumber ?? "";
-                  return (
-                    <TableRow key={f.enrollmentId} className="hover:bg-subtle">
-                      <TableCell className="font-medium">
-                        <Link href={`/contacts/${f.contactId}`} className="hover:underline">
-                          <Resaltado texto={f.alumno} busqueda={busqueda} />
-                        </Link>
-                      </TableCell>
-                      <TableCell>
-                        <span>
-                          <Resaltado texto={f.curso} busqueda={busqueda} />
-                        </span>
-                        {f.cohorte && (
-                          <span className="block text-xs text-muted-foreground">
-                            <Resaltado texto={f.cohorte} busqueda={busqueda} />
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        <span>{dia(f.inicio)}</span>
-                        <span className="mt-0.5 block">
-                          {f.confirmada ? (
-                            <Badge variant="success">Confirmado</Badge>
-                          ) : (
-                            <Badge variant="secondary">Sin confirmar</Badge>
-                          )}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        {f.vendedor ? (
-                          <Resaltado texto={f.vendedor} busqueda={busqueda} />
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-right tabular-nums">
-                        {f.amount === null ? (
-                          <span className="text-muted-foreground">Sin monto</span>
-                        ) : (
-                          dinero(f.amount, f.currency)
-                        )}
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        {f.empresa ? (
-                          <>
-                            <span className="block text-sm">
-                              <Resaltado texto={f.empresa.razonSocial} busqueda={busqueda} />
-                            </span>
-                            {f.empresa.rut && (
-                              <span className="block text-muted-foreground">
-                                RUT <Resaltado texto={f.empresa.rut} busqueda={busqueda} />
-                              </span>
-                            )}
-                            {f.empresa.billingEmail && (
-                              <span className="block text-muted-foreground">{f.empresa.billingEmail}</span>
-                            )}
-                            {f.empresa.condicion && (
-                              <span className="block text-muted-foreground">{f.empresa.condicion}</span>
-                            )}
-                          </>
-                        ) : (
-                          <span className="text-muted-foreground">Particular</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {puedeFacturar ? (
-                          <form
-                            className="flex items-center gap-1.5"
-                            onSubmit={(e) => {
-                              e.preventDefault();
-                              void guardar(f);
-                            }}
-                          >
-                            <Input
-                              className="h-8 w-32"
-                              maxLength={MAX_NUMERO}
-                              placeholder="N.º de factura"
-                              aria-label={`Número de factura de ${f.alumno}`}
-                              value={borrador}
-                              onChange={(e) =>
-                                setBorradores((b) => ({ ...b, [f.enrollmentId]: e.target.value }))
-                              }
-                            />
-                            <Button
-                              type="submit"
-                              size="sm"
-                              variant="outline"
-                              disabled={
-                                guardando[f.enrollmentId] ||
-                                normalizarNumero(borrador) === f.invoiceNumber ||
-                                (estado === "pendientes" && normalizarNumero(borrador) === null)
-                              }
-                            >
-                              {estado === "pendientes" ? "Registrar factura" : "Corregir"}
-                            </Button>
-                          </form>
-                        ) : (
-                          (f.invoiceNumber ?? <span className="text-muted-foreground">—</span>)
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
+                {bloques.map((b) =>
+                  b.tipo === "fila" ? (
+                    <Fragment key={b.fila.enrollmentId}>{renderVenta(b.fila, false)}</Fragment>
+                  ) : (
+                    <Fragment key={b.clave}>
+                      {renderEncabezadoDeEmpresa(b)}
+                      {b.filas.map((f) => (
+                        <Fragment key={f.enrollmentId}>{renderVenta(f, true)}</Fragment>
+                      ))}
+                    </Fragment>
+                  )
+                )}
               </TableBody>
             </Table>
           </div>

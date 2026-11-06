@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import {
@@ -6,6 +6,7 @@ import {
   condicionDePago,
   enLaVista,
   normalizarNumero,
+  resumenDeCobro,
   type EstadoFacturacion,
   type FilaFacturacion,
 } from "@/lib/facturacion";
@@ -67,6 +68,7 @@ export async function listarFacturacion(
       courseName: schema.course.name,
       courseKind: schema.course.kind,
       sellerName: schema.seller.name,
+      companyId: schema.company.id,
       legalName: schema.company.legalName,
       taxId: schema.company.taxId,
       billingEmail: schema.company.billingEmail,
@@ -88,20 +90,50 @@ export async function listarFacturacion(
     )
     .orderBy(asc(schema.cohort.startDate), asc(schema.contact.firstName), asc(schema.contact.lastName));
 
-  return rows
-    .filter((r) =>
-      enLaVista(
-        {
-          cohortId: r.cohortId,
-          parentEnrollmentId: r.parentEnrollmentId,
-          courseKind: r.courseKind,
-          deBaja: r.archivedAt !== null,
-          invoiceNumber: r.invoiceNumber,
-        },
-        estado
-      )
+  const enVista = rows.filter((r) =>
+    enLaVista(
+      {
+        cohortId: r.cohortId,
+        parentEnrollmentId: r.parentEnrollmentId,
+        courseKind: r.courseKind,
+        deBaja: r.archivedAt !== null,
+        invoiceNumber: r.invoiceNumber,
+      },
+      estado
     )
-    .map((r) => ({
+  );
+
+  // El cobro sale de las MISMAS cuotas y pagos de Cobranza (no hay otro registro).
+  const ids = enVista.map((r) => r.enrollmentId);
+  const [cuotas, pagos] =
+    ids.length === 0
+      ? [[], []]
+      : await Promise.all([
+          getDb()
+            .select({
+              id: schema.installment.id,
+              enrollmentId: schema.installment.enrollmentId,
+              amount: schema.installment.amount,
+              dueDate: schema.installment.dueDate,
+              canceledAt: schema.installment.canceledAt,
+            })
+            .from(schema.installment)
+            .where(scoped(schema.installment.organizationId, organizationId, inArray(schema.installment.enrollmentId, ids))),
+          getDb()
+            .select({
+              enrollmentId: schema.payment.enrollmentId,
+              installmentId: schema.payment.installmentId,
+              amount: schema.payment.amount,
+              voidedAt: schema.payment.voidedAt,
+            })
+            .from(schema.payment)
+            .where(scoped(schema.payment.organizationId, organizationId, inArray(schema.payment.enrollmentId, ids))),
+        ]);
+  const cuotasDe = Map.groupBy(cuotas, (c) => c.enrollmentId);
+  const pagosDe = Map.groupBy(pagos, (p) => p.enrollmentId);
+  const ahora = new Date();
+
+  return enVista.map((r) => ({
       enrollmentId: r.enrollmentId,
       contactId: r.contactId,
       alumno: nombre(r.firstName, r.lastName),
@@ -122,12 +154,21 @@ export async function listarFacturacion(
       invoiceRecordedAt: r.invoiceRecordedAt?.toISOString() ?? null,
       empresa: r.legalName
         ? {
+            id: r.companyId!,
             razonSocial: r.legalName,
             rut: r.taxId,
             billingEmail: r.billingEmail,
             condicion: condicionDePago(r.paymentTerms, r.paymentTermDays),
           }
         : null,
+      cobro: resumenDeCobro(
+        {
+          pactado: r.amount,
+          cuotas: cuotasDe.get(r.enrollmentId) ?? [],
+          pagos: pagosDe.get(r.enrollmentId) ?? [],
+        },
+        ahora
+      ),
     }));
 }
 
@@ -235,6 +276,75 @@ export async function registrarFactura(
     factura: { enrollmentId, invoiceNumber: numero, invoiceRecordedAt: ahora.toISOString() },
     aviso,
   };
+}
+
+/* ============================================================
+ * Factura de una empresa (varios alumnos del mismo grupo)
+ * ============================================================ */
+
+export type RegistrarFacturaDeEmpresaResult =
+  | { ok: true; facturas: { enrollmentId: string; invoiceNumber: string | null }[]; avisos: string[] }
+  | Fallo;
+
+/**
+ * 2026-11-06 — Anota UN número de factura en todas las ventas de una empresa
+ * en un mismo grupo (a la empresa se le emite una sola factura por sus
+ * alumnos). Cada venta se escribe con `registrarFactura`, así que el autor, la
+ * fecha y el "no reestampar si no cambió" son los de siempre.
+ *
+ * Todo o nada: primero se valida que TODAS sean ventas principales de la misma
+ * empresa y del mismo grupo; recién después se escribe. Si una escritura falla
+ * a mitad de camino se LANZA, para que la transacción del pedido revierta lo
+ * ya escrito (devolver una `Response` de error no revierte).
+ */
+export async function registrarFacturaDeEmpresa(
+  organizationId: string,
+  enrollmentIds: readonly string[],
+  raw: string | null,
+  actorId: string
+): Promise<RegistrarFacturaDeEmpresaResult> {
+  const ids = [...new Set(enrollmentIds)];
+  const filas = await getDb()
+    .select({
+      id: schema.enrollment.id,
+      companyId: schema.enrollment.companyId,
+      cohortId: schema.enrollment.cohortId,
+      parentEnrollmentId: schema.enrollment.parentEnrollmentId,
+    })
+    .from(schema.enrollment)
+    .where(scoped(schema.enrollment.organizationId, organizationId, inArray(schema.enrollment.id, ids)));
+
+  if (filas.length !== ids.length) {
+    return { ok: false, status: 404, code: "not_found", message: "Alguna inscripción no existe." };
+  }
+  const empresas = new Set(filas.map((f) => f.companyId));
+  const grupos = new Set(filas.map((f) => f.cohortId));
+  if (empresas.size !== 1 || [...empresas][0] === null || grupos.size !== 1) {
+    return {
+      ok: false,
+      status: 422,
+      code: "no_es_de_una_empresa",
+      message: "Solo se puede anotar una factura común a ventas de la misma empresa y del mismo grupo.",
+    };
+  }
+  if (filas.some((f) => f.parentEnrollmentId)) {
+    return {
+      ok: false,
+      status: 422,
+      code: "factura_en_la_madre",
+      message: "Alguna inscripción es de un módulo: la factura se anota en la inscripción principal.",
+    };
+  }
+
+  const facturas: { enrollmentId: string; invoiceNumber: string | null }[] = [];
+  const avisos: string[] = [];
+  for (const id of ids) {
+    const r = await registrarFactura(organizationId, id, raw, actorId);
+    if (!r.ok) throw new Error(r.message);
+    facturas.push({ enrollmentId: id, invoiceNumber: r.factura.invoiceNumber });
+    if (r.aviso && !avisos.includes(r.aviso)) avisos.push(r.aviso);
+  }
+  return { ok: true, facturas, avisos };
 }
 
 /* ============================================================
