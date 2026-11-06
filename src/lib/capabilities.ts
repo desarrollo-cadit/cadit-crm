@@ -91,6 +91,15 @@ export const CAPABILITIES = [
   "cobranza.ver",
   "cobranza.editar",
   /**
+   * 2026-11-06 — CARGAR cobranza sin poder corregirla: armar el plan de cuotas
+   * de una inscripción (nunca rearmarlo) y registrar los pagos que llegan, con
+   * su banco. Es lo que Administración necesita para dar seguimiento desde
+   * Facturación: transcribe lo que entra, pero no anula ni reescribe plata
+   * (eso sigue siendo `cobranza.editar`). Escribe en las MISMAS tablas de
+   * cuotas y pagos: no hay un segundo registro.
+   */
+  "cobranza.registrar",
+  /**
    * 040 (DV-003) — Crear y editar empresas: razón social, RUT, dirección
    * fiscal, contacto de facturación y condición de pago. La reciben
    * dirección, coordinación, administración (completa los datos con los que
@@ -193,6 +202,7 @@ export const FINANCIAL_CAPABILITIES: readonly Capability[] = [
   "inscripciones.editar",
   "cobranza.ver",
   "cobranza.editar",
+  "cobranza.registrar",
 ];
 
 /**
@@ -403,6 +413,9 @@ export const SYSTEM_ROLES: readonly {
     name: "Administración",
     capabilities: [
       "cobranza.ver",
+      // 2026-11-06 — Carga el plan y los pagos desde Facturación; no anula ni
+      // corrige (`cobranza.editar` sigue afuera).
+      "cobranza.registrar",
       "inscripciones.ver",
       "academico.ver",
       "contactos.ver",

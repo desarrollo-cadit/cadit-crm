@@ -50,6 +50,7 @@ const CAPABILITY_LABELS: Record<string, string> = {
   "inscripciones.editar": "Inscribir y editar datos comerciales",
   "cobranza.ver": "Ver cuotas, pagos y finanzas",
   "cobranza.editar": "Registrar y anular pagos",
+  "cobranza.registrar": "Cargar el plan de cuotas y los pagos (sin anular ni corregir)",
   "empresas.editar": "Crear y editar empresas y sus datos de facturación",
   "empresas.unificar": "Unificar empresas duplicadas",
   "facturacion.editar": "Registrar números de factura y de recibo (sin tocar montos)",

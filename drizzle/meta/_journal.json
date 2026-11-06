@@ -694,6 +694,13 @@
       "when": 1793899676410,
       "tag": "0098_push_notice",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1793974534489,
+      "tag": "0099_pago_banco",
+      "breakpoints": true
     }
   ]
 }

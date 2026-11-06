@@ -2051,6 +2051,8 @@ export const payment = pgTable(
     }).notNull(),
     /** 008 (DV-006) — el recibo es del PAGO; la factura sigue en `enrollment`. */
     receiptNumber: text("receipt_number"),
+    /** 2026-11-06 — Banco (o cuenta) por donde entró el pago. Texto libre, opcional. */
+    bank: text("bank"),
     /** 042 — Cuándo y quién anotó (o corrigió) el número de recibo después del alta. */
     receiptRecordedAt: timestamp("receipt_recorded_at"),
     receiptRecordedBy: text("receipt_recorded_by").references(() => user.id, {

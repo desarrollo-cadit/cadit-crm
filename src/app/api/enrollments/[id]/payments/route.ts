@@ -15,6 +15,7 @@ const createSchema = z.object({
   paidAt: z.coerce.date(),
   method: z.enum(["efectivo", "transferencia", "tarjeta", "otro"]),
   receiptNumber: z.string().max(60).nullable().optional(),
+  bank: z.string().max(120).nullable().optional(),
   notes: z.string().max(4000).nullable().optional(),
   /**
    * FR-011 — clave por intento que manda el formulario. Un segundo POST con
@@ -26,7 +27,7 @@ const createSchema = z.object({
 
 /** 008 — Registro de un pago. Admite el pago PARCIAL de una cuota (DV-002). */
 export const POST = requireCapability(
-  "cobranza.editar",
+  "cobranza.registrar",
   async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const body = await parseBody(req, createSchema);
@@ -38,6 +39,7 @@ export const POST = requireCapability(
     paidAt: body.data.paidAt,
     method: body.data.method,
     receiptNumber: body.data.receiptNumber ?? null,
+    bank: body.data.bank ?? null,
     notes: body.data.notes ?? null,
     idempotencyKey: body.data.idempotencyKey ?? null,
     recordedBy: session.userId,

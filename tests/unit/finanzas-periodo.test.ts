@@ -72,11 +72,13 @@ describe("FR-001 — el rol `administracion` existe y lleva exactamente 4 capaci
     "inscripciones.seguimiento",
     // 042 — Registra el número de factura y de recibo; no toca montos ni pagos.
     "facturacion.editar",
+    // 2026-11-06 — Carga el plan y los pagos desde Facturación; no anula ni corrige.
+    "cobranza.registrar",
   ];
 
-  it("lleva las cuatro de 026, las dos de 040 y la de 042, y ni una más", () => {
+  it("lleva las cuatro de 026, las dos de 040, la de 042 y la de cobranza.registrar, y ni una más", () => {
     expect([...rol!.capabilities].sort()).toEqual([...ESPERADAS_040].sort());
-    expect(rol!.capabilities).toHaveLength(7);
+    expect(rol!.capabilities).toHaveLength(8);
   });
 
   /**
@@ -142,7 +144,13 @@ describe("FR-002/FR-003 — la migración siembra el rol donde falta y no pisa n
     // 0061 (`seed-roles.test.ts` verifica la suma contra `SYSTEM_ROLES`).
     const rol = SYSTEM_ROLES.find((r) => r.key === "administracion")!;
     // 042 — `facturacion.editar` llega por la 0063.
-    const de040 = new Set<string>(["empresas.editar", "inscripciones.seguimiento", "facturacion.editar"]);
+    const de040 = new Set<string>([
+      "empresas.editar",
+      "inscripciones.seguimiento",
+      "facturacion.editar",
+      // 2026-11-06 — llega por la 0099.
+      "cobranza.registrar",
+    ]);
     expect([...listas[0]!].sort()).toEqual(
       rol.capabilities.filter((c) => !de040.has(c)).sort()
     );
@@ -748,6 +756,8 @@ describe("FR-007/FR-008 — la vista se gobierna con `cobranza.ver` y se declara
       "licencias.ver",
       "cursosoffline.ver",
       "talleres.ver",
+      // 2026-11-06 — cargar el plan de cuotas y los pagos, tampoco.
+      "cobranza.registrar",
     ]);
     expect(CAPABILITIES.filter((c) => !posteriores.has(c))).toHaveLength(17);
     expect(CAPABILITIES).not.toContain("finanzas.ver" as Capability);

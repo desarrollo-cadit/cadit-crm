@@ -38,6 +38,7 @@ export type PaymentDto = {
   paidAt: string;
   method: "efectivo" | "transferencia" | "tarjeta" | "otro";
   receiptNumber: string | null;
+  bank: string | null;
   notes: string | null;
   voidedAt: string | null;
   voidReason: string | null;
@@ -302,6 +303,7 @@ export type RecordPaymentInput = {
   paidAt: Date;
   method: "efectivo" | "transferencia" | "tarjeta" | "otro";
   receiptNumber?: string | null;
+  bank?: string | null;
   notes?: string | null;
   idempotencyKey?: string | null;
   recordedBy?: string | null;
@@ -400,6 +402,7 @@ export async function recordPayment(
       paidAt: input.paidAt,
       method: input.method,
       receiptNumber: input.receiptNumber ?? null,
+      bank: input.bank?.trim() || null,
       notes: input.notes ?? null,
       idempotencyKey: input.idempotencyKey ?? null,
       recordedBy: input.recordedBy ?? null,
@@ -743,6 +746,7 @@ function serializePayment(p: typeof schema.payment.$inferSelect): PaymentDto {
     paidAt: p.paidAt.toISOString(),
     method: p.method,
     receiptNumber: p.receiptNumber,
+    bank: p.bank,
     notes: p.notes,
     voidedAt: p.voidedAt?.toISOString() ?? null,
     voidReason: p.voidReason,

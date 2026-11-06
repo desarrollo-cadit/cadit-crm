@@ -171,6 +171,10 @@ export const GUIA_CAPACIDADES: Record<Capability, EntradaGuia> = {
     que: "armar el plan de cuotas de una cursada, registrar un pago (le llega un aviso por correo a Administración) y anular uno mal cargado",
     donde: "Contactos → el alumno → Estado de cuenta",
   },
+  "cobranza.registrar": {
+    que: "armar el plan de cuotas de una cursada y registrar los pagos que llegan (con monto, fecha, medio y banco), sin poder anular ni corregir plata ya cargada. Le llega un aviso por correo a Administración",
+    donde: "Facturación → la venta → Seguimiento de pagos",
+  },
   /** 040 (DV-003) — Ventas y Administración cargan los datos de facturación. */
   "empresas.editar": {
     que: "dar de alta una empresa y completar sus datos de facturación: razón social, RUT, dirección fiscal, a quién se le manda la factura y si paga contado o a crédito",

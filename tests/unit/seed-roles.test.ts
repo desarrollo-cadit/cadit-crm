@@ -74,6 +74,8 @@ const GRANTS = [
   // 2026-11-04 — `licencias.ver`, `cursosoffline.ver` y `talleres.ver` (todos
   // los roles con `academico.ver` menos `administracion`).
   migracion("0093_pantallas_academicas_propias.sql"),
+  // 2026-11-06 — `cobranza.registrar` (dirección, coordinación y administración).
+  migracion("0099_pago_banco.sql"),
 ].join("\n");
 
 /**

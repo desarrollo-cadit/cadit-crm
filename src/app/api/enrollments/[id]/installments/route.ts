@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { apiError, parseBody, requireCapability } from "@/lib/api";
+import { sessionCapabilities } from "@/lib/capabilities";
 import {
   generateInstallmentPlan,
   listInstallments,
@@ -39,12 +40,20 @@ const createSchema = z.object({
   replace: z.boolean().optional(),
 });
 
+/**
+ * Armar el plan es `cobranza.registrar` (Administración lo carga desde
+ * Facturación); REARMARLO (`replace`, la refinanciación) sigue siendo de
+ * `cobranza.editar`: cambia lo pactado.
+ */
 export const POST = requireCapability(
-  "cobranza.editar",
+  "cobranza.registrar",
   async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const body = await parseBody(req, createSchema);
   if (!body.ok) return body.response;
+  if (body.data.replace && !sessionCapabilities(session).includes("cobranza.editar")) {
+    return apiError(403, "forbidden", "Sin acceso a datos financieros");
+  }
 
   const plan = { count: body.data.count, firstDueDate: body.data.firstDueDate };
   const result = body.data.replace
