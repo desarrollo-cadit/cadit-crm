@@ -812,7 +812,7 @@ export function RosterClient({
                                       {sendingEmail === e.id + "welcome"
                                         ? "Enviando…"
                                         : e.welcomeEmailSentAt
-                                          ? "Reenviar bienvenida + grupo"
+                                          ? `Bienvenida enviada el ${diaMes(e.welcomeEmailSentAt)} · reenviar`
                                           : "Enviar bienvenida + grupo"}
                                     </Button>
                                   </>

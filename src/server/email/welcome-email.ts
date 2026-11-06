@@ -178,9 +178,9 @@ export function armarBienvenida(h: HechosDeBienvenida): VistaDeBienvenida {
 }
 
 /**
- * A quién va en copia: el docente (solo en un curso común: en una
- * especialización es de cada módulo) y el soporte técnico. Coordinación no:
- * se la nombra en el correo, pero no recibe una copia por alumno.
+ * A quién va en copia: solo el soporte técnico. El docente se nombra en el
+ * correo, pero NO recibe copia (2026-11-06: no le deben llegar estos correos),
+ * y Coordinación tampoco: se la nombra, pero no recibe una copia por alumno.
  *
  * Sin correo no se copia, no se repite, y NUNCA va el alumno —que ya es el
  * destinatario—.
@@ -189,7 +189,7 @@ export function copiaDeBienvenida(h: HechosDeBienvenida): string[] {
   const alumno = h.correoDelAlumno?.trim().toLowerCase() ?? null;
   const vistos = new Set<string>();
   const out: string[] = [];
-  const candidatos = conCorreo([...(h.esEspecializacion ? [] : [h.docente]), ...h.soporte]);
+  const candidatos = conCorreo(h.soporte);
   for (const { email } of candidatos) {
     const llave = email.toLowerCase();
     if (llave === alumno || vistos.has(llave)) continue;

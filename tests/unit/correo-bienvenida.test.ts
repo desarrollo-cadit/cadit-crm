@@ -171,12 +171,8 @@ describe("cantidadDeClases", () => {
 });
 
 describe("copiaDeBienvenida (CC)", () => {
-  it("curso: docente y soporte, sin coordinación", () => {
-    expect(copiaDeBienvenida(hechosCurso())).toEqual([
-      "sandra@example.com",
-      "julio@example.com",
-      "ale@example.com",
-    ]);
+  it("curso: solo soporte; ni docente ni coordinación", () => {
+    expect(copiaDeBienvenida(hechosCurso())).toEqual(["julio@example.com", "ale@example.com"]);
   });
 
   it("especialización: solo soporte", () => {
@@ -189,10 +185,11 @@ describe("copiaDeBienvenida (CC)", () => {
     const cc = copiaDeBienvenida(
       hechosCurso({
         correoDelAlumno: "Julio@Example.com",
-        docente: persona("Sandra", "ale@example.com"),
+        docente: persona("Sandra", "sandra@example.com"),
         soporte: [
           persona("Julio", "julio@example.com"),
-          persona("Ale", " ALE@example.com "),
+          persona("Ale", " ale@example.com "),
+          persona("Ale otra vez", "ALE@example.com"),
           persona("Nadie", null),
           persona("Vacío", "  "),
         ],
