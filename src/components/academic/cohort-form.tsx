@@ -16,6 +16,8 @@ import { MoneyInput } from "@/components/ui/money-input";
 import type { CronogramaAutomatico } from "@/lib/cronograma-automatico";
 import { COURSE_KIND_LABEL, MODULE_NAME_MAX, cursosParaSelector } from "@/lib/course-kind";
 import { esDiaValido } from "@/lib/access-expiry";
+import { entregaFinalSugerida, fechaDeFinSugerida } from "@/lib/fechas-de-cursada";
+import type { RangoDeReceso } from "@/lib/recess";
 import {
   fechasSugeridas,
   modulosSugeridos,
@@ -342,6 +344,39 @@ export function CohortForm({
       )
     );
   }
+
+  /**
+   * Alta de un grupo común: el fin sale del inicio, los días de cursada y la
+   * cantidad de clases del curso, y la entrega final 15 días después del fin.
+   * Lo que la persona escribió a mano no se pisa; con una base, mandan sus
+   * fechas (`sugerirFechas`). No cuenta recesos ni feriados.
+   */
+  const clasesDelCurso = courses.find((c) => c.id === courseId)?.classCount ?? null;
+  const diasClave = daysOfWeek.join(",");
+  // Los recesos de la academia (rangos y feriados anuales); si no cargan, se
+  // sugiere sin ellos.
+  const [recesos, setRecesos] = useState<RangoDeReceso[]>([]);
+  useEffect(() => {
+    if (initial || moduloDe) return;
+    void (async () => {
+      const res = await fetch("/api/recesses").catch(() => null);
+      if (!res?.ok) return;
+      const body = (await res.json().catch(() => null)) as { recesses?: RangoDeReceso[] } | null;
+      setRecesos(body?.recesses ?? []);
+    })();
+  }, [initial, moduloDe]);
+  useEffect(() => {
+    if (initial || moduloDe || base || esEspecializacion) return;
+    const fin = tocados.end
+      ? endDate
+      : fechaDeFinSugerida(startDate, daysOfWeek, clasesDelCurso, recesos);
+    if (!tocados.end && fin) setEndDate(fin);
+    if (!tocados.deadline && fin) {
+      const entrega = entregaFinalSugerida(fin);
+      if (entrega) setDeliveryDeadline(entrega);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- daysOfWeek va por diasClave
+  }, [startDate, diasClave, clasesDelCurso, recesos, tocados.end, tocados.deadline, endDate, initial, moduloDe, base, esEspecializacion]);
 
   const [saving, setSaving] = useState(false);
   /** Validación del formulario (inline, junto al botón). Los fallos del servidor van en toast. */
@@ -784,6 +819,13 @@ export function CohortForm({
                   setTocados((t) => ({ ...t, end: true }));
                 }}
               />
+              {!initial && !esEspecializacion && !base && !moduloDe && (
+                <p className="text-xs text-muted-foreground">
+                  Se completa sola con el inicio, los días de cursada, las clases del curso y
+                  los recesos de la academia. Los recesos propios de este grupo no entran:
+                  revisala y corregila si hace falta.
+                </p>
+              )}
             </div>
           </div>
 
@@ -801,7 +843,7 @@ export function CohortForm({
                 }}
               />
               <p className="text-xs text-muted-foreground">
-                Opcional. Posterior a la fecha de fin. Las evaluaciones sin
+                Opcional. Posterior a la fecha de fin (se sugieren 15 días después). Las evaluaciones sin
                 fecha límite propia vencen ese día a las 23:59, y el acceso a
                 los contenidos dura un mes más desde esa fecha.
               </p>
