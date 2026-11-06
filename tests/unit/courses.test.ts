@@ -89,6 +89,10 @@ vi.mock("@/lib/db", () => ({
 function pushCourseExists() {
   selectQueue.push([{ id: "crs_revit" }]);
 }
+/** 0087 — `createCohort` lee el tipo del curso (`kindDelCurso`) justo antes del insert. */
+function pushCourseKind(kind = "curso") {
+  selectQueue.push([{ kind }]);
+}
 function pushTeacherExists(id = "tch_1") {
   selectQueue.push([{ id }]);
 }
@@ -488,6 +492,7 @@ describe("courses: createCourse / createCohort (004)", () => {
   it("createCohort (005 T029, US4, FR-006) calcula licenseWarnings sin bloquear la creación", async () => {
     pushCourseExists();
     pushSoftwareExists("sw_1");
+    pushCourseKind();
     selectQueue.push(
       [{ name: "Revit", total: 5 }], // availableLicenses: software
       /*
@@ -532,6 +537,7 @@ describe("courses: createCourse / createCohort (004)", () => {
   it("createCohort (005 T034, US5, FR-008) calcula scheduleWarnings sin bloquear la creación", async () => {
     pushCourseExists();
     pushTeacherExists();
+    pushCourseKind();
     selectQueue.push([
       {
         cohort: {

@@ -40,6 +40,15 @@ const FILA_BASE = {
   textFields: [],
 };
 
+/**
+ * 0087 — La config de taller (`taller-config`) consulta la base por su cuenta;
+ * este archivo prueba la plantilla, no esa regla (la cubre
+ * `taller-config-guard.test.ts`). Sin esto la cola posicional se corre un lugar.
+ */
+vi.mock("@/server/taller-config", () => ({
+  exigirEvaluacionesDeEvaluacion: async () => null,
+}));
+
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
     select: () => thenableChain(selectQueue.shift() ?? []),

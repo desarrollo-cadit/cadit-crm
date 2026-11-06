@@ -110,6 +110,16 @@ vi.mock("@/lib/db", () => ({
   ),
 }));
 
+/**
+ * 0087 — Si el grupo tiene evaluaciones lo decide `taller-config` con consultas
+ * propias; este archivo prueba la entrega, no esa regla (la cubre
+ * `taller-config-guard.test.ts`). Un grupo común SIEMPRE las tiene.
+ */
+vi.mock("@/server/taller-config", () => ({
+  grupoTieneEvaluacionesPorId: async () => true,
+  exigirEvaluacionesDeGrupo: async () => null,
+}));
+
 vi.mock("@/server/teacher-portal", () => ({
   teacherReachesCohort: async () => alcanzaLaCohorte,
   teacherCohortDetail: async () => detalleDeCohorte,
