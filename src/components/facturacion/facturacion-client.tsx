@@ -490,7 +490,7 @@ export function FacturacionClient({
                               )}
                             </TableCell>
                           </TableRow>
-        {abiertas.has(f.enrollmentId) && (
+        {abiertas.has(f.enrollmentId) && !ventaEnBloque && (
           <TableRow className="hover:bg-transparent">
             <TableCell colSpan={COLUMNAS} className="bg-subtle">
               <BillingPanel

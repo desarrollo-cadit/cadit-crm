@@ -178,7 +178,15 @@ export function BillingPanel({
   }
 
   const vigentes = installments.filter((i) => !i.canceledAt);
-  const deuda = vigentes.reduce((s, i) => s + i.balance, 0);
+  /**
+   * Lo pagado A CUENTA (una seña sin cuota asignada) no baja el saldo de ninguna
+   * cuota, pero sí es plata que entró: el saldo lo descuenta, igual que el resumen
+   * de cobro de Facturación (pactado − pagado).
+   */
+  const aCuenta = payments
+    .filter((p) => !p.voidedAt && !p.installmentId)
+    .reduce((s, p) => s + p.amount, 0);
+  const deuda = Math.max(0, vigentes.reduce((s, i) => s + i.balance, 0) - aCuenta);
   const currency = vigentes[0]?.currency ?? monedaDeLaVenta;
 
   return (
@@ -224,6 +232,7 @@ export function BillingPanel({
             <span className={deuda > 0 ? "font-medium text-destructive" : "text-primary"}>
               {money(deuda, currency)}
             </span>
+            {aCuenta > 0 && <span> (descuenta {money(aCuenta, currency)} a cuenta)</span>}
           </p>
         )}
       </div>
