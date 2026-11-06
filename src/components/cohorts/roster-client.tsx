@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import {
   ChevronDown,
@@ -1000,10 +1001,25 @@ export function RosterClient({
                                       gate de rol (FR-016). */}
                                   <div className="mt-3 border-t pt-3">
                                     {/* 2026-10-23 — Las cuotas y los pagos son de la venta: en un módulo, de la madre. */}
-                                    <BillingPanel
-                                      enrollmentId={venta.enrollmentId}
-                                      puedeAnotarRecibo={canInvoice}
-                                    />
+                                    {e.billingEnrollmentId ? (
+                                      <p className="text-xs text-muted-foreground">
+                                        Incluido en la venta de la empresa
+                                        {(() => {
+                                          const titular = roster.enrollments.find((x) => x.id === e.billingEnrollmentId);
+                                          return titular ? <> (la lleva {titular.contact.name})</> : null;
+                                        })()}
+                                        . El total, las cuotas y los pagos se gestionan una vez, en{" "}
+                                        <Link href={`/facturacion?grupo=${roster.cohort.id}`} className="underline">
+                                          Facturación
+                                        </Link>
+                                        , no por persona.
+                                      </p>
+                                    ) : (
+                                      <BillingPanel
+                                        enrollmentId={venta.enrollmentId}
+                                        puedeAnotarRecibo={canInvoice}
+                                      />
+                                    )}
                                   </div>
                                 </div>
                               )}

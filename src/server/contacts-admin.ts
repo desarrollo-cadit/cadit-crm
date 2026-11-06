@@ -2,6 +2,7 @@ import { eq, inArray, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { sincronizarLicenciasDelGrupo } from "@/server/group-licenses";
+import { reasignarTitular } from "@/server/venta-empresa";
 
 /**
  * 014 (T004, DV-008) — Dar de baja a un alumno sin destruir su historial.
@@ -169,6 +170,18 @@ export async function archiveOrDeleteContact(
   }
 
   const decision = decidirBaja(await historialDe(organizationId, contactId));
+
+  // 2026-11-06 — Si esta persona es la TITULAR de una venta de empresa, la venta
+  // (monto, cuotas y pagos) pasa a otro alumno del grupo antes de la baja.
+  const inscripcionesTitulares = await db
+    .select({ id: schema.enrollment.id })
+    .from(schema.enrollment)
+    .where(
+      scoped(schema.enrollment.organizationId, organizationId, eq(schema.enrollment.contactId, contactId))
+    );
+  for (const i of inscripcionesTitulares) {
+    await reasignarTitular(organizationId, i.id);
+  }
 
   if (decision.accion === "borrar") {
     await db

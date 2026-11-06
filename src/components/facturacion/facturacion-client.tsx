@@ -7,6 +7,10 @@ import { BillingPanel } from "@/components/cohorts/billing-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Modal } from "@/components/ui/modal";
+import { MoneyInput } from "@/components/ui/money-input";
+import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -132,6 +136,8 @@ export function FacturacionClient({
   const [guardando, setGuardando] = useState<Record<string, boolean>>({});
   /** Las ventas con el seguimiento de pagos abierto (por id de inscripción). */
   const [abiertas, setAbiertas] = useState<Set<string>>(new Set());
+  /** El bloque de empresa que se está pasando a una sola venta (diálogo abierto). */
+  const [pasando, setPasando] = useState<Extract<BloqueDeFacturacion, { tipo: "empresa" }> | null>(null);
   /** Lo que se está escribiendo en la factura única de cada empresa, por clave de bloque. */
   const [borradoresDeEmpresa, setBorradoresDeEmpresa] = useState<Record<string, string>>({});
 
@@ -310,7 +316,26 @@ export function FacturacionClient({
 
 
   /** Cobro de la venta: cuánto va pagado y cómo viene el plan (de las cuotas y pagos de Cobranza). */
-  function celdaDeCobro(f: FilaFacturacion) {
+  function celdaDeCobro(f: FilaFacturacion, ventaEnBloque: boolean) {
+    // Venta de empresa: el cobro es de la venta, no de cada persona. Dentro de su
+    // bloque se gestiona en el encabezado; suelta (otros alumnos filtrados), se
+    // aclara de quién es.
+    if (f.venta && !f.venta.esTitular) {
+      return (
+        <span className="text-xs text-muted-foreground">
+          Incluido en la venta de la empresa
+          {!ventaEnBloque && (
+            <span className="block tabular-nums">
+              Cobrado {dinero(f.venta.cobro.pagado, f.venta.currency)}
+              {f.venta.amount !== null && <> de {dinero(f.venta.amount, f.venta.currency)}</>}
+            </span>
+          )}
+        </span>
+      );
+    }
+    if (f.venta?.esTitular && ventaEnBloque) {
+      return <span className="text-xs text-muted-foreground">Titular de la venta de la empresa</span>;
+    }
     const c: ResumenDeCobro = f.cobro;
     const abierta = abiertas.has(f.enrollmentId);
     return (
@@ -357,7 +382,7 @@ export function FacturacionClient({
   }
 
   /** Una venta; `enGrupo` = va debajo del encabezado de su empresa, que lleva la factura única. */
-  function renderVenta(f: FilaFacturacion, enGrupo: boolean) {
+  function renderVenta(f: FilaFacturacion, enGrupo: boolean, ventaEnBloque = false) {
   const borrador = borradores[f.enrollmentId] ?? f.invoiceNumber ?? "";
                     return (
       <>
@@ -395,7 +420,9 @@ export function FacturacionClient({
                               )}
                             </TableCell>
                             <TableCell className="whitespace-nowrap text-right tabular-nums">
-                              {f.amount === null ? (
+                              {f.venta && !f.venta.esTitular ? (
+                                <span className="text-muted-foreground">En la venta</span>
+                              ) : f.amount === null ? (
                                 <span className="text-muted-foreground">Sin monto</span>
                               ) : (
                                 dinero(f.amount, f.currency)
@@ -423,7 +450,7 @@ export function FacturacionClient({
                                 <span className="text-muted-foreground">Particular</span>
                               )}
                             </TableCell>
-                            <TableCell>{celdaDeCobro(f)}</TableCell>
+                            <TableCell>{celdaDeCobro(f, ventaEnBloque)}</TableCell>
                             <TableCell>
                               {enGrupo ? (
                                 (f.invoiceNumber ?? <span className="text-muted-foreground">—</span>)
@@ -499,13 +526,64 @@ export function FacturacionClient({
           <span className="text-muted-foreground">
             {" "}
             · {b.filas.length} alumnos en este grupo
-            {unaMoneda && (
+            {b.venta ? (
               <>
                 {" "}
-                · pactado {dinero(pactado, unaMoneda)} · cobrado {dinero(pagado, unaMoneda)}
+                · venta única{b.venta.amount !== null && <> {dinero(b.venta.amount, b.venta.currency)}</>} · cobrado{" "}
+                {dinero(b.venta.cobro.pagado, b.venta.currency)}
+                {b.venta.cobro.saldo !== null && <> · saldo {dinero(b.venta.cobro.saldo, b.venta.currency)}</>}
               </>
+            ) : (
+              unaMoneda && (
+                <>
+                  {" "}
+                  · pactado {dinero(pactado, unaMoneda)} · cobrado {dinero(pagado, unaMoneda)}
+                </>
+              )
             )}
           </span>
+          {b.venta ? (
+            <span className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+              {b.venta.cobro.estado === "pagada" ? (
+                <Badge variant="success">Pagada</Badge>
+              ) : b.venta.cobro.estado === "vencida" ? (
+                <Badge variant="destructive">
+                  {b.venta.cobro.cuotasVencidas} {b.venta.cobro.cuotasVencidas === 1 ? "cuota vencida" : "cuotas vencidas"}
+                </Badge>
+              ) : b.venta.cobro.estado === "al_dia" ? (
+                <Badge variant="secondary">Al día</Badge>
+              ) : (
+                <Badge variant="secondary">Sin plan</Badge>
+              )}
+              {b.venta.cobro.cuotas > 0 && (
+                <span className="text-muted-foreground">
+                  {b.venta.cobro.cuotasPagadas}/{b.venta.cobro.cuotas} cuotas
+                </span>
+              )}
+              <button
+                type="button"
+                className="inline-flex items-center gap-0.5 text-muted-foreground underline hover:text-foreground"
+                aria-expanded={abiertas.has(b.venta.titularId)}
+                onClick={() => alternar(b.venta!.titularId)}
+              >
+                {abiertas.has(b.venta.titularId) ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                Seguimiento de pagos de la empresa
+              </button>
+            </span>
+          ) : (
+            puedeRegistrarCobro && (
+              <span className="mt-1 block text-xs">
+                <button
+                  type="button"
+                  className="underline text-muted-foreground hover:text-foreground"
+                  onClick={() => setPasando(b)}
+                >
+                  Pasar a una sola venta
+                </button>
+                <span className="text-muted-foreground"> · el total, las cuotas y los pagos se gestionan una vez, no por persona</span>
+              </span>
+            )
+          )}
           {distintos && (
             <span className="block text-xs text-warning">
               Tienen números de factura distintos: anotar uno acá los unifica.
@@ -552,6 +630,16 @@ export function FacturacionClient({
 
   return (
     <div className="space-y-5 p-6">
+      {pasando && (
+        <PasarAVentaUnica
+          bloque={pasando}
+          onClose={() => setPasando(null)}
+          onHecho={() => {
+            setPasando(null);
+            void cargar(true);
+          }}
+        />
+      )}
       <header className="space-y-3">
         <div>
           <h2 className="flex items-center gap-2 font-semibold">
@@ -734,8 +822,22 @@ export function FacturacionClient({
                   ) : (
                     <Fragment key={b.clave}>
                       {renderEncabezadoDeEmpresa(b)}
+                      {b.venta && abiertas.has(b.venta.titularId) && (
+                        <TableRow className="hover:bg-transparent">
+                          <TableCell colSpan={COLUMNAS} className="bg-subtle">
+                            <BillingPanel
+                              enrollmentId={b.venta.titularId}
+                              currency={b.venta.currency}
+                              puedeRegistrar={puedeRegistrarCobro}
+                              puedeCorregir={puedeCorregirCobro}
+                              puedeAnotarRecibo={puedeFacturar}
+                              onChanged={refrescarCobro}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      )}
                       {b.filas.map((f) => (
-                        <Fragment key={f.enrollmentId}>{renderVenta(f, true)}</Fragment>
+                        <Fragment key={f.enrollmentId}>{renderVenta(f, true, b.venta !== null)}</Fragment>
                       ))}
                     </Fragment>
                   )
@@ -769,5 +871,87 @@ export function FacturacionClient({
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * 2026-11-06 — Pasa a los alumnos de una empresa en un grupo a UNA venta: un
+ * total, y desde ahí las cuotas y los pagos se gestionan una vez. Solo se puede
+ * si ninguno tiene cuotas ni pagos propios (el servidor lo rechaza si no).
+ */
+function PasarAVentaUnica({
+  bloque,
+  onClose,
+  onHecho,
+}: {
+  bloque: Extract<BloqueDeFacturacion, { tipo: "empresa" }>;
+  onClose: () => void;
+  onHecho: () => void;
+}) {
+  const primera = bloque.filas[0]!;
+  const [titularId, setTitularId] = useState(primera.enrollmentId);
+  const [total, setTotal] = useState<number | null>(
+    bloque.filas.every((f) => f.amount !== null && f.currency === primera.currency)
+      ? bloque.filas.reduce((suma, f) => suma + (f.amount ?? 0), 0)
+      : null
+  );
+  const [guardando, setGuardando] = useState(false);
+  const moneda = primera.currency;
+
+  async function confirmar() {
+    if (!total) return;
+    setGuardando(true);
+    const res = await fetch(`/api/cohorts/${primera.cohortId}/company-sale`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ companyId: bloque.empresa.id, titularId, total, currency: moneda }),
+    }).catch(() => null);
+    setGuardando(false);
+    if (!res?.ok) {
+      notify.error(await mensajeDeError(res, "No se pudo pasar a una sola venta."));
+      return;
+    }
+    notify.success(`${bloque.empresa.razonSocial}: ahora es una sola venta.`);
+    onHecho();
+  }
+
+  return (
+    <Modal onClose={onClose} busy={guardando} labelledBy="venta-unica-title" className="max-w-md">
+      <h3 id="venta-unica-title" className="mb-1 font-semibold">
+        Pasar a una sola venta
+      </h3>
+      <p className="mb-4 text-xs text-muted-foreground">
+        {bloque.empresa.razonSocial} · {bloque.filas.length} alumnos. El total, las cuotas y los pagos se gestionan una
+        vez, en la venta de la empresa; los alumnos quedan incluidos, sin monto propio. Solo se puede si ninguno tiene
+        cuotas o pagos cargados por persona.
+      </p>
+      <div className="space-y-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="venta-titular">Alumno titular de la venta</Label>
+          <Select id="venta-titular" value={titularId} onChange={(e) => setTitularId(e.target.value)}>
+            {bloque.filas.map((f) => (
+              <option key={f.enrollmentId} value={f.enrollmentId}>
+                {f.alumno}
+              </option>
+            ))}
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Es solo donde se guarda la venta. Si esa persona se da de baja, pasa a otro alumno del grupo.
+          </p>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="venta-total">Total que se le factura a la empresa</Label>
+          <MoneyInput id="venta-total" value={total} onChange={setTotal} currency={moneda} />
+        </div>
+      </div>
+      <div className="mt-4 flex justify-end gap-2">
+        <Button variant="ghost" onClick={onClose}>
+          Cancelar
+        </Button>
+        <Button disabled={guardando || !total} onClick={() => void confirmar()}>
+          {guardando ? "Guardando…" : "Pasar a una sola venta"}
+        </Button>
+      </div>
+    </Modal>
   );
 }

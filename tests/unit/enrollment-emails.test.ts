@@ -280,7 +280,7 @@ describe("bienvenida: copia y asunto", () => {
     };
   }
 
-  it("copia al docente y al soporte, sin coordinación ni el alumno", async () => {
+  it("copia solo al soporte: ni el docente, ni coordinación, ni el alumno", async () => {
     selectQueue.push([contextoBienvenida()]);
     selectQueue.push([{ name: "Revit" }]); // cohort_software
     selectQueue.push([]); // licencias propias
@@ -300,7 +300,7 @@ describe("bienvenida: copia y asunto", () => {
     expect(r.ok).toBe(true);
     const enviado = sendMail.mock.calls[0]?.[0] as { cc?: string[]; subject: string; to: string };
     expect(enviado.to).toBe("ana@x.com");
-    expect(enviado.cc).toEqual(["sandra@example.com", "julio@example.com"]);
+    expect(enviado.cc).toEqual(["julio@example.com"]);
     expect(enviado.subject).toBe("Te damos la bienvenida a REVIT Arquitectura");
   });
 

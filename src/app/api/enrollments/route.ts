@@ -25,6 +25,11 @@ const createSchema = z.object({
   receiptNumber: z.string().max(60).nullable().optional(),
   sellerId: z.string().min(1).nullable().optional(),
   companyId: z.string().min(1).nullable().optional(),
+  /**
+   * 2026-11-06 — Sumar al alumno a la venta de la empresa que ya hay en el grupo
+   * (sin monto propio). Si no hay, queda como titular y lleva el total.
+   */
+  sumarAVentaDeEmpresa: z.boolean().optional(),
   /** 2026-10-21 — Correo para la licencia (en minúsculas), si no es el del alumno. */
   licenseEmail: correoNullable,
   /**

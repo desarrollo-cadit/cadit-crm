@@ -9,6 +9,7 @@ import {
   resumenDeCobro,
   type EstadoFacturacion,
   type FilaFacturacion,
+  type VentaDeEmpresaDeFila,
 } from "@/lib/facturacion";
 
 /**
@@ -55,6 +56,7 @@ export async function listarFacturacion(
       contactId: schema.enrollment.contactId,
       cohortId: schema.enrollment.cohortId,
       parentEnrollmentId: schema.enrollment.parentEnrollmentId,
+      billingEnrollmentId: schema.enrollment.billingEnrollmentId,
       amount: schema.enrollment.amount,
       currency: schema.enrollment.currency,
       invoiceNumber: schema.enrollment.invoiceNumber,
@@ -103,8 +105,46 @@ export async function listarFacturacion(
     )
   );
 
+  /**
+   * Venta de empresa: las titulares a las que apuntan las filas de la vista (que
+   * pueden estar en la otra pestaña) y las filas de la vista que SON titulares
+   * de alguien. De cada titular sale el monto y el cobro de la venta.
+   */
+  const titularesIds = [...new Set(enVista.flatMap((r) => (r.billingEnrollmentId ? [r.billingEnrollmentId] : [])))];
+  const enVistaIds = enVista.map((r) => r.enrollmentId);
+  const conCubiertas =
+    enVistaIds.length === 0
+      ? []
+      : await getDb()
+          .select({ titularId: schema.enrollment.billingEnrollmentId })
+          .from(schema.enrollment)
+          .where(
+            scoped(
+              schema.enrollment.organizationId,
+              organizationId,
+              inArray(schema.enrollment.billingEnrollmentId, enVistaIds)
+            )
+          );
+  const titularesConCubiertas = new Set(conCubiertas.map((c) => c.titularId));
+  const titularesFuera = titularesIds.filter((id) => !enVistaIds.includes(id));
+  const titularesDatos =
+    titularesFuera.length === 0
+      ? []
+      : await getDb()
+          .select({
+            id: schema.enrollment.id,
+            amount: schema.enrollment.amount,
+            currency: schema.enrollment.currency,
+          })
+          .from(schema.enrollment)
+          .where(scoped(schema.enrollment.organizationId, organizationId, inArray(schema.enrollment.id, titularesFuera)));
+  const datosDeTitular = new Map<string, { amount: number | null; currency: (typeof enVista)[number]["currency"] }>([
+    ...enVista.map((r) => [r.enrollmentId, { amount: r.amount, currency: r.currency }] as const),
+    ...titularesDatos.map((t) => [t.id, { amount: t.amount, currency: t.currency }] as const),
+  ]);
+
   // El cobro sale de las MISMAS cuotas y pagos de Cobranza (no hay otro registro).
-  const ids = enVista.map((r) => r.enrollmentId);
+  const ids = [...new Set([...enVistaIds, ...titularesIds])];
   const [cuotas, pagos] =
     ids.length === 0
       ? [[], []]
@@ -132,6 +172,25 @@ export async function listarFacturacion(
   const cuotasDe = Map.groupBy(cuotas, (c) => c.enrollmentId);
   const pagosDe = Map.groupBy(pagos, (p) => p.enrollmentId);
   const ahora = new Date();
+  const cobroDe = (id: string, pactado: number | null) =>
+    resumenDeCobro(
+      { pactado, cuotas: cuotasDe.get(id) ?? [], pagos: pagosDe.get(id) ?? [] },
+      ahora
+    );
+
+  /** La venta de empresa de una fila: la titular de alguien o una cubierta; si no, `null`. */
+  const ventaDe = (r: (typeof enVista)[number]): VentaDeEmpresaDeFila | null => {
+    const titularId = r.billingEnrollmentId ?? (titularesConCubiertas.has(r.enrollmentId) ? r.enrollmentId : null);
+    if (!titularId) return null;
+    const datos = datosDeTitular.get(titularId);
+    return {
+      titularId,
+      esTitular: titularId === r.enrollmentId,
+      amount: datos?.amount ?? null,
+      currency: datos?.currency ?? r.currency,
+      cobro: cobroDe(titularId, datos?.amount ?? null),
+    };
+  };
 
   return enVista.map((r) => ({
       enrollmentId: r.enrollmentId,
@@ -161,14 +220,8 @@ export async function listarFacturacion(
             condicion: condicionDePago(r.paymentTerms, r.paymentTermDays),
           }
         : null,
-      cobro: resumenDeCobro(
-        {
-          pactado: r.amount,
-          cuotas: cuotasDe.get(r.enrollmentId) ?? [],
-          pagos: pagosDe.get(r.enrollmentId) ?? [],
-        },
-        ahora
-      ),
+      cobro: cobroDe(r.enrollmentId, r.amount),
+      venta: ventaDe(r),
     }));
 }
 

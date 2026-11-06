@@ -946,6 +946,19 @@ export const enrollment = pgTable(
       (): AnyPgColumn => enrollment.id,
       { onDelete: "restrict" }
     ),
+    /**
+     * 2026-11-06 — VENTA DE EMPRESA. Cuando una empresa paga un total por varios
+     * alumnos del mismo grupo, UNA inscripción (la titular) lleva el monto, las
+     * cuotas y los pagos de toda la empresa, y las demás apuntan acá a ella.
+     * NULL = la inscripción se cobra por sí misma (el caso de siempre). Una
+     * inscripción cubierta no tiene monto, cuotas ni pagos propios: lo rechazan
+     * las rutas de cobranza (`src/lib/venta-empresa.ts`). Se suelta (`set null`)
+     * si la titular se borra; la baja de una titular reasigna la venta antes.
+     */
+    billingEnrollmentId: text("billing_enrollment_id").references(
+      (): AnyPgColumn => enrollment.id,
+      { onDelete: "set null" }
+    ),
     stageId: text("stage_id")
       .notNull()
       .references(() => pipelineStage.id),
@@ -1102,6 +1115,7 @@ export const enrollment = pgTable(
     index("enrollment_org_cohort_idx").on(t.organizationId, t.cohortId),
     index("enrollment_seller_idx").on(t.sellerId),
     index("enrollment_company_idx").on(t.companyId),
+    index("enrollment_billing_enrollment_idx").on(t.billingEnrollmentId),
     index("enrollment_org_interest_course_idx").on(
       t.organizationId,
       t.interestCourseId

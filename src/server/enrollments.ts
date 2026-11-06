@@ -1,5 +1,7 @@
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
+import { MENSAJE_CUBIERTA, estaCubierta } from "@/lib/venta-empresa";
+import { titularParaSumar } from "@/server/venta-empresa";
 import { getDb, schema } from "@/lib/db";
 import type { Currency } from "@/lib/db/schema";
 import { newId } from "@/lib/db/ids";
@@ -68,6 +70,13 @@ export type CreateEnrollmentInput = {
   receiptNumber?: string | null;
   sellerId?: string | null;
   companyId?: string | null;
+  /**
+   * 2026-11-06 — El alumno se suma a la VENTA DE LA EMPRESA que ya hay en el
+   * grupo: no lleva monto, cuotas ni pagos propios (los gestiona la titular).
+   * Si todavía no hay venta de esa empresa en el grupo, este alumno queda como
+   * titular y lleva el total. Requiere `companyId`; se ignora en un módulo.
+   */
+  sumarAVentaDeEmpresa?: boolean;
   /**
    * 028 (FR-006/FR-008) — La inscripción MADRE de la que ésta es un módulo.
    * null/omitido = inscripción normal, el estado de las 384 filas reales.
@@ -269,6 +278,12 @@ export async function createEnrollment(
     };
   }
 
+  // 2026-11-06 — ¿Se suma a la venta de la empresa que ya hay en el grupo?
+  const titularDeEmpresa =
+    input.sumarAVentaDeEmpresa && input.companyId && !input.parentEnrollmentId
+      ? await titularParaSumar(organizationId, input.companyId, input.cohortId)
+      : null;
+
   const inserted = await db
     .insert(schema.enrollment)
     .values({
@@ -277,11 +292,13 @@ export async function createEnrollment(
       contactId,
       cohortId: input.cohortId,
       parentEnrollmentId: input.parentEnrollmentId ?? null,
+      billingEnrollmentId: titularDeEmpresa,
       stageId,
       enrolledAt: new Date(),
-      amount: input.amount ?? null,
+      // Cubierta por la venta de la empresa: sin monto propio.
+      amount: titularDeEmpresa ? null : (input.amount ?? null),
       currency: input.currency ?? "UYU",
-      installments: input.installments ?? null,
+      installments: titularDeEmpresa ? null : (input.installments ?? null),
       paymentNotes: input.paymentNotes ?? null,
       nationalId: nationalIdForRecord,
       invoiceNumber: input.invoiceNumber ?? null,
@@ -464,6 +481,11 @@ export type RosterEntryDto = {
   nationalId?: string | null;
   invoiceNumber?: string | null;
   receiptNumber?: string | null;
+  /**
+   * 2026-11-06 — Venta de empresa: la inscripción titular que lleva el total, las
+   * cuotas y los pagos de esta. `null` = se cobra por sí misma.
+   */
+  billingEnrollmentId?: string | null;
   sellerId?: string | null;
   /**
    * 2026-10-06 — El vendedor, con nombre, para mostrarlo en el roster.
@@ -606,6 +628,7 @@ export function buildRosterEntry(
     nationalId: enrollment.nationalId,
     invoiceNumber: enrollment.invoiceNumber,
     receiptNumber: enrollment.receiptNumber,
+    billingEnrollmentId: enrollment.billingEnrollmentId,
     sellerId: enrollment.sellerId,
     seller: seller
       ? { id: seller.id, name: seller.name, archived: seller.archivedAt !== null }
@@ -1279,6 +1302,52 @@ export async function updateEnrollmentCommercial(
       .limit(1);
     if (!companyRows[0]) {
       return { ok: false, status: 422, code: "invalid_body", message: "Empresa inexistente" };
+    }
+  }
+
+  /**
+   * 2026-11-06 — Venta de empresa: una inscripción cubierta no lleva monto
+   * propio, y la empresa de una cubierta o de una titular con cubiertas no se
+   * cambia sin soltar antes la venta (si no, la venta mezclaría empresas).
+   * El formulario comercial manda todos los campos en cada guardado, así que
+   * `amount: null` y la misma empresa pasan sin problema.
+   */
+  if (input.amount !== undefined || input.companyId !== undefined) {
+    const [actual] = await db
+      .select({
+        billingEnrollmentId: schema.enrollment.billingEnrollmentId,
+        companyId: schema.enrollment.companyId,
+      })
+      .from(schema.enrollment)
+      .where(
+        scoped(schema.enrollment.organizationId, organizationId, eq(schema.enrollment.id, enrollmentId))
+      )
+      .limit(1);
+    if (actual) {
+      if (estaCubierta(actual) && input.amount !== undefined && input.amount !== null) {
+        return { ok: false, status: 422, code: "invalid_body", message: MENSAJE_CUBIERTA };
+      }
+      if (input.companyId !== undefined && input.companyId !== actual.companyId) {
+        const [cubiertas] = await db
+          .select({ n: sql<number>`count(*)::int` })
+          .from(schema.enrollment)
+          .where(
+            scoped(
+              schema.enrollment.organizationId,
+              organizationId,
+              eq(schema.enrollment.billingEnrollmentId, enrollmentId)
+            )
+          );
+        if (estaCubierta(actual) || (cubiertas?.n ?? 0) > 0) {
+          return {
+            ok: false,
+            status: 422,
+            code: "invalid_body",
+            message:
+              "Esta inscripción es parte de una venta de empresa: para cambiar la empresa, primero sacala de esa venta.",
+          };
+        }
+      }
     }
   }
 

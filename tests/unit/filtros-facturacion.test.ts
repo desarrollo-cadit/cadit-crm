@@ -25,6 +25,7 @@ const fila = (over: Partial<FilaFacturacion>): FilaFacturacion => ({
   invoiceRecordedAt: null,
   empresa: null,
   cobro: { cuotas: 0, cuotasPagadas: 0, cuotasVencidas: 0, pagado: 0, saldo: 100000, estado: "sin_plan" },
+  venta: null,
   ...over,
 });
 

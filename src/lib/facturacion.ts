@@ -138,6 +138,22 @@ export function resumenDeCobro(
   };
 }
 
+/**
+ * 2026-11-06 — La VENTA DE EMPRESA a la que pertenece una inscripción: una
+ * titular lleva el total, las cuotas y los pagos de toda la empresa en el grupo
+ * y las demás quedan cubiertas (`src/lib/venta-empresa.ts`). Viaja en la fila
+ * de la titular Y en las de sus cubiertas, con el cobro de la venta.
+ */
+export type VentaDeEmpresaDeFila = {
+  titularId: string;
+  /** Esta fila ES la titular. */
+  esTitular: boolean;
+  /** Lo pactado con la empresa por todo el grupo. */
+  amount: number | null;
+  currency: Currency;
+  cobro: ResumenDeCobro;
+};
+
 export type FilaFacturacion = {
   enrollmentId: string;
   contactId: string;
@@ -164,6 +180,8 @@ export type FilaFacturacion = {
   empresa: EmpresaParaFacturar | null;
   /** 2026-11-06 — Cuánto va cobrado y cómo viene el plan. */
   cobro: ResumenDeCobro;
+  /** `null` = se cobra por sí misma (el caso de siempre). */
+  venta: VentaDeEmpresaDeFila | null;
 };
 
 export type FiltrosFacturacion = {
@@ -230,7 +248,14 @@ export function filtrarFacturacion(
  */
 export type BloqueDeFacturacion =
   | { tipo: "fila"; fila: FilaFacturacion }
-  | { tipo: "empresa"; clave: string; empresa: EmpresaParaFacturar; filas: FilaFacturacion[] };
+  | {
+      tipo: "empresa";
+      clave: string;
+      empresa: EmpresaParaFacturar;
+      filas: FilaFacturacion[];
+      /** La venta única de la empresa en el grupo, si ya se pasó a una. */
+      venta: VentaDeEmpresaDeFila | null;
+    };
 
 export function agruparPorEmpresa(filas: readonly FilaFacturacion[]): BloqueDeFacturacion[] {
   const claveDe = (f: FilaFacturacion) => (f.empresa ? `${f.cohortId}|${f.empresa.id}` : null);
@@ -248,7 +273,13 @@ export function agruparPorEmpresa(filas: readonly FilaFacturacion[]): BloqueDeFa
       out.push({ tipo: "fila", fila: f });
     } else if (!hechos.has(k)) {
       hechos.add(k);
-      out.push({ tipo: "empresa", clave: k, empresa: f.empresa!, filas: miembros });
+      out.push({
+        tipo: "empresa",
+        clave: k,
+        empresa: f.empresa!,
+        filas: miembros,
+        venta: miembros.find((x) => x.venta)?.venta ?? null,
+      });
     }
   }
   return out;
@@ -314,7 +345,12 @@ export function totalesPorMoneda(filas: readonly FilaFacturacion[]): {
       cantidad: suyas.length,
     };
   }).filter((t) => t.cantidad > 0);
-  return { totales, sinMonto: filas.filter((r) => r.amount === null).length };
+  // Una inscripción cubierta por la venta de su empresa no tiene monto propio:
+  // no es una venta "sin monto pactado".
+  return {
+    totales,
+    sinMonto: filas.filter((r) => r.amount === null && !(r.venta && !r.venta.esTitular)).length,
+  };
 }
 
 /** 040 — La condición de pago de la empresa, en castellano. */

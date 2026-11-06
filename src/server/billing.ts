@@ -5,6 +5,7 @@ import { newId } from "@/lib/db/ids";
 import { minorFromDb, splitMinor } from "@/lib/money";
 import { scoped } from "@/lib/db/tenant";
 import { avisarAAdministracion } from "@/server/billing-notices-queue";
+import { MENSAJE_CUBIERTA, estaCubierta } from "@/lib/venta-empresa";
 
 /**
  * 008 — Cobranza: plan de cuotas y registro de pagos.
@@ -118,6 +119,15 @@ export type BillingResult<T> =
   | { ok: false; status: 404 | 409 | 422; code: string; message: string };
 
 /**
+ * 2026-11-06 — Una inscripción cubierta por la venta de su empresa no tiene
+ * cuotas ni pagos propios: se gestionan en la titular. Se rechaza ANTES de
+ * escribir, para que no vuelva a registrarse plata "por persona".
+ */
+function cubiertaPorEmpresa(): { ok: false; status: 422; code: string; message: string } {
+  return { ok: false, status: 422, code: "cubierta_por_empresa", message: MENSAJE_CUBIERTA };
+}
+
+/**
  * Genera el plan de cuotas de una inscripción.
  *
  * Si ya hay cuotas vigentes, se rechaza en vez de pisarlas: rearmar un plan
@@ -136,6 +146,7 @@ export async function generateInstallmentPlan(
       id: schema.enrollment.id,
       amount: schema.enrollment.amount,
       currency: schema.enrollment.currency,
+      billingEnrollmentId: schema.enrollment.billingEnrollmentId,
     })
     .from(schema.enrollment)
     .where(
@@ -150,6 +161,7 @@ export async function generateInstallmentPlan(
   if (!enrollment) {
     return { ok: false, status: 404, code: "not_found", message: "Inscripción no encontrada" };
   }
+  if (estaCubierta(enrollment)) return cubiertaPorEmpresa();
   if (enrollment.amount === null) {
     return {
       ok: false,
@@ -347,7 +359,11 @@ export async function recordPayment(
   }
 
   const enrollmentRows = await db
-    .select({ id: schema.enrollment.id, currency: schema.enrollment.currency })
+    .select({
+      id: schema.enrollment.id,
+      currency: schema.enrollment.currency,
+      billingEnrollmentId: schema.enrollment.billingEnrollmentId,
+    })
     .from(schema.enrollment)
     .where(
       scoped(
@@ -361,6 +377,7 @@ export async function recordPayment(
   if (!enrollment) {
     return { ok: false, status: 404, code: "not_found", message: "Inscripción no encontrada" };
   }
+  if (estaCubierta(enrollment)) return cubiertaPorEmpresa();
 
   let currency: Currency = enrollment.currency;
 

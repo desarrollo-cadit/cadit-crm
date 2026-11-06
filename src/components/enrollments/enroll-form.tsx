@@ -95,6 +95,37 @@ export function EnrollForm({
   const [sellerId, setSellerId] = useState("");
   const [companyId, setCompanyId] = useState("");
   const [newCompanyName, setNewCompanyName] = useState("");
+  /**
+   * 2026-11-06 — Venta de empresa. Si la empresa elegida ya tiene alumnos en este
+   * grupo, el alumno nuevo puede sumarse a SU venta (sin monto, cuotas ni pagos
+   * propios: se gestionan una vez, en la venta de la empresa).
+   */
+  const [ventaEmpresa, setVentaEmpresa] = useState<{
+    titularId: string | null;
+    titularNombre: string | null;
+    alumnos: number;
+    ventaUnica: boolean;
+  } | null>(null);
+  const [sumarAVenta, setSumarAVenta] = useState(true);
+
+  const cohorteElegida = cohortId ?? selectedCohortId;
+  useEffect(() => {
+    setVentaEmpresa(null);
+    if (!companyId || !cohorteElegida) return;
+    let vigente = true;
+    void (async () => {
+      const res = await fetch(`/api/cohorts/${cohorteElegida}/company-sale?companyId=${companyId}`).catch(() => null);
+      if (!res?.ok || !vigente) return;
+      const data = (await res.json()) as NonNullable<typeof ventaEmpresa>;
+      if (!vigente) return;
+      setVentaEmpresa(data);
+      setSumarAVenta(true);
+    })();
+    return () => {
+      vigente = false;
+    };
+  }, [companyId, cohorteElegida]);
+  const sumaAVenta = Boolean(companyId && ventaEmpresa?.titularId && sumarAVenta);
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -217,9 +248,11 @@ export function EnrollForm({
               nationalId: nationalId.trim() || undefined,
             },
           }),
-      amount,
+      // Cubierta por la venta de la empresa: sin monto propio.
+      amount: sumaAVenta ? null : amount,
+      sumarAVentaDeEmpresa: sumaAVenta || undefined,
       currency,
-      installments: installments.trim() ? Number(installments) : null,
+      installments: sumaAVenta ? null : installments.trim() ? Number(installments) : null,
       paymentNotes: paymentNotes.trim() || null,
       invoiceNumber: invoiceNumber.trim() || null,
       receiptNumber: receiptNumber.trim() || null,
@@ -443,7 +476,14 @@ export function EnrollForm({
         </div>
 
         <div className="mt-4 space-y-3 border-t pt-3">
-          <div className="grid grid-cols-2 gap-3">
+          {sumaAVenta && (
+            <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+              Este alumno se suma a la venta de la empresa en este grupo
+              {ventaEmpresa?.titularNombre ? <> (la lleva {ventaEmpresa.titularNombre})</> : null}: no lleva monto,
+              cuotas ni pagos propios. Se gestionan una vez, en la venta de la empresa.
+            </p>
+          )}
+          <div className={sumaAVenta ? "hidden" : "grid grid-cols-2 gap-3"}>
             <div className="space-y-1.5">
               <Label htmlFor="enr-amount">Monto</Label>
               <div className="flex items-start gap-2">
@@ -533,6 +573,29 @@ export function EnrollForm({
                 </option>
               ))}
             </select>
+            {companyId && ventaEmpresa?.titularId && (
+              <label className="flex items-start gap-2 rounded-md border p-2.5 text-xs">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={sumarAVenta}
+                  onChange={(e) => setSumarAVenta(e.target.checked)}
+                />
+                <span>
+                  <span className="font-medium">Sumar a la venta de la empresa en este grupo</span>
+                  <span className="block text-muted-foreground">
+                    Ya hay {ventaEmpresa.alumnos} {ventaEmpresa.alumnos === 1 ? "alumno" : "alumnos"} de esta empresa.
+                    Si la empresa paga un total por todos, no cargues un importe por persona: se gestiona una vez.
+                  </span>
+                </span>
+              </label>
+            )}
+            {companyId && ventaEmpresa && !ventaEmpresa.titularId && (
+              <p className="text-xs text-muted-foreground">
+                Es el primer alumno de esta empresa en el grupo. Si la empresa paga un total por varios, cargá acá el
+                total; después sumá a los demás a esta venta.
+              </p>
+            )}
             <div className="flex gap-2">
               <Input
                 placeholder="Nueva empresa…"

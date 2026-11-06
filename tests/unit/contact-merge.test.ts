@@ -722,7 +722,8 @@ describe("consulta general: completa, nunca pisa", () => {
     const bloque = schemaSrc.split("export const enrollment = pgTable(")[1]!.split("\n  (t) =>")[0]!;
     const columnas = [...bloque.matchAll(/^    (\w+): (?:text|timestamp|integer|bigint|boolean|numeric|jsonb)\(/gm)].map((m) => m[1]!);
     // Las que no son datos de la consulta: identidad, dueño, grupo, orden en el tablero y marcas de tiempo.
-    const fuera = ["id", "organizationId", "contactId", "cohortId", "parentEnrollmentId", "position", "createdAt", "updatedAt"];
+    // `billingEnrollmentId` (venta de empresa) es un vínculo entre inscripciones de un grupo, como `parentEnrollmentId`: una consulta general no tiene grupo.
+    const fuera = ["id", "organizationId", "contactId", "cohortId", "parentEnrollmentId", "billingEnrollmentId", "position", "createdAt", "updatedAt"];
     const propias = columnas.filter((c) => !fuera.includes(c));
     expect(propias.length).toBeGreaterThan(25);
     expect(Object.keys(consultaGeneralVacia()).sort()).toEqual(
