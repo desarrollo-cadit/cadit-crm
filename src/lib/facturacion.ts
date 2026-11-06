@@ -76,6 +76,12 @@ export type FilaFacturacion = {
   enrollmentId: string;
   contactId: string;
   alumno: string;
+  /**
+   * 2026-11-06 — Cédula y celular del alumno, para el CSV de facturación.
+   * Son datos de contacto: solo viajan con `contactos.ver`, si no `null`.
+   */
+  cedula: string | null;
+  celular: string | null;
   curso: string;
   cohorte: string | null;
   cohortId: string;
@@ -242,6 +248,8 @@ export function avisoDeFacturaRepetida(
 
 const ENCABEZADO = [
   "Alumno",
+  "Cédula",
+  "Celular",
   "Curso",
   "Grupo",
   "Inicio",
@@ -272,6 +280,8 @@ export function facturacionCsv(filas: readonly FilaFacturacion[]): string {
   const lineas = filas.map((r) =>
     [
       r.alumno,
+      r.cedula,
+      r.celular,
       r.curso,
       r.cohorte,
       r.inicio,

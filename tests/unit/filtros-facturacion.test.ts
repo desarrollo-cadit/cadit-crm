@@ -11,6 +11,8 @@ const fila = (over: Partial<FilaFacturacion>): FilaFacturacion => ({
   enrollmentId: "en_1",
   contactId: "ct_1",
   alumno: "Ana Pérez",
+  cedula: null,
+  celular: null,
   curso: "Revit",
   cohorte: "Octubre",
   cohortId: "coh_1",

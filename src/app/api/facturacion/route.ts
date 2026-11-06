@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { parseQuery, requireCapability } from "@/lib/api";
+import { sessionCapabilities } from "@/lib/capabilities";
 import { listarFacturacion } from "@/server/facturacion";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +25,8 @@ export const GET = requireCapability("cobranza.ver", async (session, req: Reques
   const query = parseQuery(new URL(req.url), querySchema);
   if (!query.ok) return query.response;
   const estado = query.data.estado ?? "pendientes";
-  const filas = await listarFacturacion(session.organizationId, estado);
+  // Cédula y celular son datos de contacto: viajan solo con `contactos.ver`.
+  const conContacto = sessionCapabilities(session).includes("contactos.ver");
+  const filas = await listarFacturacion(session.organizationId, estado, conContacto);
   return Response.json({ estado, filas });
 });

@@ -41,11 +41,16 @@ function nombre(firstName: string | null, lastName: string | null): string {
  */
 export async function listarFacturacion(
   organizationId: string,
-  estado: EstadoFacturacion
+  estado: EstadoFacturacion,
+  /** `contactos.ver`: sin ella cédula y celular no se leen ni viajan. */
+  conContacto = false
 ): Promise<FilaFacturacion[]> {
   const rows = await getDb()
     .select({
       enrollmentId: schema.enrollment.id,
+      enrollmentNationalId: schema.enrollment.nationalId,
+      contactNationalId: schema.contact.nationalId,
+      contactPhone: schema.contact.phone,
       contactId: schema.enrollment.contactId,
       cohortId: schema.enrollment.cohortId,
       parentEnrollmentId: schema.enrollment.parentEnrollmentId,
@@ -100,6 +105,10 @@ export async function listarFacturacion(
       enrollmentId: r.enrollmentId,
       contactId: r.contactId,
       alumno: nombre(r.firstName, r.lastName),
+      // La cédula de la inscripción manda (es la que se usó al facturar); si no
+      // hay, la del contacto.
+      cedula: conContacto ? r.enrollmentNationalId?.trim() || r.contactNationalId?.trim() || null : null,
+      celular: conContacto ? r.contactPhone?.trim() || null : null,
       curso: r.courseName,
       cohorte: r.cohortName,
       cohortId: r.cohortId!,

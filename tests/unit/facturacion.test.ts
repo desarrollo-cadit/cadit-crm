@@ -168,6 +168,8 @@ const fila = (over: Partial<FilaFacturacion>): FilaFacturacion => ({
   enrollmentId: "en_1",
   contactId: "ct_1",
   alumno: "Ana Pérez",
+  cedula: null,
+  celular: null,
   curso: "Revit",
   cohorte: "Octubre",
   cohortId: "coh_1",
@@ -306,9 +308,9 @@ describe("facturacionCsv", () => {
     ]);
     const [encabezado, linea] = csv.split("\r\n");
     expect(encabezado).toBe(
-      "Alumno,Curso,Grupo,Inicio,Grupo confirmado,Vendedor,Monto,Moneda,Factura,Razón social,RUT,Correo de facturación,Condición de pago"
+      "Alumno,Cédula,Celular,Curso,Grupo,Inicio,Grupo confirmado,Vendedor,Monto,Moneda,Factura,Razón social,RUT,Correo de facturación,Condición de pago"
     );
-    expect(linea).toBe('Ana Pérez,Revit,Octubre,2026-10-20,Sí,Valeria,1000.00,UYU,,"ACME, SA",2100,f@acme.uy,Contado');
+    expect(linea).toBe('Ana Pérez,,,Revit,Octubre,2026-10-20,Sí,Valeria,1000.00,UYU,,"ACME, SA",2100,f@acme.uy,Contado');
   });
 
   /**
@@ -320,10 +322,15 @@ describe("facturacionCsv", () => {
     const SALTO = "\r\n";
     const linea = (amount: number | null, currency: "UYU" | "USD" | "PYG") =>
       facturacionCsv([fila({ amount, currency })]).split(SALTO)[1]!.split(",");
-    expect(linea(524532, "UYU")[6]).toBe("5245.32");
-    expect(linea(500000, "USD")[6]).toBe("5000.00");
-    expect(linea(1000000000, "PYG")[6]).toBe("10000000");
-    expect(linea(null, "UYU")[6]).toBe("");
+    expect(linea(524532, "UYU")[8]).toBe("5245.32");
+    expect(linea(500000, "USD")[8]).toBe("5000.00");
+    expect(linea(1000000000, "PYG")[8]).toBe("10000000");
+    expect(linea(null, "UYU")[8]).toBe("");
+  });
+
+  it("lleva la cédula y el celular del alumno", () => {
+    const [, linea] = facturacionCsv([fila({ cedula: "4.123.456-7", celular: "59899123456" })]).split("\r\n");
+    expect(linea!.startsWith("Ana Pérez,4.123.456-7,59899123456,Revit,")).toBe(true);
   });
 
   it("neutraliza fórmulas (un nombre puede venir de un formulario público)", () => {
