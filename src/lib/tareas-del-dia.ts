@@ -470,7 +470,7 @@ export function tareasDeLeads(envios: readonly EnvioParaTarea[], now: Date): Tar
     return {
       ruleId: "leads",
       titulo: e.nombre,
-      detalle: interes && !origen.includes(interes) ? `${origen} · ${interes}` : origen,
+      detalle: interes && !origen.includes(interes) ? `${e.submittedAt.toISOString().slice(0, 10)} · ${origen} · ${interes}` : origen,
       href: `/contacts/${e.contactId}/legajo?tab=seguimiento`,
       urgencia: horas > 72 ? "alta" : "media",
       fecha: e.submittedAt.toISOString().slice(0, 10),

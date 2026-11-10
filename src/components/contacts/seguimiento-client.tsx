@@ -97,11 +97,11 @@ export function SeguimientoClient({ contactId, canWrite }: { contactId: string; 
   return (
     <div className="mx-auto grid max-w-4xl gap-6 p-6">
       {/* 046 — qué cursó y qué le podría interesar, al atenderlo (SC-001). */}
-      <RecorridoComercialCard contactId={contactId} />
+      <Timeline timeline={data.timeline} />
+      {canWrite ? <NoteForm contactId={contactId} onAdded={agregar} /> : null}
       <ContactCard contactId={contactId} contact={data.contact} canWrite={canWrite} onRecorded={agregar} />
       <MarketingCard contactId={contactId} marketing={data.marketing} onChanged={() => setVersion((v) => v + 1)} />
-      {canWrite ? <NoteForm contactId={contactId} onAdded={agregar} /> : null}
-      <Timeline timeline={data.timeline} />
+      <RecorridoComercialCard contactId={contactId} />
     </div>
   );
 }
