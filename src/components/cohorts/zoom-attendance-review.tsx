@@ -376,7 +376,7 @@ function Revision({
                   </th>
                   <td className="px-3 py-2.5">
                     {suyas.length === 0 ? (
-                      <span className="text-text-3">No apareció</span>
+                      <span className="text-text-3">No se conectó</span>
                     ) : (
                       <ul className="flex flex-wrap gap-1.5">
                         {suyas.map((k) => (
