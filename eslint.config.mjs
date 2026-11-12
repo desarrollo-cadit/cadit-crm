@@ -22,6 +22,9 @@ const config = [
       "dist/**",
       "drizzle/**",
       "scripts/**",
+      // Herramientas aparte de la app, con sus propias dependencias
+      // (tools/guia-video: composición de Remotion de los tutoriales).
+      "tools/**",
       "next-env.d.ts",
       // Bundles temporales de esbuild (seeds e importador): código generado.
       ".tmp-*.mjs",
