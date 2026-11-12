@@ -5,7 +5,10 @@ import {
   sessionCapabilities,
   type Capability,
 } from "@/lib/capabilities";
+import { GuiaVideos } from "@/components/guia/guia-videos";
 import { agruparCapacidades, caminoVisible, GUIA_CAPACIDADES } from "@/lib/guia";
+import { agruparVideos, videosParaStaff } from "@/lib/guia-videos";
+import { videosDisponibles } from "@/server/guia-videos";
 import { listRoles } from "@/server/roles";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +52,14 @@ export default async function GuiaPage() {
   const rolesCon = (c: Capability) =>
     roles.filter((r) => r.capabilities.includes(c)).map((r) => r.name);
 
+  /**
+   * Los tutoriales en video, con la MISMA regla que el resto de la guía: los
+   * que enseñan capacidades que esta sesión tiene. Solo se ofrecen los que
+   * están publicados en el volumen (`GUIA_VIDEOS_DIR`); sin videos, la sección
+   * no aparece. La ruta que los sirve vuelve a comprobar las capacidades.
+   */
+  const seccionesDeVideo = agruparVideos(videosParaStaff(mias, await videosDisponibles()));
+
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-6xl px-6 py-8">
@@ -58,6 +69,19 @@ export default async function GuiaPage() {
           entrar a cada pantalla, dice exactamente lo que tu cuenta
           puede hacer hoy. Si alguien cambia los permisos de tu rol, cambia sola.
         </p>
+
+        {seccionesDeVideo.length > 0 && (
+          <section className="mt-7">
+            <h2 className="text-lg font-semibold tracking-tight">Tutoriales en video</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Cada video muestra paso a paso cómo se hace. Ves solo los de lo que tu cuenta puede
+              hacer.
+            </p>
+            <div className="mt-4">
+              <GuiaVideos secciones={seccionesDeVideo} base="/api/guia/videos" />
+            </div>
+          </section>
+        )}
 
         {propias.length === 0 ? (
           <p className="mt-8 rounded-md border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">

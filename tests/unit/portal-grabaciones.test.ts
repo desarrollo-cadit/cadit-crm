@@ -92,6 +92,10 @@ describe("030 US6 — los portales no leen las tablas de Zoom", () => {
         "cohorts/route.ts",
         "entregas/[id]/reabrir/route.ts",
         "entregas/[id]/route.ts",
+        // Los tutoriales en video de la guía, uno por audiencia (docs/guia-videos.md): sirven
+        // archivos del volumen `GUIA_VIDEOS_DIR` y no leen tablas de Zoom ni de dominio.
+        "guia/alumno/[id]/route.ts",
+        "guia/profesor/[id]/route.ts",
         "hours/route.ts",
         // 0083 — el pedido de prórroga del alumno; no lee tablas de Zoom.
         "me/assessments/[id]/extension-request/route.ts",

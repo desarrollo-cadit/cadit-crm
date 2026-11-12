@@ -10,6 +10,9 @@ import {
   GUIA_PORTAL_PROFESOR,
 } from "@/lib/guia-portal";
 import { ITEMS_ALUMNO, ITEMS_PROFESOR } from "@/lib/nav";
+import { agruparVideos, videosDeAudiencia } from "@/lib/guia-videos";
+import { videosDisponibles } from "@/server/guia-videos";
+import { GuiaVideos } from "@/components/guia/guia-videos";
 import { EncabezadoDePagina } from "@/components/portal/campus";
 
 export const dynamic = "force-dynamic";
@@ -40,6 +43,11 @@ export default async function GuiaPortalPage() {
   const esAlumno = Boolean(studentContactId(portal));
   const esProfesor = Boolean(portalTeacherId(portal));
 
+  // Cada audiencia ve SOLO sus tutoriales, y solo los que están publicados.
+  const disponibles = await videosDisponibles();
+  const videosAlumno = esAlumno ? agruparVideos(videosDeAudiencia("alumno", disponibles)) : [];
+  const videosProfesor = esProfesor ? agruparVideos(videosDeAudiencia("profesor", disponibles)) : [];
+
   return (
     <div className="space-y-6">
       <EncabezadoDePagina
@@ -57,6 +65,17 @@ export default async function GuiaPortalPage() {
         clase conserva las dos cosas, y sin los rótulos vería una sola lista
         larga sin entender por qué le hablan de dos cosas distintas.
       */}
+      {videosAlumno.length > 0 && (
+        <section>
+          <h2 className="text-[10.5px] font-semibold uppercase tracking-wide text-text-3">
+            Tutoriales en video · Como alumno
+          </h2>
+          <div className="mt-3">
+            <GuiaVideos secciones={videosAlumno} base="/api/portal/guia/alumno" />
+          </div>
+        </section>
+      )}
+
       {esAlumno && (
         <Seccion
           titulo="Como alumno"
@@ -65,6 +84,17 @@ export default async function GuiaPortalPage() {
             texto: GUIA_PORTAL_ALUMNO[i.href],
           }))}
         />
+      )}
+
+      {videosProfesor.length > 0 && (
+        <section>
+          <h2 className="text-[10.5px] font-semibold uppercase tracking-wide text-text-3">
+            Tutoriales en video · Como profesor
+          </h2>
+          <div className="mt-3">
+            <GuiaVideos secciones={videosProfesor} base="/api/portal/guia/profesor" />
+          </div>
+        </section>
       )}
 
       {esProfesor && (

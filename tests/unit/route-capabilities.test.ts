@@ -73,6 +73,11 @@ const SIN_CAPACIDAD: Record<string, string> = {
   // `capacidad` obligatoria; `mcp-herramientas.test.ts` lo exige), porque una
   // misma ruta sirve herramientas de capacidades distintas.
   "mcp/route.ts": "Bearer MCP; la capacidad la declara cada herramienta",
+  // Tutoriales en video de la guía del staff: la guía no exige permiso, pero
+  // cada video enseña capacidades distintas. La ruta exige sesión del equipo y
+  // TODAS las capacidades del video (404 si falta alguna); ver el comentario de
+  // la ruta. Los del portal tienen sus propias puertas.
+  "guia/videos/[id]/route.ts": "sesión del staff; las capacidades las declara cada video",
   // Mocks del entorno de pruebas: `mockGuard()` responde 404 incondicional
   // fuera de desarrollo (dev-guard.ts). Verificado: las 9 están cubiertas —
   // `ai-mock/chat/completions` hereda el guard por re-export.
