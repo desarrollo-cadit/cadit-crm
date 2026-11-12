@@ -324,6 +324,23 @@ export function rutaDeDonde(donde: string): string | null {
 }
 
 /**
+ * El enlace «Abrir» de una función de la guía: la pantalla a la que lleva su `donde`, **solo si
+ * esta cuenta puede abrirla**. Una guía que ofrece un botón que termina en una redirección al
+ * inicio es peor que no ofrecerlo (el mismo criterio que el menú: no hay puertas cerradas con
+ * cartel de bienvenida). `null` = no hay enlace.
+ *
+ * Una capacidad como `licencias.gestionar` apunta a «Académico → el grupo → Alumnos»; un rol
+ * personalizado puede tenerla sin `academico.ver`, y entonces no se le ofrece el enlace.
+ */
+export function hrefDeLaGuia(donde: string, capacidades: readonly string[]): string | null {
+  const href = rutaDeDonde(donde);
+  if (!href) return null;
+  const destino = DESTINOS_MENU.find((d) => d.href === href);
+  if (destino?.capability && !capacidades.includes(destino.capability)) return null;
+  return href;
+}
+
+/**
  * Cómo se muestra un `donde` en pantalla.
  *
  * Una ruta cruda (`/inbox`) no es una indicación: nadie navega escribiendo

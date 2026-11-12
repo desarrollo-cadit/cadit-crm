@@ -23,6 +23,12 @@ export const ALIAS_ACADEMICO: Readonly<Record<string, PestanaAcademico>> = {
   rooms: "aulas",
 };
 
+/* ---------------------------------------------------------------- /guia */
+
+/** «Tutoriales» solo existe si hay videos publicados para esta cuenta: la página decide cuál abre. */
+export const PESTANAS_GUIA = ["tutoriales", "funciones"] as const;
+export type PestanaGuia = (typeof PESTANAS_GUIA)[number];
+
 /* ------------------------------------------------------------ /licencias */
 
 /** 0091 — «Conciliación» es el reporte contra el Excel de usuarios de Autodesk. */

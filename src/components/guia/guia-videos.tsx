@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Play } from "lucide-react";
+import { EncabezadoDeSeccion, Resaltado } from "@/components/listados/filtros";
 import { Modal } from "@/components/ui/modal";
 
 type Item = { id: string; titulo: string };
@@ -15,38 +16,56 @@ type Seccion = { grupo: string; videos: Item[] };
  * `base` es la ruta de la audiencia (`/api/guia/videos`, `/api/portal/guia/alumno`…):
  * cada una tiene su propia puerta en el servidor. Acá no se decide quién ve qué;
  * llegan solo los videos que la página ya filtró.
+ *
+ * `busqueda` marca lo buscado en el título; el filtrado lo hace quien llama.
  */
-export function GuiaVideos({ secciones, base }: { secciones: Seccion[]; base: string }) {
+export function GuiaVideos({
+  secciones,
+  base,
+  busqueda = "",
+}: {
+  secciones: Seccion[];
+  base: string;
+  busqueda?: string;
+}) {
   const [abierto, setAbierto] = useState<Item | null>(null);
 
   return (
-    <div className="space-y-6">
-      {secciones.map((s) => (
-        <section key={s.grupo}>
-          <h3 className="text-[10.5px] font-semibold uppercase tracking-wide text-text-3">{s.grupo}</h3>
-          <ul className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <div className="space-y-8">
+      {secciones.map((s, i) => (
+        <section key={s.grupo} aria-labelledby={`guia-seccion-${i}`}>
+          <EncabezadoDeSeccion
+            id={`guia-seccion-${i}`}
+            titulo={s.grupo}
+            cantidad={s.videos.length}
+            claseTexto="text-text-3"
+            clasePastilla="bg-accent text-text-3"
+          />
+          <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {s.videos.map((v) => (
               <li key={v.id}>
                 <button
                   type="button"
                   onClick={() => setAbierto(v)}
-                  className="group w-full overflow-hidden rounded-lg border border-border bg-card text-left transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="group w-full overflow-hidden rounded-xl border bg-card text-left transition-[border-color,box-shadow] hover:border-border-strong hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <span className="relative block aspect-video bg-muted">
+                  <span className="relative block aspect-video overflow-hidden bg-muted">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={`${base}/${v.id}?poster=1`}
                       alt=""
                       loading="lazy"
-                      className="h-full w-full object-cover"
+                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
                     />
                     <span className="absolute inset-0 flex items-center justify-center">
-                      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-card text-foreground shadow-lg transition-transform group-hover:scale-110">
-                        <Play className="h-5 w-5" aria-hidden />
+                      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-card text-foreground shadow-lg transition-transform duration-200 group-hover:scale-110">
+                        <Play className="ml-0.5 h-5 w-5" aria-hidden fill="currentColor" strokeWidth={0} />
                       </span>
                     </span>
                   </span>
-                  <span className="block px-3 py-2.5 text-sm font-medium leading-snug">{v.titulo}</span>
+                  <span className="block px-3.5 py-3 text-[13.5px] font-medium leading-snug">
+                    <Resaltado texto={v.titulo} busqueda={busqueda} />
+                  </span>
                 </button>
               </li>
             ))}

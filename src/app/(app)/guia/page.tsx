@@ -5,9 +5,21 @@ import {
   sessionCapabilities,
   type Capability,
 } from "@/lib/capabilities";
-import { GuiaVideos } from "@/components/guia/guia-videos";
-import { agruparCapacidades, caminoVisible, GUIA_CAPACIDADES } from "@/lib/guia";
+import {
+  GuiaClient,
+  type GrupoAjeno,
+  type GrupoDeFunciones,
+  type SeccionDeVideos,
+} from "@/components/guia/guia-client";
+import {
+  agruparCapacidades,
+  caminoVisible,
+  GUIA_CAPACIDADES,
+  hrefDeLaGuia,
+} from "@/lib/guia";
 import { agruparVideos, videosParaStaff } from "@/lib/guia-videos";
+import { PESTANAS_GUIA, type PestanaGuia } from "@/lib/pestanas";
+import { leerPestana } from "@/lib/tab-param";
 import { videosDisponibles } from "@/server/guia-videos";
 import { listRoles } from "@/server/roles";
 
@@ -28,13 +40,20 @@ export const dynamic = "force-dynamic";
  * FR-005 — El filtro corre acá, en el servidor, con la MISMA fuente que
  * alimenta el menú (`sessionCapabilities`). No se manda el mapa entero al
  * navegador para filtrarlo ahí: el filtro tiene que vivir donde vive la
- * decisión.
+ * decisión. Al cliente llegan solo textos ya filtrados, nunca capacidades.
  *
  * FR-008 — No exige capacidad. Un manual que hay que tener permiso para leer
  * no es un manual, y quien menos permisos tiene es justamente quien más
  * necesita saber dónde termina lo suyo.
+ *
+ * La presentación vive en `GuiaClient` (el mismo lenguaje que Académico y
+ * Contactos); esta página decide QUÉ se muestra, no cómo.
  */
-export default async function GuiaPage() {
+export default async function GuiaPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string | string[] }>;
+}) {
   const session = await getSessionOrNull();
   if (!session) redirect("/login");
 
@@ -55,126 +74,49 @@ export default async function GuiaPage() {
   /**
    * Los tutoriales en video, con la MISMA regla que el resto de la guía: los
    * que enseñan capacidades que esta sesión tiene. Solo se ofrecen los que
-   * están publicados en el volumen (`GUIA_VIDEOS_DIR`); sin videos, la sección
-   * no aparece. La ruta que los sirve vuelve a comprobar las capacidades.
+   * están publicados en el volumen; sin videos, la pestaña no aparece. La ruta
+   * que los sirve vuelve a comprobar las capacidades.
    */
-  const seccionesDeVideo = agruparVideos(videosParaStaff(mias, await videosDisponibles()));
+  const videos: SeccionDeVideos[] = agruparVideos(videosParaStaff(mias, await videosDisponibles())).map((s) => ({
+    grupo: s.grupo,
+    videos: s.videos.map((v) => ({ id: v.id, titulo: v.titulo })),
+  }));
+
+  // El «dónde» se DERIVA de la declaración del menú (FR-004): dice «CRM → Bandeja», que es lo
+  // que la persona ve en la barra, y no una URL. El enlace «Abrir» solo existe si puede abrirla.
+  const funciones: GrupoDeFunciones[] = agruparCapacidades(propias).map((g) => ({
+    titulo: g.titulo,
+    items: g.capacidades.map((c) => ({
+      clave: c,
+      que: mayuscula(GUIA_CAPACIDADES[c].que),
+      donde: caminoVisible(GUIA_CAPACIDADES[c].donde),
+      href: hrefDeLaGuia(GUIA_CAPACIDADES[c].donde, mias),
+    })),
+  }));
+
+  // FR-007 — Dice QUÉ se puede hacer y QUÉ ROL lo tiene, y nada más. Sin enlace, sin nombres de personas.
+  const deOtroRol: GrupoAjeno[] = agruparCapacidades(ajenas).map((g) => ({
+    titulo: g.titulo,
+    items: g.capacidades.map((c) => ({
+      clave: c,
+      que: mayuscula(GUIA_CAPACIDADES[c].que),
+      roles: rolesCon(c),
+    })),
+  }));
+
+  const { tab } = await searchParams;
+  const visibles: readonly PestanaGuia[] = videos.length > 0 ? PESTANAS_GUIA : ["funciones"];
+  const inicial = leerPestana(tab, visibles, visibles[0] ?? "funciones");
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-6xl px-6 py-8">
-        <h1 className="text-2xl font-semibold tracking-tight">Qué podés hacer</h1>
-        <p className="mt-1.5 text-sm text-muted-foreground">
-          Esta guía sale de los mismos permisos con los que el sistema te deja
-          entrar a cada pantalla, dice exactamente lo que tu cuenta
-          puede hacer hoy. Si alguien cambia los permisos de tu rol, cambia sola.
-        </p>
-
-        {seccionesDeVideo.length > 0 && (
-          <section className="mt-7">
-            <h2 className="text-lg font-semibold tracking-tight">Tutoriales en video</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Cada video muestra paso a paso cómo se hace. Ves solo los de lo que tu cuenta puede
-              hacer.
-            </p>
-            <div className="mt-4">
-              <GuiaVideos secciones={seccionesDeVideo} base="/api/guia/videos" />
-            </div>
-          </section>
-        )}
-
-        {propias.length === 0 ? (
-          <p className="mt-8 rounded-md border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
-            Tu cuenta todavía no tiene un rol asignado, por eso el panel se ve
-            vacío. Quien administra la instancia puede asignártelo.
-          </p>
-        ) : (
-          <div className="mt-7 space-y-7">
-            {agruparCapacidades(propias).map((grupo) => (
-              <section key={grupo.titulo}>
-                <h2 className="text-[10.5px] font-semibold uppercase tracking-wide text-text-3">
-                  {grupo.titulo}
-                </h2>
-                <ul className="mt-2 divide-y divide-border rounded-md border border-border">
-                  {grupo.capacidades.map((c) => (
-                    <li key={c} className="px-4 py-3">
-                      <p className="text-sm font-medium">
-                        {mayuscula(GUIA_CAPACIDADES[c].que)}
-                      </p>
-                      {/*
-                        El "dónde" se DERIVA de la declaración del menú
-                        (FR-004): dice "CRM → Bandeja", que es lo que la
-                        persona ve en la barra, y no una URL — nadie navega
-                        escribiendo direcciones.
-                      */}
-                      <p className="mt-0.5 text-xs text-text-3">
-                        {caminoVisible(GUIA_CAPACIDADES[c].donde)}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            ))}
-          </div>
-        )}
-
-        {/*
-          DV-001 — Colapsada por default, y con `<details>`: sin JavaScript y
-          sin una dependencia nueva (FR-013).
-
-          Por qué existe esta sección, que es la parte discutible: ocultar lo
-          que la persona no puede hacer es lo correcto en el MENÚ —un ítem que
-          lleva a un 403 es una puerta cerrada con cartel de bienvenida—. Pero
-          en una guía el efecto es el contrario: alguien que no encuentra
-          "emitir certificados" concluye que el sistema no lo hace, y le
-          pregunta al dueño. Que era el problema que vinimos a resolver.
-
-          FR-007 — Dice QUÉ se puede hacer y QUÉ ROL lo tiene, y nada más. Sin
-          enlace, porque no se ofrece una puerta que va a devolver 403; y sin
-          nombres de personas, porque una guía que nombra gente es un
-          directorio, y un directorio se desactualiza con cada alta y cada baja.
-        */}
-        {ajenas.length > 0 && (
-          <details className="mt-9 rounded-md border border-border">
-            <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium">
-              Esto lo hace otro rol ({ajenas.length})
-            </summary>
-            <div className="border-t border-border px-4 pb-4 pt-3">
-              <p className="text-xs text-muted-foreground">
-                Estas funciones existen, pero tu rol no las incluye. Te las
-                mostramos para que sepas a quién pedírselas cuando las
-                necesites.
-              </p>
-              <div className="mt-4 space-y-5">
-                {agruparCapacidades(ajenas).map((grupo) => (
-                  <section key={grupo.titulo}>
-                    <h3 className="text-[10.5px] font-semibold uppercase tracking-wide text-text-3">
-                      {grupo.titulo}
-                    </h3>
-                    <ul className="mt-1.5 space-y-2">
-                      {grupo.capacidades.map((c) => {
-                        const quienes = rolesCon(c);
-                        return (
-                          <li key={c} className="text-sm">
-                            <span className="text-text-2">
-                              {mayuscula(GUIA_CAPACIDADES[c].que)}
-                            </span>
-                            <span className="block text-xs text-text-3">
-                              {quienes.length > 0
-                                ? `Lo hace: ${quienes.join(", ")}`
-                                : "Hoy ningún rol lo tiene asignado"}
-                            </span>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </section>
-                ))}
-              </div>
-            </div>
-          </details>
-        )}
-      </div>
+    <div className="h-full">
+      <GuiaClient
+        inicial={inicial}
+        videos={videos}
+        baseVideos="/api/guia/videos"
+        funciones={funciones}
+        ajenas={deOtroRol}
+      />
     </div>
   );
 }

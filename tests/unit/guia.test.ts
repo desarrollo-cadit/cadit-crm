@@ -388,6 +388,12 @@ describe("FR-005/FR-014 — la guía del staff filtra en el servidor y no toca d
     path.join(process.cwd(), "src/app/(app)/guia/page.tsx"),
     "utf8"
   );
+  // El marcado vive en el componente (la página decide QUÉ se muestra; `GuiaClient`, cómo). Al
+  // cliente solo llegan textos ya filtrados por la página.
+  const CLIENTE = readFileSync(
+    path.join(process.cwd(), "src/components/guia/guia-client.tsx"),
+    "utf8"
+  );
 
   /**
    * FR-005 — El filtro tiene que vivir donde vive la decisión. Mandar el mapa
@@ -432,10 +438,13 @@ describe("FR-005/FR-014 — la guía del staff filtra en el servidor y no toca d
    * (FR-013).
    */
   it("«esto lo hace otro rol» viene colapsada, sin JavaScript", () => {
-    expect(PAGINA).toContain("<details");
-    expect(PAGINA).toContain("<summary");
+    expect(CLIENTE).toContain("<details ");
+    expect(CLIENTE).toContain("<summary");
+    // Solo la etiqueta `<details …>` de verdad (con atributos), no los comentarios que la nombran.
+    const etiqueta = /<details\s[^>]*>/.exec(CLIENTE)?.[0] ?? "";
+    expect(etiqueta).not.toBe("");
     expect(
-      /<details[^>]*\bopen\b/.test(PAGINA),
+      /\bopen\b/.test(etiqueta),
       "la sección secundaria viene abierta y tapa lo que la persona sí puede hacer"
     ).toBe(false);
   });
@@ -446,7 +455,10 @@ describe("FR-005/FR-014 — la guía del staff filtra en el servidor y no toca d
    * directorio, y un directorio se desactualiza con cada alta y cada baja.
    */
   it("la sección de otros roles no ofrece enlaces ni nombra gente", () => {
-    const seccion = PAGINA.slice(PAGINA.indexOf("<details"));
+    // Desde la etiqueta `<details …>` real hasta su cierre: lo que viene después (nada hoy) es otra cosa.
+    const desde = CLIENTE.indexOf("<details ");
+    const seccion = CLIENTE.slice(desde, CLIENTE.indexOf("</details>", desde));
+    expect(desde).toBeGreaterThan(-1);
     expect(
       seccion.includes("<Link") || seccion.includes("<a "),
       "la sección «esto lo hace otro rol» ofrece una puerta que devuelve 403"
