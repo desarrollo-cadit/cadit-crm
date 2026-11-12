@@ -3996,6 +3996,8 @@ export const staffNotice = pgTable(
         "sin_confirmar_t7",
         "sin_confirmar_t2",
         "sin_confirmar_inicio",
+        // 0101 — Recordatorio de seguimiento de un contacto (al autor, el día que vence).
+        "recordatorio_contacto",
       ],
     }).notNull(),
     status: text("status", {
@@ -4025,7 +4027,7 @@ export const staffNotice = pgTable(
     index("staff_notice_org_status_idx").on(t.organizationId, t.status),
     check(
       "staff_notice_kind_valid",
-      sql`${t.kind} IN ('cohorte_confirmada','facturacion_t7','facturacion_t2','inscripcion_nueva','pago_registrado','morosidad_semanal','interesado_nuevo','sin_confirmar_t7','sin_confirmar_t2','sin_confirmar_inicio')`
+      sql`${t.kind} IN ('cohorte_confirmada','facturacion_t7','facturacion_t2','inscripcion_nueva','pago_registrado','morosidad_semanal','interesado_nuevo','sin_confirmar_t7','sin_confirmar_t2','sin_confirmar_inicio','recordatorio_contacto')`
     ),
     check(
       "staff_notice_subject_valid",
@@ -4033,7 +4035,7 @@ export const staffNotice = pgTable(
         OR (${t.kind} = 'inscripcion_nueva' AND ${t.enrollmentId} IS NOT NULL)
         OR (${t.kind} = 'pago_registrado' AND ${t.enrollmentId} IS NOT NULL AND ${t.paymentId} IS NOT NULL)
         OR (${t.kind} = 'morosidad_semanal' AND ${t.periodKey} IS NOT NULL)
-        OR (${t.kind} = 'interesado_nuevo' AND ${t.contactId} IS NOT NULL)`
+        OR (${t.kind} IN ('interesado_nuevo','recordatorio_contacto') AND ${t.contactId} IS NOT NULL)`
     ),
     check(
       "staff_notice_status_valid",
@@ -4618,6 +4620,41 @@ export const contactActivity = pgTable(
       "contact_activity_note_has_body",
       sql`${t.kind} <> 'nota' OR (${t.body} IS NOT NULL AND length(trim(${t.body})) > 0)`
     ),
+  ]
+);
+
+/**
+ * Un recordatorio de seguimiento sobre un contacto: "llamarlo el jueves".
+ * `due_date` es un DÍA de calendario en la zona de la organización (sin hora).
+ * Lo ve y lo resuelve cualquiera con `inscripciones.seguimiento`; `done_by`
+ * deja constancia de quién. El correo del día va solo a quien lo creó.
+ */
+export const contactReminder = pgTable(
+  "contact_reminder",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    contactId: text("contact_id")
+      .notNull()
+      .references(() => contact.id, { onDelete: "cascade" }),
+    /** Quién lo creó (y recibe el correo). `set null`: dar de baja la cuenta no borra la historia. */
+    authorUserId: text("author_user_id").references(() => user.id, { onDelete: "set null" }),
+    reason: text("reason").notNull(),
+    /** Día de calendario (YYYY-MM-DD) en la zona de la organización. */
+    dueDate: date("due_date", { mode: "string" }).notNull(),
+    doneAt: timestamp("done_at"),
+    doneByUserId: text("done_by_user_id").references(() => user.id, { onDelete: "set null" }),
+    emailSentAt: timestamp("email_sent_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("contact_reminder_org_due_pending_idx")
+      .on(t.organizationId, t.dueDate)
+      .where(sql`${t.doneAt} IS NULL`),
+    index("contact_reminder_org_contact_idx").on(t.organizationId, t.contactId),
+    check("contact_reminder_reason_len", sql`length(trim(${t.reason})) BETWEEN 1 AND 500`),
   ]
 );
 

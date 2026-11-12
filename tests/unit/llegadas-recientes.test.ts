@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FORM_ARRIVAL_WINDOW_MS, esLlegadaReciente } from "@/lib/form-arrivals";
+import { FORM_ARRIVAL_WINDOW_MS, esLlegadaReciente, fueContactado } from "@/lib/form-arrivals";
 
 /**
  * El número de "Alumnos" en el menú cuenta los contactos que llegaron por un
@@ -22,6 +22,21 @@ describe("esLlegadaReciente", () => {
   it("lo que no vino por formulario no se resalta, aunque sea nuevo", () => {
     expect(esLlegadaReciente({ source: "whatsapp", createdAt: hace(1) }, ahora)).toBe(false);
     expect(esLlegadaReciente({ source: null, createdAt: hace(1) }, ahora)).toBe(false);
+  });
+
+  it("una nota o un «le escribí» posterior a la llegada la saca de los nuevos", () => {
+    const base = { source: "formulario:Revit", createdAt: hace(5) };
+    expect(esLlegadaReciente({ ...base, ultimaActividad: hace(1) }, ahora)).toBe(false);
+    expect(esLlegadaReciente({ ...base, ultimaActividad: null }, ahora)).toBe(true);
+    expect(esLlegadaReciente(base, ahora)).toBe(true);
+  });
+
+  it("una actividad anterior o simultánea a la llegada no cuenta como contacto", () => {
+    const base = { source: "formulario:Revit", createdAt: hace(5) };
+    expect(esLlegadaReciente({ ...base, ultimaActividad: hace(6) }, ahora)).toBe(true);
+    expect(esLlegadaReciente({ ...base, ultimaActividad: base.createdAt }, ahora)).toBe(true);
+    expect(fueContactado(base, hace(4))).toBe(true);
+    expect(fueContactado(base, undefined)).toBe(false);
   });
 
   it("la ventana es de 48 horas", () => {

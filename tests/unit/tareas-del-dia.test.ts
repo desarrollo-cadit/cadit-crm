@@ -10,6 +10,8 @@ import {
   tareasDeLeads,
   tareasDeSugerenciasDeZoom,
   tareasDeProrrogas,
+  tareasDeRecordatorios,
+  type RecordatorioParaTarea,
   type PedidoParaTarea,
   type ClaseParaTarea,
   type EnvioParaTarea,
@@ -36,6 +38,8 @@ describe("reglasPermitidas — cada regla pide SU capacidad", () => {
       ["confirmar", ["cohortes.confirmar"]],
       ["facturar", ["cobranza.ver"]],
       ["leads", ["inscripciones.seguimiento"]],
+      // 0101 — recordatorios de seguimiento vencidos o de hoy.
+      ["recordatorios", ["inscripciones.seguimiento"]],
       ["prorrogas", ["evaluacion.editar"]],
       // 0086 — grupos terminados con resultados finales sin confirmar.
       ["resultados", ["correcciones.aprobar"]],
@@ -52,7 +56,7 @@ describe("reglasPermitidas — cada regla pide SU capacidad", () => {
         "cohortes.confirmar",
         "inscripciones.seguimiento",
       ])
-    ).toEqual(["asistencia_zoom", "asistencia", "grabaciones", "confirmar", "leads"]);
+    ).toEqual(["asistencia_zoom", "asistencia", "grabaciones", "confirmar", "leads", "recordatorios"]);
     expect(reglasPermitidas(["grabaciones.ver", "grabaciones.gestionar"])).toEqual(["grabaciones"]);
   });
 
@@ -392,6 +396,54 @@ describe("tareasDeLeads — un formulario sin contacto posterior, pasadas 24 hor
     expect(
       tareasDeLeads([envio(), envio({ submittedAt: new Date(AHORA.getTime() - 80 * HORA) })], AHORA)
     ).toHaveLength(1);
+  });
+});
+
+describe("tareasDeRecordatorios — pendientes que vencen hoy o antes", () => {
+  const rec = (over: Partial<RecordatorioParaTarea> = {}): RecordatorioParaTarea => ({
+    contactId: "ct_1",
+    nombre: "Ana Pérez",
+    reason: "Llamarla para confirmar",
+    dueDate: "2026-10-26",
+    ...over,
+  });
+
+  it("el que vence hoy es media y abre el seguimiento del contacto", () => {
+    const [t] = tareasDeRecordatorios([rec()], reloj);
+    expect(t).toMatchObject({
+      ruleId: "recordatorios",
+      titulo: "Ana Pérez",
+      detalle: "Llamarla para confirmar · vence hoy",
+      href: "/contacts/ct_1/legajo?tab=seguimiento",
+      urgencia: "media",
+      fecha: "2026-10-26",
+    });
+  });
+
+  it("el vencido es alta y dice hace cuánto", () => {
+    const [t] = tareasDeRecordatorios([rec({ dueDate: "2026-10-23" })], reloj);
+    expect(t?.urgencia).toBe("alta");
+    expect(t?.detalle).toBe("Llamarla para confirmar · venció hace 3 días");
+  });
+
+  it("uno de mañana todavía no es tarea; el día se mide en la zona de la academia", () => {
+    expect(tareasDeRecordatorios([rec({ dueDate: "2026-10-27" })], reloj)).toEqual([]);
+    // 01:00 UTC del 27/10 sigue siendo 26/10 en Montevideo.
+    const tarde = { timeZone: TZ, now: new Date("2026-10-27T01:00:00Z") };
+    expect(tareasDeRecordatorios([rec({ dueDate: "2026-10-26" })], tarde)).toHaveLength(1);
+    expect(tareasDeRecordatorios([rec({ dueDate: "2026-10-27" })], tarde)).toEqual([]);
+  });
+
+  it("recorta un motivo largo y una tarea por recordatorio", () => {
+    const largo = "x".repeat(300);
+    const tareas = tareasDeRecordatorios([rec({ reason: largo }), rec()], reloj);
+    expect(tareas).toHaveLength(2);
+    expect(tareas[0]!.detalle!.length).toBeLessThan(160);
+  });
+
+  it("la bandeja los agrupa bajo «Recordatorios para hoy»", () => {
+    const [g] = armarBandeja(tareasDeRecordatorios([rec(), rec({ contactId: "ct_2", nombre: "Beto" })], reloj));
+    expect(g).toMatchObject({ ruleId: "recordatorios", resumen: "2 recordatorios para hoy", cantidad: 2 });
   });
 });
 

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { normalizePhoneInput } from "@/lib/phone";
+import type { RecordatorioDto } from "@/lib/recordatorios";
 
 /**
  * La pestaña «Seguimiento» del contacto — reglas puras (sin base, sin red).
@@ -99,10 +100,46 @@ export type EntradaDeMarketing =
   | { tipo: "baja_marketing"; id: string; at: string; campaignName: string | null }
   | { tipo: "baja_marketing_revertida"; id: string; at: string; authorName: string | null };
 
+/**
+ * Un recordatorio en la línea de tiempo: «Recordatorio creado para el
+ * 12/11/2026: llamarlo» (cuando se agendó) y «Recordatorio resuelto» (cuando
+ * alguien lo marcó hecho). `dueDate` es `YYYY-MM-DD`.
+ */
+export type EntradaDeRecordatorio =
+  | { tipo: "recordatorio_creado"; id: string; at: string; reason: string; dueDate: string; authorName: string | null }
+  | { tipo: "recordatorio_resuelto"; id: string; at: string; reason: string; dueDate: string; authorName: string | null };
+
 export type EntradaDeSeguimiento =
   | ({ tipo: "formulario" } & EnvioDeFormularioDto)
   | ({ tipo: TipoDeActividad } & ActividadDto)
-  | EntradaDeMarketing;
+  | EntradaDeMarketing
+  | EntradaDeRecordatorio;
+
+/** Cada recordatorio da una entrada al agendarse y otra al resolverse (con quién lo resolvió). */
+export function entradasDeRecordatorios(recordatorios: readonly RecordatorioDto[]): EntradaDeRecordatorio[] {
+  return recordatorios.flatMap((r): EntradaDeRecordatorio[] => [
+    {
+      tipo: "recordatorio_creado",
+      id: r.id,
+      at: r.createdAt,
+      reason: r.reason,
+      dueDate: r.dueDate,
+      authorName: r.authorName,
+    },
+    ...(r.doneAt
+      ? [
+          {
+            tipo: "recordatorio_resuelto" as const,
+            id: `${r.id}:resuelto`,
+            at: r.doneAt,
+            reason: r.reason,
+            dueDate: r.dueDate,
+            authorName: r.doneByName,
+          },
+        ]
+      : []),
+  ]);
+}
 
 /** Una baja de marketing de la persona, tal como la lee el servidor. */
 export type BajaDeMarketingDto = {
@@ -153,11 +190,13 @@ export function entradasDeMarketing(bajas: readonly BajaDeMarketingDto[]): Entra
 export function armarLineaDeTiempo(
   envios: EnvioDeFormularioDto[],
   actividades: ActividadDto[],
-  marketing: EntradaDeMarketing[] = []
+  marketing: EntradaDeMarketing[] = [],
+  recordatorios: EntradaDeRecordatorio[] = []
 ): EntradaDeSeguimiento[] {
   const todas: { orden: number; entrada: EntradaDeSeguimiento }[] = [
     ...actividades.map((a) => ({ orden: 0, entrada: { tipo: a.kind, ...a } as EntradaDeSeguimiento })),
     ...marketing.map((m) => ({ orden: 0, entrada: m as EntradaDeSeguimiento })),
+    ...recordatorios.map((r) => ({ orden: 0, entrada: r as EntradaDeSeguimiento })),
     ...envios.map((e) => ({ orden: 1, entrada: { tipo: "formulario" as const, ...e } })),
   ];
   return todas

@@ -708,6 +708,13 @@
       "when": 1793976803445,
       "tag": "0100_venta_de_empresa",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1794494089290,
+      "tag": "0101_contact_reminder",
+      "breakpoints": true
     }
   ]
 }

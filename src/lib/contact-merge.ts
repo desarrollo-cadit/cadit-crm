@@ -209,6 +209,8 @@ export function telefonoUnificado(
 export const TABLAS_SIMPLES = [
   "activity_log",
   "contact_activity",
+  // 0101 — los recordatorios de seguimiento siguen a la persona.
+  "contact_reminder",
   "contact_form_submission",
   "marketing_campaign_recipient",
   "marketing_unsubscribe",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import {
   AlertTriangle,
   Check,
@@ -14,6 +14,7 @@ import {
   UserRound,
 } from "lucide-react";
 import type { MessageDto, MessageMediaDto } from "@/lib/types";
+import { mezclarHilo, type EventoDelHilo } from "@/lib/eventos-del-hilo";
 import { cn } from "@/lib/utils";
 import { formatBytes, mediaLabel } from "./helpers";
 
@@ -182,38 +183,62 @@ function bubbleTime(iso: string): string {
   });
 }
 
-export function MessageThread({ messages }: { messages: MessageDto[] }) {
+export function MessageThread({
+  messages,
+  events = [],
+}: {
+  messages: MessageDto[];
+  /** Notas, «le escribí» y recordatorios: líneas de sistema solo para el staff, nunca mensajes. */
+  events?: EventoDelHilo[];
+}) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const items = useMemo(() => mezclarHilo(messages, events), [messages, events]);
 
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages.length]);
+  }, [items.length]);
 
   return (
     <div
       ref={scrollRef}
       className="flex flex-1 flex-col gap-[3px] overflow-y-auto bg-chat px-[6%] py-5"
     >
-      {messages.map((m, i) => {
-        const prev = messages[i - 1];
+      {items.map((item, i) => {
+        const prev = items[i - 1];
         const newDay =
           !prev ||
-          new Date(prev.createdAt).toDateString() !==
-            new Date(m.createdAt).toDateString();
+          new Date(prev.at).toDateString() !== new Date(item.at).toDateString();
+        const separador = newDay && (
+          <div className="my-3 flex justify-center">
+            <span className="rounded-full border bg-background px-3 py-1 text-[11.5px] font-semibold text-text-2 shadow-sm">
+              {dayLabel(item.at)}
+            </span>
+          </div>
+        );
+
+        if (item.tipo === "evento") {
+          return (
+            <div key={item.evento.id}>
+              {separador}
+              <div className="my-1.5 flex justify-center" data-evento-del-hilo>
+                <span className="max-w-[80%] whitespace-pre-wrap break-words rounded-full bg-secondary px-3 py-1 text-center text-[11.5px] text-text-3">
+                  {item.evento.texto}
+                  <span className="ml-1.5 text-[10.5px]">{bubbleTime(item.at)}</span>
+                </span>
+              </div>
+            </div>
+          );
+        }
+
+        const m = item.mensaje;
         const grouped =
-          !newDay && prev !== undefined && prev.direction === m.direction;
+          !newDay && prev?.tipo === "mensaje" && prev.mensaje.direction === m.direction;
         const out = m.direction === "out";
 
         return (
           <div key={m.id}>
-            {newDay && (
-              <div className="my-3 flex justify-center">
-                <span className="rounded-full border bg-background px-3 py-1 text-[11.5px] font-semibold text-text-2 shadow-sm">
-                  {dayLabel(m.createdAt)}
-                </span>
-              </div>
-            )}
+            {separador}
             <div
               className={cn(
                 "flex",

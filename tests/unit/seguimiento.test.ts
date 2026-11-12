@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   armarLineaDeTiempo,
   entradasDeMarketing,
+  entradasDeRecordatorios,
   estadoDeMarketing,
   enlaceDeCorreo,
   enlaceDeWhatsApp,
@@ -9,6 +10,7 @@ import {
   pestanaInicialDelContacto,
   seguimientoBodySchema,
 } from "@/lib/seguimiento";
+import type { RecordatorioDto } from "@/lib/recordatorios";
 
 describe("origenDelFormulario", () => {
   it("la página de un curso no repite el nombre del curso: dice de dónde vino", () => {
@@ -224,5 +226,48 @@ describe("045 — marketing en el Seguimiento", () => {
     ]);
     const linea = armarLineaDeTiempo([], [], entradas);
     expect(linea.map((e) => e.tipo)).toEqual(["baja_marketing_revertida", "baja_marketing"]);
+  });
+});
+
+describe("0101 — recordatorios en el Seguimiento", () => {
+  const rec = (over: Partial<RecordatorioDto> = {}): RecordatorioDto => ({
+    id: "crem_1",
+    contactId: "ct_1",
+    reason: "Llamarla para confirmar",
+    dueDate: "2026-10-30",
+    createdAt: "2026-10-26T12:00:00.000Z",
+    authorName: "Lía",
+    doneAt: null,
+    doneByName: null,
+    ...over,
+  });
+
+  it("un pendiente da una sola entrada: «creado», con motivo, fecha y autor", () => {
+    expect(entradasDeRecordatorios([rec()])).toEqual([
+      {
+        tipo: "recordatorio_creado",
+        id: "crem_1",
+        at: "2026-10-26T12:00:00.000Z",
+        reason: "Llamarla para confirmar",
+        dueDate: "2026-10-30",
+        authorName: "Lía",
+      },
+    ]);
+  });
+
+  it("uno resuelto suma «resuelto» con quién lo resolvió y cuándo", () => {
+    const entradas = entradasDeRecordatorios([rec({ doneAt: "2026-10-30T09:00:00.000Z", doneByName: "Gus" })]);
+    expect(entradas.map((e) => e.tipo)).toEqual(["recordatorio_creado", "recordatorio_resuelto"]);
+    expect(entradas[1]).toMatchObject({ id: "crem_1:resuelto", at: "2026-10-30T09:00:00.000Z", authorName: "Gus" });
+  });
+
+  it("se mezclan con el resto de la línea, lo más nuevo arriba", () => {
+    const linea = armarLineaDeTiempo(
+      [],
+      [{ id: "cact_1", at: "2026-10-26T11:00:00.000Z", kind: "nota", body: "hola", authorName: "Lía" }],
+      [],
+      entradasDeRecordatorios([rec({ doneAt: "2026-10-30T09:00:00.000Z", doneByName: "Gus" })])
+    );
+    expect(linea.map((e) => e.tipo)).toEqual(["recordatorio_resuelto", "recordatorio_creado", "nota"]);
   });
 });

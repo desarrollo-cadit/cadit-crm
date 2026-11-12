@@ -106,6 +106,8 @@ const prefixes = {
   /** 0066 — cada envío de un formulario público y cada nota o contacto del equipo. */
   contactFormSubmission: "cfs",
   contactActivity: "cact",
+  /** 0101 — recordatorios de seguimiento sobre un contacto. */
+  contactReminder: "crem",
   /** 045 — campañas de marketing por correo (data-model, encabezado). */
   marketingSettings: "mks",
   marketingAudience: "mka",

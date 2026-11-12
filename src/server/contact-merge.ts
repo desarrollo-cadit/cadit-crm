@@ -43,7 +43,7 @@ import { sincronizarLicenciasDelGrupo } from "@/server/group-licenses";
  * nombrarla acá): enrollment, conversation, account_link, offline_quiz_attempt,
  * offline_course_grant, offline_topic_progress, offline_recognition,
  * activity_log, area_handoff, staff_notice, contact_form_submission,
- * contact_activity, marketing_campaign_recipient, marketing_unsubscribe,
+ * contact_activity, contact_reminder, marketing_campaign_recipient, marketing_unsubscribe,
  * historical_course_taking, zoom_participant_alias.
  *
  * Lo congelado NO se reescribe: el snapshot de los certificados, los nombres
@@ -117,6 +117,7 @@ const TABLA: Record<
   TablaSimple,
   | typeof schema.activityLog
   | typeof schema.contactActivity
+  | typeof schema.contactReminder
   | typeof schema.contactFormSubmission
   | typeof schema.marketingCampaignRecipient
   | typeof schema.marketingUnsubscribe
@@ -128,6 +129,7 @@ const TABLA: Record<
 > = {
   activity_log: schema.activityLog,
   contact_activity: schema.contactActivity,
+  contact_reminder: schema.contactReminder,
   contact_form_submission: schema.contactFormSubmission,
   marketing_campaign_recipient: schema.marketingCampaignRecipient,
   marketing_unsubscribe: schema.marketingUnsubscribe,

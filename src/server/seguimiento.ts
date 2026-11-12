@@ -1,11 +1,14 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray, max } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { estadoDeMarketingDelContacto } from "@/server/marketing/unsubscribe";
+import { eventosDelHilo, type EventoDelHilo } from "@/lib/eventos-del-hilo";
+import { recordatoriosParaLinea } from "@/server/recordatorios";
 import {
   armarLineaDeTiempo,
   entradasDeMarketing,
+  entradasDeRecordatorios,
   estadoDeMarketing,
   type EstadoDeMarketingDto,
   type ActividadDto,
@@ -82,6 +85,69 @@ export async function registrarEnvioDeFormulario(
       `[seguimiento] envío de ${envio.contactId}: no se pudo guardar (${err instanceof Error ? err.name : "error"})`
     );
   }
+}
+
+/* ------------------------------------------------ última actividad (lote) */
+
+/**
+ * La última `contact_activity` (de cualquier tipo) de cada contacto, en UNA
+ * consulta. Alimenta la regla de «llegada nueva» (`esLlegadaReciente`): un
+ * recordatorio no es actividad. Los contactos sin actividad no aparecen.
+ */
+export async function ultimaActividadDeContactos(
+  organizationId: string,
+  contactIds: readonly string[]
+): Promise<Map<string, Date>> {
+  const ids = [...new Set(contactIds)];
+  if (ids.length === 0) return new Map();
+  const rows = await getDb()
+    .select({ contactId: schema.contactActivity.contactId, ultima: max(schema.contactActivity.createdAt) })
+    .from(schema.contactActivity)
+    .where(
+      scoped(
+        schema.contactActivity.organizationId,
+        organizationId,
+        inArray(schema.contactActivity.contactId, ids)
+      )
+    )
+    .groupBy(schema.contactActivity.contactId);
+  const out = new Map<string, Date>();
+  for (const r of rows) if (r.ultima) out.set(r.contactId, r.ultima);
+  return out;
+}
+
+/* ------------------------------------------------- eventos del hilo del chat */
+
+/**
+ * Notas, «le escribí» y recordatorios del contacto como líneas de sistema del
+ * hilo de la bandeja (`src/lib/eventos-del-hilo.ts`). Solo para staff: la ruta
+ * exige `contactos.ver` para incluirlos. `desde` deja solo lo posterior.
+ */
+export async function eventosDeConversacion(
+  organizationId: string,
+  contactId: string,
+  desde?: Date
+): Promise<EventoDelHilo[]> {
+  const filas = await getDb()
+    .select({ activity: schema.contactActivity, authorName: schema.user.name })
+    .from(schema.contactActivity)
+    .leftJoin(schema.user, eq(schema.contactActivity.authorUserId, schema.user.id))
+    .where(
+      scoped(
+        schema.contactActivity.organizationId,
+        organizationId,
+        eq(schema.contactActivity.contactId, contactId)
+      )
+    );
+  const actividades: ActividadDto[] = filas.map(({ activity, authorName }) => ({
+    id: activity.id,
+    at: activity.createdAt.toISOString(),
+    kind: activity.kind,
+    body: activity.body,
+    authorName: authorName ?? null,
+  }));
+  const recordatorios = await recordatoriosParaLinea(organizationId, contactId);
+  return eventosDelHilo(actividades, recordatorios, desde);
 }
 
 /* ------------------------------------------------------------- la pestaña */
@@ -170,10 +236,16 @@ export async function seguimientoDelContacto(
   }));
 
   const bajas = await estadoDeMarketingDelContacto(organizationId, contactId);
+  const recordatorios = await recordatoriosParaLinea(organizationId, contactId);
 
   return {
     contact: { email: contacto.email, phone: contacto.phone },
-    timeline: armarLineaDeTiempo(enviosDto, actividadesDto, entradasDeMarketing(bajas)),
+    timeline: armarLineaDeTiempo(
+      enviosDto,
+      actividadesDto,
+      entradasDeMarketing(bajas),
+      entradasDeRecordatorios(recordatorios)
+    ),
     marketing: estadoDeMarketing(bajas, opts.puedeReactivarMarketing === true),
   };
 }

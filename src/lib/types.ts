@@ -260,6 +260,8 @@ export type ContactDto = {
   companyId: string | null;
   /** 046 US7 — Derivado del historial comercial (solo en el listado). */
   tipo?: "lead" | "alumno_activo" | "exalumno";
+  /** Última nota o «le escribí» del equipo (solo listado, solo contactos de formulario): apaga el «nuevo». */
+  ultimaActividad?: string | null;
   archivedAt: string | null;
   /** Iteración 3 — para la columna "Creado" de la tabla de contactos. */
   createdAt: string;

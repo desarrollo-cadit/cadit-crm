@@ -390,7 +390,15 @@ export async function countRecentFormArrivals(
         schema.contact.organizationId,
         organizationId,
         gte(schema.contact.createdAt, since),
-        like(schema.contact.source, `${FORM_SOURCE_PREFIX}%`)
+        like(schema.contact.source, `${FORM_SOURCE_PREFIX}%`),
+        // Misma regla que `esLlegadaReciente` (`fueContactado`): una nota o un
+        // «le escribí» posterior a la llegada la saca del número.
+        sql`not exists (
+          select 1 from ${schema.contactActivity} a
+          where a.organization_id = ${schema.contact.organizationId}
+            and a.contact_id = ${schema.contact.id}
+            and a.created_at > ${schema.contact.createdAt}
+        )`
       )
     );
   return Number(rows[0]?.n ?? 0);

@@ -411,7 +411,7 @@ export function ContactsClient({
               <TableBody>
                 {contacts.map((c) => {
                   // Los mismos que cuenta el número de "Alumnos" en el menú.
-                  const nuevo = esLlegadaReciente(c);
+                  const nuevo = esLlegadaReciente(c); // `c.ultimaActividad` lo apaga una vez contactado
                   return (
                   <TableRow key={c.id} className={cn("hover:bg-subtle", nuevo && "bg-brand-tint")}>
                     <TableCell>

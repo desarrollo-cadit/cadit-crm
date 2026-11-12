@@ -437,8 +437,13 @@ export async function runInternalNoticesForOrg(organizationId: string, now = new
       // Ni los de interesados.
       n += await runLeadNoticesForOrg(organizationId, now);
     } finally {
-      // Ni los de grupos sin confirmar (import dinámico: ese módulo importa `staff-notices`).
-      n += await (await import("@/server/avisos-sin-confirmar")).runUnconfirmedNoticesForOrg(organizationId, now);
+      try {
+        // Ni los de grupos sin confirmar (import dinámico: ese módulo importa `staff-notices`).
+        n += await (await import("@/server/avisos-sin-confirmar")).runUnconfirmedNoticesForOrg(organizationId, now);
+      } finally {
+        // Ni los recordatorios de seguimiento del día (08:00, solo al autor).
+        n += await (await import("@/server/recordatorios-aviso")).runReminderNoticesForOrg(organizationId, now);
+      }
     }
   }
   return n;

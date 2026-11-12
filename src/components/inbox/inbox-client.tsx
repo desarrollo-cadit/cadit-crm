@@ -9,6 +9,7 @@ import type { ConversationDto, MessageDto } from "@/lib/types";
 import { useEvents } from "@/components/use-events";
 import { ConversationList } from "./conversation-list";
 import { MessageThread } from "./message-thread";
+import type { EventoDelHilo } from "@/lib/eventos-del-hilo";
 import { Composer } from "./composer";
 import { ContactPanel } from "./contact-panel";
 
@@ -18,6 +19,8 @@ export function InboxClient({ canEnroll = false }: { canEnroll?: boolean }) {
   );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<MessageDto[]>([]);
+  // Notas, «le escribí» y recordatorios del contacto (solo con `contactos.ver`): líneas de sistema.
+  const [events, setEvents] = useState<EventoDelHilo[]>([]);
   const [panelOpen, setPanelOpen] = useState(true);
   // Se incrementa con cada evento SSE que puede cambiar la etapa/lead o el
   // estado del agente: el panel de detalles lo observa y refetch en vivo.
@@ -47,8 +50,11 @@ export function InboxClient({ canEnroll = false }: { canEnroll?: boolean }) {
       `/api/conversations/${conversationId}/messages`
     ).catch(() => null);
     if (!res?.ok) return;
-    const data = (await res.json()) as { messages: MessageDto[] };
-    if (selectedIdRef.current === conversationId) setMessages(data.messages);
+    const data = (await res.json()) as { messages: MessageDto[]; events?: EventoDelHilo[] };
+    if (selectedIdRef.current === conversationId) {
+      setMessages(data.messages);
+      setEvents(data.events ?? []);
+    }
   }, []);
 
   useEffect(() => {
@@ -59,6 +65,7 @@ export function InboxClient({ canEnroll = false }: { canEnroll?: boolean }) {
     (id: string) => {
       setSelectedId(id);
       setMessages([]);
+      setEvents([]);
       void refetchMessages(id);
       void fetch(`/api/conversations/${id}`, {
         method: "PATCH",
@@ -204,7 +211,7 @@ export function InboxClient({ canEnroll = false }: { canEnroll?: boolean }) {
                 </button>
               )}
             </header>
-            <MessageThread messages={messages} />
+            <MessageThread messages={messages} events={events} />
             <Composer
               conversation={selected}
               onSend={sendText}

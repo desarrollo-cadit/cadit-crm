@@ -16,6 +16,7 @@ import {
   tareasDeGrabaciones,
   tareasDeLeads,
   tareasDeProrrogas,
+  tareasDeRecordatorios,
   tareasDeResultadosFinales,
   tareasDeSugerenciasDeZoom,
   type ClaseParaTarea,
@@ -26,6 +27,7 @@ import {
 import { organizationTimezone } from "@/server/finanzas-periodo";
 import { cursoNoEsTaller } from "@/server/workshop-scope";
 import { gruposSinResultado } from "@/server/resultados-confirmados";
+import { recordatoriosVencidos } from "@/server/recordatorios";
 
 /**
  * 2026-10-26 — La lectura de "Hoy". Las reglas viven en
@@ -62,6 +64,16 @@ export async function tareasDelDia(
     confirmar: async () => tareasDeConfirmacion(await gruposPorConfirmar(organizationId, now), reloj),
     facturar: async () => tareasDeFacturacion(await ventasSinFactura(organizationId, now), reloj),
     leads: async () => tareasDeLeads(await enviosSinRespuesta(organizationId, now), now),
+    recordatorios: async () =>
+      tareasDeRecordatorios(
+        (await recordatoriosVencidos(organizationId, now)).map((r) => ({
+          contactId: r.contactId,
+          nombre: [r.firstName, r.lastName].filter((s) => s?.trim()).join(" ").trim() || "Sin nombre",
+          reason: r.reason,
+          dueDate: r.dueDate,
+        })),
+        reloj
+      ),
     prorrogas: async () => tareasDeProrrogas(await pedidosDeProrrogaPendientes(organizationId), reloj),
     resultados: async () =>
       tareasDeResultadosFinales(await gruposSinResultadoFinal(organizationId, now), reloj),

@@ -7,6 +7,7 @@ import { enLaVista } from "@/lib/facturacion";
 import { diasHastaElInicio } from "@/lib/staff-notices";
 import { origenDelFormulario } from "@/lib/seguimiento";
 import { wallClockInZone } from "@/lib/schedule-time";
+import { cuandoVenceDesde, hoyEnZona } from "@/lib/recordatorios";
 
 /**
  * 2026-10-26 — "Hoy": lo que la persona que entra tiene que resolver, con el
@@ -30,6 +31,7 @@ export type ReglaDeTarea =
   | "confirmar"
   | "facturar"
   | "leads"
+  | "recordatorios"
   | "prorrogas"
   | "resultados";
 export type Urgencia = "alta" | "media";
@@ -113,6 +115,15 @@ export const REGLAS_DE_TAREAS = [
     capacidades: ["inscripciones.seguimiento"],
     titulo: "Interesados sin contactar",
     unidad: ["interesado sin contactar", "interesados sin contactar"],
+  },
+  {
+    // 0101 — Los recordatorios de seguimiento que vencen hoy o ya vencieron
+    // (todos los pendientes de la organización, no solo los propios). La MISMA
+    // capacidad con la que se agendan y se resuelven.
+    id: "recordatorios",
+    capacidades: ["inscripciones.seguimiento"],
+    titulo: "Recordatorios para hoy",
+    unidad: ["recordatorio para hoy", "recordatorios para hoy"],
   },
   {
     // 0083 — Los pedidos de prórroga de los alumnos. La MISMA capacidad que
@@ -476,6 +487,47 @@ export function tareasDeLeads(envios: readonly EnvioParaTarea[], now: Date): Tar
       fecha: e.submittedAt.toISOString().slice(0, 10),
     } satisfies TareaDeHoy;
   });
+}
+
+/* ============================================================ 4b. recordatorios */
+
+/** Un recordatorio de seguimiento PENDIENTE, de un contacto sin archivar. */
+export type RecordatorioParaTarea = {
+  contactId: string;
+  nombre: string;
+  reason: string;
+  /** `AAAA-MM-DD`, el día de calendario de la organización. */
+  dueDate: string;
+};
+
+const MOTIVO_EN_BANDEJA = 120;
+
+/**
+ * 0101 — Una tarea por recordatorio pendiente que vence hoy o ya venció (en la
+ * zona de la academia): alta si ya pasó el día, media si es hoy. Abre el
+ * seguimiento del contacto, donde se marca hecho. Sin dato de más: el motivo
+ * va recortado.
+ */
+export function tareasDeRecordatorios(
+  recordatorios: readonly RecordatorioParaTarea[],
+  reloj: RelojDeAsistencia
+): TareaDeHoy[] {
+  const hoy = hoyEnZona(reloj.now, reloj.timeZone);
+  const out: TareaDeHoy[] = [];
+  for (const r of recordatorios) {
+    if (r.dueDate > hoy) continue;
+    const motivo = r.reason.trim().replace(/\s+/g, " ");
+    const corto = motivo.length > MOTIVO_EN_BANDEJA ? `${motivo.slice(0, MOTIVO_EN_BANDEJA - 1)}…` : motivo;
+    out.push({
+      ruleId: "recordatorios",
+      titulo: r.nombre,
+      detalle: `${corto} · ${cuandoVenceDesde(r.dueDate, hoy)}`,
+      href: `/contacts/${r.contactId}/legajo?tab=seguimiento`,
+      urgencia: r.dueDate < hoy ? "alta" : "media",
+      fecha: r.dueDate,
+    });
+  }
+  return out;
 }
 
 /* ============================================================ 5. prórrogas */

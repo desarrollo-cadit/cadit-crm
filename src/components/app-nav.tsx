@@ -89,6 +89,10 @@ export function AppNav({
   useEffect(() => {
     void refetchUnread();
     void refetchFormArrivals();
+    // La pestaña de seguimiento avisa cuando una nota o un «le escribí» saca a un lead de los nuevos.
+    const alRefrescar = () => void refetchFormArrivals();
+    window.addEventListener("form-arrivals:refresh", alRefrescar);
+    return () => window.removeEventListener("form-arrivals:refresh", alRefrescar);
   }, []);
 
   useEvents({

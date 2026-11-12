@@ -16,6 +16,8 @@ import { scoped } from "@/lib/db/tenant";
 import { serializeContact } from "@/server/contacts";
 import { buscarContactoDuplicado, respuestaDeDuplicado } from "@/server/contact-duplicates";
 import { condicionDeTipo, tiposDeLaOrganizacion } from "@/server/contact-types";
+import { FORM_SOURCE_PREFIX } from "@/lib/form-arrivals";
+import { ultimaActividadDeContactos } from "@/server/seguimiento";
 
 export const dynamic = "force-dynamic";
 
@@ -106,7 +108,17 @@ export const GET = requireCapability(
     db.select({ n: sql<number>`count(*)` }).from(schema.contact).where(whereClause),
   ]);
 
-  const contacts = rows.map((c) => ({ ...serializeContact(c), tipo: tipos.tipoDe(c.id) }));
+  // Solo los de formulario pueden ser «nuevos»: la última actividad del equipo
+  // (nota o «le escribí») apaga el resaltado. Una consulta para toda la página.
+  const ultimas = await ultimaActividadDeContactos(
+    session.organizationId,
+    rows.filter((c) => c.source?.startsWith(FORM_SOURCE_PREFIX)).map((c) => c.id)
+  );
+  const contacts = rows.map((c) => ({
+    ...serializeContact(c),
+    tipo: tipos.tipoDe(c.id),
+    ultimaActividad: ultimas.get(c.id)?.toISOString() ?? null,
+  }));
   const total = Number(countRows[0]?.n ?? 0);
   const [todos, alumnos, exalumnos] = await Promise.all([
     contar(undefined),

@@ -1,7 +1,9 @@
 import { z } from "zod";
 import { apiError, parseBody, requireCapability } from "@/lib/api";
+import { sessionCapabilities } from "@/lib/capabilities";
 import { getConversation, listMessages } from "@/server/inbox/queries";
 import { serializeMessage } from "@/server/inbox/ingest";
+import { eventosDeConversacion } from "@/server/seguimiento";
 import { SendError, sendStructured, sendText } from "@/server/inbox/send";
 
 export const dynamic = "force-dynamic";
@@ -18,13 +20,17 @@ export const GET = requireCapability(
   const url = new URL(req.url);
   const sinceParam = url.searchParams.get("since");
   const since = sinceParam ? new Date(sinceParam) : undefined;
-  const messages = await listMessages(
-    session.organizationId,
-    id,
-    since && !Number.isNaN(since.getTime()) ? since : undefined
-  );
+  const desde = since && !Number.isNaN(since.getTime()) ? since : undefined;
+  const messages = await listMessages(session.organizationId, id, desde);
+  // Las notas, los «le escribí» y los recordatorios del contacto son del
+  // seguimiento (`contactos.ver`), no de la bandeja: sin esa capacidad no
+  // se consultan ni viajan. Nunca son mensajes ni salen por WhatsApp.
+  const events = sessionCapabilities(session).includes("contactos.ver")
+    ? await eventosDeConversacion(session.organizationId, row.conversation.contactId, desde)
+    : undefined;
   return Response.json({
     messages: messages.map((r) => serializeMessage(r.message, r.media)),
+    ...(events ? { events } : {}),
   });
 });
 

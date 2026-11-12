@@ -33,6 +33,8 @@ export const STAFF_NOTICE_KINDS = [
   "sin_confirmar_t7",
   "sin_confirmar_t2",
   "sin_confirmar_inicio",
+  // Recordatorio de seguimiento de un contacto, al autor, el día que vence (`src/lib/recordatorios-aviso.ts`).
+  "recordatorio_contacto",
 ] as const;
 export type StaffNoticeKind = (typeof STAFF_NOTICE_KINDS)[number];
 
@@ -70,7 +72,12 @@ export type SujetoDeAviso =
    * la que se refiere el aviso: si el grupo se reprograma, la llave cambia y
    * las ventanas de la fecha nueva vuelven a avisar.
    */
-  | { kind: UnconfirmedNoticeKind; cohortId: string; inicio: string };
+  | { kind: UnconfirmedNoticeKind; cohortId: string; inicio: string }
+  /**
+   * El recordatorio de un contacto el día que vence. `recordatorio` es
+   * `<id del recordatorio>:<YYYY-MM-DD>`: uno por recordatorio y día.
+   */
+  | { kind: "recordatorio_contacto"; contactId: string; recordatorio: string };
 
 /**
  * La llave única por organización (`staff_notice.dedup_key`). Para los avisos
@@ -87,6 +94,8 @@ export function claveDeAviso(s: SujetoDeAviso): string {
       return `${s.kind}:${s.periodKey}`;
     case "interesado_nuevo":
       return `${s.kind}:${s.contactId}:${s.envio}`;
+    case "recordatorio_contacto":
+      return `${s.kind}:${s.contactId}:${s.recordatorio}`;
     case "sin_confirmar_t7":
     case "sin_confirmar_t2":
     case "sin_confirmar_inicio":
@@ -122,6 +131,7 @@ export function columnasDelSujeto(s: SujetoDeAviso): ColumnasDelSujeto {
     case "morosidad_semanal":
       return { ...vacio, periodKey: s.periodKey };
     case "interesado_nuevo":
+    case "recordatorio_contacto":
       return { ...vacio, contactId: s.contactId };
     default:
       return { ...vacio, cohortId: s.cohortId };
@@ -152,6 +162,12 @@ export function sujetoDeRegistro(
       const prefijo = `${r.kind}:${r.contactId}:`;
       if (!r.dedupKey.startsWith(prefijo) || r.dedupKey.length === prefijo.length) return null;
       return { kind: r.kind, contactId: r.contactId, envio: r.dedupKey.slice(prefijo.length) };
+    }
+    case "recordatorio_contacto": {
+      if (!r.contactId || !r.dedupKey) return null;
+      const prefijo = `${r.kind}:${r.contactId}:`;
+      if (!r.dedupKey.startsWith(prefijo) || r.dedupKey.length === prefijo.length) return null;
+      return { kind: r.kind, contactId: r.contactId, recordatorio: r.dedupKey.slice(prefijo.length) };
     }
     case "sin_confirmar_t7":
     case "sin_confirmar_t2":
@@ -188,6 +204,7 @@ export const STAFF_NOTICE_LABELS: Record<StaffNoticeKind, string> = {
   sin_confirmar_t7: "Sin confirmar, 7 días antes",
   sin_confirmar_t2: "Sin confirmar, 2 días antes",
   sin_confirmar_inicio: "Sin confirmar, día de inicio",
+  recordatorio_contacto: "Recordatorio de seguimiento",
 };
 
 export const STAFF_NOTICE_STATUS_LABELS: Record<StaffNoticeStatus, string> = {

@@ -1,13 +1,30 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { FileText, Mail, MailCheck, MailX, MessageCircle, StickyNote, type LucideIcon } from "lucide-react";
+import {
+  BellRing,
+  CheckCircle2,
+  FileText,
+  Mail,
+  MailCheck,
+  MailX,
+  MessageCircle,
+  StickyNote,
+  type LucideIcon,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { notify } from "@/lib/notify";
+import {
+  cuandoVenceDesde,
+  fechaDeRecordatorio,
+  MOTIVO_MAX,
+  type RecordatorioDto,
+} from "@/lib/recordatorios";
 import {
   enlaceDeCorreo,
   enlaceDeWhatsApp,
@@ -36,6 +53,8 @@ const ICONO: Record<EntradaDeSeguimiento["tipo"], LucideIcon> = {
   contacto_whatsapp: MessageCircle,
   baja_marketing: MailX,
   baja_marketing_revertida: MailCheck,
+  recordatorio_creado: BellRing,
+  recordatorio_resuelto: CheckCircle2,
 };
 
 const INTERES: Record<"curso" | "taller" | "general", string> = {
@@ -81,8 +100,11 @@ export function SeguimientoClient({ contactId, canWrite }: { contactId: string; 
     };
   }, [contactId, version]);
 
-  const agregar = (a: ActividadDto) =>
+  const agregar = (a: ActividadDto) => {
     setData((d) => (d ? { ...d, timeline: [{ tipo: a.kind, ...a } as EntradaDeSeguimiento, ...d.timeline] } : d));
+    // Una nota o un «le escribí» apaga el «nuevo» del lead: que el menú lo recuente.
+    window.dispatchEvent(new Event("form-arrivals:refresh"));
+  };
 
   if (error) return <p className="p-6 text-sm text-muted-foreground">{error}</p>;
   if (!data) {
@@ -99,6 +121,7 @@ export function SeguimientoClient({ contactId, canWrite }: { contactId: string; 
       {/* 046 — qué cursó y qué le podría interesar, al atenderlo (SC-001). */}
       <Timeline timeline={data.timeline} />
       {canWrite ? <NoteForm contactId={contactId} onAdded={agregar} /> : null}
+      <RemindersCard contactId={contactId} canWrite={canWrite} onChanged={() => setVersion((v) => v + 1)} />
       <ContactCard contactId={contactId} contact={data.contact} canWrite={canWrite} onRecorded={agregar} />
       <MarketingCard contactId={contactId} marketing={data.marketing} onChanged={() => setVersion((v) => v + 1)} />
       <RecorridoComercialCard contactId={contactId} />
@@ -311,6 +334,8 @@ function TimelineItem({ entrada: e }: { entrada: EntradaDeSeguimiento }) {
           <FormEntry entrada={e} />
         ) : e.tipo === "baja_marketing" || e.tipo === "baja_marketing_revertida" ? (
           <MarketingEntry entrada={e} />
+        ) : e.tipo === "recordatorio_creado" || e.tipo === "recordatorio_resuelto" ? (
+          <ReminderEntry entrada={e} />
         ) : (
           <ActivityEntry entrada={e} />
         )}
@@ -376,6 +401,220 @@ function ActivityEntry({
       <p className="text-xs text-muted-foreground">{fechaHora(e.at)}</p>
       {e.body ? <p className="whitespace-pre-wrap text-sm">{e.body}</p> : null}
     </>
+  );
+}
+
+/** Un recordatorio agendado o resuelto, en la línea de tiempo. */
+function ReminderEntry({
+  entrada: e,
+}: {
+  entrada: Extract<EntradaDeSeguimiento, { tipo: "recordatorio_creado" | "recordatorio_resuelto" }>;
+}) {
+  return (
+    <>
+      <p className="text-sm">
+        <span className="font-medium">
+          {e.tipo === "recordatorio_creado"
+            ? `Recordatorio creado para el ${fechaDeRecordatorio(e.dueDate)}`
+            : "Recordatorio resuelto"}
+        </span>
+        <span className="text-muted-foreground"> · {e.authorName ?? "Cuenta eliminada"}</span>
+      </p>
+      <p className="text-xs text-muted-foreground">{fechaHora(e.at)}</p>
+      <p className="whitespace-pre-wrap text-sm">{e.reason}</p>
+    </>
+  );
+}
+
+/**
+ * Recordatorios de seguimiento: «llamarlo el jueves». Cualquiera con
+ * `inscripciones.seguimiento` agenda y resuelve (el servidor lo exige); sin
+ * ella solo se ven. Uno vencido se marca con el tono de aviso.
+ */
+function RemindersCard({
+  contactId,
+  canWrite,
+  onChanged,
+}: {
+  contactId: string;
+  canWrite: boolean;
+  onChanged: () => void;
+}) {
+  const [data, setData] = useState<{ reminders: RecordatorioDto[]; today: string } | null>(null);
+  const [version, setVersion] = useState(0);
+  const [reason, setReason] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let vigente = true;
+    void (async () => {
+      const res = await fetch(`/api/contacts/${contactId}/recordatorios`).catch(() => null);
+      if (!vigente || !res?.ok) return;
+      setData((await res.json()) as { reminders: RecordatorioDto[]; today: string });
+    })();
+    return () => {
+      vigente = false;
+    };
+  }, [contactId, version]);
+
+  const recargar = () => {
+    setVersion((v) => v + 1);
+    onChanged();
+  };
+
+  const agendar = async (ev: React.FormEvent) => {
+    ev.preventDefault();
+    if (!reason.trim() || !dueDate) return;
+    setSaving(true);
+    const res = await fetch(`/api/contacts/${contactId}/recordatorios`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ reason, dueDate }),
+    }).catch(() => null);
+    setSaving(false);
+    if (!res?.ok) {
+      notify.error(
+        res?.status === 403
+          ? "No tenés permiso para agendar recordatorios"
+          : res?.status === 422
+            ? "Elegí una fecha de hoy en adelante"
+            : "No se pudo agendar el recordatorio"
+      );
+      return;
+    }
+    setReason("");
+    setDueDate("");
+    recargar();
+  };
+
+  const cambiar = async (id: string, action: "hecho" | "reabrir" | "eliminar") => {
+    setBusyId(id);
+    const res = await fetch(`/api/contact-reminders/${id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action }),
+    }).catch(() => null);
+    setBusyId(null);
+    if (!res?.ok) {
+      notify.error("No se pudo actualizar el recordatorio");
+      return;
+    }
+    recargar();
+  };
+
+  const hoy = data?.today ?? "";
+  const pendientes = data?.reminders.filter((r) => r.doneAt === null) ?? [];
+  const hechos = data?.reminders.filter((r) => r.doneAt !== null) ?? [];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Recordatorios</CardTitle>
+        <CardDescription>
+          Agendá cuándo volver a este contacto. El día que vence te llega un correo y aparece en «Para resolver».
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {canWrite ? (
+          <form onSubmit={agendar} className="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
+            <div className="space-y-1">
+              <label htmlFor="recordatorio-motivo" className="text-sm font-medium">
+                Agendar recordatorio
+              </label>
+              <Input
+                id="recordatorio-motivo"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="Por ejemplo: llamarlo para confirmar la inscripción"
+                maxLength={MOTIVO_MAX}
+              />
+            </div>
+            <div className="space-y-1">
+              <label htmlFor="recordatorio-fecha" className="text-sm font-medium">
+                Fecha
+              </label>
+              <Input
+                id="recordatorio-fecha"
+                type="date"
+                value={dueDate}
+                min={hoy || undefined}
+                onChange={(e) => setDueDate(e.target.value)}
+              />
+            </div>
+            <Button type="submit" loading={saving} disabled={!reason.trim() || !dueDate}>
+              Agendar
+            </Button>
+          </form>
+        ) : null}
+
+        {data && pendientes.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No hay recordatorios pendientes.</p>
+        ) : null}
+        {pendientes.length > 0 ? (
+          <ul className="space-y-2" aria-label="Recordatorios pendientes">
+            {pendientes.map((r) => {
+              const vencido = r.dueDate <= hoy;
+              return (
+                <li
+                  key={r.id}
+                  className={cn(
+                    "flex items-start justify-between gap-3 rounded-md border px-3 py-2",
+                    vencido ? "border-warning-border bg-warning-soft" : "border-border"
+                  )}
+                >
+                  <div className="min-w-0 space-y-0.5">
+                    <p className="whitespace-pre-wrap break-words text-sm">{r.reason}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {fechaDeRecordatorio(r.dueDate)} · {cuandoVenceDesde(r.dueDate, hoy)}
+                      {r.authorName ? ` · agendado por ${r.authorName}` : ""}
+                    </p>
+                  </div>
+                  {canWrite ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      loading={busyId === r.id}
+                      onClick={() => void cambiar(r.id, "hecho")}
+                    >
+                      Hecho
+                    </Button>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
+        {hechos.length > 0 ? (
+          <details className="text-sm">
+            <summary className="cursor-pointer text-muted-foreground">Resueltos ({hechos.length})</summary>
+            <ul className="mt-2 space-y-1">
+              {hechos.map((r) => (
+                <li key={r.id} className="flex items-start justify-between gap-3">
+                  <span className="min-w-0 break-words text-muted-foreground">
+                    {fechaDeRecordatorio(r.dueDate)} · {r.reason}
+                    {r.doneByName ? ` · resuelto por ${r.doneByName}` : ""}
+                  </span>
+                  {canWrite ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      loading={busyId === r.id}
+                      onClick={() => void cambiar(r.id, "reabrir")}
+                    >
+                      Reabrir
+                    </Button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 
