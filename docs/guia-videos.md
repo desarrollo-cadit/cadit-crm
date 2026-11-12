@@ -6,8 +6,9 @@ un video es copiar un archivo; no hace falta redeployar.
 
 ## Cómo funciona
 
-- Cada video es `<id>.mp4` y su portada `<id>.jpg`, dentro de `GUIA_VIDEOS_DIR`
-  (por defecto `./data/guia-videos`).
+- Cada video es `<id>.mp4` y su portada `<id>.jpg`, dentro de `GUIA_VIDEOS_DIR`. Si esa variable no
+  está, se usa `<MEDIA_DIR>/guia-videos`: el volumen persistente de la app (el de los adjuntos, ya
+  montado en producción en `/data/media`). En desarrollo sin ninguna de las dos, `./data/guia-videos`.
 - La guía ofrece **solo los videos que están en esa carpeta**. Sin carpeta o sin
   archivos, la sección «Tutoriales en video» no aparece.
 - Cada audiencia entra por su puerta: `/api/guia/videos/<id>` (staff, exige sesión
@@ -27,6 +28,13 @@ node scripts/demos/guia/publicar.mjs inicio-dashboard   # uno solo
 Deja `demos-output/guia/publicar/<id>.mp4` (comprimido, ~3-5 MB) y `<id>.jpg`.
 
 ## Subir al servidor (Coolify)
+
+**Camino más simple (el que se usó):** copiar los archivos a `guia-videos/` dentro del volumen que ya
+está montado en `/data/media`, con dueño `100:101` (el usuario `vocero` de la app). No hace falta
+configurar nada en Coolify ni redeployar para actualizar un video. Lo hace
+`scripts/ops/subir-videos-guia.sh` (ver su encabezado: indica cómo encontrar el volumen).
+
+**Alternativa, con un volumen aparte:**
 
 1. En el servicio de la app, agregar un **volumen persistente** montado en
    `/data/guia-videos`.

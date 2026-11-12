@@ -6,7 +6,7 @@ import { videoPorId } from "@/lib/guia-videos";
 
 /**
  * Los videos de la guía viven en un VOLUMEN del servidor, no en la imagen ni en
- * git (`GUIA_VIDEOS_DIR`, por defecto `./data/guia-videos`): cada uno es
+ * git (ver `carpetaDeVideos`): cada uno es
  * `<id>.mp4` con su portada `<id>.jpg`. Actualizar un video es copiar un
  * archivo, sin rehacer el build. No hay servicio externo (constitución II).
  *
@@ -16,8 +16,17 @@ import { videoPorId } from "@/lib/guia-videos";
 
 export type TipoDeArchivo = "video" | "portada";
 
+/**
+ * Dónde están los videos: `GUIA_VIDEOS_DIR` si se define; si no, la carpeta `guia-videos` del
+ * volumen persistente de la app (`MEDIA_DIR`, el mismo de los adjuntos: ya está montado en
+ * producción, así que publicar un video es copiar un archivo, sin configurar nada en Coolify);
+ * y en desarrollo sin `MEDIA_DIR`, `./data/guia-videos`.
+ */
 export function carpetaDeVideos(): string {
-  return path.resolve(process.env.GUIA_VIDEOS_DIR ?? path.join(process.cwd(), "data", "guia-videos"));
+  const explicita = process.env.GUIA_VIDEOS_DIR;
+  if (explicita) return path.resolve(explicita);
+  const media = process.env.MEDIA_DIR;
+  return path.resolve(media ? path.join(media, "guia-videos") : path.join(process.cwd(), "data", "guia-videos"));
 }
 
 /** Los ids que tienen su `.mp4` publicado. Vacío si la carpeta no existe. */
