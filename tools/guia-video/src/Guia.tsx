@@ -149,8 +149,9 @@ const Cursor: React.FC<{ x: number; y: number; clic: number; cam: Camara }> = ({
 };
 
 const Resaltado: React.FC<{ paso: Paso; t: number; cam: Camara }> = ({ paso, t, cam }) => {
-  if (!paso.caja) return null;
+  // Los hooks van antes de cualquier return condicional (orden de hooks).
   const { fps } = useVideoConfig();
+  if (!paso.caja) return null;
   const entra = spring({ frame: Math.max(0, (t - paso.t0 - 0.35) * fps), fps, config: { damping: 16, stiffness: 140 } });
   const sale = interpolate(t, [paso.t1 - 0.25, paso.t1], [1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   const latido = 1 + Math.sin(t * 5) * 0.012;
